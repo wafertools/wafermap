@@ -801,6 +801,26 @@ positive, orange = negative; intensity = strength) and a die-level scatter
 plot coloured by hard bin. Clicking a matrix cell drives the scatter plot
 onto that pair.*
 
+### What a click does
+
+Every mark on an Insights chart stands for something, and a click opens it:
+
+| Click | Opens |
+| --- | --- |
+| A wafer's bar, box or point (Yield by wafer, the box plot, the trend, the scatter, a Plot-tab chart) | that wafer's map, on the test the chart is about (the bins, for Yield by wafer) |
+| A **bin** in the bin pareto (or a sub-bar of the grouped one) | the right-click menu on the dies in that bin |
+| A **test** in a pass-rate chart | the menu on the dies that fail that test, judged as the card is |
+| A bar of the **value histogram** | the menu on the dies whose values fall in that bar |
+| A **ring** or **quadrant** of the yield diagrams | the menu on the dies it counts |
+| A cell of the correlation matrix | that pair in the scatter |
+| A test in the process-capability chart | that test in the other distribution charts |
+| A row of the **Wafers** table | that wafer's map |
+| A row of the **Dies** table | that die, ringed on its wafer's map |
+
+The menu offers the charts and tables for just those dies (and your own plots), and its heading names
+them, for example "412 dies in hard bin 3, across 13 wafers". A mark that has no dies behind it does nothing.
+Right-click on any wafer's bar, box or point opens the same menu for the whole wafer.
+
 ### Data tables
 
 ![Gallery Insights — Data sub-tab](images/guide-insights-data.png)
@@ -836,6 +856,96 @@ the layout of the file: wide has a column per test, long has a row per die per
 test (a die with no result for a test has no row), the shape statistics tools
 prefer. The note under the buttons says how many rows the file will have, and
 warns when that is more than a spreadsheet can open (1,048,576).
+
+### Plots
+
+The **Plot** sub-tab is where you build your own charts. **+ New plot** starts one,
+already filled in with the first two tests of the lot, and opens it beside a large
+copy of the chart. **Add examples** draws one plot of each chart type the lot can
+show (a scatter of the first two tests, a histogram, a box, a bar of yield by the
+first lot field that divides the wafers, and a line over wafer order), to start from
+or to see what each type is for; pressing it again adds only what is missing. Every change you make there is drawn at once; there is no Apply
+button, and the plot is kept as you go.
+
+In **Setup**, choose the **chart type**, then the field for each role:
+
+| Chart type | What it shows | Fields |
+| --- | --- | --- |
+| **Scatter** | one point per die (or per wafer) | X and Y, both numbers |
+| **Histogram** | how often each value occurs | the values |
+| **Box** | quartiles, with whiskers to the minimum and maximum, for each category | categories (wafer by default), values |
+| **Bar** | one aggregated value for each category (or a count) | categories, values (optional), how to combine them |
+| **Line** | one aggregated value at each X, joined | X, Y, how to combine them |
+
+- **X axis** and **Y axis** (a histogram has one **Values** field; a box or bar has
+  **Categories** instead of a numeric X). Any measured test, a die's X or Y position,
+  a wafer's yield or die count, or a lot field with numbers in it (slot, temperature).
+  The list is grouped Tests · Die · Wafer and filters by name or test number, so with
+  a few hundred tests you type `1050` or `vth` rather than scrolling. A field the chart
+  type cannot use is not offered; switching type keeps your fields where they still
+  apply and brings back the ones that did not when you switch back.
+- **Colour**: a category such as wafer, split, hard bin, site or ring, or, on a
+  scatter, a measured value or wafer figure drawn on a gradient (a colour bar under
+  the title states its range). **Follow Group by** (the default) takes the colours from
+  the Group by control above, so changing it recolours every plot that follows it;
+  **None** draws one colour.
+- **Combine values by** (bar and line, and any plot with one mark per wafer): mean,
+  median, minimum, maximum, sum or count. **Pooled yield** is offered for Yield: it is
+  the passing dies over the judged dies of all the wafers in a bar, not an average of
+  their percentages (the plain mean of Yield is the mean of per-wafer yields, and is
+  labelled so).
+- **One mark per**: Automatic uses the finest level the fields allow. **Wafer** makes
+  every mark a wafer, combining its dies' values as chosen above, which is how "mean
+  Idsat per wafer against slot" is drawn. A per-wafer field (yield) cannot be split by
+  a per-die one (hard bin); the plot says so rather than drawing it.
+
+In **Customise**, the **title** and each **axis title** are written for you until
+you type your own (the box shows what it would say, and clearing it brings that
+back). If you type a title and later change the fields, the plot says when the title
+still names a test it no longer shows, or names only one of the two it does, with a
+button to go back to the automatic title; a title that names none of the fields ("Process
+check") is yours and is left alone. Each axis can have a **minimum**, a **maximum**, a **log scale** (offered
+whatever the values, but it stays linear, and says so, if any value is zero or
+negative) and **reverse direction**. A histogram also has a number of **bins**. A category axis has a title only.
+
+Under every plot is a line stating what it shows: the wafers and dies, how values
+were combined ("median of Vth per wafer"), and how many dies were left out for
+having no value ("12 dies without Idsat not plotted"). A plot never drops a die
+without saying so.
+
+**Hover** a point, bar, box or line to see its values and how many dies or wafers it
+stands for. **Click** a point (or a wafer's bar or box) to open that wafer, on the plot's own
+test, so its map shows the values the plot is about and not the bins (a plot with no test in it,
+like yield against wafer order, opens the default map). Click any other bar, box, histogram bar or
+line point to open the right-click menu on the dies it counts, and **drag** a rectangle over a
+scatter to select the dies (or wafers) inside it. The selection opens the same
+right-click menu as on a map, so a few dies from a plot can be charted and tabulated
+in turn.
+
+**Keeping your plots.** A plot is a recipe, not a picture: it says which fields go
+where, and nothing about which wafers. It is therefore kept by your application
+between sessions and drawn again on the next lot. If you open a lot that lacks a
+test a plot needs, the plot stays in the list, dimmed, with the reason ("Needs test
+3001 (Leak), which is not in these dies"); it is not removed. **Export plots…**
+writes them all to a file, and **Import plots…** adds the plots of such a file to
+yours, as copies where a plot with the same identity already exists, never
+replacing one. Each card has **Edit**, **Duplicate** and **Delete**; a deleted plot
+can be restored with **Undo** for ten seconds.
+
+**Three different ways to divide the data, kept apart.** A plot divides data in
+three places, and they do different jobs, so neighbouring plots can ask different
+questions:
+
+| What it decides | Where | Kept with the plot? |
+| --- | --- | --- |
+| The categories on an axis | the plot's own **X** field | yes |
+| The colour series within it | the plot's own **Colour** field | yes |
+| Which wafers are in view | the **Show** control above | no, it is the scope |
+
+**Plots in the right-click menu.** Every saved plot is also a row in the menu that
+opens on a selection or a wafer (**Plots** section), drawn over just those dies and
+captioned with them. **New plot…** in the same menu starts a draft on the selection;
+a draft is kept only if you press **Add to my plots**.
 
 ### Sweep cards
 
@@ -902,8 +1012,19 @@ Every chart panel has a **camera** button that saves the current view as a PNG a
 resolution. To get a clean full-resolution render, use the panel's expand (corner-arrows)
 button first to open it in the fullscreen modal, then click the camera button.
 
-The saved image is the chart as shown, on a white background. It carries no title or
-context of its own, but its file name identifies the lot, wafers and chart (see below).
+The saved image is the chart as shown, under a header that says what it is: its **title**,
+what its controls are set to (**Test: vth_n_mV · 1001**, **Wafer: W03**, **Sort: yield**), the
+lines the chart states about itself (the population and N, how values were combined, what
+the box and whiskers mean, how the bars are normalised), and its colour key (the legend, or
+the colour bar's name and range). The instructions that only make sense on screen ("click a
+point to open this wafer") are left out. A chart on the **Plot** tab carries the line stating
+its wafers and dies in the same place. The image takes the card's own background, so a dark
+theme saves a dark chart. The file name identifies the lot, wafers and chart (see below).
+
+**Printing.** The dropdowns, toggles and buttons (camera, expand and, on the Plot tab, New
+plot, Add examples, Import, Export, Edit, Duplicate and Delete) are left off the printed page.
+In their place each chart prints a small block under its title giving the same settings and
+lines as the saved image, so a printed histogram says which test it is of.
 
 ### Names of saved files
 

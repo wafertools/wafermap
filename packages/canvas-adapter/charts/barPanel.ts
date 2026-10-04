@@ -62,6 +62,13 @@ export interface ChartPanel {
    * instead, via `drill.onOpenGroup` — this is never called for those.
    */
   onOpen?: (datum: ChartDatum) => void;
+  /**
+   * Clicking a bar picks out the dies it counts (a bin's dies, in the bin pareto): called with the bar and the click, so
+   * the host can open a menu there. Takes the place of `onOpen` for panels whose bars are not wafers. `selectLabel` is
+   * what the click does, in the reader's words ("chart or tabulate these dies").
+   */
+  onSelectBar?: (datum: ChartDatum, e: MouseEvent) => void;
+  selectLabel?: string;
   /** Right-click on a leaf row that carries a wafer (`datum.key`) — see
    *  `WaferContextMenuHandler`. Not called for a group row. */
   onWaferContextMenu?: WaferContextMenuHandler;
@@ -94,12 +101,15 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
   let backBtn: HTMLElement | null = null;
 
   const hint = card.ownerDocument.createElement('div');
+
+  hint.dataset.wmapCaption = '1';
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
   function syncHint(): void {
     const parts: string[] = [];
     if (panel.onOpen) parts.push('click to open this wafer');
+    if (panel.onSelectBar) parts.push(`click a bar to ${panel.selectLabel ?? 'see what it counts'}`);
     if (drill && !drillActive) parts.push(`click a ${drill.groupLabelText} to see it by wafer`);
     const text = parts.join(', or ');
     let out = text ? `${text[0].toUpperCase()}${text.slice(1)}.` : '';
@@ -299,13 +309,14 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
     const rect = canvas.getBoundingClientRect();
     const row = rowAt(e.clientY - rect.top);
     const isGroupRow = row >= 0 && drill && !drillActive && data[row].itemCount > 1;
-    const clickable = row >= 0 && (isGroupRow || (!!panel.onOpen && row >= 0 && !isGroupRow));
+    const clickable = row >= 0 && (isGroupRow || ((!!panel.onOpen || !!panel.onSelectBar) && !isGroupRow));
     if (row !== hovered) { hovered = row; canvas.style.cursor = clickable ? 'pointer' : 'default'; draw(); }
     if (row >= 0) {
       const d = data[row];
       const hintLine = isGroupRow
         ? `<br><em>click to see this ${escHtml(drill!.groupLabelText)} by wafer</em>`
-        : (panel.onOpen ? '<br><em>click to open this wafer</em>' : '');
+        : (panel.onOpen ? '<br><em>click to open this wafer</em>'
+          : panel.onSelectBar ? `<br><em>click to ${escHtml(panel.selectLabel ?? 'see what it counts')}</em>` : '');
       const menuHint = !isGroupRow && panel.onWaferContextMenu && typeof d.key === 'number' ? WAFER_MENU_HINT : '';
       tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong><br>${escHtml(valueTextOf(d))}${hintLine}${menuHint}`;
       tooltip.style.display = 'block';
@@ -319,6 +330,7 @@ export function renderBarPanel(panel: ChartPanel, onSaveImage?: SaveImageHandler
     if (row === -1) return;
     const datum = data[row];
     if (drill && !drillActive && datum.itemCount > 1) { onDrillOpen(datum); return; }
+    if (panel.onSelectBar) { tooltip.style.display = 'none'; panel.onSelectBar(datum, e); return; }
     panel.onOpen?.(datum);
   });
   canvas.addEventListener('contextmenu', e => {

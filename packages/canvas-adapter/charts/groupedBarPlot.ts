@@ -68,6 +68,8 @@ export interface GroupedBarPlotOptions {
   /** Tooltip HTML for a hovered sub-bar. */
   /** HTML for the hover tooltip. Escape every label with `escHtml` (core/utils.ts): they come from input files. */
   tooltipHtml: (rowIndex: number, groupIndex: number) => string;
+  /** Click a sub-bar: called with its row, its group and the click, so the host can open a menu there. */
+  onRowClick?: (rowIndex: number, groupIndex: number, e: MouseEvent) => void;
 }
 
 export interface GroupedBarPlotHandle {
@@ -106,6 +108,7 @@ export function renderGroupedBarPlot(
   let legendHeight = 0;
   if (showLegend) {
     const legend = doc.createElement('div');
+    legend.dataset.wmapLegend = '1';
     Object.assign(legend.style, {
       display: 'flex', flexWrap: 'wrap', gap: `${SPACE.xs} ${SPACE.xl}`, marginBottom: SPACE.xs,
     } as Partial<CSSStyleDeclaration>);
@@ -240,8 +243,14 @@ export function renderGroupedBarPlot(
     if (hovered) { hovered = null; draw(); }
     tooltip.style.display = 'none';
   };
+  const onClick = (e: MouseEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    const hit = subBarAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (hit && options.onRowClick) { tooltip.style.display = 'none'; options.onRowClick(hit.row, hit.group, e); }
+  };
   canvas.addEventListener('mousemove', onMove);
   canvas.addEventListener('mouseleave', onLeave);
+  if (options.onRowClick) { canvas.style.cursor = 'pointer'; canvas.addEventListener('click', onClick); }
 
   const resizeHandle = observeResize(card, () => draw());
   draw();
@@ -252,6 +261,7 @@ export function renderGroupedBarPlot(
       resizeHandle?.disconnect();
       canvas.removeEventListener('mousemove', onMove);
       canvas.removeEventListener('mouseleave', onLeave);
+      canvas.removeEventListener('click', onClick);
     },
   };
 }

@@ -683,6 +683,22 @@ export function saveImageBlob(blob: Blob, filename: string, onSaveImage?: SaveIm
 }
 
 /**
+ * Keeps a control out of printed output. Buttons that act on the screen (Edit, Delete, Save as PNG, Expand) are
+ * meaningless on paper and push the content they sit beside out of place. A single rule, added to the document once, that
+ * only matches elements carrying the attribute, so it cannot affect anything it was not asked to.
+ */
+export function markNoPrint(el: HTMLElement): void {
+  el.setAttribute('data-wmap-noprint', '1');
+  const doc = el.ownerDocument;
+  if (!doc.getElementById('wmap-noprint-style')) {
+    const style = doc.createElement('style');
+    style.id = 'wmap-noprint-style';
+    style.textContent = '@media print{[data-wmap-noprint]{display:none!important}}';
+    doc.head.appendChild(style);
+  }
+}
+
+/**
  * The browser's default save: a `<a download>` click. The one copy, used when
  * no host hook is supplied — by `saveImageBlob`, `saveTextFile`, and the
  * export-naming wrappers in exportName.ts, which must fall back to it too.

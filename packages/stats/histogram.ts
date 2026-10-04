@@ -30,6 +30,8 @@ export interface HistogramBucket {
 
 export interface HistogramItem {
   label?: string;
+  /** The wafer this item is, when it is one (an Insights wafer index): lets a click on a bucket say which wafers its dies are on. */
+  key?: number;
   dies?: Die[];
 }
 
@@ -123,11 +125,38 @@ export function buildTestHistogramData(
     count: 0,
   }));
 
-  for (const v of values) {
-    const index = Math.min(bucketCount - 1, Math.floor((v - min) / width));
-    buckets[index].count++;
-  }
+  for (const v of values) buckets[bucketIndexOf(v, min, width, bucketCount)].count++;
   return buckets;
+}
+
+/** The bucket a value falls in: equal widths from `min`, the last bucket closed at the top. THE binning rule. */
+export function bucketIndexOf(v: number, min: number, width: number, bucketCount: number): number {
+  return Math.min(bucketCount - 1, Math.floor((v - min) / width));
+}
+
+/**
+ * The dies behind one bucket of a histogram built by `buildTestHistogramData` over `items`, per item: every die whose
+ * value lands in it by the same rule that counted it (so the dies a click picks out are exactly the bar's `count`).
+ * Values outside the buckets' range, which a clipped axis dropped, are not in any bucket.
+ */
+export function diesInBucket(
+  items: HistogramItem[], testNumber: number, buckets: readonly HistogramBucket[], index: number,
+): Array<{ item: HistogramItem; dies: Die[] }> {
+  if (buckets.length === 0 || index < 0 || index >= buckets.length) return [];
+  const min = buckets[0].rangeLow;
+  const max = buckets[buckets.length - 1].rangeHigh;
+  const width = (buckets[0].rangeHigh - min) || 1;
+  const out: Array<{ item: HistogramItem; dies: Die[] }> = [];
+  for (const item of items) {
+    const dies: Die[] = [];
+    for (const die of item.dies ?? []) {
+      const v = testValue(die, testNumber);
+      if (v === undefined || !Number.isFinite(v) || v < min || v > max) continue;
+      if (bucketIndexOf(v, min, width, buckets.length) === index) dies.push(die);
+    }
+    if (dies.length) out.push({ item, dies });
+  }
+  return out;
 }
 
 /**

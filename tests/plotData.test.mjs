@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
-import { resolvePlot, plotFootnote, plotTitle, combine } from '../dist/packages/stats/plotData.js';
+import { resolvePlot, plotFootnote, plotTitle, combine, fieldCatalogue, fieldsForRole, defaultPlot, fieldKey, titleDrift, describeTitleDrift, examplePlots } from '../dist/packages/stats/plotData.js';
 
 const DEFS = [
   { testNumber: 1050, name: 'Vth', unit: 'V' },
@@ -58,8 +58,10 @@ test('scatter at die level: one point per die with both values, the missing ones
   assert.deepEqual(r.groups, ['']);
   const p = r.marks.points[0];
   assert.ok(p.die && p.item === 0);
-  assert.equal(r.x.label, 'Vth (V)');
-  assert.equal(r.y.label, 'Idsat (A)');
+  assert.equal(r.x.label, 'Vth');
+  assert.equal(r.x.unit, 'V');
+  assert.equal(r.y.label, 'Idsat');
+  assert.equal(r.y.unit, 'A');
   assert.equal(r.autoTitle, 'Idsat vs Vth');
 });
 
@@ -115,7 +117,8 @@ test('histogram: values by colour group, from Y or from X', () => {
   assert.equal(a.autoTitle, 'Vth · by Split');
   const b = resolvePlot(spec('histogram', { x: T(1050), color: { none: true } }), lot(), ctx);
   assert.equal(b.marks.values[0].length, 40);
-  assert.equal(b.x.label, 'Vth (V)');
+  assert.equal(b.x.label, 'Vth');
+  assert.equal(b.x.unit, 'V');
 });
 
 test('bar: yield by temperature is POOLED, not an average of wafer yields', () => {
@@ -126,11 +129,12 @@ test('bar: yield by temperature is POOLED, not an average of wafer yields', () =
   // 25 C: W1 9/10 and W2 10/20 -> 19/30
   assert.ok(Math.abs(r.marks.values[0][0] - (19 / 30) * 100) < 1e-9);
   assert.ok(Math.abs(r.marks.values[0][1] - 50) < 1e-9);
-  assert.equal(r.y.label, 'Pooled yield (%)');
+  assert.equal(r.y.label, 'Pooled yield');
+  assert.equal(r.y.unit, '%');
   assert.match(r.aggregation, /passing dies over judged dies/);
   const mean = resolvePlot(spec('bar', { x: { meta: 'temperature' }, y: { builtin: 'yield' }, color: { none: true } }, { aggregate: 'mean' }), lot(), ctx);
   assert.ok(Math.abs(mean.marks.values[0][0] - 70) < 1e-9);
-  assert.match(mean.y.label, /^Mean Yield/);
+  assert.equal(mean.y.label, 'Mean Yield');
 });
 
 test('bar: a test aggregate by split, coloured by temperature, is a clustered bar', () => {
@@ -141,7 +145,8 @@ test('bar: a test aggregate by split, coloured by temperature, is a clustered ba
   assert.ok(Math.abs(r.marks.values[0][0] - 0.64) < 1e-9);
   assert.ok(Number.isNaN(r.marks.values[1][0]));
   assert.equal(r.level, 'die');
-  assert.equal(r.y.label, 'Max Vth (V)');
+  assert.equal(r.y.label, 'Max Vth');
+  assert.equal(r.y.unit, 'V');
 });
 
 test('bar with no Y counts what it stands for', () => {
@@ -230,10 +235,6 @@ test('a test present in the dies but not in the list is plotted under its number
   assert.equal(r.x.label, 'Test 1050');
 });
 
-test('a continuous colour is an issue for now', () => {
-  const r = resolvePlot(spec('scatter', { x: T(1050), y: T(1060), color: T(1050) }), lot(), ctx);
-  assert.match(r.issues[0], /cannot be a colour yet/);
-});
 
 test('a plot from a newer version, or with a role missing, says so', () => {
   assert.match(resolvePlot({ id: 'p', mark: 'sweep', encoding: {} }, lot(), ctx).issues[0], /newer version/);
@@ -278,4 +279,177 @@ test('ring and quadrant need the wafer; without it the dies are counted as left 
   const r = resolvePlot(spec('bar', { x: { builtin: 'quadrant' }, color: { none: true } }), items, ctx);
   assert.equal(r.plotted, 0);
   assert.deepEqual(r.omitted, [{ field: 'Quadrant', count: 40 }]);
+});
+
+// ── what can be chosen ──
+
+test('the catalogue is the lot\'s: its tests, the die fields it has data for, and its wafer and lot fields', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  const keys = cat.map(f => fieldKey(f.field));
+  assert.deepEqual(keys.filter(k => k.startsWith('test:')), ['test:1050', 'test:1060']);
+  for (const k of ['builtin:x', 'builtin:y', 'builtin:ring', 'builtin:quadrant', 'builtin:hbin', 'builtin:wafer', 'builtin:waferOrder', 'builtin:yield', 'builtin:dieCount', 'meta:split', 'meta:temperature']) {
+    assert.ok(keys.includes(k), k);
+  }
+  assert.ok(!keys.includes('builtin:sbin'), 'no soft bins in this lot');
+  assert.ok(!keys.includes('builtin:site'), 'no site numbers in this lot');
+  const test1050 = cat.find(f => fieldKey(f.field) === 'test:1050');
+  assert.equal(test1050.label, 'Vth · 1050', 'the number is in the text, so a filter finds either');
+  assert.equal(test1050.group, 'Tests');
+  assert.equal(cat.find(f => fieldKey(f.field) === 'meta:temperature').kind, 'numeric');
+  assert.equal(cat.find(f => fieldKey(f.field) === 'meta:split').kind, 'categorical');
+});
+
+test('one wafer has no wafer order', () => {
+  const keys = fieldCatalogue([lot()[0]], ctx).map(f => fieldKey(f.field));
+  assert.ok(!keys.includes('builtin:waferOrder'));
+});
+
+test('a functional test is not offered as a value', () => {
+  const defs = [...DEFS, { testNumber: 2000, name: 'Cont', testType: 'F' }];
+  const keys = fieldCatalogue(lot(), { testDefs: defs }).map(f => fieldKey(f.field));
+  assert.ok(!keys.includes('test:2000'));
+});
+
+test('each role is offered only what it can use', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  const labels = (mark, role) => fieldsForRole(cat, mark, role).map(f => f.label);
+  assert.ok(labels('scatter', 'x').includes('Vth · 1050') && labels('scatter', 'x').includes('Yield'));
+  assert.ok(!labels('scatter', 'x').includes('Wafer') && !labels('scatter', 'x').includes('Split'));
+  assert.ok(labels('histogram', 'y').includes('Idsat · 1060'));
+  assert.ok(labels('scatter', 'color').includes('Wafer') && labels('scatter', 'color').includes('Split'));
+  assert.ok(labels('scatter', 'color').includes('Vth · 1050'), 'a scatter can be coloured by a measured value');
+  assert.ok(!labels('bar', 'color').includes('Vth · 1050'), 'a bar can not');
+  assert.ok(labels('bar', 'x').includes('Temperature'), labels('bar', 'x').join(','));
+  assert.ok(!labels('bar', 'x').includes('Vth · 1050'), 'a bar groups by a category, not a measurement');
+});
+
+test('a first plot is never empty: two tests, one test, or neither', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  assert.deepEqual(defaultPlot(cat, 'a'), { id: 'a', mark: 'scatter', encoding: { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } } });
+  const one = fieldCatalogue(lot(), { testDefs: [DEFS[0]] }).filter(f => f.group !== 'Tests' || f.field.test === 1050);
+  assert.equal(defaultPlot(one, 'b').mark, 'histogram');
+  const none = defaultPlot(cat.filter(f => f.group !== 'Tests'), 'c');
+  assert.deepEqual(none.encoding, { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' } });
+});
+
+// ── a continuous colour ──
+
+test('a scatter can be coloured on a gradient by a measured value, and says what the colours span', () => {
+  const r = resolvePlot(spec('scatter', { x: T(1050), y: T(1060), color: T(1050) }), lot(), ctx);
+  assert.deepEqual(r.issues, []);
+  assert.deepEqual(r.groups, ['']);
+  assert.equal(r.colorScale.label, 'Vth');
+  assert.equal(r.colorScale.unit, 'V');
+  const vs = r.marks.points.map(p => p.value);
+  assert.equal(r.colorScale.lo, Math.min(...vs));
+  assert.equal(r.colorScale.hi, Math.max(...vs));
+  assert.equal(r.autoTitle, 'Idsat vs Vth', 'colouring by the X field adds nothing to say');
+  const other = resolvePlot(spec('scatter', { x: T(1050), y: T(1060), color: { builtin: 'yield' } }), lot(), ctx);
+  assert.equal(other.autoTitle, 'Idsat vs Vth · by Yield');
+});
+
+test('a die without the colour value is left out and counted, not drawn grey', () => {
+  const r = resolvePlot(spec('scatter', { x: T(1050), y: { builtin: 'x' }, color: T(1060) }), lot(), ctx);
+  assert.equal(r.plotted, 36);
+  assert.deepEqual(r.omitted, [{ field: 'Idsat', count: 4 }]);
+});
+
+test('a continuous colour on a wafer-level scatter is the per-wafer aggregate of the value', () => {
+  const r = resolvePlot(spec('scatter', { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' }, color: T(1050) }, { aggregate: 'max' }), lot(), ctx);
+  assert.deepEqual(r.issues, []);
+  assert.equal(r.level, 'wafer');
+  assert.equal(r.marks.points.length, 3);
+  assert.ok(Math.abs(r.marks.points[0].value - 0.49) < 1e-9, 'W1 Vth max is 0.40 + 9/100');
+});
+
+test('a continuous colour is for a scatter only; a lot field with numbers still colours as categories', () => {
+  assert.match(resolvePlot(spec('histogram', { y: T(1050), color: T(1060) }), lot(), ctx).issues[0], /can colour a scatter but not a histogram/);
+  assert.match(resolvePlot(spec('bar', { x: { meta: 'split' }, color: { builtin: 'yield' } }), lot(), ctx).issues[0], /can colour a scatter but not a bar/);
+  const t = resolvePlot(spec('scatter', { x: T(1050), y: T(1060), color: { meta: 'temperature' } }), lot(), ctx);
+  assert.deepEqual(t.groups, ['25', '85']);
+  assert.equal(t.colorScale, undefined);
+});
+
+test('the colour list for a scatter includes measured values; for other types it does not', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  assert.ok(fieldsForRole(cat, 'scatter', 'color').some(f => f.label === 'Vth · 1050'));
+  assert.ok(!fieldsForRole(cat, 'bar', 'color').some(f => f.label === 'Vth · 1050'));
+  assert.ok(!fieldsForRole(cat, 'histogram', 'color').some(f => f.label === 'Vth · 1050'));
+});
+
+// ── a typed title that no longer matches ──
+
+test('an automatic title is never checked', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  assert.deepEqual(titleDrift(spec('scatter', { x: T(1050), y: T(1060) }), cat), { names: [], omits: [] });
+});
+
+test('a title naming a test the plot does not use is reported', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  const d = titleDrift(spec('scatter', { x: T(1050), y: T(1050) }, { title: 'Vth vs Idsat' }), cat);
+  assert.deepEqual(d.names, ['Idsat']);
+  assert.match(describeTitleDrift(d), /The title names Idsat, which this plot does not show\./);
+});
+
+test('a title that names one of the two fields but not the other is half a description', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  const d = titleDrift(spec('scatter', { x: T(1050), y: T(1060) }, { title: 'Vth over the lot' }), cat);
+  assert.deepEqual(d, { names: [], omits: ['Idsat'] });
+  assert.match(describeTitleDrift(d), /does not name Idsat, which this plot shows/);
+});
+
+test('free text that names none of the fields is left alone, and so is a title that is right', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  assert.equal(describeTitleDrift(titleDrift(spec('scatter', { x: T(1050), y: T(1060) }, { title: 'Process check' }), cat)), null);
+  assert.equal(describeTitleDrift(titleDrift(spec('scatter', { x: T(1050), y: T(1060) }, { title: 'Idsat against Vth, lot 5' }), cat)), null);
+});
+
+test('a name must match as a word: Vth does not match vth_n_mV, case does not matter', () => {
+  const defs = [{ testNumber: 1, name: 'vth' }, { testNumber: 2, name: 'vth_n_mV' }];
+  const items = [wafer('a')].map(w => ({ ...w, dies: w.dies.map(d => ({ ...d, testValues: { 1: 1, 2: 2 } })) }));
+  const cat = fieldCatalogue(items, { testDefs: defs });
+  assert.deepEqual(titleDrift(spec('histogram', { y: { test: 2 } }, { title: 'VTH_N_MV spread' }), cat).names, [], 'the title names the plotted test, in other case');
+  assert.deepEqual(titleDrift(spec('histogram', { y: { test: 2 } }, { title: 'vth_n_mV spread' }), cat).names, [], 'vth is not found inside vth_n_mV');
+  assert.deepEqual(titleDrift(spec('histogram', { y: { test: 1 } }, { title: 'vth_n_mV spread' }), cat).names, ['vth_n_mV']);
+});
+
+test('generic words and lot fields in a title are not mistaken for fields', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  const d = titleDrift(spec('bar', { x: { meta: 'split' }, y: T(1050) }, { title: 'Vth by Wafer and Temperature' }), cat);
+  assert.deepEqual(d.names, []);
+});
+
+// ── examples ──
+
+test('examples: one of each type the lot can show, built from its own tests and fields', () => {
+  const cat = fieldCatalogue(lot(), ctx);
+  let n = 0;
+  const ex = examplePlots(cat, 3, () => `e${n++}`);
+  assert.deepEqual(ex.map(p => p.mark), ['scatter', 'histogram', 'box', 'bar', 'line']);
+  assert.deepEqual(ex[0].encoding, { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } });
+  assert.deepEqual(ex[3].encoding.x, { meta: 'split' }, 'the first lot field that divides the wafers');
+  assert.deepEqual(ex[3].encoding.y, { builtin: 'yield' });
+  assert.equal(new Set(ex.map(p => p.id)).size, 5);
+  for (const p of ex) {
+    assert.equal('title' in p, false, 'untitled, so each is named by what it plots');
+    const r = resolvePlot(p, lot(), ctx);
+    assert.deepEqual(r.issues, [], `${p.mark}: ${r.issues}`);
+    assert.ok(r.plotted > 0, p.mark);
+  }
+});
+
+test('examples: a single wafer gets only what makes sense for one', () => {
+  const cat = fieldCatalogue([lot()[0]], ctx);
+  assert.deepEqual(examplePlots(cat, 1, () => 'x').map(p => p.mark), ['scatter', 'histogram']);
+});
+
+test('examples: with no tests there is nothing to draw but yield', () => {
+  const cat = fieldCatalogue(lot(), ctx).filter(f => f.group !== 'Tests');
+  assert.deepEqual(examplePlots(cat, 3, () => 'x').map(p => p.mark), ['bar']);
+});
+
+test('examples: yield is by wafer when no lot field divides them', () => {
+  const items = [wafer('a'), wafer('b'), wafer('c')];
+  const ex = examplePlots(fieldCatalogue(items, ctx), 3, () => 'x');
+  assert.deepEqual(ex.find(p => p.mark === 'bar').encoding.x, { builtin: 'wafer' });
 });

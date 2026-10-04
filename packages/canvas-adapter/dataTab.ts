@@ -83,6 +83,8 @@ export interface DataSectionDeps {
   metadataFields?: MetadataFieldDef[];
   /** A die row was clicked: show that die on its map. When set, Dies rows are clickable and say so. */
   onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+  /** A wafer row was clicked: open that wafer. When set, Wafers rows are clickable and say so. */
+  onOpenWafer?: (waferIndex: number, label: string) => void;
   /** Set when the tables describe part of a population (a drilldown selection): what to say after the
    *  counts ("selected on W03"), and a wafer column and file-name tag so a file says so too. */
   population?: { phrase: string; fileTag: string };
@@ -392,6 +394,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
   }));
   const table = createVirtualTable<WaferRow>({
     columns: vcols, rows, ariaLabel: `Wafers (${rows.length})`, ownerDocument: doc,
+    onRowClick: deps.onOpenWafer ? (row) => deps.onOpenWafer!(row.item.waferIndex, row.item.label) : undefined,
   });
   table.el.style.maxHeight = '70vh';
   table.el.style.minHeight = '120px';
@@ -403,7 +406,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
     el: table.el,
     destroy: () => table.destroy(),
     actions: {
-      note: () => `${plural(rows.length, 'wafer')}.${cutNote} Export follows the order shown.`,
+      note: () => `${plural(rows.length, 'wafer')}.${cutNote}${deps.onOpenWafer ? ' Click a row to open that wafer.' : ''} Export follows the order shown.`,
       exportCsv: () => exportCsv(csvCols(), table.orderedRows(), 'wafers.csv', deps.onSaveText, { rowCount: rows.length }),
       copyText: rows.length * cols.length <= COPY_CELL_LIMIT ? () => tableToTsv(csvCols(), table.orderedRows()) : null,
     },

@@ -28,10 +28,15 @@ import { MEAN_WAFER_YIELD_LABEL } from '../stats/presentation.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from '../stats/facets.js';
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
+import { dieFailsTest } from '../stats/testPassRate.js';
+import { fmt } from '../renderer/fmt.js';
+import { testLabel } from '../renderer/testLabel.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { waferPopulation } from './chartPopulation.js';
 import { openDrilldownMenu } from './drilldown.js';
+import { createPlotStore, type PlotStore } from './plotStore.js';
+import type { PlotSpec } from '../stats/plotSpec.js';
 import { INPUT_DEFAULT_PASS_BINS, itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
@@ -55,11 +60,11 @@ import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../sta
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
 import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
 import { runChunked } from './chunked.js';
-import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions } from '../stats/regions.js';
+import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions, diesInRegion, type RegionYieldDatum } from '../stats/regions.js';
 import { renderDataSection, type DataView } from './dataTab.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
-export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data';
+export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot';
 
 /** Public option shape for `RenderOptions.insights`/`GalleryOptions.insights`. */
 export interface InsightsOptions {
@@ -133,6 +138,23 @@ export interface InsightsOptions {
    */
   onRemoveSweeps?: (ids: string[]) => void;
   /**
+   * The reader's saved plots: the recipes behind the **Plot** tab, in the order the reader keeps them. The
+   * library never stores anything itself: hand the list in here (from a file, `localStorage`, a server) and keep
+   * it current from `onPlotsChange`. A plot carries no population, so the same list works on any lot; one that
+   * needs a test the open lot lacks is kept and shown greyed with the reason, never dropped.
+   */
+  plots?: PlotSpec[];
+  /**
+   * Called with the whole list after the reader adds, edits, duplicates, deletes or imports a plot (a burst of
+   * typing is one call). Keep it, and pass it back as `plots` next time.
+   */
+  onPlotsChange?: (plots: PlotSpec[]) => void;
+  /**
+   * Choose a plots file to import, resolving to its text, or `null` when cancelled. Without it the Plot tab uses
+   * the browser's own file input; a desktop host passes its native dialog.
+   */
+  onPickPlotsFile?: () => Promise<string | null>;
+  /**
    * Open the Insights view on mount instead of starting on the map/grid.
    * Default false — the tab is offered, the map is what you see first.
    *
@@ -198,6 +220,14 @@ export interface InsightsTabDeps {
   sweeps?: SweepSpec[];
   /** See `InsightsOptions.onRemoveSweeps`. */
   onRemoveSweeps?: (ids: string[]) => void;
+  /**
+   * The live list of saved plots, shared with the drilldown menu so a plot edited here is the one a right-click
+   * opens. Created from `plots`/`onPlotsChange` when omitted.
+   */
+  plotStore?: PlotStore;
+  plots?: PlotSpec[];
+  onPlotsChange?: (plots: PlotSpec[]) => void;
+  onPickPlotsFile?: () => Promise<string | null>;
   /** Opens the user guide. Rendered as an icon at the end of the tab row —
    *  while Insights is showing, the map toolbar is hidden (it held only a
    *  back-to-gallery button, which the back tab already provides, and this
@@ -274,8 +304,11 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
  */
 const SWEEPS_VIEW: { key: InsightsView; label: string } = { key: 'sweeps', label: 'Sweeps' };
 
-/** Last, after the charts: the same scope as tables, with their exports (dataTab.ts). */
+/** After the charts: the same scope as tables, with their exports (dataTab.ts). */
 const DATA_VIEW: { key: InsightsView; label: string } = { key: 'data', label: 'Data' };
+
+/** Last: the reader's own plots (plotTab.ts). */
+const PLOT_VIEW: { key: InsightsView; label: string } = { key: 'plot', label: 'Plot' };
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest, locateDie } = deps;
@@ -408,7 +441,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   rootEl.appendChild(bodyEl);
 
   const hasSweeps = (deps.sweeps?.length ?? 0) > 0;
-  const views = hasSweeps ? [...VIEWS, SWEEPS_VIEW, DATA_VIEW] : [...VIEWS, DATA_VIEW];
+  const views = hasSweeps ? [...VIEWS, SWEEPS_VIEW, DATA_VIEW, PLOT_VIEW] : [...VIEWS, DATA_VIEW, PLOT_VIEW];
+  const plotStore = deps.plotStore ?? createPlotStore(deps.plots, deps.onPlotsChange);
   let activeView: InsightsView = deps.defaultView === 'sweeps' && !hasSweeps
     ? 'overview'
     : deps.defaultView ?? 'overview';
@@ -514,8 +548,25 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         waferLabel: it.identity, testDefs: it.testDefs,
         activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex, wafer: it.wafer,
       });
-      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, onSaveImage, onSaveText, onLocateDie: locateDie });
+      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
     };
+  }
+
+  /**
+   * Opens the drilldown menu on the dies of `items` that `keep` accepts, wherever the click was: one population for
+   * everything a chart mark counts (a bin, a histogram bucket, a ring). Per wafer, so the tables name each die's wafer
+   * and a chart opened on it is of exactly those dies. Nothing happens when no die qualifies.
+   */
+  function openDiesMenu(e: MouseEvent, items: Item[], what: string, keep: (d: Die) => boolean, activeTest?: number): void {
+    const picked = items
+      .map(it => ({ it, dies: it.dies.filter(keep) }))
+      .filter(x => x.dies.length > 0)
+      .map(({ it, dies }) => ({ label: it.identity ?? it.label, dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins }));
+    if (picked.length === 0) return;
+    const population = picked.length === 1 ? `${what} on ${picked[0].label}` : `${what}, across ${picked.length} wafers`;
+    openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement,
+      { items: picked, population, testDefs: mergeTestDefs(items).defs, activeTest },
+      { sweeps: deps.sweeps, plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
   }
 
   function testLeafAction(items: Item[]): { open: (waferIndex: number, testNumber: number) => void; label?: string } | null {
@@ -702,6 +753,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
             softBinCounts: it.statsSummary?.stats.softBinCounts,
           })),
         })),
+        // A sub-bar is a bin in one group: click it for those dies.
+        onSelectBin: (sel, e) => {
+          const group = groups.find(g => g.key === sel.groupKey);
+          if (!group) return;
+          const kind = sel.binType === 'hbin' ? 'hard' : 'soft';
+          openDiesMenu(e, group.items, `in ${kind} bin ${sel.bin} of ${sel.groupKey}`, d => (sel.binType === 'hbin' ? d.hbin : d.sbin) === sel.bin);
+        },
         onSaveImage,
         ownerDocument: doc,
       });
@@ -737,6 +795,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // counts — including a colour-blind-safe palette or definition colours.
       // binCode undefined ⇒ no bin recorded ⇒ the no-data fill.
       barColor: datum => binColorFor(datum.binCode),
+      // A bar is a bin: click it for the dies in it, to chart or tabulate.
+      onSelectBar: (datum, e) => {
+        const kind = binType === 'hbin' ? 'hard' : 'soft';
+        const bin = datum.binCode;
+        openDiesMenu(e, items, bin === undefined ? `with no ${kind} bin recorded` : `in ${kind} bin ${bin}`,
+          d => (binType === 'hbin' ? d.hbin : d.sbin) === bin);
+      },
+      selectLabel: 'chart or tabulate its dies',
       ownerDocument: doc,
     };
     const binPanel = renderBarPanel(binPanelConfig, onSaveImage);
@@ -854,22 +920,36 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       })),
       testDefs: allTestDefs,
       onSaveImage,
+      // A row is a test: click it for the dies that fail it, as the card is judging them.
+      onSelectTest: (row, e) => {
+        const def = allTestDefs.find(d => d.testNumber === row.testNumber);
+        if (!def) return;
+        openDiesMenu(e, items, `failing ${row.label}`, d => dieFailsTest(d, def, row.kind) === true,
+          isParametricTest(def) ? row.testNumber : undefined);
+      },
       ownerDocument: doc,
     });
     passRate.card.style.minHeight = '300px';
     elements.push(passRate.card);
     destroyFns.push(passRate.destroy);
 
+    // A region of the yield diagram is a ring or a quadrant: click it for the dies it counts, across the wafers in view.
+    const regionClick = (builder: typeof buildRingRegions) => (row: RegionYieldDatum, e: MouseEvent): void => {
+      const inRegion = new Set<Die>();
+      for (const it of items) for (const d of diesInRegion(it.dies, it.wafer, ringCount, row.key, builder)) inRegion.add(d);
+      openDiesMenu(e, items, `in ${row.label}`, d => inRegion.has(d));
+    };
+
     // Each wafer judged by its own pass bins — index-aligned with allWafers above.
     const ringRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, buildRingRegions);
     if (ringRows.length) {
-      const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, onSaveImage, ownerDocument: doc });
+      const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, onSelectRegion: regionClick(buildRingRegions), onSaveImage, ownerDocument: doc });
       elements.push(ring.card);
       destroyFns.push(ring.destroy);
     }
     const quadrantRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, buildQuadrantRegions);
     if (quadrantRows.length) {
-      const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, onSaveImage, ownerDocument: doc });
+      const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, onSelectRegion: regionClick(buildQuadrantRegions), onSaveImage, ownerDocument: doc });
       elements.push(quadrant.card);
       destroyFns.push(quadrant.destroy);
     }
@@ -1115,6 +1195,34 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return row;
   }
 
+  /**
+   * The Plot tab's section. Loaded on first use, like the drilldown's editor: the chart, the editor and the
+   * file handling are not part of what opening Insights downloads, and most readers never open this tab.
+   */
+  function renderPlotBlock(
+    items: Item[],
+    allTestDefs: TestDef[],
+    groupBy: string | undefined,
+    groupLabel: string | undefined,
+  ): { card: HTMLElement; destroy: () => void } {
+    const host = doc.createElement('div');
+    host.style.width = '100%';
+    let inner: { destroy: () => void } | undefined;
+    let gone = false;
+    void import('./plotTab.js').then(({ createPlotSection }) => {
+      if (gone) return;
+      const section = createPlotSection({
+        doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount?.() ?? 4,
+        groupBy, groupLabel, onSaveImage, onSaveText,
+        openWafer: openWafer ? (wi, label, test) => openWafer(wi, label, test) : undefined,
+        focusTest, locateDie, sweeps: deps.sweeps, pickPlotsFile: deps.onPickPlotsFile,
+      });
+      host.appendChild(section.card);
+      inner = section;
+    });
+    return { card: host, destroy: () => { gone = true; inner?.destroy(); } };
+  }
+
   /** The Data tab's section for the current scope. Its table choice and the Dies layout
    *  are held above (`dataView`, `diesLayout`) so a rebuild keeps them. */
   function renderDataBlock(
@@ -1136,6 +1244,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       ringCount: getRingCount?.() ?? 4,
       yieldByWaferIndex: new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent])),
       onSaveText, onLocateDie: locateDie,
+      onOpenWafer: openWafer ? (wi, label) => openWafer(wi, label) : undefined,
       // These are this tab's own items, handed back by the section.
       buildStatistics: its => buildStatisticsCards(its as Item[], testDefs, allTestDefs),
       view: dataView,
@@ -1219,6 +1328,16 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       items, testDefs, groups,
       onGroupChange: (key) => selectGroupEverywhere(key),
       onSaveImage,
+      // A bar is a range of one test's values: click it for the dies in it.
+      onSelectBucket: (sel, e) => {
+        const def = testDefs.find(d => d.testNumber === sel.testNumber);
+        const whose = new Set<unknown>(sel.items.map(x => x.item));   // the very Item objects handed in above
+        const picked = new Set(sel.items.flatMap(x => x.dies));
+        const lo = fmt(sel.low, def?.unit, 'engineering'), hi = fmt(sel.high, def?.unit, 'engineering');
+        openDiesMenu(e, items.filter(it => whose.has(it)),
+          `with ${def ? testLabel(def, def.testNumber) : `test ${sel.testNumber}`} from ${lo} to ${hi}`,
+          d => picked.has(d), sel.testNumber);
+      },
       ownerDocument: doc,
     });
     // Wafer-to-wafer trend joins the cross-panel test link below, so picking a
@@ -1389,7 +1508,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
           ? `selected on ${picked[0].label} in the scatter`
           : `selected in the scatter, across ${picked.length} wafers`;
         openDrilldownMenu(at, anchor, { items: picked, population, testDefs, activeTest: xTest },
-          { sweeps: deps.sweeps, onSaveImage, onSaveText, onLocateDie: locateDie });
+          { sweeps: deps.sweeps, plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
       },
       ownerDocument: doc,
     });
@@ -1569,6 +1688,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       activeView === 'distributions' ? renderDistributionsSection(scopeItems, scopedTestDefs, scopeGroups, groupLabelText) :
       activeView === 'sweeps'        ? renderSweepsSection(scopeItems) :
       activeView === 'data'          ? renderDataBlock(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
+      activeView === 'plot'          ? renderPlotBlock(scopeItems, scopedAllDefs,
+        // The Group by in force: a narrowed scope has collapsed it, so plots follow nothing then.
+        scoped_ ? undefined : analysisGroupKey, scoped_ ? undefined : groupLabelText) :
       renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups));
     if (!cached) sectionCache.set(activeView, section);
     // Say why the test list is short, and how to get the rest back — above
@@ -1604,6 +1726,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     render,
     destroy: () => {
       dropSectionCache();
+      plotStore.flush();
       rootEl.remove();
     },
   };

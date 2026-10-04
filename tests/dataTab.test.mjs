@@ -70,13 +70,13 @@ const drawnRows = (tab) => [...dataRoot(tab).querySelectorAll('tbody tr[aria-row
 
 // ── Tab structure ────────────────────────────────────────────────────────────
 
-test('Data is the last tab, after Sweeps when there are sweeps', () => {
+test('Data comes after Sweeps when there are sweeps, then Plot', () => {
   const { items, lot } = lotItems(2);
   const tab = mount(items, lot, 'overview');
   const labels = [...tab.el.querySelectorAll('[role="tab"]')].map(b => b.textContent);
-  assert.deepEqual(labels, ['Overview', 'Distributions', 'Correlation', 'Data']);
+  assert.deepEqual(labels, ['Overview', 'Distributions', 'Correlation', 'Data', 'Plot']);
   const withSweeps = mount(items, lot, 'overview', { sweeps: [{ id: 's', title: 'S', series: [{ label: 'A', tests: [1050] }] }] });
-  assert.equal([...withSweeps.el.querySelectorAll('[role="tab"]')].at(-1).textContent, 'Data');
+  assert.deepEqual([...withSweeps.el.querySelectorAll('[role="tab"]')].slice(-3).map(b => b.textContent), ['Sweeps', 'Data', 'Plot']);
 });
 
 test('the Overview no longer carries the test tables, and points at the Data tab', () => {

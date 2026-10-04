@@ -221,6 +221,9 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
 
 
   const hint = card.ownerDocument.createElement('div');
+
+
+  hint.dataset.wmapCaption = '1';
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 

@@ -24,12 +24,18 @@ import {
   openReparentedModal, type CheckMenuRow, type SaveImageHandler, type SaveTextHandler,
 } from './toolbar.js';
 import type { DrilldownSource, DrilldownItem } from './chartPopulation.js';
+import { defaultPlot, fieldCatalogue, plotTitle, resolvePlot, type PlotContext } from '../stats/plotData.js';
+import { newPlotId, type PlotSpec } from '../stats/plotSpec.js';
+import { sourceFromPoints, toPlotItems } from './plotItems.js';
+import type { PlotStore } from './plotStore.js';
 
 export type { DrilldownSource, DrilldownItem };
 
 /** What the targets can draw on — the host's chart definitions and hooks. */
 export interface DrilldownContext {
   sweeps?: SweepSpec[];
+  /** The reader's saved plots: each is a row in the menu, opened on the selection. */
+  plots?: PlotStore;
   onSaveImage?: SaveImageHandler;
   /** The host's CSV save hook, for the tables' Export CSV. */
   onSaveText?: SaveTextHandler;
@@ -160,6 +166,57 @@ function distributionTargets(source: DrilldownSource, ctx: DrilldownContext, anc
   return [histogram, capability];
 }
 
+/**
+ * The reader's saved plots as targets, and "New plot…" for a one-off. A saved plot is drawn over this selection
+ * exactly as it is on the Plot tab (the spec carries no population), in the editor window, where an edit is an
+ * edit of the saved plot. "New plot…" opens a draft that is kept only if the reader adds it.
+ */
+function plotTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: Element): Target[] {
+  const store = ctx.plots;
+  if (!store) return [];
+  const doc = anchor.ownerDocument;
+  const items = toPlotItems(source.items);
+  const plotCtx: PlotContext = { testDefs: source.testDefs, passBins: [1] };
+  const dies = allDies(source);
+  const none = source.notMeasuredReason ?? (dies.length === 0 ? 'Nothing is selected' : null);
+  const phrase = populationPhrase(dies.length, dies.length, source.population);
+
+  // The chart and the editor are loaded when a plot is opened, not when the menu is: most right-clicks open a
+  // table or a histogram.
+  const open = (plot: PlotSpec, draft: boolean) => () => {
+    void import('./plotModal.js').then(({ openPlotEditor }) => openPlotEditor({
+      doc, anchor: anchor as HTMLElement, store, plot, draft, items, ctx: plotCtx, population: phrase,
+      // Not the plot's own title: that follows its fields, and a window heading fixed at open would go on naming the old ones.
+      title: `${draft ? 'New plot' : 'Plot'} — ${phrase}`,
+      chart: {
+        onSaveImage: ctx.onSaveImage,
+        // A drag on the plot opens this menu again on the dies inside it.
+        onSelectPoints: (points, at, el) => {
+          const sub = sourceFromPoints(points, items, source.testDefs);
+          if (sub) openDrilldownMenu(at, el, sub, ctx);
+        },
+      },
+    }));
+  };
+
+  const saved: Target[] = store.get().map(plot => {
+    const r = resolvePlot(plot, items, plotCtx);
+    return {
+      section: 'Plots', label: plotTitle(r) || 'Plot',
+      unavailable: none ?? r.issues[0] ?? (r.plotted === 0 ? 'No die here has the values this plot needs' : null),
+      open: open(plot, false),
+    };
+  });
+  const catalogue = fieldCatalogue(items, plotCtx);
+  const hasTests = catalogue.some(f => f.group === 'Tests');
+  saved.push({
+    section: 'Plots', label: 'New plot…',
+    unavailable: none ?? (hasTests ? null : 'These dies have no parametric test values'),
+    open: open(defaultPlot(catalogue, newPlotId()), true),
+  });
+  return saved;
+}
+
 /** The population as tables — Dies and Statistics, in a modal. Loaded on first
  *  use: the tables, the virtual table under them and the CSV writer are not part
  *  of the chart chunk. A source of aggregates (a lot stack) has no dies to list. */
@@ -208,6 +265,7 @@ function targetsFor(source: DrilldownSource, ctx: DrilldownContext, anchor: Elem
   return [
     ...distributionTargets(source, ctx, anchor),
     ...(ctx.sweeps ?? []).map(spec => sweepTarget(spec, source, ctx, anchor)),
+    ...plotTargets(source, ctx, anchor),
     ...tableTargets(source, ctx, anchor),
   ];
 }

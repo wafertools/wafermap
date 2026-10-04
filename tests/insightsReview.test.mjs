@@ -587,9 +587,9 @@ const selectedTab = (tab) => tab.el.querySelector('button[role="tab"][aria-selec
 
 test('the Sweeps tab exists only when sweeps are defined', () => {
   const { items, lot } = lotItems(2);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), ['Overview', 'Distributions', 'Correlation', 'Data']);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), ['Overview', 'Distributions', 'Correlation', 'Data']);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), ['Overview', 'Distributions', 'Correlation', 'Sweeps', 'Data']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), ['Overview', 'Distributions', 'Correlation', 'Data', 'Plot']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), ['Overview', 'Distributions', 'Correlation', 'Data', 'Plot']);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), ['Overview', 'Distributions', 'Correlation', 'Sweeps', 'Data', 'Plot']);
 });
 
 test('sweep cards are in the Sweeps tab, not in Distributions', () => {

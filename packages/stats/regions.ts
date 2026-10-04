@@ -89,6 +89,19 @@ export function buildRegionYieldData(
     .filter((d): d is RegionYieldDatum => d !== null);
 }
 
+/**
+ * The dies behind one region of `buildRegionYieldData`'s output, on one wafer: the same dies its `n` counts (positioned,
+ * not partial or edge-excluded, with a bin recorded), found by the same region builder. For picking out what a click on a
+ * ring or quadrant of the yield diagram stands for.
+ */
+export function diesInRegion(
+  dies: readonly Die[], wafer: Wafer, ringCount: number, key: string,
+  regionBuilder: (dies: PositionedDie[], wafer: Wafer, ringCount: number) => StatsRegion[],
+): Die[] {
+  const region = regionBuilder(dies.filter(isPositionedDie), wafer, ringCount).find(r => r.key === key);
+  return region ? region.dies.filter(d => !d.partial && !d.edgeExcluded && (d.hbin ?? d.sbin) !== undefined) : [];
+}
+
 // ── Shared ordering / adjacency utilities ──────────────────────────────────
 // Single source of truth for region ordering, consumed by buildSectorRegions
 // and the adjacent-finding merge pass (analyzeWaferMap.ts) — keep these here so the compass

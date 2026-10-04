@@ -64,6 +64,40 @@ under `### Breaking`.
   with Export CSV and Copy (a saved file is named for the selection and carries a Wafer column). On a bins-only
   map the charts and Test statistics are greyed with the reason.
 
+- **A Plot tab in Insights: build, keep and reload your own plots.** The last Insights sub-tab is a chart builder. **+ New
+  plot** opens a plot beside a large copy of its chart; choose the chart type (scatter, histogram, box, bar or line), the
+  field for X, Y and colour (any parametric test, a die's X or Y, a wafer's yield or die count, ring, quadrant, hard or soft bin,
+  site, or a wafer or lot field such as split, slot or temperature), and each axis's title, limits, log scale and
+  direction. The field lists are grouped and filter by name or test number. Titles are automatic until typed in.
+  Colour follows the Group by control unless the plot names its own field, and a scatter can be coloured on a gradient by
+  a measured value or a wafer figure. A bar of Yield is pooled (passing dies over judged dies) rather than an average of
+  percentages, a plot can draw one mark per wafer with its dies' values combined by mean, median, minimum, maximum, sum
+  or count, and a per-wafer figure is never split by a per-die field (it is reported instead). Every plot states its wafers and dies, how
+  values were combined, and how many dies were left out for a missing value. Points hover, click to open their wafer,
+  and drag to select dies into the right-click menu. A plot is a recipe with no population, so it is kept for the next
+  lot: `insights.plots` supplies the list, `insights.onPlotsChange` reports it after every change (a burst of typing is
+  one call), and **Export plots…** / **Import plots…** carry it as a `wafermap-plots` file (`onPickPlotsFile` for a
+  native dialog). A plot that needs a test the open lot lacks is kept and greyed with the reason, and a test is matched
+  by number and checked by name, so a plot saved against another test program is reported rather than drawn against the
+  wrong measurement. The Plot tab is loaded the first time it is opened.
+- **Add examples, and titles that say when they are out of date.** The Plot tab's **Add examples** draws one plot of each
+  chart type the lot can show (scatter of the first two tests, histogram, box by wafer, bar of yield by the first lot field
+  that divides the wafers, line over wafer order) and adds only those not already there. A title the reader typed is checked
+  against its plot: the card and the editor say when it names a test the plot no longer shows, or names one of its two
+  fields but not the other, and offer the automatic title. Copying a plot numbers its copies ("Vth (copy 2)") instead of
+  stacking marks, and a copy of an untitled plot stays untitled so its title keeps following its fields.
+- **Clicks on Insights charts open what the mark counts.** A plot's point, bar or box opens its wafer on the plot's own test
+  (it opened the bin map before), or shows the test on the map in a single-wafer host. The bin pareto (and the grouped
+  one's sub-bars), a pass-rate row (the dies failing that test, judged as the card is), a bar of the value histogram, a
+  ring or quadrant of the yield diagrams, and a plot's histogram bar, non-wafer bar or box, and line point each open the
+  right-click menu on exactly the dies they count; a Wafers-table row opens its wafer. `dieFailsTest`, `diesInBucket`,
+  `diesInRegion` and `bucketIndexOf` are the rules those picks share with the tallies they match.
+- **Saved plots in the right-click menu.** The drilldown menu has a **Plots** section: each saved plot is drawn over the
+  selected dies, and **New plot…** starts a draft on the selection that is kept only if it is added.
+- **`readPlotsFile` and `writePlotsFile`** (and the `PlotSpec` type) read and write the plots file. The reader is
+  lenient (it keeps every readable plot and names each dropped setting), keeps settings a newer version wrote, and
+  keeps a plot whose chart type it does not know.
+
 ### Breaking
 
 - **Right-click on a map, a gallery card or a chart mark always opens the drilldown menu.** It used to open only where there
@@ -82,6 +116,18 @@ under `### Breaking`.
 
 ### Changed
 
+- **A chart saved as a PNG says what it is, and a printed chart says the same.** Every Insights chart card now reads back
+  what it shows around its canvas: its title, what its controls are set to (`Test: Vth`, `Wafer: W03`, `X: Vth · Y: Idsat`,
+  ticked toggles), the lines it states about itself (population and N, `box = Q1–Q3, …`, the normalisation of the capability
+  chart, the correlation sample note), and its colour key. A saved image puts these in a header above the chart, with the
+  instructions to click or drag removed; the camera button's file is named for the title as it reads then. A chart whose key
+  is a gradient (a coloured scatter, the correlation matrix) gets a colour bar with its range. The image takes the card's own
+  background instead of white, so a dark theme saves a legible dark chart. In print, the controls and on-screen hints are
+  hidden (`data-wmap-noprint`, one `@media print` rule) and each card shows a block, refilled just before printing, giving the
+  same settings and lines. Panels mark the text that belongs in them with `data-wmap-caption`. `makeWaferSelect`'s accessible
+  name is now "Wafer" (it was its "All wafers" label). `saveCanvasPng` gains an optional header and is otherwise unchanged.
+- **Controls that act on the screen are left off a printed page**: the camera and expand buttons on chart cards, and the Plot
+  tab's New plot, Add examples, Import, Export, Edit, Duplicate and Delete with their notices.
 - **The Overview no longer carries the test-values and functional-tests tables.** They moved, unchanged, to the Data
   tab's Statistics view; the Overview ends with a link to it. Hosts that read the "Test values CSV" or "Functional
   CSV" button from the Overview should open the Data tab first. The Summary panel's own tables are unchanged.

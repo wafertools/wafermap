@@ -32,7 +32,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
-import { dieHasVerdicts, testValuesReader } from '../core/dieTable.js';
+import { dieHasVerdicts, testValue, testValuesReader } from '../core/dieTable.js';
 import { isParametricTest, getTestPassStatus, testPassStatusReader, type TestDef } from '../renderer/buildWaferMap.js';
 import { classifySpec } from '../renderer/spec.js';
 import { testLabel, derivedFields } from '../renderer/testLabel.js';
@@ -235,8 +235,23 @@ export function buildTestPassRateData(
   };
 }
 
-/** Spec-limit judgement for one die/test, or undefined when it cannot be made
- *  (no value, or no limit to judge against). */
+/**
+ * Whether one die fails one test under `kind`'s judgement, or `undefined` when it cannot be judged (no value or limit
+ * for 'spec', no recorded verdict for the other two). The same two primitives the tally above reads in bulk
+ * (`classifySpec`, `getTestPassStatus`), for picking out the failing dies a pass-rate row counts.
+ */
+export function dieFailsTest(die: Die, def: TestDef, kind: TestPassKind): boolean | undefined {
+  const tn = def.testNumber;
+  if (tn === undefined || !isYieldEligibleDie(die)) return undefined;
+  if (kind === 'spec') {
+    const v = testValue(die, tn);
+    const cat = v === undefined ? null : classifySpec(v, def);
+    return cat === null ? undefined : cat !== 'pass';
+  }
+  const verdict = getTestPassStatus(die, tn, def);
+  return verdict === undefined ? undefined : !verdict;
+}
+
 
 /** True when this item must be walked die-by-die even in 'spec' mode — i.e. it
  *  carries recorded verdicts, so the spec/flag comparison needs the raw dies the

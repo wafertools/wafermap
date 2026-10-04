@@ -23,7 +23,8 @@ import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, positionChartTooltip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas, drawOffAxisLimits, limitLines, hasBothLimitKinds, makeLimitsSelect, stackLabelRows, strokeLimitLine, fillTextOnHalo, type AxisPrefs } from './chartShell.js';
+import { wirePointInteractions } from './pointInteractions.js';
+import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas, drawOffAxisLimits, limitLines, hasBothLimitKinds, makeLimitsSelect, stackLabelRows, strokeLimitLine, fillTextOnHalo, type AxisPrefs } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -166,6 +167,8 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   }
 
   const warn = card.ownerDocument.createElement('div');
+
+  warn.dataset.wmapCaption = '1';
   Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, padding: `${SPACE.xs} ${SPACE.md}`, fontSize: FONT.body, marginBottom: SPACE.xs, display: 'none' } as Partial<CSSStyleDeclaration>);
   card.insertBefore(warn, body);
 
@@ -184,6 +187,8 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   syncMixedFieldsWarning();
 
   const hint = card.ownerDocument.createElement('div');
+
+  hint.dataset.wmapCaption = '1';
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
@@ -518,20 +523,8 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
   // A point is a die, so the tooltip names it and its wafer, and a click opens
   // that wafer on the X test. Only the points actually drawn can be hit: past
   // 5,000 the plot samples, and a hit on a point the reader cannot see would be
-  // a click on nothing.
-  const HIT_RADIUS = 7;
-  const pointAt = (e: MouseEvent): ScatterPoint | null => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    let best: ScatterPoint | null = null;
-    let bestD = HIT_RADIUS * HIT_RADIUS;
-    for (const d of drawn) {
-      const dx = d.cx - mx, dy = d.cy - my;
-      const dist = dx * dx + dy * dy;
-      if (dist <= bestD) { bestD = dist; best = d.p; }
-    }
-    return best;
-  };
+  // a click on nothing. The pointer itself is `pointInteractions.ts`, shared
+  // with the plot builder's scatter.
   const clickable = (p: ScatterPoint): boolean => !!onOpen && p.waferIndex !== undefined;
 
   function describe(p: ScatterPoint): string {
@@ -547,92 +540,33 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       + (clickable(p) ? `<br><em>click to ${escHtml(openLabel)}</em>` : '');
   }
 
-  canvas.addEventListener('mousemove', e => {
-    const p = pointAt(e);
-    canvas.style.cursor = p && clickable(p) ? 'pointer' : 'crosshair';
-    if (!p) {
-      tooltip.style.display = 'none';
-      if (hovered) { hovered = null; draw(); }
-      return;
-    }
-    tooltip.innerHTML = describe(p);
-    tooltip.style.display = 'block';
-    positionChartTooltip(tooltip, card, e.clientX, e.clientY);
-    if (hovered !== p) { hovered = p; draw(); }
-  });
-  canvas.addEventListener('mouseleave', () => {
-    tooltip.style.display = 'none';
-    if (hovered) { hovered = null; draw(); }
-  });
-  // A drag selects; a press that barely moves is a click. After a drag the browser still sends a
-  // click, which must not also open a wafer.
-  const DRAG_PX = 4;
-  let suppressClick = false;
-  const rubber = card.ownerDocument.createElement('div');
-  Object.assign(rubber.style, {
-    position: 'absolute', display: 'none', pointerEvents: 'none', zIndex: '40', boxSizing: 'border-box',
-    border: `1px dashed ${CLR.iconActive}`, background: 'rgba(120,150,200,0.15)',
-  } as Partial<CSSStyleDeclaration>);
-  card.appendChild(rubber);
-
-  if (onSelect) {
-    canvas.addEventListener('mousedown', down => {
-      if (down.button !== 0) return;
-      suppressClick = false;
-      const rect = canvas.getBoundingClientRect();
-      const x0 = down.clientX - rect.left, y0 = down.clientY - rect.top;
-      let dragging = false;
-      let x1 = x0, y1 = y0;
-      const doc = card.ownerDocument;
-      const onMove = (e: MouseEvent): void => {
-        x1 = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
-        y1 = Math.min(Math.max(e.clientY - rect.top, 0), rect.height);
-        if (!dragging && Math.hypot(x1 - x0, y1 - y0) < DRAG_PX) return;
-        dragging = true;
-        tooltip.style.display = 'none';
-        const cardRect = card.getBoundingClientRect();
-        Object.assign(rubber.style, {
-          display: 'block',
-          left: `${rect.left - cardRect.left + Math.min(x0, x1)}px`, top: `${rect.top - cardRect.top + Math.min(y0, y1)}px`,
-          width: `${Math.abs(x1 - x0)}px`, height: `${Math.abs(y1 - y0)}px`,
-        } as Partial<CSSStyleDeclaration>);
-      };
-      const onUp = (e: MouseEvent): void => {
-        doc.removeEventListener('mousemove', onMove);
-        doc.removeEventListener('mouseup', onUp);
-        rubber.style.display = 'none';
-        if (!dragging) return;
-        suppressClick = true;
+  const pointer = wirePointInteractions<ScatterPoint>({
+    card, canvas, tooltip,
+    drawn: () => drawn,
+    describe, clickable,
+    onOpen: p => { if (activeX !== null) onOpen!(p.waferIndex!, activeX); },
+    onHover: p => { hovered = p; draw(); },
+    select: onSelect ? {
+      pick: ({ x0, y0, x1, y1 }) => {
         const { plotW, plotH } = dims();
         const xSpan = xHi - xLo, ySpan = yHi - yLo;
-        const inRect = (p: ScatterPoint): boolean => {
+        const pool = activeCats.size === 0 ? points : points.filter(p => activeCats.has(categoryOf(p)));
+        return pool.filter(p => {
           const cx = SCATTER_LEFT + ((p.x - xLo) / xSpan) * plotW;
           const cy = SCATTER_TOP + (1 - (p.y - yLo) / ySpan) * plotH;
-          return cx >= Math.min(x0, x1) && cx <= Math.max(x0, x1) && cy >= Math.min(y0, y1) && cy <= Math.max(y0, y1);
-        };
-        const pool = activeCats.size === 0 ? points : points.filter(p => activeCats.has(categoryOf(p)));
-        const picked = pool.filter(inRect);
+          return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+        });
+      },
+      onPicked: (picked, at) => {
         selected.clear();
         for (const p of picked) selected.add(p);
         syncHint();
         draw();
-        if (picked.length > 0 && activeX !== null) onSelect(picked, { x: e.clientX, y: e.clientY }, canvas, activeX);
-      };
-      doc.addEventListener('mousemove', onMove);
-      doc.addEventListener('mouseup', onUp);
-    });
-  }
-
-  canvas.addEventListener('click', e => {
-    if (suppressClick) { suppressClick = false; return; }
-    const p = pointAt(e);
-    if (!p) {
-      // A click on empty space clears a selection.
-      if (selected.size > 0) { selected.clear(); syncHint(); draw(); }
-      return;
-    }
-    if (!clickable(p) || activeX === null) return;
-    onOpen!(p.waferIndex!, activeX);
+        if (picked.length > 0 && activeX !== null) onSelect(picked, at, canvas, activeX);
+      },
+      onClear: () => { selected.clear(); syncHint(); draw(); },
+      hasSelection: () => selected.size > 0,
+    } : undefined,
   });
 
   const resizeHandle = observeResize(card, () => draw());
@@ -653,5 +587,5 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
     draw();
   }
 
-  return { card, setXY, setAxisPrefs, destroy: () => { resizeHandle.disconnect(); rubber.remove(); } };
+  return { card, setXY, setAxisPrefs, destroy: () => { resizeHandle.disconnect(); pointer.destroy(); } };
 }

@@ -493,13 +493,17 @@ The on-screen test table carries Test / Mean / **Ppk** / Limit yield only; the f
 ```ts
 {
   enabled?:     boolean                                          // show the Insights toolbar button and the Maps | Insights switch; default true with a toolbar (single map: `showToolbar`), always true for a gallery; `false` opts out
-  defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps'  // sub-tab shown first; default 'overview'.
+  defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot'  // sub-tab shown first; default 'overview'.
                                                                       // 'sweeps' with no sweeps defined falls back to 'overview'
   defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
   sweeps?:      SweepSpec[]                                      // parametric sweeps, one card each on a Sweeps tab (below)
   onRemoveSweeps?: (ids: string[]) => void                       // adds a Remove button to the Sweeps tab's notice about
                                                                       // sweeps that name no test in the data; the host drops
                                                                       // those ids and re-renders
+  plots?:       PlotSpec[]                                       // the reader's saved plots, the Plot tab's list (below)
+  onPlotsChange?: (plots: PlotSpec[]) => void                    // the whole list after every add, edit, delete or import
+  onPickPlotsFile?: () => Promise<string | null>                 // choose a plots file to import (a native dialog); without
+                                                                      // it the Plot tab uses the browser's file input
 }
 ```
 
@@ -509,6 +513,74 @@ that the chart suite is a lazily-imported chunk, so opening it on mount also pul
 that chunk on load rather than on first click; leave it off for a map-first page.
 See the [Insights example](../examples/insights.html), which uses it because the
 charts are its whole subject.
+
+##### The Plot tab: saved plots
+
+The **Plot** sub-tab is a chart builder: the reader picks a chart type (scatter, histogram, box, bar or line), the field for X, Y
+and colour (any test, die position, wafer yield, or lot field), and axis titles and limits, and each edit is drawn
+at once. A plot is a recipe, `PlotSpec`, that carries no population: the wafers drawn are whatever Insights is
+scoped to, or whatever a drilldown selection holds, so the same list works on any lot. The library stores nothing.
+Hand the list in as `plots`, keep it current from `onPlotsChange`, and pass it back next time:
+
+```ts
+import { readPlotsFile, writePlotsFile } from '@wafertools/wafermap/stats';
+
+const saved = readPlotsFile(localStorage.getItem('plots') ?? '{"format":"wafermap-plots","plots":[]}');
+renderWaferGallery(el, items, {
+  insights: {
+    plots: saved.plots,
+    onPlotsChange: plots => localStorage.setItem('plots', writePlotsFile(plots)),
+  },
+});
+```
+
+`onPlotsChange` is called once for a burst of edits (typing a title is one call), with the whole list in the
+reader's order, and again when the view is destroyed if a change is waiting. A host that has no storage can ignore
+both options: the tab then keeps plots for the life of the page, and **Export plots…** / **Import plots…** carry
+them as a file (`onSaveText` receives the export; `onPickPlotsFile` supplies the import).
+
+```ts
+{
+  id: 'plot-lq1x-0f3a-0',                   // generated once, never reused; survives rename and reorder
+  title?: 'Vth vs Idsat',                    // only when the reader typed one; absent = an automatic title
+  mark: 'scatter' | 'histogram' | 'box' | 'bar' | 'line',
+  encoding: {
+    x?: Field, y?: Field,                    // a histogram reads y (or x) as its values; a box or bar's x is its categories (default wafer)
+    color?: Field | { follow: 'groupBy' } | { none: true },   // absent = follow the tab's Group by; a measured value or wafer figure
+                                             // colours a scatter on a gradient, anything else is a category
+  },
+  level?: 'die' | 'wafer',                   // the unit one mark stands for; absent = the finest the fields allow
+  aggregate?: 'mean' | 'median' | 'min' | 'max' | 'sum' | 'count' | 'yield',
+  axes?: { x?: Axis, y?: Axis },             // Axis = { label?, scale?: 'linear' | 'log', min?, max?, reverse? }
+  bins?: 16,
+}
+// Field = { test: 1050, name?: 'Vth' } | { builtin: 'wafer' | 'x' | 'y' | 'ring' | 'quadrant' | 'hbin' | 'sbin' | 'site' | 'yield' | 'dieCount' | 'waferOrder' } | { meta: 'split' }
+```
+
+Things that hold for every plot:
+
+- **A test is found by its number and checked by its name.** A plot saved against another test program is
+  reported ("Test 1050 is "Leakage" in this plot and "Vth" here") instead of being drawn against the wrong
+  measurement.
+- **The plot states its population and what it left out**: the wafers and dies, how values were combined, and the
+  count of dies missing a value.
+- **One unit per mark.** With `level: 'wafer'`, die-level values are combined per wafer with `aggregate`, and a
+  per-wafer field (yield) cannot be split by a per-die one (hard bin): that is reported, not drawn.
+- **Grouping has three places.** The categories on an axis are the plot's X; the series within them are its colour;
+  which wafers are in view is the tab's **Show**, and is not part of the plot.
+- **A plot this lot cannot draw is kept.** It is listed, dimmed, with the reason, and draws again on a lot that has
+  the test.
+
+**The file.** `writePlotsFile(plots)` returns `{ "format": "wafermap-plots", "version": 1, "plots": [...] }`.
+`readPlotsFile(text)` is lenient: it keeps every plot it can read, names each setting it dropped in `warnings`, and
+sets `error` only when nothing is usable. Settings a newer version wrote are kept when the file is written back, and
+a plot using a mark this version does not know is kept and shown as needing a newer version, so a round trip through
+an older build loses nothing. Importing adds plots and never replaces: a plot whose id is already in the list is
+added as a copy.
+
+**Plots in drilldown.** Each saved plot is a row in the right-click menu (a **Plots** section between the charts and
+the tables), drawn over the selected dies; **New plot…** opens a draft on the selection that is kept only if the
+reader adds it. The Plot tab, its editor and the chart are loaded the first time they are opened.
 
 #### 5.4.4 Die list & CSV export
 

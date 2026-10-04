@@ -14,8 +14,9 @@
 // `title` attribute instead of porting tsmap's `attachTooltip` chrome
 // helper (that's tsmap app chrome, not chart-panel logic).
 
-import { buildTestHistogramData, collectTestValues, buildTestHistogramSeries, testValueExtent, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
+import { buildTestHistogramData, collectTestValues, buildTestHistogramSeries, testValueExtent, diesInBucket, type HistogramItem, type HistogramSeriesData } from '../../stats/histogram.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
+import type { Die } from '../../core/dies.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { fmt } from '../../renderer/fmt.js';
 import { niceStep, fitTicks } from '../../renderer/axisTicks.js';
@@ -114,6 +115,11 @@ export interface HistogramPanelOptions {
   /** Fired when the user narrows to one group by clicking it in the legend.
    *  The Insights tab owns the scope; this panel only reports the gesture. */
   onGroupChange?: (key: string | null) => void;
+  /**
+   * Click a bar: the dies it counts, per item, with the bar's range and the click, so the host can open a menu on them.
+   * Offered on the single-population view; the overlaid group view has no one bar to click.
+   */
+  onSelectBucket?: (sel: { testNumber: number; low: number; high: number; items: Array<{ item: HistogramItem; dies: Die[] }> }, e: MouseEvent) => void;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -313,11 +319,14 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const maxCount = Math.max(maxOf(buckets.map(b => b.count)), 1);
 
     const statsLabel = card.ownerDocument.createElement('div');
+
+    statsLabel.dataset.wmapCaption = '1';
     Object.assign(statsLabel.style, { fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
     // The clipped count is stated, never silent: these values exist and are still
     // in every statistic — only this chart's range excludes them.
     statsLabel.textContent = `max ${maxCount} dies/bucket`
-      + (lastClippedCount ? ` · ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside clipped range` : '');
+      + (lastClippedCount ? ` · ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside clipped range` : '')
+      + (options.onSelectBucket ? ' · click a bar to chart or tabulate its dies' : '');
     body.appendChild(statsLabel);
 
     const canvas = card.ownerDocument.createElement('canvas');
@@ -439,12 +448,24 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       if (bar !== hovered) { hovered = bar; draw(); }
       if (bar >= 0) {
         const b = buckets[bar];
-        tooltip.innerHTML = `<strong>${escHtml(`${fmt(b.rangeLow, unit, 'engineering')} – ${fmt(b.rangeHigh, unit, 'engineering')}`)}</strong><br>${b.count} dies`;
+        tooltip.innerHTML = `<strong>${escHtml(`${fmt(b.rangeLow, unit, 'engineering')} – ${fmt(b.rangeHigh, unit, 'engineering')}`)}</strong><br>${b.count} dies`
+          + (options.onSelectBucket && b.count > 0 ? '<br><em>click to chart or tabulate these dies</em>' : '');
         tooltip.style.display = 'block';
         positionChartTooltip(tooltip, card, e.clientX, e.clientY);
       } else { tooltip.style.display = 'none'; }
     });
     canvas.addEventListener('mouseleave', () => { if (hovered !== -1) { hovered = -1; draw(); } tooltip.style.display = 'none'; });
+    if (options.onSelectBucket) {
+      canvas.style.cursor = 'pointer';
+      canvas.addEventListener('click', e => {
+        const bar = barAt(e.clientX - canvas.getBoundingClientRect().left);
+        if (bar < 0 || activeTest === null || buckets[bar].count === 0) return;
+        const picked = diesInBucket(scopedItems, activeTest, buckets, bar);
+        if (picked.length === 0) return;
+        tooltip.style.display = 'none';
+        options.onSelectBucket!({ testNumber: activeTest, low: buckets[bar].rangeLow, high: buckets[bar].rangeHigh, items: picked }, e);
+      });
+    }
 
     resizeHandle = observeResize(card, () => draw());
     draw();
@@ -473,6 +494,8 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const maxCount = Math.max(1, ...series.flatMap(s => s.counts));
 
     const statsLabel = card.ownerDocument.createElement('div');
+
+    statsLabel.dataset.wmapCaption = '1';
     Object.assign(statsLabel.style, { fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
     statsLabel.textContent = `${series.length} groups · max ${maxCount} dies/bucket`;
     body.appendChild(statsLabel);

@@ -102,6 +102,8 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
   const doc = card.ownerDocument;
 
   const hint = doc.createElement('div');
+
+  hint.dataset.wmapCaption = '1';
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 

@@ -40,6 +40,8 @@ export interface TestPassRatePanelOptions {
   groups: { key: string; items: TestPassRateItem[] }[];
   testDefs: TestDef[] | undefined;
   onSaveImage?: SaveImageHandler;
+  /** Click a test's row: the host picks out the dies that fail it (judged the way the card is showing). */
+  onSelectTest?: (row: { testNumber: number; label: string; kind: TestPassKind }, e: MouseEvent) => void;
   ownerDocument?: Document;
 }
 
@@ -92,6 +94,8 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
   }
 
   const hint = doc.createElement('div');
+
+  hint.dataset.wmapCaption = '1';
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
@@ -124,7 +128,8 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
       kind === 'spec'     ? 'Dies within test limits, per test'
       : kind === 'testFlag' ? "Dies the tester marked pass, per test"
       : 'Dies passing the recorded verdict, per test';
-    hint.textContent = basis + (grouped ? ' · one bar per group' : '') + ' · worst first';
+    hint.textContent = basis + (grouped ? ' · one bar per group' : '') + ' · worst first'
+      + (options.onSelectTest ? ' · click a test to chart or tabulate the dies that fail it' : '');
 
     // Surfaced, not resolved: a spec/flag disagreement is expected under guard
     // bands or dynamic limits, but it is also how a limits/data mismatch shows
@@ -162,6 +167,7 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
       maxLabelChars: 14,
       emptyBarText: 'no data',
       colorOf,
+      onRowClick: options.onSelectTest ? (ri, _gi, e) => options.onSelectTest!({ testNumber: rows[ri].testNumber, label: rows[ri].label, kind }, e) : undefined,
       tooltipHtml: (ri, gi) => {
         const row = rows[ri];
         const value = row.byGroup[gi];

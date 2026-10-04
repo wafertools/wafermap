@@ -23,6 +23,8 @@ const SNAPSHOTS = {
     'listBinColorSchemes', 'listValueColorSchemes', 'mergeTestDefs', 'metadataDisplayValue',
     'registerBinColorScheme', 'registerValueColorScheme', 'resolveValueColorFn',
     'setReportOpener', 'visibleFindings',
+    // The plot builder's saved recipes: a host keeps them between sessions and needs the one reader and writer.
+    'readPlotsFile', 'writePlotsFile',
   ],
   './core': [
     'diePassStatus', 'getDieKey', 'getReticleCell', 'hasPosition', 'isYieldEligibleDie',
@@ -45,6 +47,7 @@ const SNAPSHOTS = {
     'renderLotReportHtml', 'renderWaferReportHtml',
     'analyzeWaferLot', 'analyzeWaferMap', 'buildFacetTable', 'facetValueOf', 'FACET_NONE_VALUE',
     'filterFindings', 'mergeTestDefs', 'setReportOpener', 'visibleFindings',
+    'readPlotsFile', 'writePlotsFile',
   ],
   './render': [
     'renderWaferMap', 'renderWaferGallery', 'setDetachWindowOpener',

@@ -13,3 +13,7 @@ export type { FacetField, FacetValue, FacetCuration, FacetItem, BuildFacetTableO
 export type { MetadataKeySelection } from './metadataColumns.js';
 export { mergeTestDefs } from './mergeTestDefs.js';
 export type { MergedTestDefs, TestDefConflict, TestDefConflictKind } from './mergeTestDefs.js';
+// The plot builder's saved recipes and their file. A host keeps the list between sessions (InsightsOptions.plots in,
+// onPlotsChange out) and needs the one reader and writer, so there is a single validator of the format.
+export { readPlotsFile, writePlotsFile } from './plotSpec.js';
+export type { PlotSpec, ReadPlotsResult } from './plotSpec.js';

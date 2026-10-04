@@ -94,6 +94,9 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
 
 
   const hint = card.ownerDocument.createElement('div');
+
+
+  hint.dataset.wmapCaption = '1';
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 

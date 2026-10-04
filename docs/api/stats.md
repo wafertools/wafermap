@@ -684,3 +684,18 @@ missing one, which is the one case where this bucket is ambiguous.
 `WaferMetadata` → §11.3
 
 ---
+
+### 7.14 `readPlotsFile` / `writePlotsFile`
+
+The saved recipes behind the Insights **Plot** tab, and the file they travel in. Pure and DOM-free, so a host can keep
+a user's plots in any store and a Node tool can read the same file.
+
+```ts
+readPlotsFile(text: string): { plots: PlotSpec[]; warnings: string[]; error?: string }
+writePlotsFile(plots: readonly PlotSpec[]): string        // { "format": "wafermap-plots", "version": 1, "plots": [...] }
+```
+
+`readPlotsFile` accepts the wrapped file or a bare array. It keeps every plot it can read and names each setting it
+dropped; `error` is set only for text that is not JSON, is not a plots file, or holds no usable plot. Unknown settings
+survive a read and a write. The shape of `PlotSpec`, what a plot guarantees, and how the host stores the list are in
+[Render → Insights → The Plot tab](render-map.md#the-plot-tab-saved-plots).

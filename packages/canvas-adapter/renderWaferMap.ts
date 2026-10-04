@@ -29,6 +29,7 @@ import { ICONS } from './icons.js';
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
 // TYPE-ONLY, for the same reason: drilldown opens chart panels, loaded on first use.
 import type { DrilldownContext } from './drilldown.js';
+import { createPlotStore } from './plotStore.js';
 import { selectionPopulation, waferPopulation, type DrilldownSource } from './chartPopulation.js';
 import { createIdentityHeader, collapsedLabel, type IdentityHeaderController } from './identityHeader.js';
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
@@ -1039,7 +1040,9 @@ export function renderWaferMapCard(
   // Drilldown: a chart opened on the selected dies, or on the whole wafer.
   // Offered only when there is a chart to open (`drilldownOffered`) — with
   // none, right-click stays the browser's (or host's).
-  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
+  // The reader's saved plots, one list for the Plot tab and for the drilldown menu.
+  const plotStore = createPlotStore(insightsOpts?.plots, insightsOpts?.onPlotsChange);
+  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
   /** Read live: `testDefs` changes with `setData`. */
   const drilldownOffered = (): boolean => !isMapless;
   let closeDrilldownMenu: (() => void) | null = null;
@@ -1208,6 +1211,7 @@ export function renderWaferMapCard(
       defaultView: insightsOpts?.defaultView,
       sweeps: insightsOpts?.sweeps,
       onRemoveSweeps: insightsOpts?.onRemoveSweeps,
+      plotStore, onPickPlotsFile: insightsOpts?.onPickPlotsFile,
       // Both of these are FALLBACKS, passed only when the toolbar cannot carry
       // them. The toolbar now stays visible while Insights is open, so its own
       // toggle and Help are permanently reachable in a fixed corner; passing
@@ -3496,6 +3500,7 @@ export function renderWaferMapCard(
 
     destroy(): void {
       destroyed = true;
+      plotStore.flush();
       for (const run of panelRuns.values()) run.cancel();
       panelRuns.clear();
       modalHandle?.close();

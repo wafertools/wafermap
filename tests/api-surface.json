@@ -38,6 +38,8 @@
       "PatternFeatures",
       "PatternLabel",
       "PlotMode",
+      "PlotSpec",
+      "ReadPlotsResult",
       "RegionYield",
       "RegionYieldFigures",
       "ReportMap",
@@ -127,6 +129,8 @@
       "PatternClassification",
       "PatternFeatures",
       "PatternLabel",
+      "PlotSpec",
+      "ReadPlotsResult",
       "RegionYield",
       "RegionYieldFigures",
       "ReportMap",
@@ -379,7 +383,10 @@
       "defaultOpen",
       "defaultView",
       "enabled",
+      "onPickPlotsFile",
+      "onPlotsChange",
       "onRemoveSweeps",
+      "plots",
       "sweeps"
     ],
     "SummaryPanelOptions": [

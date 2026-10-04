@@ -29,6 +29,8 @@ export interface RegionYieldDiagramOptions {
   mode: RegionYieldMode;
   /** Ring mode: ordered ring 1 (core) → ring N (edge), matching `buildRegionYieldData`'s output for `buildRingRegions`. Quadrant mode: any order — each row's quadrant is read from its `key` (`quadrant:NE` etc.), not position. */
   rows: RegionYieldDatum[];
+  /** Click a region: called with it and the click, so the host can pick out the dies it counts and open a menu there. */
+  onSelectRegion?: (row: RegionYieldDatum, e: MouseEvent) => void;
   onSaveImage?: SaveImageHandler;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
@@ -120,6 +122,9 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
   body.appendChild(canvas);
 
 
+  // Where the circle was last drawn, for hit-testing a click.
+  let geo = { cx: 0, cy: 0, R: 0 };
+
   function draw(): void {
     // The grid size is what the card asks for; expanded, the circle grows to
     // the shorter side of the space it is given.
@@ -142,6 +147,7 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
     const cx = size / 2, cy = size / 2;
     const margin = 34; // room for label chips near the outer edge
     const R = size / 2 - margin;
+    geo = { cx, cy, R };
 
     if (mode === 'ring') {
       const n = rows.length;
@@ -205,6 +211,27 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
+  }
+
+  /** The region under a point of the canvas: a ring by its distance from the centre, a quadrant by its angle. */
+  function regionAt(x: number, y: number): RegionYieldDatum | null {
+    const dx = x - geo.cx, dy = y - geo.cy;
+    const d = Math.hypot(dx, dy);
+    if (!(d <= geo.R)) return null;
+    if (mode === 'ring') return rows[Math.min(rows.length - 1, Math.floor((d / geo.R) * rows.length))] ?? null;
+    const angle = (Math.atan2(dy, dx) + 2 * Math.PI) % (2 * Math.PI);
+    return rows.find(r => {
+      const a = QUADRANT_ANGLES[parseRegionKey(r.key).quadrant ?? ''];
+      return !!a && angle >= a[0] && angle < a[1];
+    }) ?? null;
+  }
+  if (options.onSelectRegion) {
+    canvas.style.cursor = 'pointer';
+    canvas.addEventListener('click', e => {
+      const rect = canvas.getBoundingClientRect();
+      const row = regionAt(e.clientX - rect.left, e.clientY - rect.top);
+      if (row) options.onSelectRegion!(row, e);
+    });
   }
 
   const resizeHandle = observeResize(card, () => draw());

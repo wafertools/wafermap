@@ -15,6 +15,9 @@
 //
 // Pure, no DOM. Design record: notes/wafermap/design-plot-builder.md.
 
+import { newPlotId } from './plotId.js';
+export { newPlotId };
+
 export const PLOTS_FORMAT = 'wafermap-plots';
 export const PLOTS_VERSION = 1;
 
@@ -78,13 +81,6 @@ export interface ReadPlotsResult {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-
-let idCounter = 0;
-/** A new plot id: unique across a session and, with the random part, across files. */
-export function newPlotId(): string {
-  const rand = Math.floor(Math.random() * 0x100000000).toString(36).padStart(7, '0');
-  return `plot-${Date.now().toString(36)}-${rand}-${(idCounter++).toString(36)}`;
-}
 
 /** Two fields name the same series. */
 export function sameField(a: PlotField | undefined, b: PlotField | undefined): boolean {

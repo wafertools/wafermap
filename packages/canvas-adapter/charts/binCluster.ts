@@ -22,6 +22,8 @@ export interface BinClusterPanelOptions {
   title?: string;
   groups: { key: string; items: BinItem[] }[];
   onSaveImage?: SaveImageHandler;
+  /** Click a sub-bar: a bin in one group. The host picks out those dies and opens a menu at the click. */
+  onSelectBin?: (sel: { bin: number; binType: BinType; groupKey: string }, e: MouseEvent) => void;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -49,7 +51,9 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
   ));
 
   const hint = card.ownerDocument.createElement('div');
-  hint.textContent = 'One cluster per bin · a sub-bar per group';
+
+  hint.dataset.wmapCaption = '1';
+  hint.textContent = 'One cluster per bin · a sub-bar per group' + (options.onSelectBin ? ' · click a sub-bar to chart or tabulate its dies' : '');
   Object.assign(hint.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   card.insertBefore(hint, body);
 
@@ -82,6 +86,7 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
       groups: clusterGroups,
       labelWidth: CLUSTER_LABEL_WIDTH,
       maxVisibleRows: MAX_VISIBLE_BINS,
+      onRowClick: options.onSelectBin ? (ri, gi, e) => options.onSelectBin!({ bin: bins[ri].binCode, binType, groupKey: clusterGroups[gi] }, e) : undefined,
       tooltipHtml: (ri, gi) => {
         const bin = bins[ri];
         const count = bin.counts[gi];

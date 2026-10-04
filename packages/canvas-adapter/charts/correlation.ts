@@ -107,7 +107,12 @@ function blendTowardBg(colour: string, bg: [number, number, number], t: number):
 export function renderCorrelationPanel(options: CorrelationPanelOptions): CorrelationPanelHandle {
   // Cells use the fixed sign-aware correlation hues (palette.ts).
   const { title = 'Test correlation matrix', items, testDefs, onSaveImage, onSelectPair } = options;
-  const { card, body, controlsRow } = cardShell(title, onSaveImage, options.ownerDocument);
+  const { card, body, controlsRow, setPngDecor } = cardShell(title, onSaveImage, options.ownerDocument);
+  // The sign scale is page markup under the matrix; a saved image gets it as a colour bar so the hues can be read.
+  setPngDecor(() => {
+    const bg = parseCssRgb(card.ownerDocument.defaultView?.getComputedStyle(card).backgroundColor ?? '') ?? [255, 255, 255];
+    return { colorbar: { label: 'Pearson r', lo: '−1', hi: '+1', color: (t: number) => blendTowardBg(t < 0.5 ? CORRELATION_NEGATIVE : CORRELATION_POSITIVE, bg as [number, number, number], Math.abs(2 * t - 1)) } };
+  });
   setChartGrow(card, 'square');
 
   body.style.overflowX = 'auto';
@@ -225,6 +230,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     const sampleNote = correlationSampleNote(sample);
     if (sampleNote) {
       const note = card.ownerDocument.createElement('div');
+      note.dataset.wmapCaption = '1';
       note.textContent = `${sampleNote} — r is an estimate, not the whole population.`;
       Object.assign(note.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
       hintRow.appendChild(note);
@@ -232,6 +238,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
     if (mixedFields.length > 0) {
       const warn = card.ownerDocument.createElement('div');
+      warn.dataset.wmapCaption = '1';
       warn.textContent = `⚠ Mixed ${mixedFields.join(', ')} within this set — correlations may be misleading (Simpson's paradox). Use Group by, or the Wafer picker, to narrow to a like-for-like set.`;
       Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, padding: `${SPACE.xs} ${SPACE.md}`, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
       hintRow.appendChild(warn);
@@ -242,6 +249,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     const hint = card.ownerDocument.createElement('span');
     Object.assign(hint.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm, color: CLR.label, fontSize: FONT.body, flexWrap: 'wrap' } as Partial<CSSStyleDeclaration>);
     const hintText = card.ownerDocument.createElement('span');
+    hintText.dataset.wmapCaption = '1';
     // Population stated up front: the summary line below counts "strong pairs"
     // by |r| alone, and |r| ≥ 0.7 over 6 dies is not the same claim as over 6,000.
     // `n` is the median across displayed pairs because tests can have different
@@ -268,6 +276,8 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     hintRow.appendChild(hint);
 
     const summaryLine = card.ownerDocument.createElement('span');
+
+    summaryLine.dataset.wmapCaption = '1';
     Object.assign(summaryLine.style, { color: CLR.value, fontSize: FONT.body, fontWeight: '500' } as Partial<CSSStyleDeclaration>);
     if (strongPairs === 0 && moderatePairs === 0) {
       summaryLine.textContent = strongestPair

@@ -1863,7 +1863,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.ok(await waitForInsights(root));
     assert.deepEqual(
       tabButtons.map((b) => b.dataset.wmapInsightsTab).sort(),
-      ['correlation', 'data', 'distributions', 'overview'],
+      ['correlation', 'data', 'distributions', 'overview', 'plot'],
       'each Insights sub-tab carries data-wmap-insights-tab set to its view key',
     );
 

@@ -145,6 +145,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     const excluded = totalTests - shownCount;
     const unspecNote = unspecCount > 0 ? ` · ${unspecCount} without both limits` : '';
     const summary = card.ownerDocument.createElement('span');
+    summary.dataset.wmapCaption = '1';
     summary.textContent = excluded > 0
       ? `${shownCount} of ${totalTests} tests shown${unspecNote} · ${excluded} excluded (no recorded values)`
       : `${shownCount} test${shownCount !== 1 ? 's' : ''} shown${unspecNote}`;
@@ -166,6 +167,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     // chart they are not looking at.
     const allUnspec = unspecCount >= shownCount;
     const method = card.ownerDocument.createElement('div');
+    method.dataset.wmapCaption = '1';
     method.textContent = allUnspec
       ? 'No test has both limits, so each is normalised to its own observed range '
         + '(min = 0, max = 1) and sorted most-variable first. Ppk needs limits, so none is shown.'

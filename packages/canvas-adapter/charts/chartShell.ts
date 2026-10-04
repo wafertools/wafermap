@@ -5,7 +5,7 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
+import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { minOf, maxOf } from '../../core/utils.js';
 import { robustFence } from '../../stats/math.js';
@@ -635,15 +635,260 @@ export function drawAxisUnit(ctx: CanvasRenderingContext2D, unit: string, x: num
 // Reuses toolbar.ts's saveImageBlob — the same save-hook dance renderWaferMap
 // and renderWaferGallery already use — rather than a third parallel copy.
 
-export function saveCanvasPng(canvas: HTMLCanvasElement, filenameStem: string, onSaveImage?: SaveImageHandler): void {
-  const flat = canvas.ownerDocument.createElement('canvas');
-  flat.width = canvas.width;
-  flat.height = canvas.height;
+// ── What a card says around its canvas ───────────────────────────────────────────────────────────────────
+//
+// The title, the test or wafer a selector is set to, the line stating the population, the legend: these are page
+// elements around the canvas, so a bare canvas (a saved PNG, a printed page whose controls were hidden) loses all of
+// them and is a picture of unlabelled marks. They are read back from the card itself, so a panel states them once, on
+// screen, and the saved and printed copies cannot disagree with it.
+
+/** Text for a saved image or a printed page: what a caption says about the chart, without telling the reader to click. */
+export function captionText(text: string): string {
+  return text
+    .split(' · ')
+    .map(c => c.replace(/[\s·]+$/, '').trim())
+    .filter(c => c && !/\b(click|clicks|drag|hover|right-click)\b/i.test(c) && !/\(.*(click|drag).*\)/i.test(c))
+    .join(' · ');
+}
+
+const visible = (el: HTMLElement, root: HTMLElement): boolean => {
+  for (let n: HTMLElement | null = el; n && n !== root.parentElement; n = n.parentElement) if (n.style.display === 'none') return false;
+  return true;
+};
+
+const SELECT_CARET = /\s*[▾▼]\s*$/;
+
+export interface CardContext {
+  controls: string[];
+  captions: string[];
+  legend: Array<{ label: string; color: string }>;
+}
+
+/** The explicit extras a panel registered with `setPngDecor`, by card, so the print copy can read them too. */
+const decorOf = new WeakMap<HTMLElement, () => PngDecor | undefined>();
+
+/**
+ * Reads what a card currently says around its canvas: its controls' settings ("Test: vth_n_mV · 1001", "Sort: yield"),
+ * its caption elements (marked `data-wmap-caption`, with instructions to click or drag removed), and its legend.
+ */
+export function describeCard(card: HTMLElement): CardContext {
+  const controls: string[] = [];
+  const row = card.querySelector<HTMLElement>('[data-wmap-controls]');
+  if (row) {
+    for (const btn of row.querySelectorAll<HTMLElement>('button[aria-haspopup]')) {
+      if (!visible(btn, row)) continue;
+      const value = (btn.textContent ?? '').replace(SELECT_CARET, '').trim();
+      if (!value) continue;
+      const wrap = btn.closest('label');
+      const own = wrap ? (wrap.textContent ?? '').replace(btn.textContent ?? '', '').replace(/[:\s]+$/, '').trim() : '';
+      const name = own || btn.getAttribute('aria-label') || '';
+      controls.push(name && name !== value ? `${name}: ${value}` : value);
+    }
+    for (const group of row.querySelectorAll<HTMLElement>('[role="radiogroup"]')) {
+      if (!visible(group, row)) continue;
+      const checked = group.querySelector<HTMLInputElement>('input:checked');
+      const text = checked?.closest('label')?.textContent?.trim();
+      if (text) controls.push(text);
+    }
+    for (const box of row.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')) {
+      if (!visible(box, row)) continue;
+      const text = box.closest('label')?.textContent?.trim();
+      if (text) controls.push(text);
+    }
+  }
+  const captions: string[] = [];
+  for (const el of card.querySelectorAll<HTMLElement>('[data-wmap-caption]')) {
+    if (!visible(el, card)) continue;
+    const t = captionText((el.textContent ?? '').replace(/\s+/g, ' ').trim());
+    if (t) captions.push(t);
+  }
+  const legend: CardContext['legend'] = [];
+  for (const chip of card.querySelectorAll<HTMLElement>('button[aria-pressed]')) {
+    const swatch = chip.querySelector<HTMLElement>('span');
+    const color = swatch?.style.backgroundColor || swatch?.style.borderColor;
+    const label = (chip.textContent ?? '').trim();
+    if (label && color && color !== 'transparent') legend.push({ label, color });
+  }
+  // Legends that are spans, not buttons (the grouped bar charts'): a swatch and a name.
+  for (const item of card.querySelectorAll<HTMLElement>('[data-wmap-legend] > span')) {
+    const swatch = item.firstElementChild as HTMLElement | null;
+    const color = swatch?.style.backgroundColor || swatch?.style.borderColor;
+    const label = (item.textContent ?? '').trim();
+    if (label && color && color !== 'transparent') legend.push({ label, color });
+  }
+  const extra = decorOf.get(card)?.();
+  if (extra) {
+    if (extra.controls) controls.push(...extra.controls);
+    if (extra.caption !== undefined) { captions.length = 0; captions.push(...(typeof extra.caption === 'string' ? [extra.caption] : extra.caption)); }
+    if (extra.legend) { legend.length = 0; legend.push(...extra.legend); }
+  }
+  return { controls, captions, legend };
+}
+
+/** A card's context as the extras of a saved image. */
+function decorFor(card: HTMLElement): PngDecor {
+  const ctx = describeCard(card);
+  const extra = decorOf.get(card)?.();
+  return {
+    controls: ctx.controls, caption: ctx.captions,
+    legend: ctx.legend.length ? ctx.legend : undefined,
+    colorbar: extra?.colorbar,
+  };
+}
+
+/**
+ * Printed pages lose the interactive controls (they are hidden) and cannot use the on-screen hints (they tell the reader
+ * to click). Each card therefore carries a block that is hidden on screen and shown in print, refilled just before
+ * printing from the card's own current state.
+ */
+function refreshPrintBlocks(doc: Document): void {
+  for (const card of doc.querySelectorAll<HTMLElement>('[data-wmap-chart-card]')) {
+    const block = card.querySelector<HTMLElement>(':scope > [data-wmap-print-only]');
+    if (!block) continue;
+    const ctx = describeCard(card);
+    block.replaceChildren();
+    const lines = [ctx.controls.length ? ctx.controls.join(' · ') : '', ...ctx.captions].filter(Boolean);
+    for (const line of lines) {
+      const div = doc.createElement('div');
+      div.textContent = line;
+      block.appendChild(div);
+    }
+    // The on-screen captions say the same with instructions added; on paper the block above replaces them.
+    for (const el of card.querySelectorAll<HTMLElement>('[data-wmap-caption]')) el.setAttribute('data-wmap-noprint', '1');
+  }
+}
+
+const printHooked = new WeakSet<Document>();
+function ensurePrintCaptions(doc: Document): void {
+  if (printHooked.has(doc)) return;
+  printHooked.add(doc);
+  const style = doc.createElement('style');
+  style.textContent = '@media print{[data-wmap-print-only]{display:block!important}}';
+  doc.head.appendChild(style);
+  const win = doc.defaultView;
+  win?.addEventListener('beforeprint', () => refreshPrintBlocks(doc));
+  // Engines that do not fire beforeprint tell us through the print media query instead.
+  try { win?.matchMedia?.('print').addEventListener?.('change', e => { if (e.matches) refreshPrintBlocks(doc); }); } catch { /* no matchMedia */ }
+}
+
+/** What a saved chart carries besides its canvas: the legend and the statement of what it shows are DOM, not canvas. */
+export interface PngDecor {
+  /** Which test, wafer, group or sort the card's controls are set to ("Test: vth_n_mV · 1001"): a chart saved without them is unlabelled. */
+  controls?: readonly string[];
+  /** The population and what was combined or left out, under the title: a line, or several. */
+  caption?: string | readonly string[];
+  /** The colour key of a chart coloured by category. */
+  legend?: ReadonlyArray<{ label: string; color: string }>;
+  /** The colour key of a chart coloured on a gradient. */
+  colorbar?: { label: string; lo: string; hi: string; color: (t: number) => string };
+}
+
+export interface PngHeader {
+  /** The card the chart lives in: its colours are the saved image's, so a dark theme saves a legible dark image. */
+  card: HTMLElement;
+  title: string;
+  decor?: PngDecor;
+}
+
+/** The first background colour that is not transparent, up the tree from `el`; white when there is none. */
+function opaqueBackground(el: HTMLElement): string {
+  const win = el.ownerDocument.defaultView;
+  for (let node: HTMLElement | null = el; node && win; node = node.parentElement) {
+    const bg = win.getComputedStyle(node).backgroundColor;
+    if (bg && bg !== 'transparent' && !/^rgba\(.*,\s*0\)$/.test(bg)) return bg;
+  }
+  return '#ffffff';
+}
+
+/**
+ * The canvas as it is saved: under a header that names the chart, states what it shows, and carries the legend.
+ * A bare canvas saved with none of these is a picture of unlabelled marks: the title, the population ("6 wafers · 3,966
+ * dies"), and the key to the colours live in the card around the canvas, not in it.
+ */
+export function composeChartPng(canvas: HTMLCanvasElement, header?: PngHeader): HTMLCanvasElement {
+  const doc = canvas.ownerDocument;
+  const flat = doc.createElement('canvas');
+  const s = Math.max(1, canvas.width / (canvas.clientWidth || canvas.width));
+  const width = canvas.width;
+  const probe = doc.createElement('canvas').getContext('2d');
+  const pad = 12 * s;
+  const font = (px: number, weight = '400') => `${weight} ${px * s}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  const measure = (text: string, f: string): number => { if (!probe) return text.length * 7 * s; probe.font = f; return probe.measureText(text).width; };
+
+  // Lay the header out first (its height sets the canvas size), then draw it.
+  type Op = { kind: 'text'; text: string; x: number; y: number; font: string; alpha: number }
+    | { kind: 'dot'; x: number; y: number; r: number; color: string }
+    | { kind: 'strip'; x: number; y: number; w: number; h: number; color: (t: number) => string };
+  const ops: Op[] = [];
+  let y = 0;
+  if (header) {
+    y = pad;
+    ops.push({ kind: 'text', text: header.title, x: pad, y: y + 14 * s, font: font(16, '600'), alpha: 1 });
+    y += 24 * s;
+    const decor = header.decor;
+    const lines: Array<{ text: string; alpha: number }> = [];
+    if (decor?.controls?.length) lines.push({ text: decor.controls.join(' · '), alpha: 1 });
+    for (const c of decor?.caption === undefined ? [] : typeof decor.caption === 'string' ? [decor.caption] : decor.caption) lines.push({ text: c, alpha: 0.75 });
+    const f = font(12);
+    for (const { text, alpha } of lines) {
+      let line = '';
+      for (const word of text.split(' ')) {
+        const next = line ? `${line} ${word}` : word;
+        if (line && measure(next, f) > width - 2 * pad) { ops.push({ kind: 'text', text: line, x: pad, y: y + 11 * s, font: f, alpha }); y += 17 * s; line = word; }
+        else line = next;
+      }
+      if (line) { ops.push({ kind: 'text', text: line, x: pad, y: y + 11 * s, font: f, alpha }); y += 17 * s; }
+    }
+    if (decor?.legend?.length) {
+      y += 4 * s;
+      const f = font(12);
+      let x = pad;
+      for (const item of decor.legend) {
+        const w = 14 * s + measure(item.label, f) + 14 * s;
+        if (x > pad && x + w > width - pad) { x = pad; y += 18 * s; }
+        ops.push({ kind: 'dot', x: x + 5 * s, y: y + 7 * s, r: 5 * s, color: item.color });
+        ops.push({ kind: 'text', text: item.label, x: x + 14 * s, y: y + 11 * s, font: f, alpha: 1 });
+        x += w;
+      }
+      y += 20 * s;
+    }
+    if (decor?.colorbar) {
+      y += 4 * s;
+      const f = font(12), cb = decor.colorbar;
+      let x = pad;
+      ops.push({ kind: 'text', text: cb.label, x, y: y + 10 * s, font: f, alpha: 1 });
+      x += measure(cb.label, f) + 10 * s;
+      ops.push({ kind: 'text', text: cb.lo, x, y: y + 10 * s, font: f, alpha: 0.75 });
+      x += measure(cb.lo, f) + 6 * s;
+      ops.push({ kind: 'strip', x, y: y + 1 * s, w: 200 * s, h: 10 * s, color: cb.color });
+      x += 206 * s;
+      ops.push({ kind: 'text', text: cb.hi, x, y: y + 10 * s, font: f, alpha: 0.75 });
+      y += 20 * s;
+    }
+    y += 6 * s;
+  }
+
+  flat.width = width;
+  flat.height = Math.ceil(canvas.height + y);
   const ctx = flat.getContext('2d')!;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = header ? opaqueBackground(header.card) : '#ffffff';
   ctx.fillRect(0, 0, flat.width, flat.height);
-  ctx.drawImage(canvas, 0, 0);
-  flat.toBlob(blob => {
+  if (header) {
+    const win = doc.defaultView;
+    const ink = win ? win.getComputedStyle(header.card).color || '#222222' : '#222222';
+    ctx.textBaseline = 'alphabetic';
+    for (const op of ops) {
+      if (op.kind === 'text') { ctx.font = op.font; ctx.fillStyle = ink; ctx.globalAlpha = op.alpha; ctx.fillText(op.text, op.x, op.y); ctx.globalAlpha = 1; }
+      else if (op.kind === 'dot') { ctx.fillStyle = op.color; ctx.beginPath(); ctx.arc(op.x, op.y, op.r, 0, Math.PI * 2); ctx.fill(); }
+      else { for (let i = 0; i < op.w; i++) { ctx.fillStyle = op.color(i / Math.max(1, op.w - 1)); ctx.fillRect(op.x + i, op.y, 1, op.h); } }
+    }
+  }
+  ctx.drawImage(canvas, 0, y);
+  return flat;
+}
+
+export function saveCanvasPng(canvas: HTMLCanvasElement, filenameStem: string, onSaveImage?: SaveImageHandler, header?: PngHeader): void {
+  composeChartPng(canvas, header).toBlob(blob => {
     if (blob) saveImageBlob(blob, filenameStem, onSaveImage);
   }, 'image/png');
 }
@@ -655,6 +900,8 @@ export interface CardShell {
   heading: HTMLElement;
   controlsRow: HTMLElement;
   body: HTMLElement;
+  /** What the card's Save as PNG adds under the title, besides the canvas (a caption, a legend). Read at the moment of saving. */
+  setPngDecor(read: () => PngDecor | undefined): void;
 }
 
 /**
@@ -811,8 +1058,11 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   attachChartTip(saveBtn, card, headerTip, 'Save as PNG');
   saveBtn.addEventListener('click', () => {
     const canvas = card.querySelector<HTMLCanvasElement>('canvas');
-    if (canvas) saveCanvasPng(canvas, title, onSaveImage);
+    // The heading as it is now: a plot's title follows its fields, so the file is named for what is on screen.
+    // Saved under its title, with what the card says around the canvas: a bare canvas is marks with no name.
+    if (canvas) saveCanvasPng(canvas, heading.textContent || title, onSaveImage, { card, title: heading.textContent || title, decor: decorFor(card) });
   });
+  markNoPrint(saveBtn);
   headingRow.appendChild(saveBtn);
 
   const expandBtn = card.ownerDocument.createElement('button');
@@ -828,13 +1078,23 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   attachChartTip(expandBtn, card, headerTip, 'Expand');
   expandBtn.dataset.wmapChartExpand = '1';
   expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title));
+  markNoPrint(expandBtn);
   headingRow.appendChild(expandBtn);
   card.appendChild(headingRow);
 
+  // Hidden on screen, shown in print, filled from the card's state just before printing (see ensurePrintCaptions).
+  const printBlock = card.ownerDocument.createElement('div');
+  printBlock.dataset.wmapPrintOnly = '1';
+  Object.assign(printBlock.style, { display: 'none', color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
+  card.appendChild(printBlock);
+  ensurePrintCaptions(card.ownerDocument);
+
   const controlsRow = card.ownerDocument.createElement('div');
+  controlsRow.dataset.wmapControls = '1';
   Object.assign(controlsRow.style, {
     display: 'flex', gap: SPACE.sm, marginBottom: SPACE.md, flexWrap: 'wrap', alignItems: 'center',
   } as Partial<CSSStyleDeclaration>);
+  markNoPrint(controlsRow);   // dropdowns and toggles are for the screen; their settings print as text in the block above
   card.appendChild(controlsRow);
 
   const body = card.ownerDocument.createElement('div');
@@ -862,7 +1122,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   Object.assign(body.style, { overflowX: 'hidden', overflowY: 'hidden', minHeight: '0', flex: '1', position: 'relative' } as Partial<CSSStyleDeclaration>);
   card.appendChild(body);
 
-  return { card, heading, controlsRow, body };
+  return { card, heading, controlsRow, body, setPngDecor: read => { decorOf.set(card, read); } };
 }
 
 // ── Segmented control ────────────────────────────────────────────────────────
@@ -977,7 +1237,12 @@ export function renderEmptyState(body: HTMLElement, message: string, styleOverri
 // rule therefore styles these rows too, which is how an embedded map ends up
 // matching the host's own controls for free.
 
-export interface ListSelectOption { value: string; label: string }
+export interface ListSelectOption {
+  value: string;
+  label: string;
+  /** A heading shown above the first option of each run with the same group. The list stays one flat, searchable list. */
+  group?: string;
+}
 
 /**
  * A themed single-select picker: a trigger button plus an on-demand popup
@@ -1080,6 +1345,11 @@ export function makeListSelect(
 
     const rows: { row: HTMLDivElement; label: string }[] = [];
     const visibleRows = (): HTMLDivElement[] => rows.filter(r => r.row.style.display !== 'none').map(r => r.row);
+    // Group headings follow their rows: a heading with nothing under it after a search is hidden.
+    const headings: { el: HTMLDivElement; first: number; last: number }[] = [];
+    const syncHeadings = (): void => {
+      for (const h of headings) h.el.style.display = rows.slice(h.first, h.last + 1).some(r => r.row.style.display !== 'none') ? '' : 'none';
+    };
 
     if (options.length > MENU_SEARCH_THRESHOLD) {
       // `makeMenuSearchBox` stops all keydown propagation on the input itself
@@ -1088,6 +1358,7 @@ export function makeListSelect(
       // on bubbling into the delegated listener that mouse/focus events use.
       const searchBox = makeMenuSearchBox(query => {
         for (const r of rows) r.row.style.display = r.label.includes(query) ? '' : 'none';
+        syncHeadings();
       }, searchPlaceholder, ownerDocument);
       // Contained: this z-index only has to beat its own siblings (the option
       // rows, which set none) INSIDE `menu`, and `menu` itself lives in
@@ -1102,7 +1373,19 @@ export function makeListSelect(
       menu.appendChild(searchBox);
     }
 
+    let lastGroup: string | undefined;
     for (const o of options) {
+      if (o.group !== undefined && o.group !== lastGroup) {
+        const head = ownerDocument.createElement('div');
+        head.textContent = o.group;
+        head.setAttribute('role', 'presentation');
+        Object.assign(head.style, {
+          padding: `${SPACE.sm} ${SPACE.xl} ${SPACE.xxs}`, fontSize: FONT.sub, color: CLR.label, fontWeight: '600',
+        } as Partial<CSSStyleDeclaration>);
+        menu.appendChild(head);
+        headings.push({ el: head, first: rows.length, last: rows.length });
+      }
+      lastGroup = o.group;
       const isSelected = o.value === current;
       const row = ownerDocument.createElement('div');
       row.textContent = o.label;
@@ -1130,6 +1413,7 @@ export function makeListSelect(
       });
       menu.appendChild(row);
       rows.push({ row, label: o.label.toLowerCase() });
+      if (headings.length) headings[headings.length - 1].last = rows.length - 1;
     }
 
     // The shared roving-focus handler, NOT `wireMenuA11y`: that one also
@@ -1453,7 +1737,7 @@ export function makeWaferSelect(
     [{ value: ALL, label: allLabel }, ...items.map((it, i) => ({ value: String(i), label: it.label ?? `#${i}` }))],
     selectedIndex === null ? ALL : String(selectedIndex),
     v => onChange(v === ALL ? null : Number(v)),
-    { maxWidth, ownerDocument, ariaLabel: allLabel, searchPlaceholder: 'Filter wafers…' },
+    { maxWidth, ownerDocument, ariaLabel: 'Wafer', searchPlaceholder: 'Filter wafers…' },
   );
 }
 

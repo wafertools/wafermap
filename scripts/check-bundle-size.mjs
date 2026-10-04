@@ -79,7 +79,7 @@ const rootKB = Math.round(gzipSync(Buffer.from(rootResult.outputFiles[0].content
 // from renderWaferMap's detach path) stay in core, as they always have: the
 // documented renderer figure means "what rendering a map costs", and a consumer
 // importing the /render entry gets the gallery statically.
-const LAZY_FEATURES = ['userGuideHtml', 'insightsTab', 'drilldown', 'dataTab', 'renderSummaryReport'];
+const LAZY_FEATURES = ['userGuideHtml', 'insightsTab', 'drilldown', 'dataTab', 'renderSummaryReport', 'plotTab', 'plotModal'];
 const outputs = result.metafile.outputs;
 const base = (p) => p.split('/').pop();
 const gzipOf = new Map(result.outputFiles.map(f => [base(f.path), gzipSync(Buffer.from(f.contents)).length]));

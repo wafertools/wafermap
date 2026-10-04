@@ -21,10 +21,10 @@ import { classifyDie } from '../core/classify.js';
 import { testValue, testsPresent } from '../core/dieTable.js';
 import { compareNatural, minOf, maxOf } from '../core/utils.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
-import { facetValueOf, FACET_NONE_VALUE } from './facets.js';
+import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
-import { sameField, plotIssue } from './plotSpec.js';
+import { sameField, plotIssue, isField } from './plotSpec.js';
 import type { PlotSpec, PlotField, PlotAxis, PlotAggregate, PlotBuiltin } from './plotSpec.js';
 
 /** One wafer of the population. The same shape a drilldown source's items have. */
@@ -69,14 +69,19 @@ export interface FieldColumn {
   issue?: string;
 }
 
-export interface PlotPoint { x: number; y: number; group: number; item: number; die?: Die }
+export interface PlotPoint { x: number; y: number; group: number; item: number; die?: Die; /** The colour field's value, when it is continuous. */ value?: number }
+
+/** What one mark stands for: the wafer it is on, and the die when it is one die (not a wafer's aggregate). */
+export interface PlotUnit { item: number; die?: Die }
 
 export type PlotMarks =
   | { type: 'scatter'; points: PlotPoint[] }
-  | { type: 'histogram'; values: number[][] }
-  | { type: 'box' | 'bar'; categories: string[]; cells: number[][][]; values: number[][] }
-  | { type: 'line'; xs: number[]; values: number[][] };
+  /** `units[g][k]` is the unit behind `values[g][k]`, so a bar can say which dies (or wafers) it counts. */
+  | { type: 'histogram'; values: number[][]; units: number[][]; unit: (u: number) => PlotUnit }
+  | { type: 'box' | 'bar'; categories: string[]; cells: number[][][]; cellUnits: number[][][]; values: number[][]; categoryItems?: number[]; unit: (u: number) => PlotUnit }
+  | { type: 'line'; xs: number[]; values: number[][]; counts: number[][]; cellUnits: number[][][]; unit: (u: number) => PlotUnit };
 
+/** `label` is the axis title WITHOUT its unit: the chart appends the unit, scaled to the ticks ("µA" for 0.000861 A). */
 export interface ResolvedAxis { label: string; unit?: string; scale: 'linear' | 'log'; min?: number; max?: number; reverse?: boolean }
 
 export interface ResolvedPlot {
@@ -91,8 +96,10 @@ export interface ResolvedPlot {
   autoTitle: string;
   x?: ResolvedAxis;
   y?: ResolvedAxis;
-  /** Colour groups in legend order; `['']` when there is no colour. */
+  /** Colour groups in legend order; `['']` when there is no colour (or the colour is continuous, see `colorScale`). */
   groups: string[];
+  /** Set when a scatter is coloured by a continuous field: the range its colourbar covers. */
+  colorScale?: { label: string; unit?: string; lo: number; hi: number };
   colorLabel?: string;
   /** How values were combined, in words ("mean of Vth per wafer"), when they were. */
   aggregation?: string;
@@ -245,8 +252,6 @@ const AGG_WORD: Record<PlotAggregate, string> = { mean: 'Mean', median: 'Median'
 
 // ── the plot ─────────────────────────────────────────────────────────────────────────────────────────────
 
-const unitSuffix = (unit?: string) => (unit ? ` (${unit})` : '');
-
 function axisFor(role: 'x' | 'y', label: string, unit: string | undefined, spec: PlotSpec, values: Iterable<number>, notes: string[]): ResolvedAxis {
   const a: PlotAxis = spec.axes?.[role] ?? {};
   let scale = a.scale ?? 'linear';
@@ -256,9 +261,27 @@ function axisFor(role: 'x' | 'y', label: string, unit: string | undefined, spec:
   return { label: a.label ?? label, unit, scale, min: a.min, max: a.max, reverse: a.reverse };
 }
 
-function emptyResult(spec: PlotSpec, items: readonly PlotItem[], issues: string[]): ResolvedPlot {
+/**
+ * The title a plot has until the reader types one, from its field names alone: a plot that cannot be drawn still
+ * needs a name in its heading, or the card reads as an empty box with nothing to say what it was for.
+ */
+function titleFromSpec(spec: PlotSpec, ctx: PlotContext): string {
+  const { mark, encoding: enc } = spec;
+  const x = enc.x ? fieldLabel(enc.x, ctx.testDefs) : (mark === 'box' || mark === 'bar') ? 'Wafer' : undefined;
+  const y = enc.y ? fieldLabel(enc.y, ctx.testDefs) : undefined;
+  switch (mark) {
+    case 'scatter': return x && y ? `${y} vs ${x}` : 'Scatter';
+    case 'histogram': { const v = y ?? (enc.x ? fieldLabel(enc.x, ctx.testDefs) : undefined); return v ?? 'Histogram'; }
+    case 'line': return x && y ? `${y} over ${x}` : 'Line';
+    case 'box': return y && x ? `${y} by ${x}` : 'Box';
+    case 'bar': return x ? (y ? `${y} by ${x}` : `Dies by ${x}`) : 'Bar';
+    default: return '';
+  }
+}
+
+function emptyResult(spec: PlotSpec, items: readonly PlotItem[], issues: string[], ctx: PlotContext = {}): ResolvedPlot {
   return {
-    spec, issues, notes: [], level: 'die', autoTitle: spec.title ?? '', groups: [''],
+    spec, issues, notes: [], level: 'die', autoTitle: titleFromSpec(spec, ctx), groups: [''],
     population: { wafers: items.length, dies: items.reduce((n, it) => n + it.dies.length, 0) },
     plotted: 0, omitted: [],
   };
@@ -267,10 +290,10 @@ function emptyResult(spec: PlotSpec, items: readonly PlotItem[], issues: string[
 /** Resolves `spec` over `items`. Never throws for a plot that cannot be drawn: it returns the reasons. */
 export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext = {}): ResolvedPlot {
   const versionIssue = plotIssue(spec);
-  if (versionIssue) return emptyResult(spec, items, [versionIssue]);
+  if (versionIssue) return emptyResult(spec, items, [versionIssue], ctx);
   const rows = flatten(items);
   const r: Resolver = { items, rows, ctx };
-  const fail = (...issues: string[]) => ({ ...emptyResult(spec, items, issues), autoTitle: spec.title ?? '' });
+  const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
 
   const mark = spec.mark;
   const enc = spec.encoding;
@@ -306,18 +329,21 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
   if (colorCol?.issue && (colorSpec === undefined || 'follow' in colorSpec)) colorCol = undefined;
 
   const issues = [xCol?.issue, yCol?.issue, colorCol?.issue].filter((s): s is string => !!s);
-  if (colorCol && colorCol.kind === 'numeric' && !('meta' in colorCol.field)) {
-    issues.push(`${colorCol.label} cannot be a colour yet: colour by a category such as wafer, split or bin`);
+  // A measured value or a wafer figure colours a scatter on a gradient; a lot field with numbers in it (temperature,
+  // slot) is a handful of values and colours as a category. Everywhere else a colour is a category.
+  const continuous = !!colorCol && colorCol.kind === 'numeric' && !('meta' in colorCol.field);
+  if (continuous && mark !== 'scatter') {
+    issues.push(`${colorCol!.label} is continuous, so it can colour a scatter but not a ${mark}: colour by a category such as wafer, split or bin`);
   }
   if (issues.length) return fail(...issues);
 
   // Level.
   const used = [xCol, yCol].filter((c): c is FieldColumn => !!c);
   let level: 'die' | 'wafer' = spec.level ?? (used.some(c => c.level === 'die') ? 'die' : 'wafer');
-  if (colorCol?.level === 'die' && level === 'wafer') {
+  if (colorCol?.level === 'die' && level === 'wafer' && !continuous) {
     return fail(`${colorCol.label} is per die, so it cannot colour a plot of one mark per wafer`);
   }
-  const dieOnly = [xCol, colorCol].filter((c): c is FieldColumn => !!c && c.level === 'die');
+  const dieOnly = [xCol, continuous ? undefined : colorCol].filter((c): c is FieldColumn => !!c && c.level === 'die');
   if (yCol && yCol.level === 'wafer' && yCol.weights && dieOnly.length) {
     return fail(`${yCol.label} is per wafer, so it cannot be split by ${dieOnly[0].label}, which is per die`);
   }
@@ -325,6 +351,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
 
   const nUnits = level === 'die' ? rows.dies.length : items.length;
   const itemOf = (u: number) => (level === 'die' ? rows.item[u] : u);
+  const unitInfo = (u: number): PlotUnit => ({ item: itemOf(u), die: level === 'die' ? rows.dies[u] : undefined });
 
   // A column as one value per unit. A die-level numeric column at wafer level is aggregated per wafer.
   const aggHow: PlotAggregate = spec.aggregate && spec.aggregate !== 'yield' ? spec.aggregate : 'mean';
@@ -348,7 +375,11 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
   let groups = [''];
   let groupOf = new Int32Array(nUnits);
   let colorLabel: string | undefined;
-  if (colorCol) {
+  let colorValues: Float64Array | undefined;
+  if (colorCol && continuous) {
+    colorLabel = colorCol.label;
+    colorValues = numAt(colorCol);
+  } else if (colorCol) {
     colorLabel = colorCol.label;
     const cc = catAt(colorCol);
     const labels = new Map<string, number>();
@@ -374,6 +405,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
   let marks: PlotMarks;
   let xAxis: ResolvedAxis | undefined, yAxis: ResolvedAxis | undefined;
   let aggregation: string | undefined;
+  let colorScale: ResolvedPlot['colorScale'];
   let plotted = 0;
   const groupCount = groups.length;
 
@@ -385,34 +417,42 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     for (let u = 0; u < nUnits; u++) {
       if (!Number.isFinite(xs[u])) { omit(xCol!.label); continue; }
       if (!Number.isFinite(ys[u])) { omit(yCol!.label); continue; }
-      points.push({ x: xs[u], y: ys[u], group: groupOf[u], item: itemOf(u), die: level === 'die' ? rows.dies[u] : undefined });
+      if (colorValues && !Number.isFinite(colorValues[u])) { omit(colorCol!.label); continue; }
+      points.push({ x: xs[u], y: ys[u], group: groupOf[u], item: itemOf(u), die: level === 'die' ? rows.dies[u] : undefined, ...(colorValues ? { value: colorValues[u] } : {}) });
     }
     plotted = points.length;
+    if (colorValues && points.length) {
+      const vs = points.map(p => p.value!);
+      colorScale = { label: colorCol!.label, unit: colorCol!.unit, lo: minOf(vs), hi: maxOf(vs) };
+    }
     marks = { type: 'scatter', points };
-    xAxis = axisFor('x', xCol!.label + unitSuffix(xCol!.unit), xCol!.unit, spec, points.map(p => p.x), notes);
-    yAxis = axisFor('y', yCol!.label + unitSuffix(yCol!.unit), yCol!.unit, spec, points.map(p => p.y), notes);
+    xAxis = axisFor('x', xCol!.label, xCol!.unit, spec, points.map(p => p.x), notes);
+    yAxis = axisFor('y', yCol!.label, yCol!.unit, spec, points.map(p => p.y), notes);
     aggregation = [perWaferNote(xCol!), perWaferNote(yCol!)].filter(Boolean).join('; ') || undefined;
   } else if (mark === 'histogram') {
     const vs = numAt(yCol!);
     const values: number[][] = Array.from({ length: groupCount }, () => []);
+    const units: number[][] = Array.from({ length: groupCount }, () => []);
     for (let u = 0; u < nUnits; u++) {
       if (!Number.isFinite(vs[u])) { omit(yCol!.label); continue; }
-      values[groupOf[u]].push(vs[u]); plotted++;
+      values[groupOf[u]].push(vs[u]); units[groupOf[u]].push(u); plotted++;
     }
-    marks = { type: 'histogram', values };
-    xAxis = axisFor('x', yCol!.label + unitSuffix(yCol!.unit), yCol!.unit, spec, values.flat(), notes);
+    marks = { type: 'histogram', values, units, unit: unitInfo };
+    xAxis = axisFor('x', yCol!.label, yCol!.unit, spec, values.flat(), notes);
     yAxis = { label: 'Count', scale: 'linear', ...(spec.axes?.y?.label ? { label: spec.axes.y.label } : {}) };
     aggregation = perWaferNote(yCol!);
   } else if (mark === 'line') {
     const xs = numAt(xCol!), ys = numAt(yCol!);
     const xsSeen = new Set<number>();
     const cells = new Map<string, number[]>();
+    const cellUnitsMap = new Map<string, number[]>();
     for (let u = 0; u < nUnits; u++) {
       if (!Number.isFinite(xs[u])) { omit(xCol!.label); continue; }
       if (!Number.isFinite(ys[u])) { omit(yCol!.label); continue; }
       xsSeen.add(xs[u]);
       const k = `${groupOf[u]}|${xs[u]}`;
       (cells.get(k) ?? cells.set(k, []).get(k)!).push(ys[u]); plotted++;
+      (cellUnitsMap.get(k) ?? cellUnitsMap.set(k, []).get(k)!).push(u);
     }
     const xsSorted = [...xsSeen].sort((a, b) => a - b);
     const how = spec.aggregate ?? 'mean';
@@ -420,10 +460,12 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
       const cell = cells.get(`${g}|${x}`);
       return cell ? combine(cell, how === 'yield' ? 'mean' : how) : NaN;
     }));
-    marks = { type: 'line', xs: xsSorted, values };
-    xAxis = axisFor('x', xCol!.label + unitSuffix(xCol!.unit), xCol!.unit, spec, xsSorted, notes);
+    const counts = Array.from({ length: groupCount }, (_, g) => xsSorted.map(x => cells.get(`${g}|${x}`)?.length ?? 0));
+    const lineUnits = Array.from({ length: groupCount }, (_, g) => xsSorted.map(x => cellUnitsMap.get(`${g}|${x}`) ?? []));
+    marks = { type: 'line', xs: xsSorted, values, counts, cellUnits: lineUnits, unit: unitInfo };
+    xAxis = axisFor('x', xCol!.label, xCol!.unit, spec, xsSorted, notes);
     const yAgg = how === 'yield' ? 'mean' : how;
-    yAxis = axisFor('y', `${AGG_WORD[yAgg]} ${yCol!.label}${unitSuffix(yCol!.unit)}`, yCol!.unit, spec, values.flat(), notes);
+    yAxis = axisFor('y', `${AGG_WORD[yAgg]} ${yCol!.label}`, yCol!.unit, spec, values.flat(), notes);
     aggregation = `${AGG_WORD[yAgg].toLowerCase()} of ${yCol!.label} per ${xCol!.label}`;
   } else {
     // box and bar: one category per value of X.
@@ -449,12 +491,14 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     const ys = yCol ? numAt(yCol) : undefined;
     const ws = yCol ? weightAt(yCol) : undefined;
     const cells: number[][][] = Array.from({ length: groupCount }, () => categories.map(() => []));
+    const cellUnits: number[][][] = Array.from({ length: groupCount }, () => categories.map(() => []));
     const weights: number[][][] = Array.from({ length: groupCount }, () => categories.map(() => []));
     for (let u = 0; u < nUnits; u++) {
       const ci = labelsOf[u] === undefined ? undefined : catSeen.get(labelsOf[u]!);
       if (ci === undefined) { omit(xc.label); continue; }
       if (ys && !Number.isFinite(ys[u]) ) { omit(yCol!.label); continue; }
       cells[groupOf[u]][ci].push(ys ? ys[u] : 1);
+      cellUnits[groupOf[u]][ci].push(u);
       if (ws) weights[groupOf[u]][ci].push(ws[u]);
       plotted++;
     }
@@ -467,17 +511,19 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
       }
       return combine(cell, how);
     }));
-    marks = { type: mark === 'box' ? 'box' : 'bar', categories, cells, values };
+    // A wafer is its own category, so a click on it can open that wafer: the item behind each label.
+    const categoryItems = isWafer ? categories.map(c => labelsOf.findIndex((t, u) => t === c && u >= 0)) : undefined;
+    marks = { type: mark === 'box' ? 'box' : 'bar', categories, cells, cellUnits, unit: unitInfo, values, categoryItems: categoryItems?.map(u => (level === 'die' ? rows.item[u] : u)) };
     xAxis = { label: spec.axes?.x?.label ?? xc.label, scale: 'linear' };
     if (mark === 'bar') {
       const word = how === 'count' ? 'Count' : AGG_WORD[how];
-      const ylabel = wantsCount ? `Count of ${unitNoun}` : how === 'yield' ? 'Pooled yield (%)' : `${word} ${yCol!.label}${unitSuffix(yCol!.unit)}`;
-      yAxis = axisFor('y', ylabel, yCol?.unit, spec, values.flat(), notes);
+      const ylabel = wantsCount ? `Count of ${unitNoun}` : how === 'yield' ? 'Pooled yield' : `${word} ${yCol!.label}`;
+      yAxis = axisFor('y', ylabel, how === 'yield' ? '%' : (how === 'count' ? undefined : yCol?.unit), spec, values.flat(), notes);
       aggregation = wantsCount ? undefined
         : how === 'yield' ? `passing dies over judged dies, pooled per ${xc.label.toLowerCase()}`
         : `${word.toLowerCase()} of ${yCol!.label}${yCol!.level === 'die' && level === 'wafer' ? ' per wafer' : ''} per ${xc.label.toLowerCase()}`;
     } else {
-      yAxis = axisFor('y', yCol!.label + unitSuffix(yCol!.unit), yCol!.unit, spec, cells.flat(2), notes);
+      yAxis = axisFor('y', yCol!.label, yCol!.unit, spec, cells.flat(2), notes);
       aggregation = perWaferNote(yCol!);
     }
   }
@@ -494,7 +540,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
 
   return {
     spec, issues: [], notes, marks, level,
-    autoTitle: title(), x: xAxis, y: yAxis, groups, colorLabel, aggregation,
+    autoTitle: title(), x: xAxis, y: yAxis, groups, colorScale, colorLabel, aggregation,
     population: { wafers: items.length, dies: rows.dies.length },
     plotted,
     omitted: [...omittedBy].map(([field, count]) => ({ field, count })),
@@ -515,3 +561,199 @@ export function plotFootnote(resolved: ResolvedPlot): string {
   return parts.join(' · ');
 }
 
+
+// ── what can be chosen ────────────────────────────────────────────────────────────────────────────────────
+
+export type FieldGroup = 'Tests' | 'Die' | 'Wafer';
+
+/** One entry of the editor's field list. */
+export interface FieldOption {
+  field: PlotField;
+  /** The list text: the name, plus the test number so a filter box finds either. */
+  label: string;
+  /** The name alone ("Vth"), as a title would write it. */
+  name: string;
+  /** For a lot field: how many different values the wafers in view carry. */
+  distinct?: number;
+  group: FieldGroup;
+  kind: FieldKind;
+  level: 'die' | 'wafer';
+  /** Can divide the data into series or categories (a colour, a bar's X). */
+  categorical: boolean;
+}
+
+/** A stable string for a field, for list values and comparisons. */
+export function fieldKey(f: PlotField): string {
+  return 'test' in f ? `test:${f.test}` : 'builtin' in f ? `builtin:${f.builtin}` : `meta:${f.meta}`;
+}
+
+/**
+ * Everything a plot could put on an axis or a colour over this population: its parametric tests, the die fields it
+ * has data for, and the wafer and lot fields. Offered only when the population has something to show for it (no
+ * soft-bin entry for a lot with no soft bins), so the list is the lot's, not the library's.
+ */
+export function fieldCatalogue(items: readonly PlotItem[], ctx: PlotContext = {}): FieldOption[] {
+  const out: FieldOption[] = [];
+  const dies = items.flatMap(it => it.dies);
+  const present = new Set(dies.length ? testsPresent(dies, 'values') : []);
+  const defs = ctx.testDefs ?? [];
+  const tests = new Map<number, string | undefined>();
+  for (const d of defs) {
+    if (d.testType === 'F') continue;
+    if (present.has(d.testNumber) || !dies.length) tests.set(d.testNumber, d.name);
+  }
+  for (const n of present) if (!tests.has(n) && !defs.some(d => d.testNumber === n && d.testType === 'F')) tests.set(n, undefined);
+  for (const [n, name] of [...tests].sort((a, b) => a[0] - b[0])) {
+    out.push({
+      field: { test: n, ...(name ? { name } : {}) },
+      label: name ? `${name} · ${n}` : `Test ${n}`, name: name || `Test ${n}`,
+      group: 'Tests', kind: 'numeric', level: 'die', categorical: false,
+    });
+  }
+  const has = (f: (d: Die) => boolean) => dies.some(f);
+  const die = (builtin: PlotBuiltin, kind: FieldKind, categorical: boolean) =>
+    out.push({ field: { builtin }, label: BUILTIN_LABEL[builtin], name: BUILTIN_LABEL[builtin], group: 'Die', kind, level: 'die', categorical });
+  if (has(d => hasPosition(d))) { die('x', 'numeric', false); die('y', 'numeric', false); }
+  if (items.some(it => it.wafer) && has(d => hasPosition(d))) { die('ring', 'categorical', true); die('quadrant', 'categorical', true); }
+  if (has(d => d.hbin !== undefined)) die('hbin', 'categorical', true);
+  if (has(d => d.sbin !== undefined)) die('sbin', 'categorical', true);
+  if (has(d => d.siteNum !== undefined)) die('site', 'categorical', true);
+
+  const wafer = (builtin: PlotBuiltin, kind: FieldKind, categorical: boolean) =>
+    out.push({ field: { builtin }, label: BUILTIN_LABEL[builtin], name: BUILTIN_LABEL[builtin], group: 'Wafer', kind, level: 'wafer', categorical });
+  wafer('wafer', 'categorical', true);
+  if (items.length > 1) wafer('waferOrder', 'numeric', false);
+  wafer('yield', 'numeric', false);
+  wafer('dieCount', 'numeric', false);
+  const r: Resolver = { items, rows: { dies: [], item: new Uint32Array(0) }, ctx };
+  for (const f of buildFacetTable(items.map(it => ({ metadata: it.metadata, dieCount: it.dies.length })), { facetableOnly: false, curation: ctx.curation })) {
+    if (f.values.length === 0) continue;
+    const col = resolveField({ meta: f.key }, r);
+    out.push({
+      field: { meta: f.key }, label: f.label || prettyMetaKey(f.key), name: f.label || prettyMetaKey(f.key), group: 'Wafer',
+      kind: col.kind, level: 'wafer', categorical: true, distinct: f.values.length,
+    });
+  }
+  return out;
+}
+
+export type PlotRole = 'x' | 'y' | 'color';
+
+/**
+ * The fields that make sense for a role of a mark, so the editor never offers a choice that can only fail:
+ * values must be numeric; a bar or box groups by a category (or a lot field with a handful of values); a colour is
+ * always a category, since a continuous colour is not drawn yet.
+ */
+export function fieldsForRole(catalogue: readonly FieldOption[], mark: PlotSpec['mark'], role: PlotRole): FieldOption[] {
+  const valueRole = role === 'y' || (role === 'x' && (mark === 'scatter' || mark === 'line' || mark === 'histogram'));
+  // A scatter can also be coloured on a gradient by a measured value or a wafer figure.
+  if (role === 'color') return catalogue.filter(f => f.categorical || (mark === 'scatter' && f.kind === 'numeric'));
+  if (valueRole) return catalogue.filter(f => f.kind === 'numeric');
+  // A bar or box X: categories, or a numeric lot field, each value its own category.
+  return catalogue.filter(f => f.categorical);
+}
+
+/**
+ * A first plot for this population: the scatter of the first two tests, a histogram when there is one, a bar of
+ * yield by wafer when there are none. Never an empty editor.
+ */
+export function defaultPlot(catalogue: readonly FieldOption[], id: string): PlotSpec {
+  const tests = catalogue.filter(f => f.group === 'Tests');
+  if (tests.length >= 2) return { id, mark: 'scatter', encoding: { x: tests[0].field, y: tests[1].field } };
+  if (tests.length === 1) return { id, mark: 'histogram', encoding: { y: tests[0].field } };
+  return { id, mark: 'scatter', encoding: { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' } } };
+}
+
+
+// ── titles that no longer match their plot ─────────────────────────────────────────────────────────────────
+
+/** Words a title uses of everything, not of a field: naming one of these says nothing about what is plotted. */
+const GENERIC_NAMES = new Set(['wafer', 'dies', 'die x', 'die y', 'wafer order']);
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const mentions = (title: string, name: string) =>
+  name.length >= 3 && new RegExp(`(^|[^A-Za-z0-9_])${escapeRe(name)}($|[^A-Za-z0-9_])`, 'i').test(title);
+
+export interface TitleDrift {
+  /** Fields the title names that the plot does not use: the title is describing something else. */
+  names: string[];
+  /** Fields the plot plots that the title leaves out, when the title does describe its fields. */
+  omits: string[];
+}
+
+/**
+ * Whether a title the reader TYPED still describes its plot. A title written for one pair of tests goes on naming them
+ * after the fields change, and nothing else would tell the reader the chart is no longer what it says. Two checks:
+ *
+ * - the title names a test (or another measured field) the plot does not use;
+ * - the title names one of the plot's X or Y fields but not the other, so it is half a description.
+ *
+ * A title that names none of the plot's fields is free text ("Process check") and is left alone. Lot fields are not
+ * checked for the first, since their names are everyday words and a followed colour changes with Group by. An
+ * automatic title is always accurate and is never checked.
+ */
+export function titleDrift(spec: PlotSpec, catalogue: readonly FieldOption[]): TitleDrift {
+  const title = spec.title?.trim();
+  const none: TitleDrift = { names: [], omits: [] };
+  if (!title) return none;
+  const colour = spec.encoding.color;
+  const used = [spec.encoding.x, spec.encoding.y, colour].filter((f): f is PlotField => isField(f));
+  const isUsed = (f: PlotField) => used.some(u => sameField(u, f));
+  const names = catalogue
+    .filter(o => !GENERIC_NAMES.has(o.name.toLowerCase()) && !('meta' in o.field) && !isUsed(o.field) && mentions(title, o.name))
+    .map(o => o.name);
+  const roles = [spec.encoding.x, spec.encoding.y].filter((f): f is PlotField => isField(f));
+  const nameOf = (f: PlotField) => catalogue.find(o => sameField(o.field, f))?.name ?? fieldLabel(f);
+  const named = roles.filter(f => !GENERIC_NAMES.has(nameOf(f).toLowerCase()) && mentions(title, nameOf(f)));
+  const missing = roles.filter(f => !GENERIC_NAMES.has(nameOf(f).toLowerCase()) && !mentions(title, nameOf(f)));
+  const omits = named.length > 0 || names.length > 0 ? missing.map(nameOf) : [];
+  return { names, omits };
+}
+
+const list = (a: readonly string[]) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+
+/** `titleDrift` in a sentence for the reader, or null when the title is fine. */
+export function describeTitleDrift(d: TitleDrift): string | null {
+  const parts: string[] = [];
+  if (d.names.length) parts.push(`The title names ${list(d.names)}, which this plot does not show.`);
+  if (d.omits.length) parts.push(`It does not name ${list(d.omits)}, which this plot shows.`);
+  return parts.length ? parts.join(' ') : null;
+}
+
+// ── example plots ──────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One example of each chart type that this population can show, so a reader who has not built a plot before has
+ * something to start from: a scatter of the first two tests, a histogram of the first, a box of the first by wafer, a
+ * bar of yield by the first lot field that divides the wafers (by wafer when none does), and the first test over wafer
+ * order as a line. A type is left out when the population cannot support it (a line needs two wafers). Untitled, so
+ * each one is named by what it plots.
+ */
+export function examplePlots(catalogue: readonly FieldOption[], waferCount: number, newId: () => string): PlotSpec[] {
+  const tests = catalogue.filter(f => f.group === 'Tests').map(f => f.field);
+  const out: PlotSpec[] = [];
+  const manyWafers = waferCount > 1;
+  if (tests.length >= 2) out.push({ id: newId(), mark: 'scatter', encoding: { x: tests[0], y: tests[1] } });
+  if (tests.length >= 1) out.push({ id: newId(), mark: 'histogram', encoding: { y: tests[0], color: { none: true } } });
+  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), mark: 'box', encoding: { x: { builtin: 'wafer' }, y: tests[0], color: { none: true } } });
+  if (manyWafers) {
+    const dividing = catalogue.find(f => 'meta' in f.field && f.distinct !== undefined && f.distinct >= 2 && f.distinct <= Math.max(2, Math.floor(waferCount / 2)));
+    out.push({ id: newId(), mark: 'bar', encoding: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
+  }
+  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), mark: 'line', encoding: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean' });
+  return out;
+}
+
+
+/**
+ * The test a click on this plot should open a wafer on: the plot's own measurement, so the map shows the values the
+ * plot is about rather than the bins. A scatter takes its X (as the Insights scatter does), then its Y, then its
+ * colour; every other chart type its values. `undefined` when the plot has no test in it (yield against wafer order),
+ * where the wafer's own default map is the right one.
+ */
+export function plotTestNumber(spec: PlotSpec): number | undefined {
+  const { x, y, color } = spec.encoding;
+  const order = spec.mark === 'scatter' ? [x, y, color] : spec.mark === 'histogram' ? [y, x] : [y];
+  for (const f of order) if (isField(f) && 'test' in f) return f.test;
+  return undefined;
+}
