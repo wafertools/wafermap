@@ -578,7 +578,26 @@ test('renderWaferMap onSaveImage hook intercepts the PNG download', () => {
   }
 });
 
-test('renderWaferMap onSaveText hook intercepts the Summary panel\'s CSV export', () => {
+/** The Summary panel no longer exports itself: its "Data tables" button opens the tables in a modal. Opens it
+ *  (a dynamic import, so a tick later) and clicks Statistics > "Test values CSV". */
+async function exportTestValuesCsvFromDataTables(window, root) {
+  const open = [...root.querySelectorAll('button')].find((b) => b.textContent === 'Data tables');
+  assert.ok(open, 'the Summary panel has a Data tables button');
+  click(window, open);
+  const stats = await waitUntil(() => window.document.querySelector('[data-wmap-data-view="statistics"]'));
+  assert.ok(stats, 'the Data tables modal opened');
+  click(window, stats);
+  const csv = [...window.document.querySelectorAll('button')].find((b) => /Test values CSV$/.test(b.textContent));
+  assert.ok(csv, 'the Statistics view has the Test values CSV button');
+  click(window, csv);
+}
+
+async function waitUntil(find, tries = 200) {
+  for (let i = 0; i < tries; i++) { const v = find(); if (v) return v; await new Promise((r) => setTimeout(r, 5)); }
+  return find();
+}
+
+test('renderWaferMap onSaveText hook intercepts the Data tables CSV export', async () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -611,9 +630,8 @@ test('renderWaferMap onSaveText hook intercepts the Summary panel\'s CSV export'
         onSaveText: (text, name, mimeType) => { saved.push({ text, name, mimeType }); },
       });
 
-      const exportBtn = [...root.querySelectorAll('button')].find((b) => /CSV$/.test(b.textContent));
-      assert.ok(exportBtn, 'Export CSV button should exist in the Test Values section');
-      click(window, exportBtn);
+      assert.ok(![...root.querySelectorAll('button')].some((b) => /CSV$/.test(b.textContent)), 'the docked panel has no CSV buttons of its own');
+      await exportTestValuesCsvFromDataTables(window, root);
 
       assert.equal(saved.length, 1, 'onSaveText should be called exactly once');
       assert.match(saved[0].text, /Vth/, 'hook receives the CSV text, including the test name');
@@ -628,7 +646,7 @@ test('renderWaferMap onSaveText hook intercepts the Summary panel\'s CSV export'
   }
 });
 
-test('saved files are named for the lot and wafer on screen, whichever export saves them', () => {
+test('saved files are named for the lot and wafer on screen, whichever export saves them', async () => {
   // Every export used to be named for its content alone, so a PNG and CSV from
   // two wafers of one lot were indistinguishable on disk (dies.csv, dies (1).csv).
   const { window, root, cleanup } = setupDom();
@@ -660,7 +678,7 @@ test('saved files are named for the lot and wafer on screen, whichever export sa
 
     const button = (pred) => [...root.querySelectorAll('button')].find(pred);
     click(window, button((b) => b.ariaLabel === 'Download PNG'));
-    click(window, button((b) => /CSV$/.test(b.textContent)));
+    await exportTestValuesCsvFromDataTables(window, root);
     assert.deepEqual(images, ['LOT123_W05_hard-bin.png'], 'map PNG: lot, wafer, then the map title');
     assert.deepEqual(texts, ['LOT123_W05_test-values.csv'], 'Summary panel CSV: lot, wafer, then the export');
 
@@ -705,7 +723,7 @@ test('a hidden Summary panel is rendered when it is opened, not before', () => {
   }
 });
 
-test('a host downloadFilename prefixes every file the map saves, PNG and CSV alike', () => {
+test('a host downloadFilename prefixes every file the map saves, PNG and CSV alike', async () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -731,7 +749,7 @@ test('a host downloadFilename prefixes every file the map saves, PNG and CSV ali
     });
     const buttons = [...root.querySelectorAll('button')];
     click(window, buttons.find((b) => b.ariaLabel === 'Download PNG'));
-    click(window, buttons.find((b) => /CSV$/.test(b.textContent)));
+    await exportTestValuesCsvFromDataTables(window, root);
     assert.equal(images.length, 1);
     assert.match(images[0], /^LOT123_sort_W05_.+\.png$/, 'the PNG: prefix, then the wafer — the lot is already in the prefix');
     assert.deepEqual(texts, ['LOT123_sort_W05_test-values.csv'], 'CSVs take the prefix too');

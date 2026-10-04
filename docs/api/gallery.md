@@ -152,8 +152,8 @@ to be pre-built.
                                             // (see "User guide extension" below) — only relevant when showHelpButton is true
   lotStatsSummary?:        LotStatsSummary   // lot-level stats from analyzeWaferLot — adds a Summary button to the toolbar; per-wafer findings are drawn from the lot analysis automatically and badged onto the Wafer Yield rows
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state (§5.4.2)
-  dieList?:                DieListDisplayOptions // "View die list" link inside the Summary panel — every die
-                                            // across the whole lot, pooled, with a Wafer column. Not a toolbar
+  dieList?:                DieListDisplayOptions // "Data tables" button inside the Summary panel — Statistics, every die
+                                            // across the whole lot (pooled, with a Wafer column) and one row per wafer. Not a toolbar
                                             // button; requires summaryPanel to be reachable. Default ENABLED
                                             // (shows automatically whenever the Summary panel is); set
                                             // { enabled: false } to hide it. §5.4.4

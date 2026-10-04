@@ -587,6 +587,8 @@ at least a point below the rest.
 
 ![Wafer summary report](images/report-wafer-summary.png)
 
+A **Data tables** button beside it opens the same tables as Insights' Data tab ([Data tables](#data-tables)) over this wafer, or over the whole lot in a gallery: Statistics, every die, and, for a lot, one row per wafer — each with Export CSV and Copy. It does not need Insights to be switched on.
+
 ### Why some findings name two bins
 
 A finding may read **"hard bin and soft bin 3 (Fail) (same dies)"**. That is one

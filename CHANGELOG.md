@@ -33,6 +33,13 @@ under `### Breaking`.
   which writes the table as shown in the order shown, and **Copy** (tab-separated, up to 200,000 cells). The Dies
   export can be **Wide** (a column per test) or **Long** (a row per die per test). `InsightsOptions.defaultView`
   accepts `'data'`, and the tab button carries `data-wmap-insights-tab="data"`.
+- **The docked Summary panel has no CSV buttons.** The "Test values CSV" and "Functional CSV" buttons are gone from its
+  tables (and from the lot panel's); the **Data tables** button beside the report button opens the same tables, with Export CSV
+  and Copy. Insights' Data tab and the modal keep them.
+- **The Summary panel's "View die list" is now "Data tables".** It opens the Data tab's tables in a modal over the wafer or lot the
+  panel describes — Statistics and Dies, plus Wafers for a lot — each with Export CSV and Copy, and it works with Insights
+  turned off. The Dies table is virtual, so `dieList.maxRows` no longer limits it (it still limits the coordinate-less map
+  replacement and the "+N dies without position" footer). `dieList.enabled` gates the button as before.
 - **Drilldown can open the selection as a table.** The right-click menu on a map selection, a wafer or a chart mark gains
   **Dies** and **Test statistics**: the Data tab's tables over just those dies, in a modal that names the population,
   with Export CSV and Copy (a saved file is named for the selection and carries a Wafer column). On a bins-only

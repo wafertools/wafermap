@@ -275,7 +275,7 @@ test('buildTestSection / buildFunctionalTestSection CSVs never contain a die-lev
   assert.ok(!saved2.text.split('\n')[0].toLowerCase().includes('part'));
 });
 
-// ── "View die list" link: gates the modal that reuses buildDieListSection ──
+// ── "Data tables" button: gates the modal of Statistics | Dies (| Wafers) tables ──
 //
 // No dedicated toolbar button — reached only from an already-open summary
 // panel, the same way "Summary report" opens the HTML report without one.
@@ -290,35 +290,41 @@ function clickLink(panel, text) {
   btn.click();
 }
 
-test('renderWaferSummaryContent — "View die list" is present by default (no dieListOptions at all)', () => {
+test('renderWaferSummaryContent — "Data tables" is present by default (no dieListOptions at all)', () => {
   const panel = panelDiv();
   renderWaferSummaryContent(panel, {
     wafer: wafer({ metadata: { lot: 'L1' } }),
     dies: [die({ hbin: 1 })],
   });
-  assert.ok([...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+  assert.ok([...panel.querySelectorAll('button')].some(b => b.textContent === 'Data tables'));
 });
 
-test('renderWaferSummaryContent — "View die list" is absent when explicitly disabled', () => {
+test('renderWaferSummaryContent — "Data tables" is absent when explicitly disabled', () => {
   const panel = panelDiv();
   renderWaferSummaryContent(panel, {
     wafer: wafer({ metadata: { lot: 'L1' } }),
     dies: [die({ hbin: 1 })],
     dieListOptions: { enabled: false },
   });
-  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'Data tables'));
 });
 
-test('renderWaferSummaryContent — "View die list" is absent when there are no dies, even with the default enabled', () => {
+test('renderWaferSummaryContent — "Data tables" is absent when there are no dies, even with the default enabled', () => {
   const panel = panelDiv();
   renderWaferSummaryContent(panel, {
     wafer: wafer({ metadata: {} }),
     dies: [],
   });
-  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'Data tables'));
 });
 
-test('renderWaferSummaryContent — "View die list" opens a modal with this wafer\'s dies and metadata', () => {
+const untilFound = async (find, tries = 200) => {
+  for (let i = 0; i < tries; i++) { const v = find(); if (v) return v; await new Promise(r => setTimeout(r, 5)); }
+  return find();
+};
+const dieRows = () => [...document.querySelectorAll('.wmap-dielist-table tbody tr[aria-rowindex]')];
+
+test('renderWaferSummaryContent — "Data tables" opens a modal with this wafer\'s dies and metadata', async () => {
   const panel = panelDiv();
   document.body.innerHTML = '';
   renderWaferSummaryContent(panel, {
@@ -326,17 +332,17 @@ test('renderWaferSummaryContent — "View die list" opens a modal with this wafe
     dies: [die({ hbin: 1, metadata: { part_id: 'XJ-1' } }), die({ hbin: 2 })],
     dieListOptions: { enabled: true },
   });
-  clickLink(panel, 'View die list');
+  clickLink(panel, 'Data tables');
 
-  const modal = document.body.querySelector('.wmap-dielist-table');
-  assert.ok(modal, 'expected a die-list table to have been mounted into the modal');
+  assert.ok(await untilFound(() => document.body.querySelector('.wmap-dielist-table')), 'expected a die table to have been mounted into the modal');
   const headers = [...document.querySelectorAll('.wmap-dielist-th')].map(th => th.textContent);
   assert.ok(headers.some(h => /part/i.test(h)), `expected a part_id column: ${headers}`);
-  const rows = document.querySelectorAll('.wmap-dielist-table tbody tr');
-  assert.equal(rows.length, 2);
+  assert.equal(dieRows().length, 2);
+  // Statistics is offered alongside; a single wafer has no Wafers table.
+  assert.deepEqual([...document.querySelectorAll('[data-wmap-data-view]')].map(b => b.dataset.wmapDataView), ['statistics', 'dies']);
 });
 
-test('renderLotSummaryContent — "View die list" pools every wafer\'s dies with a Wafer column', () => {
+test('renderLotSummaryContent — "Data tables" pools every wafer\'s dies with a Wafer column, and offers a Wafers table', async () => {
   const panel = panelDiv();
   document.body.innerHTML = '';
   const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 2 }, perWafer: [] };
@@ -345,15 +351,15 @@ test('renderLotSummaryContent — "View die list" pools every wafer\'s dies with
     { label: 'W2', wafer: wafer({ metadata: { lot: 'L1', waferId: 'W2' } }), dies: [die({ hbin: 2 }), die({ hbin: 1 })] },
   ];
   renderLotSummaryContent(panel, { lotSummary, items, dieListOptions: { enabled: true } });
-  clickLink(panel, 'View die list');
+  clickLink(panel, 'Data tables');
 
+  assert.ok(await untilFound(() => document.body.querySelector('.wmap-dielist-table')));
   const headers = [...document.querySelectorAll('.wmap-dielist-th')].map(th => th.textContent);
   assert.equal(headers[0], 'Wafer', `expected the Wafer column leading: ${headers}`);
-
-  const rows = [...document.querySelectorAll('.wmap-dielist-table tbody tr')];
+  const rows = dieRows();
   assert.equal(rows.length, 3, 'all dies across both wafers');
-  const waferCol = rows.map(r => r.querySelector('td').textContent);
-  assert.deepEqual(waferCol.sort(), ['W1', 'W2', 'W2']);
+  assert.deepEqual(rows.map(r => r.querySelector('td').textContent).sort(), ['W1', 'W2', 'W2']);
+  assert.deepEqual([...document.querySelectorAll('[data-wmap-data-view]')].map(b => b.dataset.wmapDataView), ['statistics', 'dies', 'wafers']);
 });
 
 // ── "Summary report": opens in an in-app modal by default —
@@ -399,7 +405,7 @@ test('renderLotSummaryContent — "Summary report" opens an in-app modal too', a
   assert.ok(modal.querySelector('iframe'), 'expected the lot report HTML to be rendered via an iframe');
 });
 
-test('renderLotSummaryContent — "View die list" CSV carries only metadata common to every wafer', () => {
+test('renderLotSummaryContent — "Data tables" CSV carries only metadata common to every wafer', async () => {
   const panel = panelDiv();
   document.body.innerHTML = '';
   const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 2 }, perWafer: [] };
@@ -412,10 +418,10 @@ test('renderLotSummaryContent — "View die list" CSV carries only metadata comm
   renderLotSummaryContent(panel, {
     lotSummary, items, dieListOptions: { enabled: true }, onSaveText: (text) => { saved.text = text; },
   });
-  clickLink(panel, 'View die list');
+  clickLink(panel, 'Data tables');
 
-  const exportBtn = [...document.querySelectorAll('button')].find(b => /CSV$/.test(b.textContent));
-  assert.ok(exportBtn, 'expected an Export CSV button inside the die-list modal');
+  const exportBtn = await untilFound(() => document.querySelector('[data-wmap-data-export]'));
+  assert.ok(exportBtn, 'expected an Export CSV button inside the modal');
   exportBtn.click();
 
   const headerLine = saved.text.split('\n')[0];
@@ -423,20 +429,20 @@ test('renderLotSummaryContent — "View die list" CSV carries only metadata comm
   assert.ok(!headerLine.includes('Product'), `varying field must not appear: ${headerLine}`);
 });
 
-test('renderLotSummaryContent — "View die list" is present by default (no dieListOptions at all)', () => {
+test('renderLotSummaryContent — "Data tables" is present by default (no dieListOptions at all)', () => {
   const panel = panelDiv();
   const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 1 }, perWafer: [] };
   const items = [{ label: 'W1', wafer: wafer({ metadata: {} }), dies: [die({ hbin: 1 })] }];
   renderLotSummaryContent(panel, { lotSummary, items });
-  assert.ok([...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+  assert.ok([...panel.querySelectorAll('button')].some(b => b.textContent === 'Data tables'));
 });
 
-test('renderLotSummaryContent — "View die list" is absent when explicitly disabled', () => {
+test('renderLotSummaryContent — "Data tables" is absent when explicitly disabled', () => {
   const panel = panelDiv();
   const lotSummary = { level: 'lot', hasNotableFindings: false, findings: [], lotYieldSeries: [], stats: { waferCount: 1 }, perWafer: [] };
   const items = [{ label: 'W1', wafer: wafer({ metadata: {} }), dies: [die({ hbin: 1 })] }];
   renderLotSummaryContent(panel, { lotSummary, items, dieListOptions: { enabled: false } });
-  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'View die list'));
+  assert.ok(![...panel.querySelectorAll('button')].some(b => b.textContent === 'Data tables'));
 });
 
 // ── CSV identity columns are IDENTITY, not the whole metadata blob ──────────

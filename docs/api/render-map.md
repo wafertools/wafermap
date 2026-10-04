@@ -239,8 +239,9 @@ Plus:
                                             // dialog. When omitted, the default download behaviour is unchanged.
                                             // suggestedName is the generated name, with extension (§5.4.5)
   onSaveText?:             (text: string | Blob, suggestedName: string, mimeType: string) => void | Promise<void>
-                                            // host hook for every built-in "Export CSV" button — Summary/Insights test-values
-                                            // and functional-tests tables, and the die-list table (§5.4.1). Mirrors
+                                            // host hook for every built-in "Export CSV" button — the Data tables (Statistics, Dies,
+                                            // Wafers; from the Summary panel's Data tables button, drilldown and Insights' Data tab)
+                                            // and the correlation matrix (§5.4.1). The docked Summary panel has no CSV buttons of its own. Mirrors
                                             // onSaveImage — when provided, called instead of a browser <a download> (a
                                             // silent no-op in Tauri/Electron/WebView2). When omitted, the default
                                             // download behaviour is unchanged. `text` is a string, or a Blob for a
@@ -513,18 +514,18 @@ charts are its whole subject.
 
 The die list is the general "show me the raw dies" table — one row per die, with an Export CSV
 button. It backs three built-in surfaces — the coordinate-less map replacement, the "+N dies
-without position" footer, and the "View die list" Summary panel link, below — all configured
+without position" footer, and the Summary panel's "Data tables" button, below — all configured
 by the one `dieList` option (`DieListDisplayOptions`).
 
-**"View die list"** is a link inside the always-available Summary panel (§5.4.2/§6.5), not a
+**"Data tables"** is a button inside the always-available Summary panel (§5.4.2/§6.5), not a
 new toolbar button — deliberately, since the toolbar already carries a dozen buttons and this
 reuses an existing entry point the same way "Summary report" opens the HTML report without one
-either. **On by default** whenever a Summary panel is reachable at all — set `enabled: false`
+either. It opens the Insights Data tab's tables in a modal — **Statistics** and **Dies**, each with Export CSV and Copy — and works with `insights: { enabled: false }`; the Dies table is virtual, so `maxRows` does not apply to it. **On by default** whenever a Summary panel is reachable at all — set `enabled: false`
 to hide it:
 
 ```ts
 renderWaferMap(container, result, {
-  summaryPanel: {},   // the panel this link lives inside — "View die list" appears automatically
+  summaryPanel: {},   // the panel this button lives inside — "Data tables" appears automatically
 });
 
 renderWaferMap(container, result, {
@@ -533,8 +534,8 @@ renderWaferMap(container, result, {
 });
 ```
 
-On `renderWaferMap` it opens **this wafer's own dies**. On `renderWaferGallery` (§6.5) the
-equivalent `GalleryOptions.dieList` opens **every wafer in the lot, pooled**, with a leading
+On `renderWaferMap` it opens **this wafer's own dies** (and its statistics). On `renderWaferGallery` (§6.5) the
+equivalent `GalleryOptions.dieList` opens **every wafer in the lot, pooled** (plus a **Wafers** table, one row per wafer), with a leading
 `Wafer` column (one per die, resolved from each card's own `label`) and wafer-metadata columns
 computed via `commonMetadata` — a field common to every wafer appears once; a field that
 varies across the lot (a mixed-lot pool) does not appear at all, rather than printing one

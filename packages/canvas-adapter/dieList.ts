@@ -36,10 +36,12 @@ const withUnit = (label: string, unit: string | undefined): string => (unit ? `$
  *  identity data by mistake. */
 export interface DieListDisplayOptions {
   /**
-   * Show a "View die list" link inside the Summary panel (`renderWaferMap`)
+   * Show a "Data tables" button inside the Summary panel (`renderWaferMap`)
    * / lot Summary panel (`renderWaferGallery`) that opens this wafer's — or,
-   * in the gallery, the whole lot's — dies as a table in a modal, with the
-   * same "Export CSV" button every die list has. **Default
+   * in the gallery, the whole lot's — tables in a modal: Statistics and Dies
+   * (and, for a lot, Wafers), each with Export CSV and Copy. The Dies table is
+   * virtual, so `maxRows` does not apply to it. Works whether or not Insights
+   * is enabled. **Default
    * `true`** — set `enabled: false` to hide it. Requires a Summary panel to
    * be reachable at all (`RenderOptions.summaryPanel` / `GalleryOptions.summaryPanel`),
    * since that panel is this link's only home; irrelevant otherwise.
@@ -48,7 +50,8 @@ export interface DieListDisplayOptions {
    * without position" footer, both of which show a die list unconditionally
    * regardless of this flag — those exist because there is literally nothing
    * else to show, not as an opt-in extra. The rest of this options object
-   * (column selection, `maxRows`, …) is shared by both surfaces.
+   * (column selection, `maxRows`, …) is shared by those two surfaces and the modal's Dies table
+   * (which ignores `maxRows`).
    */
   enabled?: boolean;
   /**

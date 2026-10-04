@@ -21,10 +21,10 @@ import { prettyKey } from '../core/utils.js';
 import { tableToTsv, type CsvCell, type CsvColumn } from '../core/tableCsv.js';
 import { commonMetadata } from '../stats/facets.js';
 import { buildYieldData } from '../stats/yield.js';
-import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
 import { testLabel } from '../renderer/testLabel.js';
-import { resolveDieColumns } from './dieList.js';
+import { resolveDieColumns, type DieListDisplayOptions } from './dieList.js';
 import { createVirtualTable, type VirtualColumn } from './virtualTable.js';
 import { exportCsv } from './tableExport.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip, type SaveTextHandler } from './toolbar.js';
@@ -77,6 +77,10 @@ export interface DataSectionDeps {
   buildStatistics: (items: DataItem[]) => { cards: HTMLElement[]; destroy: () => void };
   /** Which views to offer. Default all three. */
   views?: readonly DataView[];
+  /** Host display choices for the Dies table (`RenderOptions.dieList`): which metadata columns to show. */
+  dieListOptions?: DieListDisplayOptions;
+  /** Label/order hints for die metadata columns, e.g. `WaferMapResult.metadataFields`. */
+  metadataFields?: MetadataFieldDef[];
   /** Set when the tables describe part of a population (a drilldown selection): what to say after the
    *  counts ("selected on W03"), and a wafer column and file-name tag so a file says so too. */
   population?: { phrase: string; fileTag: string };
@@ -243,6 +247,8 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
   if (dies.length === 0) return emptyView(doc, 'No dies to show.');
 
   const { columns, visibleColumns } = resolveDieColumns(dies, deps.allTestDefs, {
+    ...deps.dieListOptions,
+    metadataFields: deps.metadataFields,
     extraColumn: items.length > 1 || deps.population ? { label: 'Wafer', get: d => waferLabelByDie.get(d) } : undefined,
     getWafer: anyWafer ? (d => waferByDie.get(d)) : undefined,
     ringCount: deps.ringCount,
@@ -468,60 +474,87 @@ function segmented(
   return { el, set: key => { selected = key; paint(); } };
 }
 
-// ── A drilldown selection as tables ──────────────────────────────────────────
+// ── The tables in a modal ────────────────────────────────────────────────────
 
-export interface SelectionTablesInput {
+export interface DataTablesInput {
   doc: Document;
-  /** One entry per wafer the population spans. */
-  items: ReadonlyArray<{ label: string; dies: Die[]; waferIndex?: number; wafer?: Wafer }>;
+  /** One entry per wafer. `wafer` gives ring/quadrant and the lot/product columns; `passBins` and
+   *  `statsSummary` give the Wafers view its yield and means. */
+  items: ReadonlyArray<{ label: string; dies: Die[]; waferIndex?: number; wafer?: Wafer; passBins?: readonly number[]; statsSummary?: DataItem['statsSummary'] }>;
   testDefs: TestDef[] | undefined;
-  /** Who the dies are, in words: "selected on W03". */
-  population: string;
-  view: 'dies' | 'statistics';
+  /** Set when the tables describe part of a population — a drilldown selection: who the dies are, in
+   *  words ("selected on W03"). A saved file then says so in its name and a Wafer column. Omit for a whole wafer or lot. */
+  population?: string;
+  view: DataView;
+  /** Which views to offer. Default Dies and Statistics, plus Wafers when there is more than one wafer. */
+  views?: readonly DataView[];
+  ringCount?: number;
+  metadataFields?: MetadataFieldDef[];
+  dieListOptions?: DieListDisplayOptions;
   onSaveText?: SaveTextHandler;
 }
 
 /**
- * The Dies and Statistics tables for a population picked out by drilldown (a map
- * selection, or one wafer), in the same controls as the Data tab — for a modal.
+ * The Data tab's tables for a population, in the same controls, for a modal —
+ * a drilldown selection, or a wafer or lot opened from the Summary panel. It does
+ * not need Insights to be enabled: it is built from the dies it is given.
  * Statistics is the Test Values and Functional Tests tables over just those dies,
- * stamped with the population so a saved file says what it covers.
+ * stamped with their identity so a saved file says what it covers.
  */
-export function renderSelectionTables(input: SelectionTablesInput): { el: HTMLElement; destroy: () => void } {
+export function renderDataTables(input: DataTablesInput): { el: HTMLElement; destroy: () => void } {
   const { doc } = input;
   const host = doc.createElement('div');
   Object.assign(host.style, { display: 'flex', flexDirection: 'column', minWidth: '0', minHeight: '0', flex: '1', padding: SPACE.md } as Partial<CSSStyleDeclaration>);
-  const items: DataItem[] = input.items.map((it, i) => ({ label: it.label, dies: it.dies, waferIndex: it.waferIndex ?? i, wafer: it.wafer }));
+  const items: DataItem[] = input.items.map((it, i) => ({ ...it, waferIndex: it.waferIndex ?? i }));
   const allDies = items.flatMap(it => it.dies);
   const allDefs = input.testDefs ?? [];
   const parametric = allDefs.filter(isParametricTest);
-  const phrase = `${plural(allDies.length, 'die')} ${input.population}`;
+  const views = input.views ?? (items.length > 1 ? ['statistics', 'dies', 'wafers'] as const : ['statistics', 'dies'] as const);
 
-  let view = input.view;
+  // Identity for the Test Values CSV: the population in words for a selection, else the wafer
+  // (or the wafers pooled), exactly as the panels' own tables stamp theirs.
+  const csvContext = input.population
+    ? { populationLabel: `${plural(allDies.length, 'die')} ${input.population}` }
+    : items.length > 1
+      ? { perWaferMetadata: items.map(it => it.wafer?.metadata ?? {}), populationLabel: `${plural(items.length, 'wafer')} pooled` }
+      : { waferMetadata: items[0]?.wafer?.metadata };
+
+  let view: DataView = views.includes(input.view) ? input.view : views[0];
   let layout: 'wide' | 'long' = 'wide';
   let current: { card: HTMLElement; destroy: () => void } | null = null;
   const draw = (): void => {
     current?.destroy();
     current = renderDataSection({
-      doc, items, testDefs: parametric, allTestDefs: allDefs, ringCount: 4,
+      doc, items, testDefs: parametric, allTestDefs: allDefs, ringCount: input.ringCount ?? 4,
       yieldByWaferIndex: new Map(), onSaveText: input.onSaveText,
-      views: ['dies', 'statistics'], view,
-      population: { phrase: input.population, fileTag: 'selection' },
+      views, view, dieListOptions: input.dieListOptions, metadataFields: input.metadataFields,
+      population: input.population ? { phrase: input.population, fileTag: 'selection' } : undefined,
       buildStatistics: its => {
         const dies = its.flatMap(it => it.dies);
-        const csv = { populationLabel: phrase };
         const cards: HTMLElement[] = [];
-        const values = buildTestSection(dies, parametric, undefined, undefined, input.onSaveText, csv, its.map(it => ({ dies: it.dies })), undefined, 'full');
+        const values = buildTestSection(dies, parametric, undefined, undefined, input.onSaveText, csvContext, its.map(it => ({ dies: it.dies })), undefined, 'full');
         if (values) cards.push(values);
-        const functional = buildFunctionalTestSection(dies, allDefs, undefined, input.onSaveText, csv);
+        const functional = buildFunctionalTestSection(dies, allDefs, undefined, input.onSaveText, csvContext);
         if (functional) cards.push(functional);
         return { cards, destroy: () => {} };
       },
-      onViewChange: v => { view = v as 'dies' | 'statistics'; draw(); },
+      onViewChange: v => { view = v; draw(); },
       diesLayout: layout, onDiesLayoutChange: l => { layout = l; },
     });
     host.replaceChildren(current.card);
   };
   draw();
   return { el: host, destroy: () => current?.destroy() };
+}
+
+/** A drilldown population as tables: Dies and Statistics, named for who the dies are. */
+export function renderSelectionTables(input: {
+  doc: Document;
+  items: DataTablesInput['items'];
+  testDefs: TestDef[] | undefined;
+  population: string;
+  view: 'dies' | 'statistics';
+  onSaveText?: SaveTextHandler;
+}): { el: HTMLElement; destroy: () => void } {
+  return renderDataTables({ ...input, views: ['statistics', 'dies'] });
 }

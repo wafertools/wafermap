@@ -156,6 +156,20 @@ const stubDrilldown = {
   },
 };
 
+// The Data tables (dataTab.ts: the Statistics, Dies and Wafers tables, the virtual table under them
+// and the CSV writer) open from the Summary panel's "Data tables" button and from drilldown, and
+// load on first use. Stubbed so the threshold measures what is downloaded up front.
+const stubDataTab = {
+  name: 'stub-datatab',
+  setup(b) {
+    b.onResolve({ filter: /\/dataTab\.js$/ }, () => ({ path: 'datatab', namespace: 'datatab' }));
+    b.onLoad({ filter: /.*/, namespace: 'datatab' }, () => ({
+      contents: 'export const renderDataTables = () => ({ el: document.createElement("div"), destroy() {} }); export const renderSelectionTables = renderDataTables;',
+      loader: 'js',
+    }));
+  },
+};
+
 // The report builders (renderSummaryReport.ts) are loaded when a report is opened, from the Summary
 // panel's report button and the gallery's. Stubbed so the threshold measures the map a consumer
 // downloads up front; the static-import test below holds the deferral.
@@ -190,7 +204,7 @@ test('wafermap (root) bundle size is within threshold', async () => {
 });
 
 test('wafermap/render initial chunk size is within threshold', async () => {
-  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubReport]);
+  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubDataTab, stubReport]);
   assert.ok(
     gz <= THRESHOLDS['wafermap/render (initial)'],
     `wafermap/render initial chunk too large: ${gz} bytes gzipped (threshold ${THRESHOLDS['wafermap/render (initial)']}). Check for new static imports of heavy modules.`,
@@ -247,6 +261,15 @@ test('userGuideHtml is not statically imported by renderWaferMap or renderWaferG
     !staticImportRe.test(gallerySrc),
     'renderWaferGallery.js has a static import of userGuideHtml — must use dynamic import() instead.',
   );
+});
+
+test('dataTab is not statically imported by the Summary panel or drilldown', async () => {
+  const { readFile } = await import('fs/promises');
+  const staticImportRe = /^import\s+(?!type\b).*dataTab/m;
+  for (const f of ['summaryPanel.js', 'drilldown.js', 'renderWaferMap.js', 'renderWaferGallery.js']) {
+    const src = await readFile(resolve(dist, 'packages/canvas-adapter', f), 'utf8');
+    assert.ok(!staticImportRe.test(src), `${f} has a static import of dataTab — must use dynamic import() instead.`);
+  }
 });
 
 test('drilldown is not statically imported by renderWaferMap or renderWaferGallery', async () => {

@@ -48,7 +48,8 @@ import { binBreakdownRows, binBreakdownTitle, binCountsFrom, totalOf } from '../
 import { poolFunctionalYield } from '../stats/testPassRate.js';
 import { makeLabeledSelect, makeSegmented } from './charts/chartShell.js';
 import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, openReportModal, wireTooltip, type SaveTextHandler } from './toolbar.js';
-import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
+import type { DieListDisplayOptions } from './dieList.js';
+import type { DataTablesInput } from './dataTab.js';
 import { exportCsv, type CsvColumn } from './tableExport.js';
 // Re-exported from its original home so existing importers keep working; the
 // implementation now lives in core/utils.ts (see its comment).
@@ -1551,7 +1552,11 @@ export function* buildTestSectionSteps(
       rows, 'test-values.csv', onSaveText,
     );
   });
-  headerRow.appendChild(exportBtn);
+  // The docked Summary panel (which owns its collapsed state, so passes `panel`) does not export:
+  // its "Data tables" button opens the same tables with Export CSV and Copy. A stateless build
+  // (the Data tab's Statistics view and modal) keeps the button.
+  const exportable = panel === undefined;
+  if (exportable) headerRow.appendChild(exportBtn);
   outer.appendChild(headerRow);
 
   const table = el('table', {
@@ -1659,7 +1664,7 @@ export function* buildTestSectionSteps(
     stateKey: 'testValues',
     panel,
     render: content => content.appendChild(tableBlock),
-    control: () => exportBtn,
+    control: exportable ? () => exportBtn : undefined,
   });
   return shell;
 }
@@ -1734,7 +1739,11 @@ export function buildFunctionalTestSection(
       rows, 'functional-tests.csv', onSaveText,
     );
   });
-  headerRow.appendChild(exportBtn);
+  // The docked Summary panel (which owns its collapsed state, so passes `panel`) does not export:
+  // its "Data tables" button opens the same tables with Export CSV and Copy. A stateless build
+  // (the Data tab's Statistics view and modal) keeps the button.
+  const exportable = panel === undefined;
+  if (exportable) headerRow.appendChild(exportBtn);
   outer.appendChild(headerRow);
 
   const table = el('table', {
@@ -1794,7 +1803,7 @@ export function buildFunctionalTestSection(
   headerRow.remove();
   const { outer: shell } = collapsibleSection(
     titleText, true, undefined,
-    { stateKey: 'functionalTests', panel, render: content => content.appendChild(fnBlock), control: () => exportBtn },
+    { stateKey: 'functionalTests', panel, render: content => content.appendChild(fnBlock), control: exportable ? () => exportBtn : undefined },
   );
   return shell;
 }
@@ -2878,64 +2887,29 @@ function reportButtonRow(...buttons: Array<HTMLButtonElement | null>): HTMLDivEl
 }
 
 /**
- * Opens the raw die-data table (`buildDieListSection`) in wmap's own modal —
- * the summary panel's "View die list" link, single-wafer and lot alike. No
- * dedicated toolbar button: reached only from an already-open summary panel,
- * the same way "Summary report" opens the HTML report without one either.
- * The modal's own chrome title stays generic; the section's own header
- * carries the specific die/wafer counts and the Export CSV button.
+ * Opens the Data tables (Statistics | Dies, and Wafers for a lot) in wmap's own
+ * modal — the same tables as Insights' Data tab, over the wafer or lot this panel
+ * describes, with Export CSV and Copy. It does not depend on Insights being
+ * enabled: the tables are loaded on first use and built from the dies given.
+ * The panel's "Data tables" button, single-wafer and lot alike.
  */
-function openDieListModal(
-  anchor: Element,
-  dies: Die[],
-  testDefs: TestDef[] | undefined,
-  sectionTitle: string,
-  waferMetadata: WaferMetadata | undefined,
-  metadataFields: MetadataFieldDef[] | undefined,
-  dieListOptions: DieListDisplayOptions | undefined,
-  onSaveText: SaveTextHandler | undefined,
-  extraColumn?: { label: string; get: (d: Die) => string | undefined },
-  /** Per-die wafer for Ring/Quadrant classification — a constant lookup for a
-   *  single-wafer die list, or a per-die WeakMap read for the lot-pooled one
-   *  (a die carries no wafer identity of its own; see `renderLotSummaryContent`). */
-  getWafer?: (die: Die) => Wafer | undefined,
-  ringCount?: number,
+function openDataTablesModal(
+  anchor: HTMLElement,
+  input: Omit<DataTablesInput, 'doc' | 'view'>,
+  title: string,
 ): void {
-  // `anchor` (a live element from this render, e.g. the panel itself) is
-  // required, not optional — without it `openOverlay` builds the modal onto
-  // bare `doc.body`, which sits BEHIND a host's own native <dialog> (shown
-  // via .showModal(), promoted to the browser's top layer) regardless of
-  // z-index. Every other openModal call site in this codebase passes one
-  // (see "Findings Summary" above, and renderWaferGallery.ts's detach
-  // window); this one originally didn't, and reopened exactly that
-  // already-solved bug for any host embedding wmap inside its own modal.
-  // ownerDocument passed explicitly for the same reason renderWaferMap.ts's
-  // expand modal does: `anchor` may live in a gallery card's own detached
-  // popup window, and without this the modal (and buildDieListSection's
-  // injected styles) build into the bare global `document` — the OPENER's
-  // page — while the modal box itself still visually lands inside the popup
-  // via `openModal`'s own anchor-based root resolution. The table then has
-  // no matching `.wmap-dielist-table` rule in the popup's own <head> and
-  // falls back to the browser's default (larger) table font.
+  // `anchor` (a live element from this render, the panel itself) is required,
+  // not optional: without it `openOverlay` builds the modal onto bare `doc.body`,
+  // which sits BEHIND a host's own native <dialog> (top layer) regardless of
+  // z-index. `ownerDocument` is passed explicitly for the same reason as the
+  // expand modal's: the anchor may live in a gallery card's own detached popup
+  // window, and the table's injected styles must reach that document.
   const ownerDocument = anchor.ownerDocument;
-  const handle = openModal({ title: 'Die list', onClose: () => {}, anchor, ownerDocument });
-  // openOverlay's contentWrap carries no padding of its own (by design —
-  // other buildDieListSection callers sit inside a parent that already pads,
-  // e.g. renderWaferMap.ts's mapless panel), so this modal is the one place
-  // that must add it, or the heading and table sit flush against the box edge.
-  handle.contentWrap.style.padding = '14px 16px';
-  const section = buildDieListSection(dies, testDefs, {
-    ...dieListOptions,
-    title: sectionTitle,
-    onSaveText,
-    waferMetadata,
-    metadataFields,
-    extraColumn,
-    getWafer,
-    ringCount,
-    ownerDocument,
+  void import('./dataTab.js').then(({ renderDataTables }) => {
+    const tables = renderDataTables({ ...input, doc: ownerDocument, view: 'dies' });
+    const handle = openModal({ title, onClose: () => tables.destroy(), anchor, ownerDocument, boxSize: { width: 'min(96vw, 1200px)', height: 'min(92vh, 780px)' } });
+    handle.contentWrap.appendChild(tables.el);
   });
-  if (section) handle.contentWrap.appendChild(section);
 }
 
 /**
@@ -3048,12 +3022,11 @@ export function* renderWaferSummaryContentSteps(
   const summaryReportBtn = openReport ? reportButton('Summary report', openReport) : null;
 
   const dieListBtn = ((dieListOptions?.enabled ?? true) && dies.length)
-    ? reportButton('View die list', () => {
-        openDieListModal(
-          panel, dies, testDefs, `Die list — ${dies.length} dies`,
-          wafer.metadata, metadataFields, dieListOptions, onSaveText,
-          undefined, () => wafer, ringCount,
-        );
+    ? reportButton('Data tables', () => {
+        openDataTablesModal(panel, {
+          items: [{ label: wafer.metadata?.waferId !== undefined ? String(wafer.metadata.waferId) : 'this wafer', dies, wafer }],
+          testDefs, ringCount, metadataFields, dieListOptions, onSaveText,
+        }, `Data tables — ${dies.length.toLocaleString()} dies`);
       })
     : null;
 
@@ -3286,25 +3259,20 @@ export function* renderLotSummaryContentSteps(
   }
 
   const dieListBtn = (dieListOptions?.enabled ?? true)
-    ? reportButton('View die list', () => {
+    ? reportButton('Data tables', () => {
         if (!allDies.length) return;
-        openDieListModal(
-          panel, allDies, testDefs,
-          `Die list — ${allDies.length} dies across ${items.length} wafer${items.length === 1 ? '' : 's'}`,
-          commonMetadata(items.filter((it): it is NonNullable<typeof it> => !!it).map(it => ({ metadata: it.wafer?.metadata }))),
-          items.find(it => it?.metadataFields?.length)?.metadataFields,
+        const present = items.map((it, i) => ({ it, i })).filter((x): x is { it: NonNullable<typeof x.it>; i: number } => !!x.it);
+        openDataTablesModal(panel, {
+          items: present.map(({ it, i }) => ({
+            label: waferDisplayLabel(it, i), dies: it.dies ?? [], waferIndex: i, wafer: it.wafer,
+            passBins: itemPassBins(it, passBins), statsSummary: it.statsSummary,
+          })),
+          testDefs, ringCount, metadataFields: items.find(it => it?.metadataFields?.length)?.metadataFields,
           dieListOptions, onSaveText,
-          { label: 'Wafer', get: (d) => waferLabelByDie.get(d) },
-          (d) => waferByDie.get(d), ringCount,
-        );
+        }, `Data tables — ${allDies.length.toLocaleString()} dies across ${items.length} wafer${items.length === 1 ? '' : 's'}`);
       })
     : null;
 
-  // No separate "Findings report" button: the summary report now carries both the
-  // lot-level findings and a per-wafer "Findings by Wafer" section, so a second
-  // button would offer a subset of the same document. It was also asymmetric —
-  // present only when some wafer had findings, and on the no-lot-stats fallback
-  // path it was the ONLY report available.
   const reportRow = reportButtonRow(summaryReportBtn, dieListBtn);
   if (reportRow) panel.appendChild(reportRow);
 
