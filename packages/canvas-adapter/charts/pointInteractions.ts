@@ -17,6 +17,9 @@ export interface PointInteractionOptions<P> {
   tooltip: HTMLElement;
   /** The points as last drawn. Only these can be hit: a chart that samples a large population hides the rest. */
   drawn: () => ReadonlyArray<DrawnPoint<P>>;
+  /** Finds the point a pointer is on by its own rule, in place of the nearest drawn point within a few pixels: a chart
+   *  whose points are columns (one per wafer) is hit anywhere along the column, not only on the dot. */
+  locate?: (e: MouseEvent) => P | null;
   /** Tooltip HTML for a point (already escaped). */
   describe: (p: P) => string;
   /** Whether a click on this point does anything. */
@@ -44,6 +47,7 @@ export function wirePointInteractions<P>(o: PointInteractionOptions<P>): { destr
   let hovered: P | null = null;
 
   const pointAt = (e: MouseEvent): P | null => {
+    if (o.locate) return o.locate(e);
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     let best: P | null = null;

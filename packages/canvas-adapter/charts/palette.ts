@@ -33,11 +33,26 @@ export const QUANTITY = '#4e79a7';
  * only (facet groups, overlaid histogram series), never quantities.
  * Yellow is omitted: it is illegible as a thin line/small swatch on white.
  */
-const CATEGORICAL = ['#0072B2', '#E69F00', '#009E73', '#CC79A7', '#56B4E9', '#D55E00', '#8C6D31', '#999999'];
+const OKABE_ITO = ['#0072B2', '#E69F00', '#009E73', '#CC79A7', '#56B4E9', '#D55E00', '#8C6D31', '#999999'];
+
+/**
+ * Eight more, for a chart with more than eight groups (a lot of 13 wafers coloured by wafer, say). Chosen, not derived:
+ * each was picked in turn as the colour farthest in CIELAB from every colour already in the palette (and from white),
+ * among those that stay at least a fixed distance from all of them as seen with deuteranopia and protanopia, so no
+ * second-round colour collapses onto a first-round one for a colour-blind reader. Written out rather than computed so
+ * it cannot drift, and so the first eight stay exactly the Okabe-Ito set. Past sixteen the palette wraps. Colour is
+ * still never the only carrier: a legend names every group, and a mark's tooltip says which group it is in.
+ */
+const SECOND_ROUND = ['#1f1ff9', '#f91ff9', '#05d105', '#65188b', '#f91f68', '#607afb', '#8b1818', '#1f4951'];
+
+const CATEGORICAL = [...OKABE_ITO, ...SECOND_ROUND];
 
 export function categorical(i: number): string {
   return CATEGORICAL[((i % CATEGORICAL.length) + CATEGORICAL.length) % CATEGORICAL.length];
 }
+
+/** How many series colours are distinct from one another before the palette repeats. */
+export const CATEGORICAL_COUNT = CATEGORICAL.length;
 
 function lerpHex(a: string, b: string, t: number): string {
   const pa = [parseInt(a.slice(1, 3), 16), parseInt(a.slice(3, 5), 16), parseInt(a.slice(5, 7), 16)];

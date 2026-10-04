@@ -17,7 +17,8 @@ import { isParametricTest, type TestDef } from '../../renderer/buildWaferMap.js'
 import { fmt } from '../../renderer/fmt.js';
 import { SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { QUANTITY } from './palette.js';
-import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLines, limitExtent, hasBothLimitKinds, stackLabelRows, strokeLimitLine, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
+import { wirePointInteractions } from './pointInteractions.js';
+import { cardShell, observeResize, makeTooltip, makeLinkedTestSelect, makeLinkedAxisPrefs, renderEmptyState, chartFillHeight, PADDING, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLines, limitExtent, hasBothLimitKinds, stackLabelRows, strokeLimitLine, makeAxisFormat, VERTICAL_TICK_SPACING_PX, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { escHtml } from '../../core/utils.js';
 import { maxOf } from '../../core/utils.js';
@@ -37,6 +38,11 @@ export interface TrendPanelOptions {
   onOpen?: (key: number, testNumber: number) => void;
   /** Right-click on a wafer's point — see `WaferContextMenuHandler`. */
   onWaferContextMenu?: WaferContextMenuHandler;
+  /**
+   * Drag across the trend to pick a run of wafers: their `key`s (the wafer indexes), the test shown, where the pointer
+   * was released and the canvas to anchor a menu on. The wafers' own dies are the population.
+   */
+  onSelectWafers?: (sel: { keys: number[]; testNumber: number }, at: { x: number; y: number }, anchor: HTMLElement) => void;
   /**
    * What the dashed reference line is, as a noun phrase — "lot mean" when the
    * items are one lot, else "mean of all wafers" (see stats/population.ts).
@@ -145,6 +151,7 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
     const syncHint = () => {
       hint.textContent = `Point = wafer mean, whisker = ±1σ, dashed = ${centreLabel} · wafers in slot order`
         + (onOpen ? ' · click a point to open that wafer' : '')
+        + (options.onSelectWafers ? ' · drag across the plot to select wafers' : '')
         + (lastClippedCount ? ` · axis clipped, ${lastClippedCount} outside` : '');
     };
     syncHint();
@@ -156,6 +163,8 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
     // Geometry as last DRAWN — never re-derived. Declared above `draw`, which
     // assigns it, so no temporal-dead-zone hazard if the call order changes.
     let plotGeom: { left: number; step: number } | null = null;
+    /** The wafers a drag picked, ringed until the next click on empty space. */
+    const selected = new Set<number>();
 
     const draw = () => {
       const width = Math.max(1, body.clientWidth);
@@ -318,6 +327,13 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
         ctx.beginPath();
         ctx.arc(x, yOf(d.mean), POINT_R, 0, Math.PI * 2);
         ctx.fill();
+        if (selected.has(i)) {
+          ctx.beginPath();
+          ctx.arc(x, yOf(d.mean), POINT_R + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = theme.text;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
       });
 
       // X labels — thinned so they never overlap, since a 25-wafer lot cannot
@@ -344,26 +360,42 @@ export function renderTrendPanel(options: TrendPanelOptions): TrendPanelHandle {
       return i >= 0 && i < data.length && data[i].count > 0 ? i : -1;
     };
 
-    canvas.addEventListener('mousemove', e => {
-      const i = indexAt(e);
-      if (i < 0) { tooltip.style.display = 'none'; canvas.style.cursor = 'default'; return; }
+    // A wafer is hit anywhere along its column, not only on the dot (`locate`), and a drag across the plot picks a run of
+    // wafers: the pointer, as everywhere else in Insights (pointInteractions.ts).
+    const describe = (i: number): string => {
       const d = data[i];
-      canvas.style.cursor = onOpen && d.key !== undefined ? 'pointer' : 'default';
-      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong><br>`
+      return `<strong>${escHtml(d.label)}</strong><br>`
         + escHtml(`mean ${fmt(d.mean, def?.unit)} · σ ${fmt(d.stddev, def?.unit)}`) + '<br>'
         + `n = ${d.count.toLocaleString()}`
         + (centre !== null ? '<br>' + escHtml(`Δ vs ${centreLabel} ${d.mean - centre >= 0 ? '+' : ''}${fmt(d.mean - centre, def?.unit)}`) : '')
         + (onOpen && d.key !== undefined ? '<br><em>click to open this wafer</em>' : '')
+        + (options.onSelectWafers ? '<br><em>drag across the plot to select wafers</em>' : '')
         + (options.onWaferContextMenu && d.key !== undefined ? WAFER_MENU_HINT : '');
-      tooltip.style.display = 'block';
-      positionChartTooltip(tooltip, card, e.clientX, e.clientY);
-    });
-    canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
-    canvas.addEventListener('click', e => {
-      const i = indexAt(e);
-      if (i < 0 || !onOpen) return;
-      const d = data[i];
-      if (d.key !== undefined && activeTest !== null) onOpen(d.key, activeTest);
+    };
+    wirePointInteractions<number>({
+      card, canvas, tooltip,
+      drawn: () => [],
+      locate: e => { const i = indexAt(e); return i < 0 ? null : i; },
+      describe,
+      clickable: i => !!onOpen && data[i].key !== undefined,
+      onOpen: i => { const d = data[i]; if (d.key !== undefined && activeTest !== null) onOpen!(d.key, activeTest); },
+      onHover: () => {},
+      select: options.onSelectWafers ? {
+        pick: ({ x0, x1 }) => {
+          if (!plotGeom) return [];
+          const g = plotGeom;
+          return data.map((_, i) => i).filter(i => data[i].count > 0 && g.left + i * g.step >= x0 && g.left + i * g.step <= x1);
+        },
+        onPicked: (picked, at) => {
+          selected.clear();
+          for (const i of picked) selected.add(i);
+          draw();
+          const keys = picked.map(i => data[i].key).filter((k): k is number => k !== undefined);
+          if (keys.length > 0 && activeTest !== null) options.onSelectWafers!({ keys, testNumber: activeTest }, at, canvas);
+        },
+        onClear: () => { selected.clear(); draw(); },
+        hasSelection: () => selected.size > 0,
+      } : undefined,
     });
     canvas.addEventListener('contextmenu', e => {
       const i = indexAt(e);

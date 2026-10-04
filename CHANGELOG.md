@@ -92,6 +92,14 @@ under `### Breaking`.
   ring or quadrant of the yield diagrams, and a plot's histogram bar, non-wafer bar or box, and line point each open the
   right-click menu on exactly the dies they count; a Wafers-table row opens its wafer. `dieFailsTest`, `diesInBucket`,
   `diesInRegion` and `bucketIndexOf` are the rules those picks share with the tallies they match.
+- **More of Insights is clickable, and a chart with many groups keeps its colours apart.** With Group by on, a column of the
+  overlaid value histogram opens the menu on that bucket's dies (across the groups, or the one the legend has emphasised);
+  a level of a sweep curve opens the dies measured there; a drag across the wafer-to-wafer trend selects the wafers it
+  crosses, ringed, and opens the menu on their dies (a click on a point still opens that wafer). The categorical series
+  palette has sixteen colours instead of eight (the first eight are unchanged): the second round was chosen for distance
+  from the first in CIELAB and for staying distinct under deuteranopia and protanopia, so a lot of 13 wafers coloured by
+  wafer no longer gives two wafers the same colour. `categorical(i)` wraps past sixteen. `wirePointInteractions` gains
+  `locate`, for charts whose marks are columns.
 - **Saved plots in the right-click menu.** The drilldown menu has a **Plots** section: each saved plot is drawn over the
   selected dies, and **New plot…** starts a draft on the selection that is kept only if it is added.
 - **`readPlotsFile` and `writePlotsFile`** (and the `PlotSpec` type) read and write the plots file. The reader is

@@ -117,9 +117,10 @@ export interface HistogramPanelOptions {
   onGroupChange?: (key: string | null) => void;
   /**
    * Click a bar: the dies it counts, per item, with the bar's range and the click, so the host can open a menu on them.
-   * Offered on the single-population view; the overlaid group view has no one bar to click.
+   * On the overlaid group view the bar is the bucket across every group, or across the one the legend has emphasised
+   * (`group` then says which): there is no one bar to click, so the column is the target.
    */
-  onSelectBucket?: (sel: { testNumber: number; low: number; high: number; items: Array<{ item: HistogramItem; dies: Die[] }> }, e: MouseEvent) => void;
+  onSelectBucket?: (sel: { testNumber: number; low: number; high: number; items: Array<{ item: HistogramItem; dies: Die[] }>; group?: string }, e: MouseEvent) => void;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -497,7 +498,8 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
 
     statsLabel.dataset.wmapCaption = '1';
     Object.assign(statsLabel.style, { fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
-    statsLabel.textContent = `${series.length} groups · max ${maxCount} dies/bucket`;
+    statsLabel.textContent = `${series.length} groups · max ${maxCount} dies/bucket`
+      + (options.onSelectBucket ? ' · click a column to chart or tabulate its dies' : '');
     body.appendChild(statsLabel);
 
     const legend = card.ownerDocument.createElement('div');
@@ -669,6 +671,18 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       }
     });
     canvas.addEventListener('mouseleave', () => { if (hoveredBucket !== -1) { hoveredBucket = -1; draw(); } tooltip.style.display = 'none'; });
+    if (options.onSelectBucket && groups) {
+      canvas.style.cursor = 'pointer';
+      canvas.addEventListener('click', e => {
+        const b = bucketAt(e.clientX - canvas.getBoundingClientRect().left);
+        if (b < 0 || activeTest === null) return;
+        const shown = emphasizedGroup ? groups.filter(g => g.key === emphasizedGroup) : groups;
+        const picked = diesInBucket(shown.flatMap(g => g.items), activeTest, ranges, b);
+        if (picked.length === 0) return;
+        tooltip.style.display = 'none';
+        options.onSelectBucket!({ testNumber: activeTest, low: ranges[b].rangeLow, high: ranges[b].rangeHigh, items: picked, ...(emphasizedGroup ? { group: emphasizedGroup } : {}) }, e);
+      });
+    }
 
     resizeHandle = observeResize(card, () => draw());
     draw();

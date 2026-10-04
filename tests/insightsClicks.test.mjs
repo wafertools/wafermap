@@ -246,3 +246,60 @@ test('with Group by on, the clustered bin pareto opens one bin of one group', ()
   assert.ok(m, 'a menu');
   assert.match(m.getAttribute('aria-label'), /in hard bin \d of (TT|FF)/);
 });
+
+// ── the ones that did nothing ──
+
+test('with Group by on, a column of the overlaid histogram opens the dies in that bucket across the groups', () => {
+  const { tab } = mount('distributions');
+  document.body.appendChild(tab.el);
+  tab.el.querySelector('[data-wmap-select="group-by"]').click();
+  [...document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
+  const c = card(tab, 'Value histogram');
+  assert.match(c.textContent, /click a column to chart or tabulate its dies/);
+  const m = clickUntilMenu(c.querySelector('canvas'), range(40, 70, 1), [100]);
+  assert.ok(m, 'a menu');
+  assert.match(m.getAttribute('aria-label'), /^Open a chart or table of \d+ dies with Vth from .+ to .+( on W\d| across [23] wafers)$/);
+});
+
+test('a sweep: a level of the curve opens the dies measured there', () => {
+  const sweep = { id: 's', title: 'Vth sweep', series: [{ label: 'Up', tests: [1050, 1060], xValues: [0, 5] }, { label: 'Down', tests: [1060, 1050], xValues: [0, 5] }] };
+  const { tab } = mount('sweeps', { sweeps: [sweep] });
+  const c = card(tab, 'Vth sweep');
+  assert.ok(c, 'the sweep card');
+  assert.match(c.textContent, /click a level to chart or tabulate the dies measured there/);
+  const m = clickUntilMenu(c.querySelector('canvas'), range(60, 560, 20), [100]);
+  assert.ok(m, 'a menu');
+  assert.match(m.getAttribute('aria-label'), /dies measured at .+, across 3 wafers$/);
+});
+
+test('the wafer trend: a drag across it picks a run of wafers, whose own dies are the population', async () => {
+  const { renderTrendPanel } = await import('../dist/packages/canvas-adapter/charts/trend.js');
+  const { items } = lotItems(5);
+  const picked = [];
+  const panel = renderTrendPanel({
+    items: items.map((it, i) => ({ label: it.label, key: i, dies: it.dies })), testDefs: DEFS,
+    onSelectWafers: (sel, at, anchor) => picked.push({ keys: sel.keys, test: sel.testNumber, at, anchor }),
+  });
+  document.getElementById('root').appendChild(panel.card);
+  const body = panel.card.querySelector('canvas').parentElement;
+  Object.defineProperty(body, 'clientWidth', { configurable: true, get: () => 700 });
+  panel.setTest(1060);   // rebuilds the canvas at the width the body now reports
+  const canvas = panel.card.querySelector('canvas');
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 300, width: 700, height: 300, x: 0, y: 0 });
+  assert.match(panel.card.textContent, /drag across the plot to select wafers/);
+  canvas.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 90, clientY: 50 }));
+  document.dispatchEvent(new dom.window.MouseEvent('mousemove', { bubbles: true, clientX: 450, clientY: 150 }));
+  document.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true, clientX: 450, clientY: 150 }));
+  assert.equal(picked.length, 1, 'a selection');
+  assert.deepEqual(picked[0].keys, [1, 2], 'the wafers whose points the drag crossed');
+  assert.deepEqual(picked[0].keys, [...picked[0].keys].sort(), 'in order');
+  assert.equal(picked[0].test, 1060);
+  assert.equal(picked[0].anchor, canvas);
+});
+
+test('a selection of wafers on the trend opens the menu on those wafers', () => {
+  // end to end through the Insights tab: the trend's host wiring names the selection
+  const { tab } = mount('distributions');
+  const c = card(tab, 'Wafer-to-wafer trend');
+  assert.match(c.textContent, /drag across the plot to select wafers/);
+});

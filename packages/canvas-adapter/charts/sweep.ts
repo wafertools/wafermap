@@ -75,6 +75,11 @@ export interface SweepPanelOptions {
   population?: string;
   testDefs: TestDef[] | undefined;
   onSaveImage?: SaveImageHandler;
+  /**
+   * Click a level of the curve: the tests measured there (one per series that has a value at it) and its label, with the
+   * click, so the host can pick out the dies that were measured and open a menu on them.
+   */
+  onSelectPoint?: (sel: { testNumbers: number[]; label: string }, e: MouseEvent) => void;
   ownerDocument?: Document;
 }
 
@@ -152,7 +157,8 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
     // Names the population and what a line is, so nobody reads the band as a
     // spec limit or the line as a single die.
     hint.textContent = `Line = median across ${populationPhrase(data.dieCount, dies.length, population)}, band = p10–p90`
-      + (spec.series.length > 2 ? ' · crossing and separation measured between the first two series' : '');
+      + (spec.series.length > 2 ? ' · crossing and separation measured between the first two series' : '')
+      + (options.onSelectPoint ? ' · click a level to chart or tabulate the dies measured there' : '');
 
     const canvas = doc.createElement('canvas');
     canvas.style.display = 'block';
@@ -367,26 +373,30 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
     draw();
     resizeHandle = observeResize(body, draw);
 
-    canvas.addEventListener('mousemove', e => {
+    /** The measured x nearest the pointer, across every series: hovering between two points still reports a real
+     *  measurement, not an interpolated one. `null` when nothing was measured. */
+    const nearestX = (e: MouseEvent): number | null => {
       const d = data;
-      if (d === null || geom === null) { tooltip.style.display = 'none'; return; }
-      const rect = canvas.getBoundingClientRect();
-      const px = e.clientX - rect.left;
+      if (d === null || geom === null) return null;
+      const px = e.clientX - canvas.getBoundingClientRect().left;
       // In axis space, like the positions it is compared against below.
       const xValue = geom.xLo + ((px - geom.left) / Math.max(1, geom.right - geom.left)) * (geom.xHi - geom.xLo);
-      const axOf = geom.ax;
-
-      // Nearest measured x across every series, so hovering between two points
-      // still reports a real measurement rather than an interpolated fiction.
       let best: { x: number; dist: number } | null = null;
       for (const s of d.series) {
         for (const p of s.points) {
           if (p.count === 0) continue;
-          const dist = Math.abs(axOf(p.x) - xValue);
+          const dist = Math.abs(geom.ax(p.x) - xValue);
           if (best === null || dist < best.dist) best = { x: p.x, dist };
         }
       }
-      if (best === null) { tooltip.style.display = 'none'; return; }
+      return best === null ? null : (best as { x: number }).x;
+    };
+
+    canvas.addEventListener('mousemove', e => {
+      const d = data;
+      const bestX = nearestX(e);
+      if (d === null || bestX === null) { tooltip.style.display = 'none'; return; }
+      const best = { x: bestX };
 
       const atX = d.series.map(s => s.points.find(q => q.x === best!.x && q.count > 0));
       const rows = d.series.map((s, si) => {
@@ -409,6 +419,18 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
       positionChartTooltip(tooltip, card, e.clientX, e.clientY);
     });
     canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+    if (options.onSelectPoint) {
+      canvas.style.cursor = 'pointer';
+      canvas.addEventListener('click', e => {
+        const d = data, x = nearestX(e);
+        if (d === null || x === null) return;
+        // The level clicked: each series' test there (a rising and a falling run have different tests at one x).
+        const here = d.series.flatMap(s => s.points.filter(p => p.x === x && p.count > 0));
+        if (here.length === 0) return;
+        tooltip.style.display = 'none';
+        options.onSelectPoint!({ testNumbers: here.map(p => p.testNumber), label: here[0].label }, e);
+      });
+    }
 
     writeFooter();
   }

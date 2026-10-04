@@ -810,7 +810,9 @@ Every mark on an Insights chart stands for something, and a click opens it:
 | A wafer's bar, box or point (Yield by wafer, the box plot, the trend, the scatter, a Plot-tab chart) | that wafer's map, on the test the chart is about (the bins, for Yield by wafer) |
 | A **bin** in the bin pareto (or a sub-bar of the grouped one) | the right-click menu on the dies in that bin |
 | A **test** in a pass-rate chart | the menu on the dies that fail that test, judged as the card is |
-| A bar of the **value histogram** | the menu on the dies whose values fall in that bar |
+| A bar of the **value histogram** (with Group by on, a column of it) | the menu on the dies whose values fall in that bar, across the groups, or in the one group the legend has emphasised |
+| A level of a **sweep** curve | the menu on the dies measured at that level |
+| A **drag** across the wafer-to-wafer **trend** | the menu on the dies of the wafers whose points the drag crossed (a click on a point still opens that wafer) |
 | A **ring** or **quadrant** of the yield diagrams | the menu on the dies it counts |
 | A cell of the correlation matrix | that pair in the scatter |
 | A test in the process-capability chart | that test in the other distribution charts |

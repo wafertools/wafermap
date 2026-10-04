@@ -140,7 +140,7 @@ export function bucketIndexOf(v: number, min: number, width: number, bucketCount
  * Values outside the buckets' range, which a clipped axis dropped, are not in any bucket.
  */
 export function diesInBucket(
-  items: HistogramItem[], testNumber: number, buckets: readonly HistogramBucket[], index: number,
+  items: HistogramItem[], testNumber: number, buckets: ReadonlyArray<Pick<HistogramBucket, 'rangeLow' | 'rangeHigh'>>, index: number,
 ): Array<{ item: HistogramItem; dies: Die[] }> {
   if (buckets.length === 0 || index < 0 || index >= buckets.length) return [];
   const min = buckets[0].rangeLow;

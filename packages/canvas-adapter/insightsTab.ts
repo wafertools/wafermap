@@ -22,6 +22,8 @@
 // were by default, from the first render, whenever "Group by" was set.
 
 import type { Die } from '../core/dies.js';
+import { isYieldEligibleDie } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
 import type { Wafer } from '../core/wafer.js';
 import type { LotStatsSummary, StatsSummary } from '../stats/types.js';
 import { MEAN_WAFER_YIELD_LABEL } from '../stats/presentation.js';
@@ -558,13 +560,18 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    * and a chart opened on it is of exactly those dies. Nothing happens when no die qualifies.
    */
   function openDiesMenu(e: MouseEvent, items: Item[], what: string, keep: (d: Die) => boolean, activeTest?: number): void {
+    openDiesMenuAt({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, items, what, keep, activeTest);
+  }
+
+  /** `openDiesMenu` for a gesture that reports where it ended rather than handing over its event (a drag). */
+  function openDiesMenuAt(at: { x: number; y: number }, anchor: HTMLElement, items: Item[], what: string, keep: (d: Die) => boolean, activeTest?: number): void {
     const picked = items
       .map(it => ({ it, dies: it.dies.filter(keep) }))
       .filter(x => x.dies.length > 0)
       .map(({ it, dies }) => ({ label: it.identity ?? it.label, dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins }));
     if (picked.length === 0) return;
     const population = picked.length === 1 ? `${what} on ${picked[0].label}` : `${what}, across ${picked.length} wafers`;
-    openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement,
+    openDrilldownMenu(at, anchor,
       { items: picked, population, testDefs: mergeTestDefs(items).defs, activeTest },
       { sweeps: deps.sweeps, plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
   }
@@ -1335,7 +1342,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         const picked = new Set(sel.items.flatMap(x => x.dies));
         const lo = fmt(sel.low, def?.unit, 'engineering'), hi = fmt(sel.high, def?.unit, 'engineering');
         openDiesMenu(e, items.filter(it => whose.has(it)),
-          `with ${def ? testLabel(def, def.testNumber) : `test ${sel.testNumber}`} from ${lo} to ${hi}`,
+          `with ${def ? testLabel(def, def.testNumber) : `test ${sel.testNumber}`} from ${lo} to ${hi}${sel.group ? ` in ${sel.group}` : ''}`,
           d => picked.has(d), sel.testNumber);
       },
       ownerDocument: doc,
@@ -1368,6 +1375,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       onOpen: openWafer
         ? (key, testNumber) => openWaferDetailModal(key, `Wafer ${items.find(it => it.waferIndex === key)?.label ?? key}`, testNumber)
         : undefined,
+      // Drag across the trend: a run of wafers, with their own dies as the population.
+      onSelectWafers: (sel, at, anchor) => {
+        const keys = new Set(sel.keys);
+        openDiesMenuAt(at, anchor, items.filter(it => keys.has(it.waferIndex)), 'selected in the trend', () => true, sel.testNumber);
+      },
       onWaferContextMenu: waferContextMenu(items),
       ownerDocument: doc,
     });
@@ -1433,7 +1445,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const sweeps = deps.sweeps ?? [];
     const unmatched = sweeps.filter(spec => !sweepAppliesTo(spec, testDefs));
     if (unmatched.length > 0) wrap.appendChild(sweepMismatchNotice(unmatched, sweeps.length));
-    const panels = sweeps.map(spec => renderSweepPanel({ spec, dies, testDefs, onSaveImage, ownerDocument: doc }));
+    const panels = sweeps.map(spec => renderSweepPanel({
+      spec, dies, testDefs, onSaveImage, ownerDocument: doc,
+      // A level of the curve is a set of tests: click it for the dies that were measured there.
+      onSelectPoint: (sel, e) => {
+        const measured = (d: Die) => sel.testNumbers.some(n => { const v = testValue(d, n); return v !== undefined && Number.isFinite(v); });
+        openDiesMenu(e, items, `measured at ${sel.label}`, d => isYieldEligibleDie(d) && measured(d), sel.testNumbers[0]);
+      },
+    }));
     for (const p of panels) wrap.appendChild(p.card);
     return { card: wrap, destroy: () => { for (const p of panels) p.destroy(); } };
   }
