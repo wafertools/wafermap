@@ -63,8 +63,12 @@ export interface YieldItem {
 
 export type YieldSortBy = 'yield' | 'label';
 
-/** Fallback only — used when an item doesn't carry a precomputed `yieldPercent`. */
-function yieldPercentFromDies(dies: Die[], passBins: readonly number[]): number {
+/**
+ * Passing and judged dies of one wafer: the eligible dies (not partial, not edge-excluded) that
+ * carry a bin. THE count behind every yield figure computed from dies, so a pooled yield over
+ * several wafers (the plot builder's) sums these rather than averaging percentages.
+ */
+export function yieldCounts(dies: readonly Die[], passBins: readonly number[]): { pass: number; total: number } {
   let pass = 0, total = 0;
   const passSet = new Set(passBins);
   for (const d of dies) {
@@ -74,6 +78,12 @@ function yieldPercentFromDies(dies: Die[], passBins: readonly number[]): number 
     total++;
     if (verdict) pass++;
   }
+  return { pass, total };
+}
+
+/** Fallback only — used when an item doesn't carry a precomputed `yieldPercent`. */
+function yieldPercentFromDies(dies: Die[], passBins: readonly number[]): number {
+  const { pass, total } = yieldCounts(dies, passBins);
   return total > 0 ? (pass / total) * 100 : 0;
 }
 
