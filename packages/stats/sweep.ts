@@ -64,7 +64,7 @@ export interface SweepSeriesSpec {
    * Read each test's x value from its NAME instead — for programs that record
    * the swept quantity only in the test text. A placeholder pattern, not a
    * regular expression: `{x}` reads a number, `*` matches any run of
-   * characters, everything else is literal. `"LRS_STATS_{x}"` reads 12,000 from
+   * characters, `?` matches exactly one character, everything else is literal. `"LRS_STATS_{x}"` reads 12,000 from
    * a test named `"Normalized_LRS= LRS_STATS_12K / …"`.
    *
    * - The pattern is found ANYWHERE in the name; no leading or trailing `*`.
@@ -258,6 +258,41 @@ function listTests(tests: number[], max = 16): string {
     : `${tests.slice(0, max).join(', ')}, … (${tests.length - max} more)`;
 }
 
+/**
+ * The names of the first few of `tests`, as they are in the data: what a name pattern has to match. A test the data
+ * does not hold is said not to be there, not shown as an empty name.
+ */
+function showNames(tests: number[], defs: ReadonlyMap<number, TestDef>, max = 3): string {
+  const clip = (t: string) => (t.length > 70 ? `${t.slice(0, 69)}…` : t);
+  const shown = tests.slice(0, max).map(tn => {
+    const def = defs.get(tn);
+    return def === undefined ? `${tn} (not in this data)` : `${tn} "${clip(def.name)}"`;
+  });
+  return shown.join(', ') + (tests.length > max ? `, … (${tests.length - max} more)` : '');
+}
+
+/** One test's line in the name-pattern preview. `x` is what the pattern reads from the name. */
+export interface NamePreviewRow { test: number; name?: string; x: number | null | { ambiguous: string } }
+
+/**
+ * What `series.xFromName` reads from the names of the series' first `max` tests, for the editor to show while the
+ * pattern is being written: the names as they are in the data, and the X each yields. The tests are expanded as the
+ * chart expands them (ranges included), so the preview and the chart cannot disagree about which tests there are.
+ * `error` is the pattern's own problem (none yet, or no `{x}`); the rows then carry names only.
+ */
+export function previewXFromName(
+  series: SweepSeriesSpec, testDefs: readonly TestDef[] | undefined, max = 4,
+): { rows: NamePreviewRow[]; total: number; error?: string } {
+  const defs = new Map((testDefs ?? []).map(d => [d.testNumber, d]));
+  const tests = resolveSeries(series, defs, []).tests;
+  const pattern = compileXNamePattern(series.xFromName ?? '');
+  const rows = tests.slice(0, max).map((test): NamePreviewRow => {
+    const name = defs.get(test)?.name;
+    return { test, name, x: 'error' in pattern || name === undefined ? null : readXFromName(pattern, name) };
+  });
+  return { rows, total: tests.length, ...('error' in pattern ? { error: pattern.error } : {}) };
+}
+
 /** X for point `i` — the physical value when the axis is physical, else the ordinal. */
 function xAt(xs: number[] | undefined, i: number): number {
   const v = xs?.[i];
@@ -304,7 +339,8 @@ function seriesX(r: ResolvedSeries, defs: Map<number, TestDef>, warnings: string
       warnings.push(`"${s.label}": xFromName "${s.xFromName}" found no x value in the name of ${unread.length === 1 ? 'test' : 'tests'} ${listTests(unread)}`
         + (ambiguous.length > 0
           ? ` — "${ambiguous[0]}" is written in capitals, where M could be milli or mega; put the letter in the pattern ("…{x}M…") and the unit in xLabel.`
-          : '.'));
+          : '.')
+        + ` The names are: ${showNames(unread, defs)}.`);
       return { asked: true };
     }
     return { xs, asked: true };

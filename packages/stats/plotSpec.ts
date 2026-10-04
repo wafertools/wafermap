@@ -1,6 +1,6 @@
 // The plot builder's saved recipe, and the file it travels in.
 //
-// A `PlotSpec` is plain data: which fields stand for X, Y and colour, what kind of mark draws them, and the
+// A `PlotSpec` is plain data: which fields stand for X, Y and colour, what kind of chart draws them, and the
 // handful of axis settings a user can change. It carries NO population (which wafers are in view is the
 // Insights scope or the drilldown selection), so the same spec works on any lot, and it holds no function, so
 // a host can keep it as JSON. The library never stores anything itself; the host keeps the list
@@ -10,19 +10,26 @@
 //   - `version` is an integer; a reader accepts any version up to its own and ignores fields it does not know.
 //   - Fields it does not know are KEPT on write, so a round trip through an older build does not strip a
 //     newer build's settings.
-//   - A mark or field kind it does not know is kept and reported by `plotIssue`, never dropped.
+//   - A chart or field kind it does not know is kept and reported by `plotIssue`, never dropped.
 //   - New fields are optional with a stated default, so a plot saved today means the same plot in a year.
 //
 // Pure, no DOM. Design record: notes/wafermap/design-plot-builder.md.
 
 import { newPlotId } from './plotId.js';
+import type { SweepSpec } from './sweep.js';
 export { newPlotId };
 
 export const PLOTS_FORMAT = 'wafermap-plots';
 export const PLOTS_VERSION = 1;
 
-export const PLOT_MARKS = ['scatter', 'histogram', 'box', 'bar', 'line'] as const;
-export type PlotMark = (typeof PLOT_MARKS)[number];
+/** The marker of the sweeps file tsmap wrote before sweeps became plots. A plots file reader accepts it. */
+export const SWEEPS_FORMAT = 'tsmap-sweeps';
+
+/** A sweep's own definition: a `SweepSpec` without the `id` and `title` the plot already carries. */
+export type SweepPayload = Omit<SweepSpec, 'id' | 'title'>;
+
+export const PLOT_CHARTS = ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep'] as const;
+export type PlotChart = (typeof PLOT_CHARTS)[number];
 
 export const PLOT_BUILTINS = ['wafer', 'x', 'y', 'ring', 'quadrant', 'hbin', 'sbin', 'site', 'yield', 'dieCount', 'waferOrder'] as const;
 export type PlotBuiltin = (typeof PLOT_BUILTINS)[number];
@@ -55,8 +62,10 @@ export interface PlotSpec {
   id: string;
   /** Set only when the user typed one; absent = the automatic title. */
   title?: string;
-  mark: PlotMark;
-  encoding: {
+  /** The kind of chart that draws the plot. */
+  chart: PlotChart;
+  /** Which field stands for each role. Absent for a sweep, which names runs of tests instead. */
+  fields?: {
     x?: PlotField;
     y?: PlotField;
     /** Absent = follow the tab's Group by. */
@@ -69,6 +78,8 @@ export interface PlotSpec {
   axes?: { x?: PlotAxis; y?: PlotAxis };
   /** Histogram bin count. Absent = automatic. */
   bins?: number;
+  /** The definition of a `sweep` chart: ordered runs of tests read as curves. Such a plot has no `fields`. */
+  sweep?: SweepPayload;
 }
 
 export interface ReadPlotsResult {
@@ -135,13 +146,64 @@ function readAxis(raw: unknown, where: string, warnings: string[]): PlotAxis | u
   return out;
 }
 
+const RANGE_TEXT = /^\s*\d+\s*(\.\.\s*\d+\s*)?$/;
+const isTestEntry = (v: unknown): boolean => (typeof v === 'number' && Number.isInteger(v)) || (typeof v === 'string' && RANGE_TEXT.test(v));
+
 /**
- * One plot from parsed JSON, or `null` when it cannot be a plot at all (no mark). Unknown keys survive; a
+ * A sweep's definition from parsed JSON. Lenient like the rest of the file: a series that cannot be read is named and
+ * left out, a setting that is wrong is dropped, and settings this build does not know are kept.
+ */
+export function readSweepPayload(raw: unknown, where: string, warnings: string[]): SweepPayload {
+  if (!isObject(raw)) { warnings.push(`${where}: no sweep definition, left empty`); return { series: [] }; }
+  const out: Record<string, unknown> = { ...raw };
+  delete out.id; delete out.title;
+  const list = Array.isArray(raw.series) ? raw.series : [];
+  if (!Array.isArray(raw.series)) warnings.push(`${where}.series: not a list, left empty`);
+  const series: unknown[] = [];
+  list.forEach((s, i) => {
+    const at = `${where}.series ${i + 1}`;
+    if (!isObject(s)) { warnings.push(`${at}: not an object, skipped`); return; }
+    const one: Record<string, unknown> = { ...s };
+    if (typeof s.label !== 'string' || s.label.trim() === '') one.label = `Series ${i + 1}`;
+    if (!Array.isArray(s.tests) || !s.tests.every(isTestEntry)) {
+      warnings.push(`${at}: its tests must be test numbers or ranges such as "1010..1030", skipped`);
+      return;
+    }
+    if ('xValues' in s && !(Array.isArray(s.xValues) && s.xValues.every(isFiniteNumber))) { warnings.push(`${at}.xValues: not a list of numbers, left out`); delete one.xValues; }
+    if ('xFromName' in s && typeof s.xFromName !== 'string') { warnings.push(`${at}.xFromName: not text, left out`); delete one.xFromName; }
+    if ('color' in s && typeof s.color !== 'string') delete one.color;
+    series.push(one);
+  });
+  out.series = series;
+  for (const k of ['xLabel', 'xUnit', 'yLabel'] as const) {
+    if (k in raw && typeof raw[k] !== 'string') { warnings.push(`${where}.${k}: not text, left out`); delete out[k]; }
+  }
+  if ('xScale' in raw && raw.xScale !== 'linear' && raw.xScale !== 'log') { warnings.push(`${where}.xScale: "${String(raw.xScale)}" is not linear or log, left out`); delete out.xScale; }
+  if ('crossing' in raw && typeof raw.crossing !== 'boolean') { warnings.push(`${where}.crossing: not true or false, left out`); delete out.crossing; }
+  if ('separationAt' in raw && !(Array.isArray(raw.separationAt) && raw.separationAt.every(isFiniteNumber))) { warnings.push(`${where}.separationAt: not a list of numbers, left out`); delete out.separationAt; }
+  return out as unknown as SweepPayload;
+}
+
+/** The plot a sweep becomes: its id and title go on the envelope, the rest is the payload. */
+export function sweepToPlot(spec: SweepSpec): PlotSpec {
+  const { id, title, ...payload } = spec;
+  return { id, ...(title ? { title } : {}), chart: 'sweep', sweep: payload };
+}
+
+/** The sweep a `sweep` plot defines, in the shape the sweep maths reads; `undefined` for any other chart. */
+export function plotToSweep(plot: PlotSpec): SweepSpec | undefined {
+  if (plot.chart !== 'sweep') return undefined;
+  return { ...(plot.sweep ?? { series: [] }), id: plot.id, title: plot.title ?? 'Sweep' };
+}
+
+/**
+ * One plot from parsed JSON, or `null` when it cannot be a plot at all (no chart). Unknown keys survive; a
  * setting that is wrong is dropped with a warning and the rest of the plot is kept.
  */
 export function readPlot(raw: unknown, where: string, warnings: string[]): PlotSpec | null {
   if (!isObject(raw)) { warnings.push(`${where}: not an object, skipped`); return null; }
-  if (typeof raw.mark !== 'string' || raw.mark === '') { warnings.push(`${where}: no mark, skipped`); return null; }
+  const chart = raw.chart;
+  if (typeof chart !== 'string' || chart === '') { warnings.push(`${where}: no chart, skipped`); return null; }
   const out: Record<string, unknown> = { ...raw };
 
   if (typeof raw.id !== 'string' || raw.id === '') { out.id = newPlotId(); warnings.push(`${where}: no id, given a new one`); }
@@ -149,29 +211,31 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
   if ('title' in raw && typeof raw.title !== 'string') { warnings.push(`${where}.title: not text, left out`); delete out.title; }
   else if (typeof raw.title === 'string' && raw.title.trim() === '') delete out.title;
 
-  const enc = isObject(raw.encoding) ? raw.encoding : {};
-  if (raw.encoding !== undefined && !isObject(raw.encoding)) warnings.push(`${where}.encoding: not an object, left empty`);
-  const encoding: Record<string, unknown> = { ...enc };
+  const enc = isObject(raw.fields) ? raw.fields : {};
+  if (raw.fields !== undefined && !isObject(raw.fields)) warnings.push(`${where}.fields: not an object, left empty`);
+  const fields: Record<string, unknown> = { ...enc };
   for (const role of ['x', 'y'] as const) {
-    const f = readField(enc[role], `${where}.encoding.${role}`, warnings);
-    if (f) encoding[role] = f; else delete encoding[role];
+    const f = readField(enc[role], `${where}.fields.${role}`, warnings);
+    if (f) fields[role] = f; else delete fields[role];
   }
   if (enc.color !== undefined) {
     const c = enc.color;
-    if (isObject(c) && 'follow' in c) { if (c.follow === 'groupBy') encoding.color = { follow: 'groupBy' }; else { encoding.color = c; } }
-    else if (isObject(c) && 'none' in c) encoding.color = { none: true };
+    if (isObject(c) && 'follow' in c) { if (c.follow === 'groupBy') fields.color = { follow: 'groupBy' }; else { fields.color = c; } }
+    else if (isObject(c) && 'none' in c) fields.color = { none: true };
     else {
-      const f = readField(c, `${where}.encoding.color`, warnings);
-      if (f) encoding.color = f; else delete encoding.color;
+      const f = readField(c, `${where}.fields.color`, warnings);
+      if (f) fields.color = f; else delete fields.color;
     }
   }
-  out.encoding = encoding;
+  // A sweep has no fields to name; any other chart always has the object, so a reader of the list can rely on it.
+  if (chart === 'sweep' && Object.keys(fields).length === 0) delete out.fields; else out.fields = fields;
 
   if ('level' in raw && raw.level !== 'die' && raw.level !== 'wafer') { warnings.push(`${where}.level: "${String(raw.level)}" is not die or wafer, left out`); delete out.level; }
   if ('aggregate' in raw && !(PLOT_AGGREGATES as readonly unknown[]).includes(raw.aggregate)) {
     warnings.push(`${where}.aggregate: "${String(raw.aggregate)}" is not known to this version, left out`); delete out.aggregate;
   }
   if ('bins' in raw && !(Number.isInteger(raw.bins) && (raw.bins as number) >= 1)) { warnings.push(`${where}.bins: not a whole number of at least 1, left out`); delete out.bins; }
+  if (chart === 'sweep') out.sweep = readSweepPayload(raw.sweep, `${where}.sweep`, warnings);
 
   if (raw.axes !== undefined) {
     if (!isObject(raw.axes)) { warnings.push(`${where}.axes: not an object, left out`); delete out.axes; }
@@ -211,10 +275,13 @@ export function readPlotsFile(text: string): ReadPlotsResult {
   let list: unknown;
   if (Array.isArray(json)) list = json;
   else if (isObject(json)) {
-    if (json.format !== PLOTS_FORMAT) {
+    if (json.format === SWEEPS_FORMAT) {
+      // A sweeps file from before sweeps were plots: each sweep is a plot with the sweep chart.
+      if (!Array.isArray(json.sweeps)) return { plots: [], warnings: [], error: 'The file has no "sweeps" list' };
+      list = json.sweeps.map(sw => (isObject(sw) ? { id: sw.id, title: sw.title, chart: 'sweep', sweep: sw } : sw));
+    } else if (json.format !== PLOTS_FORMAT) {
       return { plots: [], warnings: [], error: `This is not a plots file (expected "format": "${PLOTS_FORMAT}")` };
-    }
-    list = json.plots;
+    } else list = json.plots;
   } else return { plots: [], warnings: [], error: 'This is not a plots file' };
 
   if (!Array.isArray(list)) return { plots: [], warnings: [], error: 'The file has no "plots" list' };
@@ -261,13 +328,13 @@ export function addPlots(existing: readonly PlotSpec[], incoming: readonly PlotS
 }
 
 /**
- * Why this build cannot draw `plot`, or `undefined` when it can: a mark or field kind from a newer version.
+ * Why this build cannot draw `plot`, or `undefined` when it can: a chart or field kind from a newer version.
  * (A test that is missing from the open lot is a data question, answered by the resolver, not a version one.)
  */
 export function plotIssue(plot: PlotSpec): string | undefined {
-  if (!(PLOT_MARKS as readonly unknown[]).includes(plot.mark)) return 'Needs a newer version of this tool';
-  const fields = [plot.encoding.x, plot.encoding.y, plot.encoding.color];
-  for (const f of fields) {
+  if (!(PLOT_CHARTS as readonly unknown[]).includes(plot.chart)) return 'Needs a newer version of this tool';
+  const given = plot.fields ?? {};
+  for (const f of [given.x, given.y, given.color]) {
     if (f === undefined || (isObject(f) && ('follow' in f || 'none' in f))) continue;
     if (!isField(f)) return 'Needs a newer version of this tool';
   }

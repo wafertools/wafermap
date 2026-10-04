@@ -53,7 +53,7 @@
     plot-mode menu lists the others beside the measured tests, marked
     <strong>†</strong>. The sweep is a chart, so it is in the <strong>Insights</strong>
     tab — the chart button at the right of the gallery's toolbar, which this page opens
-    on its <strong>Sweeps</strong> view (or use <em>Show the sweep</em> below).
+    on its <strong>Plot</strong> view (or use <em>Show the sweep</em> below).
   </div>
 
   <div class="spec-part">
@@ -137,9 +137,10 @@
   <div class="spec-part">
     <h2>Part 2 · A sweep — a chart of the data</h2>
     <p>Not a test and not in the same list: a sweep is a <em>chart definition</em>,
-      passed to the renderer as <code>insights.sweeps</code> and drawn in the Insights
-      tab. It reads tests — measured or derived — but adds none. In tsmap it is a
-      separate sweeps file (Setup ▾ → Sweeps…), not part of the test definitions.</p>
+      passed to the renderer as a plot with <code>chart: 'sweep'</code> in
+      <code>insights.plots</code> and drawn on the Insights Plot tab. It reads tests —
+      measured or derived — but adds none. In tsmap it is saved with your plots, not
+      with the test definitions.</p>
     <p>This page has one sweep. The <a href="sweeps.html"><strong>parametric sweeps
       example</strong></a> has five, each a different use of the crossing and the width
       — temperature inversion, DIBL on a log scale, data retention, output drive with
@@ -157,16 +158,18 @@ const PULSE_V = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4];
 renderWaferGallery(container, items, {
   insights: {
     enabled: true,           // adds the Insights tab to the toolbar
-    defaultView: 'sweeps',   // …and opens it on Sweeps
-    sweeps: [{
+    defaultView: 'plot',     // …and opens it on the Plot tab
+    plots: [{
       id: 'threshold',
       title: 'SET / RESET threshold — crossing and width',
-      series: [
+      chart: 'sweep',
+      sweep: { series: [
         { label: 'SET',   tests: ['1200..1208'], xValues: PULSE_V },
         { label: 'RESET', tests: ['1210..1218'], xValues: PULSE_V },
       ],
-      separationAt: [0.40, 0.70, 1.00],   // levels to measure the width at
-      xLabel: 'Pulse amplitude', xUnit: 'V',
+        separationAt: [0.40, 0.70, 1.00],   // levels to measure the width at
+        xLabel: 'Pulse amplitude', xUnit: 'V',
+      },
     }],
   },
 });</pre>
@@ -174,8 +177,8 @@ renderWaferGallery(container, items, {
         </div>
         <div class="spec-notes">
           <p class="look"><strong>A sweep is a chart, not a test</strong>, so it is not in
-          the map's plot-mode menu: it is a card in the <strong>Insights</strong> tab's
-          <strong>Sweeps</strong> view. The button under the code opens it.</p>
+          the map's plot-mode menu: it is a card on the <strong>Insights</strong> tab's
+          <strong>Plot</strong> view. The button under the code opens it.</p>
           <p class="look"><strong><code>'1200..1208'</code> is the same range syntax as
           <code>t[1200..1208]</code> in the <code>SET Span</code> expression above</strong>,
           read by the same code, so the same text always names the same tests. It expands
@@ -352,7 +355,7 @@ renderWaferGallery(container, items, {
 
     renderWaferGallery(document.getElementById('gallery'), items, {
       lotStatsSummary,
-      insights:     { enabled: true, sweeps: SWEEPS, defaultView: 'sweeps' },
+      insights:     { enabled: true, plots: SWEEPS.map(({ id, title, ...sweep }) => ({ id, title, chart: 'sweep', sweep })), defaultView: 'plot' },
       summaryPanel: { placement: 'right' },
       // Open on the derived switching window, so the first thing on screen is a map of
       // something no instrument measured.
@@ -363,7 +366,7 @@ renderWaferGallery(container, items, {
     // "Show the sweep": scroll to the gallery and press its own Insights button —
     // the same control a reader would use, so the page shows where it is rather
     // than opening the tab by some route the reader cannot repeat. The gallery
-    // opens Insights on Sweeps because of `defaultView` above.
+    // opens Insights on the Plot tab because of `defaultView` above.
     document.getElementById('show-sweep').addEventListener('click', () => {
       const gallery = document.getElementById('gallery');
       gallery.scrollIntoView({ behavior: 'smooth', block: 'start' });

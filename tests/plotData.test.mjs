@@ -31,7 +31,7 @@ const lot = () => [
   wafer('W3', { n: 10, pass: 5, vth0: 0.50, meta: { split: 'TT', temperature: 85 } }),
 ];
 const ctx = { testDefs: DEFS, passBins: [1] };
-const spec = (mark, encoding, over = {}) => ({ id: 'p', mark, encoding, ...over });
+const spec = (chart, fields, over = {}) => ({ id: 'p', chart, fields, ...over });
 const T = (n, name) => ({ test: n, name });
 
 test('combine: each way of reducing a set, ignoring missing values', () => {
@@ -237,7 +237,8 @@ test('a test present in the dies but not in the list is plotted under its number
 
 
 test('a plot from a newer version, or with a role missing, says so', () => {
-  assert.match(resolvePlot({ id: 'p', mark: 'sweep', encoding: {} }, lot(), ctx).issues[0], /newer version/);
+  assert.match(resolvePlot({ id: 'p', chart: 'ripple', fields: {} }, lot(), ctx).issues[0], /newer version/);
+  assert.match(resolvePlot({ id: 'p', chart: 'sweep', sweep: { series: [] } }, lot(), ctx).issues[0], /drawn by the sweep panel/, 'a sweep is not a field plot');
   assert.match(resolvePlot(spec('scatter', { x: T(1050) }), lot(), ctx).issues[0], /Choose a field for Y/);
   assert.match(resolvePlot(spec('scatter', { y: T(1050) }), lot(), ctx).issues[0], /Choose a field for X/);
   assert.match(resolvePlot(spec('histogram', {}), lot(), ctx).issues[0], /Choose a field/);
@@ -325,11 +326,11 @@ test('each role is offered only what it can use', () => {
 
 test('a first plot is never empty: two tests, one test, or neither', () => {
   const cat = fieldCatalogue(lot(), ctx);
-  assert.deepEqual(defaultPlot(cat, 'a'), { id: 'a', mark: 'scatter', encoding: { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } } });
+  assert.deepEqual(defaultPlot(cat, 'a'), { id: 'a', chart: 'scatter', fields: { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } } });
   const one = fieldCatalogue(lot(), { testDefs: [DEFS[0]] }).filter(f => f.group !== 'Tests' || f.field.test === 1050);
-  assert.equal(defaultPlot(one, 'b').mark, 'histogram');
+  assert.equal(defaultPlot(one, 'b').chart, 'histogram');
   const none = defaultPlot(cat.filter(f => f.group !== 'Tests'), 'c');
-  assert.deepEqual(none.encoding, { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' } });
+  assert.deepEqual(none.fields, { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' } });
 });
 
 // ── a continuous colour ──
@@ -425,31 +426,34 @@ test('examples: one of each type the lot can show, built from its own tests and 
   const cat = fieldCatalogue(lot(), ctx);
   let n = 0;
   const ex = examplePlots(cat, 3, () => `e${n++}`);
-  assert.deepEqual(ex.map(p => p.mark), ['scatter', 'histogram', 'box', 'bar', 'line']);
-  assert.deepEqual(ex[0].encoding, { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } });
-  assert.deepEqual(ex[3].encoding.x, { meta: 'split' }, 'the first lot field that divides the wafers');
-  assert.deepEqual(ex[3].encoding.y, { builtin: 'yield' });
-  assert.equal(new Set(ex.map(p => p.id)).size, 5);
-  for (const p of ex) {
+  assert.deepEqual(ex.map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep']);
+  assert.deepEqual(ex[0].fields, { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } });
+  assert.deepEqual(ex[3].fields.x, { meta: 'split' }, 'the first lot field that divides the wafers');
+  assert.deepEqual(ex[3].fields.y, { builtin: 'yield' });
+  assert.equal(new Set(ex.map(p => p.id)).size, 6);
+  for (const p of ex.filter(p => p.chart !== 'sweep')) {
     assert.equal('title' in p, false, 'untitled, so each is named by what it plots');
     const r = resolvePlot(p, lot(), ctx);
-    assert.deepEqual(r.issues, [], `${p.mark}: ${r.issues}`);
-    assert.ok(r.plotted > 0, p.mark);
+    assert.deepEqual(r.issues, [], `${p.chart}: ${r.issues}`);
+    assert.ok(r.plotted > 0, p.chart);
   }
+  const sweep = ex[5];
+  assert.equal(sweep.title, 'Example sweep', 'a sweep has no fields to name it, so it is titled');
+  assert.deepEqual(sweep.sweep.series, [{ label: 'Series 1', tests: [1050, 1060] }], 'the lot\'s own tests, in test order');
 });
 
 test('examples: a single wafer gets only what makes sense for one', () => {
   const cat = fieldCatalogue([lot()[0]], ctx);
-  assert.deepEqual(examplePlots(cat, 1, () => 'x').map(p => p.mark), ['scatter', 'histogram']);
+  assert.deepEqual(examplePlots(cat, 1, () => 'x').map(p => p.chart), ['scatter', 'histogram', 'sweep']);
 });
 
 test('examples: with no tests there is nothing to draw but yield', () => {
   const cat = fieldCatalogue(lot(), ctx).filter(f => f.group !== 'Tests');
-  assert.deepEqual(examplePlots(cat, 3, () => 'x').map(p => p.mark), ['bar']);
+  assert.deepEqual(examplePlots(cat, 3, () => 'x').map(p => p.chart), ['bar']);
 });
 
 test('examples: yield is by wafer when no lot field divides them', () => {
   const items = [wafer('a'), wafer('b'), wafer('c')];
   const ex = examplePlots(fieldCatalogue(items, ctx), 3, () => 'x');
-  assert.deepEqual(ex.find(p => p.mark === 'bar').encoding.x, { builtin: 'wafer' });
+  assert.deepEqual(ex.find(p => p.chart === 'bar').fields.x, { builtin: 'wafer' });
 });

@@ -29,7 +29,7 @@ import { ICONS } from './icons.js';
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
 // TYPE-ONLY, for the same reason: drilldown opens chart panels, loaded on first use.
 import type { DrilldownContext } from './drilldown.js';
-import { createPlotStore, type WithPlotStore } from './plotStore.js';
+import { plotStoreFor, type WithPlotStore } from './plotStore.js';
 import { selectionPopulation, waferPopulation, type DrilldownSource } from './chartPopulation.js';
 import { createIdentityHeader, collapsedLabel, type IdentityHeaderController } from './identityHeader.js';
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
@@ -1041,8 +1041,8 @@ export function renderWaferMapCard(
   // Offered only when there is a chart to open (`drilldownOffered`) — with
   // none, right-click stays the browser's (or host's).
   // The reader's saved plots, one list for the Plot tab and for the drilldown menu.
-  const plotStore = (insightsOpts as WithPlotStore | undefined)?.plotStore ?? createPlotStore(insightsOpts?.plots, insightsOpts?.onPlotsChange);
-  const drilldownCtx: DrilldownContext = { sweeps: insightsOpts?.sweeps, plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
+  const plotStore = (insightsOpts as WithPlotStore | undefined)?.plotStore ?? plotStoreFor(insightsOpts);
+  const drilldownCtx: DrilldownContext = { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
   /** Read live: `testDefs` changes with `setData`. */
   const drilldownOffered = (): boolean => !isMapless;
   let closeDrilldownMenu: (() => void) | null = null;
@@ -1209,8 +1209,6 @@ export function renderWaferMapCard(
       onSaveImage: exportHooks.onSaveImage,
       onSaveText: exportHooks.onSaveText,
       defaultView: insightsOpts?.defaultView,
-      sweeps: insightsOpts?.sweeps,
-      onRemoveSweeps: insightsOpts?.onRemoveSweeps,
       plotStore, onPickPlotsFile: insightsOpts?.onPickPlotsFile,
       // Both of these are FALLBACKS, passed only when the toolbar cannot carry
       // them. The toolbar now stays visible while Insights is open, so its own

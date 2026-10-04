@@ -112,18 +112,18 @@ worth reporting, not a pattern to build on.
 - **The analysis surfaces are already built — do not reimplement them.** Pass
   `statsSummary` to `renderWaferMap` and it mounts the Summary panel. The
   chart suite (Insights) is on by default (`insights: { enabled: false }` removes it): yield, bin pareto,
-  boxplot, histogram, correlation, scatter, capability, and one card per
-  `insights.sweeps` entry. `renderWaferGallery` takes the same option across a whole
+  boxplot, histogram, correlation, scatter, capability, and a Plot tab where the reader's own plots
+  and sweeps (`chart: 'sweep'`, in `insights.plots`) are cards. `renderWaferGallery` takes the same option across a whole
   lot. Supply or replace the analysis later with `setStatsSummary()`. There is no
   chart-data API to hand-build them from. Charting a selection or one wafer (right-click → histogram, capability,
-  sweeps) is built in too, with no wiring.
+  saved plots and sweeps) is built in too, with no wiring.
 - **A value computed from other tests is a derived test, not a host-side column.** Pass
   `derivedTests` (a `TestDef` plus an `expression`, e.g. `'abs(t[1020] - t[1010])'`) to
   `buildWaferMap`; it then behaves as a measured test everywhere, marked `†` as not
   measured. Computing it in the host and injecting it into `testValues` loses that
   mark, the missing-input rule (absent, never 0) and the collision check. A boolean
   expression must be declared `testType: 'F'`.
-- **A sweep's x values are data, not guesses.** Give `xValues`, or `xFromName` (a
+- **A sweep's x values are data, not guesses.** In a sweep plot's `sweep.series`, give `xValues`, or `xFromName` (a
   `{x}` placeholder pattern, not a regex) when the swept value is only in the test
   name. Never derive x from test numbers: they are identifiers, not a scale.
 - **Click-to-highlight is wired, not hand-rolled.** `onSelect` reports what the user

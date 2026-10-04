@@ -494,12 +494,12 @@ The on-screen test table carries Test / Mean / **Ppk** / Limit yield only; the f
 {
   enabled?:     boolean                                          // show the Insights toolbar button and the Maps | Insights switch; default true with a toolbar (single map: `showToolbar`), always true for a gallery; `false` opts out
   defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot'  // sub-tab shown first; default 'overview'.
-                                                                      // 'sweeps' with no sweeps defined falls back to 'overview'
+                                                                      // 'sweeps' opens the Plot tab, where sweeps are drawn
   defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
-  sweeps?:      SweepSpec[]                                      // parametric sweeps, one card each on a Sweeps tab (below)
-  onRemoveSweeps?: (ids: string[]) => void                       // adds a Remove button to the Sweeps tab's notice about
-                                                                      // sweeps that name no test in the data; the host drops
-                                                                      // those ids and re-renders
+  sweeps?:      SweepSpec[]                                      // DEPRECATED: sweeps are plots (see "Sweeps" below); each entry
+                                                                      // is drawn as a sweep plot under its own id
+  onRemoveSweeps?: (ids: string[]) => void                       // DEPRECATED, with `sweeps`: told when the reader deletes one
+                                                                      // of them, so the host stops supplying it
   plots?:       PlotSpec[]                                       // the reader's saved plots, the Plot tab's list (below)
   onPlotsChange?: (plots: PlotSpec[]) => void                    // the whole list after every add, edit, delete or import
   onPickPlotsFile?: () => Promise<string | null>                 // choose a plots file to import (a native dialog); without
@@ -543,8 +543,8 @@ them as a file (`onSaveText` receives the export; `onPickPlotsFile` supplies the
 {
   id: 'plot-lq1x-0f3a-0',                   // generated once, never reused; survives rename and reorder
   title?: 'Vth vs Idsat',                    // only when the reader typed one; absent = an automatic title
-  mark: 'scatter' | 'histogram' | 'box' | 'bar' | 'line',
-  encoding: {
+  chart: 'scatter' | 'histogram' | 'box' | 'bar' | 'line' | 'sweep',   // the kind of chart; a sweep has `sweep` (below) instead of `fields`
+  fields: {
     x?: Field, y?: Field,                    // a histogram reads y (or x) as its values; a box or bar's x is its categories (default wafer)
     color?: Field | { follow: 'groupBy' } | { none: true },   // absent = follow the tab's Group by; a measured value or wafer figure
                                              // colours a scatter on a gradient, anything else is a category
@@ -578,7 +578,7 @@ a plot using a mark this version does not know is kept and shown as needing a ne
 an older build loses nothing. Importing adds plots and never replaces: a plot whose id is already in the list is
 added as a copy.
 
-**Plots in drilldown.** Each saved plot is a row in the right-click menu (a **Plots** section between the charts and
+**Plots in drilldown.** Each saved plot, sweeps included, is a row in the right-click menu (a **Plots** section between the charts and
 the tables), drawn over the selected dies; **New plot…** opens a draft on the selection that is kept only if the
 reader adds it. The Plot tab, its editor and the chart are loaded the first time they are opened.
 
@@ -749,7 +749,7 @@ Choose the right update method:
 | Zoom region | Drag to draw a zoom rectangle |
 | Pan | Drag to pan the map |
 | Box select | Draw selection rectangle — fires `onSelect` callback if provided. The mode a map opens in. |
-| Chart | Drilldown menu (§5.12) for the selected dies, or for the whole wafer when nothing is selected — the same menu right-click opens. Shown only when there is something to chart: a parametric test in the data, or a sweep in `insights.sweeps`. |
+| Chart | Drilldown menu (§5.12) for the selected dies, or for the whole wafer when nothing is selected — the same menu right-click opens. Shown only when there is something to chart: a parametric test in the data. |
 | Zoom + | Zoom in centred on canvas |
 | Zoom − | Zoom out centred on canvas |
 | Reset | Return to fitted view (also: double-click canvas) |
@@ -835,7 +835,7 @@ Insights is on by default wherever the toolbar is shown (pass `insights: { enabl
 
 **Separate from the Summary panel (§5.4.2) on purpose.** A finding's entire value is click-to-highlight-on-map, which can't work inside a full takeover of the map — so the Summary panel (which includes findings) stays docked, always co-visible with the map, while Insights takes over the full view for chart-heavy content that doesn't reference specific dies. The two toggle independently; opening one never hides the other's toolbar button. Insights' Overview numbers and the Summary panel's compact bin/ring/quadrant/test-value rows read the same underlying computation, so they never disagree even though both can be on screen in principle.
 
-Insights has three chart sub-tabs, **Sweeps** when `insights.sweeps` defines any, and a last **Data** sub-tab (below):
+Insights has three chart sub-tabs, then **Data** and **Plot** sub-tabs (below). Sweeps are drawn on the Plot tab:
 
 - **Overview** — a **per-test pass rate** chart (worst test first, clustered by group when "Group by" is active), headline tiles naming the population (wafer count, dies analysed and excluded, and for a lot the mean wafer yield, labelled *unweighted, per wafer* to distinguish it from the die-weighted figure), a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)", with a dashed median reference line), a hard/soft bin pareto, and a details card with ring/quadrant regional yield. The pass-rate chart has three modes — the same three pass rates `analyzeWaferMap` returns as `stats.testSpecYield`, `stats.testFlagYield` and `stats.functionalYield` (§7.4.1) — because a parametric test carries **two independent** pass/fail notions and a functional test only one:
 
@@ -851,13 +851,34 @@ Only the modes the data supports are offered, judged from the dies for `'testFla
 - **Distributions** — process capability (Cp/Cpk/Pp/Ppk per test, the same figures as `stats.capability` in §7.4.1; normalised to the spec limits where both are given and the test limits otherwise; a test without both limits is drawn on its own observed range, with no indices), a test-value boxplot, a value histogram, and a **wafer-to-wafer trend** (per-wafer mean with ±1σ whiskers, the die-weighted lot mean as a dashed centre line, and the limits). The trend is always in slot order and has no sort control: a drift or a bad cassette position is only visible in the physical sequence, so sorting it would remove the only signal it carries.
 - **Limits on the charts** — the boxplot, histogram, trend and scatter draw test limits (`limitLow`/`limitHigh`, labelled *Lo limit*/*Hi limit*, short dashes) and spec limits (`specLow`/`specHigh`, labelled *LSL*/*USL*, long dashes). When the test has both kinds, a **Limits** choice — *Test + spec* (default), *Test limits*, *Spec limits*, *None* — is shared by all four charts. A test without the chosen kind shows the kind it has; a limit outside the plotted range is marked at the chart edge. The wafer map's pass/fail colouring and out-of-limit markers always use the test limits.
 - **Correlation** — a Pearson-r correlation matrix (stating the median pairwise `n`, with the exact per-pair `n` in each cell's tooltip) and a die-level X/Y scatter that reports `r` and `n` for the pair it is showing, recomputed when the legend filters the points. Hovering a point names its wafer and die; clicking it opens that wafer on the X test (a single-wafer host shows the test on its map instead); dragging a rectangle selects the dies inside it, across wafers, and opens the drilldown menu (§5.12) for them, with a **Wafers** table when they span more than one. Clicking a capability box drives the boxplot, histogram and trend onto that same test in place; clicking a correlation matrix cell drives the scatter panel's X/Y in place.
-- **Data** — the same scope as tables, one at a time (`InsightsView` `'data'`; it is the last tab, after **Sweeps**). **Statistics** is the per-test statistics table and the functional-tests table (they were Overview cards), one set per group when "Group by" is active. **Dies** is one row per die — wafer, X, Y, ring, quadrant, site, bins, a column per test, and metadata — drawn as a virtual table, so only the rows in view exist in the DOM, with sortable columns. **Wafers** is one row per wafer: metadata, die counts, the yield every other panel reports, and the mean of each of the first 50 parametric tests. **Export CSV** writes the table as shown, in the order shown, with full-precision plain numbers (§5.4.1's `onSaveText`; a table of a million cells or more reaches the host as a `Blob`); the Dies table can be exported **Wide** (a column per test) or **Long** (a row per die per test, skipping tests the die has no result for). **Copy** puts a table of up to 200,000 cells on the clipboard as tab-separated text. `InsightsOptions.defaultView` accepts `'data'`.
+- **Data** — the same scope as tables, one at a time (`InsightsView` `'data'`; it comes after Correlation). **Statistics** is the per-test statistics table and the functional-tests table (they were Overview cards), one set per group when "Group by" is active. **Dies** is one row per die — wafer, X, Y, ring, quadrant, site, bins, a column per test, and metadata — drawn as a virtual table, so only the rows in view exist in the DOM, with sortable columns. **Wafers** is one row per wafer: metadata, die counts, the yield every other panel reports, and the mean of each of the first 50 parametric tests. **Export CSV** writes the table as shown, in the order shown, with full-precision plain numbers (§5.4.1's `onSaveText`; a table of a million cells or more reaches the host as a `Blob`); the Dies table can be exported **Wide** (a column per test) or **Long** (a row per die per test, skipping tests the die has no result for). **Copy** puts a table of up to 200,000 cells on the clipboard as tab-separated text. `InsightsOptions.defaultView` accepts `'data'`.
 
 For a single wafer there is no "Group by" control (grouping needs more than one wafer to be meaningful — see §6.10) and no click-to-open-wafer action (the map you're looking at already *is* the only wafer there is to open). Everything else — the wafer picker on histogram/correlation/scatter, the capability↔boxplot/histogram cross-link, the correlation↔scatter cross-link — behaves the same as the gallery version.
 
 `insights.enabled` only changes what the toolbar exposes; it needs no other options.
 
-**`insights.sweeps`** — parametric sweeps, one card each in their own **Sweeps** sub-tab, which appears only when at least one is defined. Sweeps get a tab rather than joining Distributions because that view is driven by one selected test (capability → boxplot → histogram → trend), while a sweep draws many tests as one curve and ignores the selection; and the tab exists exactly when there is something in it, rather than behind an option or a count threshold, so a sweep never moves tabs because another was added. `defaultView: 'sweeps'` opens on it. **→ [Example: Parametric sweeps](../examples/sweeps.html)**
+**Sweeps** — a sweep is a plot with `chart: 'sweep'`: one card on the **Plot** tab, beside the reader's other plots, kept and shared the same way (`plots` / `onPlotsChange`, Export and Import). It is a card of its own kind rather than a field plot because it reads a run of *tests* with stated X values, not one field per role. The **Plot** tab's **+ New sweep** starts one on the lot's first tests, and **Edit** opens the sweep editor beside a live copy of the curve (below). `defaultView: 'sweeps'` is accepted and opens the Plot tab. **→ [Example: Parametric sweeps](../examples/sweeps.html)**
+
+A sweep plot is the plot envelope (`id`, `title`) with the definition under `sweep`, which is a `SweepSpec` without its `id` and `title`:
+
+```ts
+plots: [{
+  id: 'power', title: 'Power Sweep — rise vs fall', chart: 'sweep',
+  sweep: {
+    series: [
+      { label: 'Rising',  tests: [1010, 1011, 1012], xValues: [0, 5, 10] },
+      { label: 'Falling', tests: [1020, 1021, 1022], xValues: [0, 5, 10] },
+    ],
+    xLabel: 'Power', xUnit: 'dBm', separationAt: [1.2, 2.5],
+  },
+}]
+```
+
+`readPlotsFile` also reads a `tsmap-sweeps` file (`{ "format": "tsmap-sweeps", "sweeps": [...] }`), turning each sweep into a sweep plot under the same `id`, so sweep files written earlier import unchanged.
+
+**The sweep editor** has the title, one block per series, and the axis and measurements. A series is its name, its **tests, in sweep order** (typed as numbers and ranges, `1010, 1011, 1020..1030`), and where each test's X comes from: **Test order** (the position in the run, labelled by test number, no scale assumed), **Values** (one number per test) or **From test name** (a `{x}` pattern). One source at a time, because giving two is reported as an error. Text that is not a test number or a range is flagged where it is typed, naming the offending word, and is not applied, so the chart beside it is always a definition the reader meant. **+ Add series** and **Remove** manage the list; crossing and widths appear only with two or more series.
+
+**`insights.sweeps`** (deprecated) — the earlier way to supply sweeps. Each entry is added to the plot list as a sweep plot under its own `id` and the first use logs a notice; a plot saved under that `id` takes precedence, so a host that keeps both shows the sweep once and does not undo the reader's edits. Deleting one on the Plot tab calls `onRemoveSweeps` with its id, so the host stops supplying it and the next render does not bring it back. The `SweepSpec` shape below is unchanged.
 
 A sweep reads an ordered run of tests as a response curve rather than as independent tests, and measures the **pair**: where the first two series cross, and how far apart they are at given levels. The case it exists for is one quantity measured at a series of drive levels and recorded as a block of consecutive test numbers — swept up in one block, down in another.
 
@@ -883,7 +904,7 @@ insights: {
 | `title` | `string` | Card title |
 | `series[].tests` | `(number \| string)[]` | Test numbers **in sweep order** — never sorted. An entry may be a range string, `"1200..1230"` (see below) |
 | `series[].xValues` | `number[]` | The real swept quantity per test, one per test **after** ranges are expanded. Without it the x axis is the ordinal position, because test numbers are identifiers and nothing guarantees they are evenly spaced — interpolating a crossing along them would assume a scale the data never claimed. Supply it and the crossing is reported in dBm rather than "between the 3rd and 4th test". |
-| `series[].xFromName` | `string` | Read each test's x value from its **name** instead of `xValues` — for programs that record the swept quantity only in the test text. A placeholder pattern, not a regex: `{x}` reads a number, `*` matches anything, the rest is literal. Found anywhere in the name; literal text matches regardless of case. `{x}` reads an SI prefix (`12K` → 12,000, `1M` → 1,000,000; case-sensitive, so `m` is milli, with `K` accepted as kilo). A letter counts as a prefix only when it stands alone or leads a unit symbol — `12K`, `12kΩ`, `5us` — so `12Kangaroos` reads 12. In a name written all in capitals a prefix before a unit is read in any case (`5NS` → 5 ns), except `M`, which could be milli or mega and is reported rather than guessed (`2MV`): spell it in the pattern (`"V_{x}MV"`). Put the prefix in the pattern (`"LRS_STATS_{x}K"`) to keep the number as written. Each x stays attached to its own test, so a missing test loses one point rather than shifting the rest. A name the pattern does not fit is reported and nothing is measured. Not a regex because a shared file must not be able to freeze the app: this matcher's cost is bounded whatever the pattern. |
+| `series[].xFromName` | `string` | Read each test's x value from its **name** instead of `xValues` — for programs that record the swept quantity only in the test text. A placeholder pattern, not a regex: `{x}` reads a number, `*` matches anything, `?` matches exactly one character, the rest is literal. Found anywhere in the name; literal text matches regardless of case. `{x}` reads an SI prefix (`12K` → 12,000, `1M` → 1,000,000; case-sensitive, so `m` is milli, with `K` accepted as kilo). A letter counts as a prefix only when it stands alone or leads a unit symbol — `12K`, `12kΩ`, `5us` — so `12Kangaroos` reads 12. In a name written all in capitals a prefix before a unit is read in any case (`5NS` → 5 ns), except `M`, which could be milli or mega and is reported rather than guessed (`2MV`): spell it in the pattern (`"V_{x}MV"`). Put the prefix in the pattern (`"LRS_STATS_{x}K"`) to keep the number as written. Each x stays attached to its own test, so a missing test loses one point rather than shifting the rest. A name the pattern does not fit is reported and nothing is measured. Not a regex because a shared file must not be able to freeze the app: this matcher's cost is bounded whatever the pattern. |
 | `series[].color` | `string` | Optional override. Omit it and the series take CVD-safe palette colours that theme correctly in dark mode; a hardcoded hex does neither. |
 | `crossing` | `boolean` | Default `true` when there are two or more series |
 | `separationAt` | `number[]` | Y levels at which to report the **width** between the first two series — the horizontal distance between the points where each crosses that level. When one curve falls and the other rises, the pair traces a V and this is the width of the V at that level, which widens as the level rises above the crossing. Each series must be monotonic for the width to be unambiguous; a level that meets a curve twice reports the first crossing. |
@@ -895,7 +916,7 @@ Each line is the population **median with a p10–p90 band**, not one trace per 
 
 A sweep deliberately carries **no population scope of its own**: it names which tests form the curve, so the same definition is valid for any population and stays portable between lots and hosts. The dies it aggregates are whatever the Insights view is currently scoped to.
 
-**Drilldown.** Every sweep is also offered on a population the user picks — selected dies, one wafer — alongside a value histogram and process capability. See §5.12.
+**Drilldown.** Every sweep plot is also offered on a population the user picks — selected dies, one wafer — in the menu's **Plots** section, alongside a value histogram and process capability. See §5.12.
 
 **Swept values in test names, on a log axis.** A resistance CDF — one test per threshold, the threshold written only in the test text (`Normalized_LRS= LRS_STATS_12K / …`), thresholds growing by multiples:
 
@@ -932,7 +953,7 @@ A plain number that is not declared still keeps its place in the curve with no d
 
 A crossing is measured only where both series share an x value, and a multiple crossing is reported as such rather than presenting the first as if it were the only one. A width level that either curve never reaches reads "not measurable", naming which series — never `0`. Tests missing from `testDefs`, functional tests inside a sweep, and series measuring different units are reported in the card footer.
 
-**Sweeps that name no test in the data.** A sweep whose tests are all absent — typically one a host kept from another test program — draws an empty card saying so, and the Sweeps tab shows a notice listing such sweeps. With `insights.onRemoveSweeps`, the notice carries a **Remove** button that hands the host those sweeps' ids.
+**Sweeps that name no test in the data.** A sweep whose tests are all absent — typically one kept from another test program — is kept, greyed, with a card saying so; **Delete** removes it (with an Undo), and it draws again as soon as a lot with its tests is opened. Opening a different file never prunes the reader's plots.
 
 
 **The chart suite is loaded on demand.** It is a separate chunk (size in [Performance → Download size](../performance.md#download-size)), fetched
@@ -1075,7 +1096,7 @@ The map's **Chart** toolbar button (§5.6), the Menu key and Shift+F10 open the 
 | --- | --- | --- |
 | Value histogram | Some parametric test has a value in the population | Opens on the test the map is showing (`plotMode: 'value'`) |
 | Process capability | Some parametric test has at least two values | Below 30 dies the card adds that each Ppk is a rough estimate |
-| Each `insights.sweeps` entry | The population has values for the sweep's tests | A single map offers them even when `insights.enabled` is off; the gallery passes its sweeps to every card |
+| Each saved sweep plot | The population has values for the sweep's tests | A single map offers them even when `insights.enabled` is off; the gallery passes its plots to every card |
 
 A chart that cannot be drawn stays in the menu, **disabled, with the reason** as its hint — no values for its tests, too few dies, or a lot-stack map, whose dies are per-position aggregates rather than measured dies (every chart is disabled there). Charts that compare wafers (the boxplot, the trend) are not offered: every population here is one wafer.
 

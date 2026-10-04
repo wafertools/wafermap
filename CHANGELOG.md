@@ -82,7 +82,8 @@ under `### Breaking`.
   wrong measurement. The Plot tab is loaded the first time it is opened.
 - **Add examples, and titles that say when they are out of date.** The Plot tab's **Add examples** draws one plot of each
   chart type the lot can show (scatter of the first two tests, histogram, box by wafer, bar of yield by the first lot field
-  that divides the wafers, line over wafer order) and adds only those not already there. A title the reader typed is checked
+  that divides the wafers, line over wafer order, and a sweep of the first tests in test order) and adds only those not
+  already there. A title the reader typed is checked
   against its plot: the card and the editor say when it names a test the plot no longer shows, or names one of its two
   fields but not the other, and offer the automatic title. Copying a plot numbers its copies ("Vth (copy 2)") instead of
   stacking marks, and a copy of an untitled plot stays untitled so its title keeps following its fields.
@@ -105,6 +106,26 @@ under `### Breaking`.
 - **`readPlotsFile` and `writePlotsFile`** (and the `PlotSpec` type) read and write the plots file. The reader is
   lenient (it keeps every readable plot and names each dropped setting), keeps settings a newer version wrote, and
   keeps a plot whose chart type it does not know.
+- **Sweeps are plots, with an editor.** A sweep is a plot with `chart: 'sweep'`: a card on the Plot tab beside the reader's
+  other plots, with Edit, Duplicate and Delete (and Undo), kept, exported and imported like any plot, and a row in the
+  right-click menu's Plots section over the selected dies. A level of its curve opens the dies measured there, as before.
+  **+ New sweep** starts one on the lot's first tests, and **Edit** opens a sweep editor beside a live copy of the curve:
+  the title, a block per series (its tests in sweep order, typed as numbers and ranges such as `1010, 1011, 1020..1030`,
+  and whether X is the test order, typed values or read from the test names), the axis title, unit and scale, whether the
+  first two series' crossing is marked, and the Y levels at which their width is measured. Text that is not a test number
+  or a range is flagged where it is typed and not applied. A sweep whose tests are not in the open lot is kept and greyed,
+  and draws again when a lot with its tests is opened. `PlotSpec` gains the optional `sweep` (a `SweepSpec` without its
+  `id` and `title`), and `readPlotsFile` also reads a `tsmap-sweeps` file, turning each sweep into a sweep plot under
+  the same `id`. When a name pattern (`xFromName`) finds no X in a test's name, the warning on the chart shows the first
+  three of those names, as they are in the data, so the pattern can be written against them. The sweep editor shows the same: under a name pattern it lists the first four
+  test names and what the pattern reads from each as it is typed, with a folded list of worked **Pattern examples**
+  (`@ {x}` on `Fmax @ 0.55 V`, `-{x}` on `1234-5`), which a test keeps true against the matcher. A name pattern's `?` matches exactly one character
+  (`123?{x}` reads 4 from `12314`), alongside `*` for any run of text.
+- **A plot's JSON uses `chart` and `fields`.** A plot names its kind of chart in `chart` (`scatter`, `histogram`, `box`, `bar`,
+  `line` or `sweep`) and the field for each role in `fields` (`x`, `y`, `color`); a sweep has no `fields`.
+- **Reset and Cancel in the plot and sweep editors.** Edits are kept as they are made, so the editor's footer, which stays in
+  view while the settings scroll, has **Reset** (back to the plot as it was when the window opened; disabled until something
+  changed) and **Cancel** (the same, then close; a draft is discarded). Closing with the window's own button keeps the changes.
 
 ### Breaking
 
@@ -123,6 +144,12 @@ under `### Breaking`.
   hosts. The chart code still downloads only when Insights is first opened.
 
 ### Changed
+
+- **Sweeps are drawn on the Plot tab; the Sweeps tab is gone.** Each sweep is a card there, in the same list as the other
+  plots. `insights.sweeps` and `insights.onRemoveSweeps` are deprecated and still work: each entry is drawn as a sweep plot
+  under its own `id` (a plot already saved under that `id` takes precedence, so a host that keeps both shows it once), the
+  first use logs a notice, and deleting one on the Plot tab calls `onRemoveSweeps` so the host stops supplying it.
+  `defaultView: 'sweeps'` opens the Plot tab. The right-click menu lists sweeps with the plots, in its Plots section.
 
 - **A chart saved as a PNG says what it is, and a printed chart says the same.** Every Insights chart card now reads back
   what it shows around its canvas: its title, what its controls are set to (`Test: Vth`, `Wafer: W03`, `X: Vth · Y: Idsat`,

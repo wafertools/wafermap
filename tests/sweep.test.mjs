@@ -15,7 +15,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSweepData } from '../dist/packages/stats/sweep.js';
+import { buildSweepData, previewXFromName } from '../dist/packages/stats/sweep.js';
+import { NAME_PATTERN_EXAMPLES } from '../dist/packages/stats/sweepXFromName.js';
 import { parseTestReference, parseExpression } from '../dist/packages/renderer/derivedTests/parser.js';
 
 const defs = (numbers, extra = {}) =>
@@ -479,6 +480,17 @@ test('a name the pattern does not fit is reported and nothing is measured', () =
   assert.ok(d.warnings.some(w => /found no x value in the name of test 2003/.test(w)), d.warnings.join(' | '));
 });
 
+test('the warning for a name pattern shows the names it had to match, so the pattern can be corrected', () => {
+  const named = [{ testNumber: 1, name: 'Fmax @ 0.55 V' }, { testNumber: 2, name: 'Fmax @ 0.60 V' }, { testNumber: 3, name: 'Fmax @ 0.65 V' }, { testNumber: 4, name: 'Fmax @ 0.70 V' }];
+  const spec = { id: 's', title: 'S', series: [{ label: 'Up', tests: [1, 2, 3, 4, 9], xFromName: 'VDD={x}' }] };
+  const d = buildSweepData(dies([{ 1: 1, 2: 2, 3: 3, 4: 4 }]), named, spec);
+  const w = d.warnings.find(x => /found no x value/.test(x));
+  assert.ok(w, d.warnings.join(' | '));
+  assert.match(w, /The names are: 1 "Fmax @ 0.55 V", 2 "Fmax @ 0.60 V", 3 "Fmax @ 0.65 V", … \(2 more\)\./, w);
+  const missing = buildSweepData(dies([{ 1: 1 }]), named, { ...spec, series: [{ label: 'Up', tests: [9], xFromName: 'x{x}' }] });
+  assert.ok(missing.warnings.some(x => /9 \(not in this data\)/.test(x)), 'a test the data lacks is said to be missing, not shown with an empty name');
+});
+
 test('giving both xValues and xFromName is reported, not resolved by preference', () => {
   const spec = { ...CDF_SPEC, series: [{ ...CDF_SPEC.series[0], xValues: [1, 2, 3, 4] }, CDF_SPEC.series[1]] };
   const d = buildSweepData(CDF_DIES, cdfDefs, spec);
@@ -513,3 +525,60 @@ test('sweepAppliesTo — true when any series names a parametric test in the def
   assert.equal(sweepAppliesTo(spec, undefined), false);
 });
 
+
+test('the name-pattern preview shows each test\'s name and what the pattern reads from it', () => {
+  const named = [
+    { testNumber: 10, name: 'Fmax @ 0.55 V' }, { testNumber: 11, name: 'Fmax @ 0.60 V' }, { testNumber: 12, name: 'Fmax (no level)' },
+    { testNumber: 13, name: 'Fmax @ 0.70 V' }, { testNumber: 14, name: 'Fmax @ 0.75 V' },
+  ];
+  const series = { label: 'Up', tests: ['10..14', 99], xFromName: '@ {x}' };
+  const p = previewXFromName(series, named, 4);
+  assert.equal(p.error, undefined);
+  assert.equal(p.total, 6, 'a range is expanded as the chart expands it, and a test the data lacks still counts');
+  assert.deepEqual(p.rows.map(r => [r.test, r.x]), [[10, 0.55], [11, 0.6], [12, null], [13, 0.7]]);
+  assert.equal(p.rows[0].name, 'Fmax @ 0.55 V');
+  const missing = previewXFromName({ label: 'Up', tests: [99], xFromName: '@ {x}' }, named);
+  assert.deepEqual(missing.rows, [{ test: 99, name: undefined, x: null }]);
+});
+
+test('the preview of a pattern with no {x}, or none yet, carries the names and the pattern\'s own problem', () => {
+  const named = [{ testNumber: 10, name: 'Fmax @ 0.55 V' }];
+  for (const xFromName of ['', 'no placeholder']) {
+    const p = previewXFromName({ label: 'Up', tests: [10], xFromName }, named);
+    assert.match(p.error, /exactly once/);
+    assert.deepEqual(p.rows, [{ test: 10, name: 'Fmax @ 0.55 V', x: null }]);
+  }
+});
+
+test('"@ {x}" reads 0.55 from "Fmax @ 0.55 V", and so does a bare {x}, which takes the first number', () => {
+  const named = [{ testNumber: 10, name: 'Fmax @ 0.55 V' }];
+  for (const pat of ['@ {x}', '{x}', '@ {x} V', 'Fmax @ {x}']) {
+    assert.equal(previewXFromName({ label: 'Up', tests: [10], xFromName: pat }, named).rows[0].x, 0.55, pat);
+  }
+});
+
+test('every worked name-pattern example reads what it says, so the editor and the guide cannot mislead', () => {
+  assert.ok(NAME_PATTERN_EXAMPLES.length >= 8);
+  for (const ex of NAME_PATTERN_EXAMPLES) {
+    const got = previewXFromName({ label: 'S', tests: [1], xFromName: ex.pattern }, [{ testNumber: 1, name: ex.name }]).rows[0].x;
+    assert.equal(got, ex.reads, `${ex.name} with ${ex.pattern}`);
+  }
+});
+
+test('? matches exactly one character, so a fixed-shape name can be read by position', () => {
+  const read = (name, xFromName) => previewXFromName({ label: 'S', tests: [1], xFromName }, [{ testNumber: 1, name }]).rows[0].x;
+  assert.deepEqual(['12314', '12325', '12336'].map(n => read(n, '123?{x}')), [4, 5, 6], 'the last digit of each');
+  assert.equal(read('1234', '123?{x}'), null, 'it must find a character to skip: nothing is left for {x}');
+  assert.equal(read('12', '1??{x}'), null);
+  assert.equal(read('A-12-7', 'A-??-{x}'), 7, 'two characters, here a two-digit field');
+  assert.equal(read('A-1-7', 'A-??-{x}'), null, 'a field of the wrong width does not fit');
+  assert.equal(read('Vth?5', 'Vth?{x}'), 5, 'a literal question mark in a name is matched by ? too, as any character is');
+  assert.equal(read('😀7', '?{x}'), 7, 'a character outside the basic plane counts as one');
+});
+
+test('? cannot make a pattern slow: a long name with many wildcards is read at once', () => {
+  const name = 'A'.repeat(2000) + '5';
+  const t0 = Date.now();
+  assert.equal(previewXFromName({ label: 'S', tests: [1], xFromName: '?*?*?*?*?*?*{x}' }, [{ testNumber: 1, name }]).rows[0].x, 5);
+  assert.ok(Date.now() - t0 < 500, 'bounded by pattern length times name length');
+});

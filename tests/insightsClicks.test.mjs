@@ -173,7 +173,7 @@ test('the Wafers table: a row opens that wafer', async () => {
 });
 
 test('the Plot tab: a point opens its wafer on the test the plot is about', async () => {
-  const plots = [{ id: 'p', mark: 'scatter', encoding: { x: { test: 1050, name: 'Vth' }, y: { test: 1060 }, color: { none: true } } }];
+  const plots = [{ id: 'p', chart: 'scatter', fields: { x: { test: 1050, name: 'Vth' }, y: { test: 1060 }, color: { none: true } } }];
   const { tab, opened } = mount('plot', { plotStore: createPlotStore(plots, undefined, 0) });
   const c = await until(() => tab.el.querySelector('[data-wmap-plot-id]'), 'the plot');
   c.querySelector('canvas').dispatchEvent(new dom.window.MouseEvent('mousemove', { bubbles: true, clientX: 70, clientY: 30 }));
@@ -193,7 +193,7 @@ test('the Plot tab: a point opens its wafer on the test the plot is about', asyn
 });
 
 test('a plot with no test in it opens the wafer\'s default map', async () => {
-  const plots = [{ id: 'p', mark: 'bar', encoding: { x: { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } }];
+  const plots = [{ id: 'p', chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } }];
   const { tab, opened } = mount('plot', { plotStore: createPlotStore(plots, undefined, 0) });
   const c = await until(() => tab.el.querySelector('[data-wmap-plot-id]'), 'the plot');
   c.querySelector('canvas').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, clientX: 66, clientY: 20 }));
@@ -203,8 +203,8 @@ test('a plot with no test in it opens the wafer\'s default map', async () => {
 
 test('a single-wafer host shows the plot\'s test on its own map', async () => {
   const shown = [];
-  const plots = [{ id: 'p', mark: 'histogram', encoding: { y: { test: 1060 }, color: { none: true } } },
-    { id: 'q', mark: 'scatter', encoding: { x: { test: 1050 }, y: { test: 1060 }, color: { none: true } } }];
+  const plots = [{ id: 'p', chart: 'histogram', fields: { y: { test: 1060 }, color: { none: true } } },
+    { id: 'q', chart: 'scatter', fields: { x: { test: 1050 }, y: { test: 1060 }, color: { none: true } } }];
   const { tab } = mount('plot', { plotStore: createPlotStore(plots, undefined, 0), openWafer: undefined, focusTest: (n) => shown.push(n) }, 1);
   const c = await until(() => tab.el.querySelector('[data-wmap-plot-id="q"]'), 'the plot');
   assert.match(c.textContent, /click a point to show this test on the map/);
@@ -217,9 +217,9 @@ test('a single-wafer host shows the plot\'s test on its own map', async () => {
 
 test('plot bars, boxes and lines open what they count when they are not a wafer', async () => {
   const plots = [
-    { id: 'b', mark: 'bar', encoding: { x: { meta: 'split' }, y: { test: 1050 }, color: { none: true } }, aggregate: 'mean' },
-    { id: 'h', mark: 'histogram', encoding: { y: { test: 1050 }, color: { none: true } } },
-    { id: 'l', mark: 'line', encoding: { x: { builtin: 'waferOrder' }, y: { test: 1050 }, color: { none: true } }, aggregate: 'mean' },
+    { id: 'b', chart: 'bar', fields: { x: { meta: 'split' }, y: { test: 1050 }, color: { none: true } }, aggregate: 'mean' },
+    { id: 'h', chart: 'histogram', fields: { y: { test: 1050 }, color: { none: true } } },
+    { id: 'l', chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: { test: 1050 }, color: { none: true } }, aggregate: 'mean' },
   ];
   const { tab, opened } = mount('plot', { plotStore: createPlotStore(plots, undefined, 0) });
   await until(() => tab.el.querySelectorAll('[data-wmap-plot-id]').length === 3, 'the plots');
@@ -261,11 +261,11 @@ test('with Group by on, a column of the overlaid histogram opens the dies in tha
   assert.match(m.getAttribute('aria-label'), /^Open a chart or table of \d+ dies with Vth from .+ to .+( on W\d| across [23] wafers)$/);
 });
 
-test('a sweep: a level of the curve opens the dies measured there', () => {
+test('a sweep: a level of the curve opens the dies measured there', async () => {
+  const { sweepToPlot } = await import('../dist/packages/stats/plotSpec.js');
   const sweep = { id: 's', title: 'Vth sweep', series: [{ label: 'Up', tests: [1050, 1060], xValues: [0, 5] }, { label: 'Down', tests: [1060, 1050], xValues: [0, 5] }] };
-  const { tab } = mount('sweeps', { sweeps: [sweep] });
-  const c = card(tab, 'Vth sweep');
-  assert.ok(c, 'the sweep card');
+  const { tab } = mount('plot', { plotStore: createPlotStore([sweepToPlot(sweep)], undefined, 0) });
+  const c = await until(() => card(tab, 'Vth sweep'), 'the sweep card');
   assert.match(c.textContent, /click a level to chart or tabulate the dies measured there/);
   const m = clickUntilMenu(c.querySelector('canvas'), range(60, 560, 20), [100]);
   assert.ok(m, 'a menu');

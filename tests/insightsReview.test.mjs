@@ -555,10 +555,9 @@ test('insights — a data or grouping change still rebuilds, cache or not', () =
   assert.notEqual(afterRender, first, 'an explicit render rebuilds rather than reusing a stale section');
 });
 
-// ── The Sweeps sub-tab ────────────────────────────────────────────────────────
-// Sweeps get their own tab, present exactly when any are defined: not an option,
-// and not a count threshold that would move a sweep between tabs as others are
-// added. They are not in Distributions, which is driven by one selected test.
+// ── Sweeps are plots ──────────────────────────────────────────────────────────
+// A sweep is a plot with the sweep mark: it is a card on the Plot tab, beside the reader's other plots. The old
+// `sweeps` option still works and becomes sweep plots; there is no tab of its own.
 
 function mountWithSweeps(items, lot, defaultView, sweeps, onRemoveSweeps) {
   const host = dom.window.document.getElementById('host');
@@ -585,48 +584,46 @@ const chartTitleAttrs = (tab) => [...tab.el.querySelectorAll('[data-wmap-chart-t
 const tabLabels = (tab) => [...tab.el.querySelectorAll('button[role="tab"]')].map(b => b.textContent);
 const selectedTab = (tab) => tab.el.querySelector('button[role="tab"][aria-selected="true"]')?.textContent;
 
-test('the Sweeps tab exists only when sweeps are defined', () => {
+test('there is no Sweeps tab, whether or not sweeps are defined', () => {
   const { items, lot } = lotItems(2);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), ['Overview', 'Distributions', 'Correlation', 'Data', 'Plot']);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), ['Overview', 'Distributions', 'Correlation', 'Data', 'Plot']);
-  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), ['Overview', 'Distributions', 'Correlation', 'Sweeps', 'Data', 'Plot']);
+  const expected = ['Overview', 'Distributions', 'Correlation', 'Data', 'Plot'];
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), expected);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), expected);
+  assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), expected);
 });
 
-test('sweep cards are in the Sweeps tab, not in Distributions', () => {
+const later = (ms = 0) => new Promise(r => setTimeout(r, ms));
+async function waitFor(fn, what) {
+  const end = Date.now() + 2000;
+  for (;;) { const v = fn(); if (v) return v; if (Date.now() > end) throw new Error(`timed out waiting for ${what}`); await later(5); }
+}
+
+test('sweeps from the old option are cards on the Plot tab, not in Distributions', async () => {
   const { items, lot } = lotItems(2);
-  const sweepsTab = mountWithSweeps(items, lot, 'sweeps', [SWEEP]);
-  assert.equal(selectedTab(sweepsTab), 'Sweeps');
-  assert.ok(chartTitleAttrs(sweepsTab).includes('Vth sweep card'), chartTitleAttrs(sweepsTab).join(' | '));
+  const plotTab = mountWithSweeps(items, lot, 'plot', [SWEEP]);
+  assert.equal(selectedTab(plotTab), 'Plot');
+  await waitFor(() => chartTitleAttrs(plotTab).includes('Vth sweep card'), 'the sweep card');
 
   const distTab = mountWithSweeps(items, lot, 'distributions', [SWEEP]);
   assert.ok(!chartTitleAttrs(distTab).includes('Vth sweep card'), 'no sweep card in Distributions');
 });
 
-test("defaultView 'sweeps' with no sweeps opens Overview — there is no such tab", () => {
+test("defaultView 'sweeps' opens the Plot tab, where sweeps are", () => {
   const { items, lot } = lotItems(2);
-  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', undefined)), 'Overview');
+  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', undefined)), 'Plot');
+  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', [SWEEP])), 'Plot');
 });
 
-test('a sweep naming no test of this data gets a notice on the Sweeps tab, with Remove when the host offers it', () => {
+test('a sweep naming no test of this data is kept and says so on its card; deleting one the host supplies tells the host', async () => {
   const { items, lot } = lotItems(2);
   const FOREIGN = { id: 'other', title: 'Other program', series: [{ label: 'A', tests: ['7000..7010'] }] };
-  const noticeOf = (tab) => tab.el.querySelector('[role="status"]');
-
-  const quiet = mountWithSweeps(items, lot, 'sweeps', [SWEEP]);
-  assert.equal(noticeOf(quiet), null, 'no notice when every sweep matches');
-
   let removed;
-  const tab = mountWithSweeps(items, lot, 'sweeps', [SWEEP, FOREIGN], ids => { removed = ids; });
-  const notice = noticeOf(tab);
-  assert.ok(notice, 'notice shown');
-  assert.match(notice.textContent, /1 of 2 sweeps name no test in this data: Other program/);
-  const btn = notice.querySelector('button');
-  assert.equal(btn.textContent, 'Remove this sweep');
-  btn.click();
-  assert.deepEqual(removed, ['other'], 'only the unmatched sweep is handed back');
-
-  const noHandler = mountWithSweeps(items, lot, 'sweeps', [FOREIGN]);
-  assert.ok(noticeOf(noHandler), 'the notice shows without a handler');
-  assert.equal(noticeOf(noHandler).querySelector('button'), null, 'but offers no button');
-  assert.match(noHandler.el.textContent, /None of this sweep’s tests are in this data/);
+  const tab = mountWithSweeps(items, lot, 'plot', [SWEEP, FOREIGN], ids => { removed = ids; });
+  const card = await waitFor(() => tab.el.querySelector('[data-wmap-plot-id="other"]'), 'the sweep card');
+  assert.match(card.textContent, /None of this sweep’s tests are in this data/);
+  assert.equal(card.style.opacity, '0.7', 'greyed, not dropped');
+  assert.equal(tab.el.querySelector('[data-wmap-plot-id="s1"]').style.opacity, '1');
+  card.querySelector('[data-wmap-plot-delete]').click();
+  assert.deepEqual(removed, ['other'], 'only the deleted sweep is handed back');
+  assert.ok(!tab.el.querySelector('[data-wmap-plot-id="other"]'));
 });

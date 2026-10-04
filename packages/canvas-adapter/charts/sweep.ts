@@ -88,6 +88,10 @@ export interface SweepPanelHandle {
   destroy: () => void;
   /** Re-aggregate over a new population, keeping the same curve definition. */
   setDies: (dies: Die[]) => void;
+  /** Draw a changed definition (the editor), keeping the population. */
+  setSpec: (spec: SweepSpec) => void;
+  /** The row under the title, for the host's own buttons (Edit, Duplicate, Delete). */
+  actions: HTMLElement;
 }
 
 /** Unit of the first test of the first series — what the y axis is in. Read
@@ -98,11 +102,12 @@ function yUnit(data: SweepData, testDefs: TestDef[] | undefined): string | undef
 }
 
 export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
-  const { spec, testDefs, onSaveImage, population } = options;
+  const { testDefs, onSaveImage, population } = options;
+  let spec = options.spec;
   let dies = options.dies;
 
 
-  const { card, body } = cardShell(spec.title, onSaveImage, options.ownerDocument);
+  const { card, body, heading, controlsRow } = cardShell(spec.title, onSaveImage, options.ownerDocument);
   card.style.alignSelf = 'start';
   const doc = card.ownerDocument;
 
@@ -489,5 +494,12 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
     card,
     destroy: () => { resizeHandle?.disconnect(); tooltip.remove(); card.remove(); },
     setDies: (next: Die[]) => { dies = next; rebuild(); },
+    setSpec: (next: SweepSpec) => {
+      spec = next;
+      heading.textContent = next.title;
+      card.dataset.wmapChartTitle = next.title;
+      rebuild();
+    },
+    actions: controlsRow,
   };
 }

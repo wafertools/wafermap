@@ -282,7 +282,7 @@ Either way, an **Insights** button appears in the toolbar. Clicking it swaps the
 
 The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button instead, for enlarging just that chart.
 
-The tab lays out three sub-tabs — four when you define sweeps, which get a **Sweeps** tab of their own (see [Derived tests and sweeps](#derived-tests-and-sweeps)):
+The tab lays out three chart sub-tabs, then **Data** and **Plot**. Sweeps are cards on the Plot tab (see [Derived tests and sweeps](#derived-tests-and-sweeps)):
 
 - **Overview** — headline tiles naming the population (wafers, dies analysed and excluded, and for a lot the mean wafer yield), a **per-test pass rate** chart (worst test first, one sub-bar per group when grouping is active), a yield bar labelled with the actual pass bins in use and marked with a dashed median reference, and a hard/soft bin pareto.
 - **Distributions** — process capability, a test-value box plot, a value histogram, and a **wafer-to-wafer trend** (one point per wafer at its mean, ±1σ whiskers, the die-weighted lot mean as a centre line, and spec limits where the test has them). The trend is always in slot order and has no sort control by design — drift only reads in the population's own sequence.
@@ -367,21 +367,24 @@ A test program that measures one quantity at a series of drive levels records it
 renderWaferGallery(container, items, {
   insights: {
     enabled: true,
-    sweeps: [{
+    plots: [{
       id: 'power',
       title: 'Power Sweep — rise vs fall',
-      series: [
-        { label: 'Rising',  tests: [1200, 1201, 1202], xValues: [0, 3, 6] },
-        { label: 'Falling', tests: [1210, 1211, 1212], xValues: [0, 3, 6] },
-      ],
-      separationAt: [0.45, 0.60],
-      xLabel: 'Drive level (dBm)',
+      chart: 'sweep',
+      sweep: {
+        series: [
+          { label: 'Rising',  tests: [1200, 1201, 1202], xValues: [0, 3, 6] },
+          { label: 'Falling', tests: [1210, 1211, 1212], xValues: [0, 3, 6] },
+        ],
+        separationAt: [0.45, 0.60],
+        xLabel: 'Drive level (dBm)',
+      },
     }],
   },
 });
 ```
 
-Each sweep gets a card in the **Sweeps** sub-tab, which appears only when at least one sweep is defined — on a single map or a gallery alike. Pass `defaultView: 'sweeps'` to open on it.
+A sweep is a plot with `chart: 'sweep'`, so it is a card on the **Plot** sub-tab, kept and shared like any other plot (`plots`, `onPlotsChange`, Export and Import) — on a single map or a gallery alike. **+ New sweep** starts one in the app and **Edit** opens a sweep editor beside the curve; pass `defaultView: 'plot'` to open on the tab. `insights.sweeps` still works but is deprecated: each entry is drawn as a sweep plot under its own `id`, and `readPlotsFile` reads a `tsmap-sweeps` file.
 
 **→ [Example: Parametric sweeps](../examples/sweeps.html)** — five characterisation sweeps: temperature inversion, DIBL, data retention, output drive, and an RRAM resistance distribution read from test names on a log axis.
 
@@ -427,8 +430,36 @@ sweeps: [{
 }]
 ```
 
-- `{x}` reads a number, `*` matches any text, and everything else must appear in the name — in any case, because test text changes case between programs. The pattern is found anywhere in the name, so it needs only enough text around `{x}` to be unambiguous.
+- `{x}` reads a number, `*` matches any text, `?` matches exactly one character, and everything else must appear in the name — in any case, because test text changes case between programs. The pattern is found anywhere in the name, so it needs only enough text around `{x}` to be unambiguous.
 - `{x}` reads an SI prefix with the number, case-sensitively: `m` is milli, `M` mega, and `K` is accepted as kilo. A letter is a prefix only when it stands alone or comes before a unit (`12K`, `12kΩ`, `5us`), so `12Kangaroos` reads 12. In a name written all in capitals the case is gone, so a prefix before a unit is read in any case — except `M`, which could be milli or mega and is reported rather than guessed (`2MV`). Put the letter in the pattern (`'V_{x}MV'`) and the unit in `xLabel` to read those.
+- Worked examples (the sweep editor shows the same list under **Pattern examples**, and the preview under the pattern box shows what it reads from the names in your data as you type):
+
+  | Test name | Pattern | Reads | Why |
+  | --- | --- | --- | --- |
+  | `Fmax @ 0.55 V` | `@ {x}` | 0.55 | the text before the number picks it out; the unit after it is ignored |
+  | `1234-5` | `-{x}` | 5 | the number after the dash |
+  | `1234-5` | `{x}` | 1234 | with nothing around it, `{x}` takes the first number |
+  | `A-1-5` | `A-1-{x}` | 5 | a pattern fits the first place it can, so add more of the name |
+  | `VDD=1.2V_IDS` | `VDD={x}` | 1.2 | |
+  | `Idsat Vg=0.8 Vd=1.0` | `Vd={x}` | 1 | the second of two levels |
+  | `Tj-40C_Vth` | `Tj{x}C` | −40 | a minus sign belongs to the number |
+  | `Step 03 of 12` | `Step {x}` | 3 | |
+  | `PAT_7_RUN2` | `PAT_{x}_` | 7 | text after `{x}` must follow it, so `RUN2` is not read |
+  | `LRS_STATS_12K` | `LRS_STATS_{x}` | 12,000 | `{x}` reads the `K` as kilo |
+  | `LRS_STATS_12K` | `LRS_STATS_{x}K` | 12 | write the `K` in the pattern to keep the number as the name shows it |
+  | `Fmax_25C_0.55V` | `C_{x}` | 0.55 | the text just before the number, here the end of the temperature |
+  | `VCC_1.8V_TEMP_125` | `TEMP_{x}` | 125 | other numbers in the name are ignored |
+  | `LRS_RUN3_STATS_12K` | `LRS*STATS_{x}` | 12,000 | `*` skips any length of text between the two parts |
+  | `fmax @ 0.55 v` | `FMAX @ {x}` | 0.55 | text matches in any case |
+  | `Vth @ 50mV` | `@ {x}` | 0.05 | the `m` of `mV` is read as milli, so 50 mV is 0.05 |
+  | `Delay 5ns @ 25C` | `Delay {x}` | 5 × 10⁻⁹ | a unit with a prefix is scaled to its base unit |
+  | `Leak I=1e-6A` | `I={x}` | 10⁻⁶ | exponent notation is read |
+
+  | `12314` | `123?{x}` | 4 | `?` is any one character, so names of one shape can be read by position: here the digit after `123` and one more |
+  | `12336` | `123?{x}` | 6 | the same pattern on the next name |
+
+  **What a pattern cannot do:** take part of a number, so reading the last digit of `12314` needs the characters before it spelled out or skipped with `?` (`123?{x}`), which suits names of one length. It cannot count back from the end of a name. For names of uneven length, give the X values directly with `xValues`.
+
 - It is **not a regular expression**, deliberately. Sweep definitions are shared, and JavaScript cannot interrupt a runaway regex; this matcher's cost is bounded whatever the pattern says.
 - Each value stays attached to its own test, so a missing test costs one point instead of shifting the rest. A name the pattern does not fit is named in the card footer, and nothing is measured.
 
@@ -436,7 +467,7 @@ Each line is the population **median with a p10–p90 band**, never one trace pe
 
 A sweep carries **no population scope of its own**. It names which tests form the curve and nothing about which dies, so one definition stays valid for any lot and portable between hosts — the dies it aggregates are whatever the Insights view is currently scoped to, including the group or wafer picked in the panel above it.
 
-The same definitions reach **drilldown**: a user who selects dies on a map, or right-clicks a wafer, gets a menu drawn from just that population — a value histogram, process capability, each sweep, and two tables (**Dies** and **Test statistics**, the Data tab's views over those dies; their Export CSV goes through `onSaveText`) — opened in a modal that states how many dies it plots and from which wafer. There is nothing to wire; a single map offers the sweeps even with `insights.enabled` off. The menu is always offered, because there are always dies to list: a bins-only map gets **Dies**, with the charts and **Test statistics** greyed and explained. A host that needs its own context menu on a map must handle it before it reaches the canvas. The user guide (§4.4) describes it from the user's side.
+The same plots reach **drilldown**: a user who selects dies on a map, or right-clicks a wafer, gets a menu drawn from just that population — a value histogram, process capability, each saved plot and sweep, and two tables (**Dies** and **Test statistics**, the Data tab's views over those dies; their Export CSV goes through `onSaveText`) — opened in a modal that states how many dies it plots and from which wafer. There is nothing to wire; a single map offers the saved plots and sweeps even with `insights.enabled` off. The menu is always offered, because there are always dies to list: a bins-only map gets **Dies**, with the charts and **Test statistics** greyed and explained. A host that needs its own context menu on a map must handle it before it reaches the canvas. The user guide (§4.4) describes it from the user's side.
 
 The card is explicit about what it cannot measure rather than quietly rounding it off: a crossing that happens more than once says so instead of presenting the first as the only one, a separation level that either curve never reaches reads "not measurable" and names which series rather than reporting `0`, and tests missing from `testDefs`, functional tests inside a sweep, and series carrying different units are all listed in the card footer.
 

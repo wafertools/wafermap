@@ -20,7 +20,7 @@ import type { WaferMetadata } from '../core/metadata.js';
 import { classifyDie } from '../core/classify.js';
 import { testValue, testsPresent } from '../core/dieTable.js';
 import { compareNatural, minOf, maxOf } from '../core/utils.js';
-import type { TestDef } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
@@ -266,7 +266,8 @@ function axisFor(role: 'x' | 'y', label: string, unit: string | undefined, spec:
  * needs a name in its heading, or the card reads as an empty box with nothing to say what it was for.
  */
 function titleFromSpec(spec: PlotSpec, ctx: PlotContext): string {
-  const { mark, encoding: enc } = spec;
+  const { chart: mark } = spec;
+  const enc = spec.fields ?? {};
   const x = enc.x ? fieldLabel(enc.x, ctx.testDefs) : (mark === 'box' || mark === 'bar') ? 'Wafer' : undefined;
   const y = enc.y ? fieldLabel(enc.y, ctx.testDefs) : undefined;
   switch (mark) {
@@ -291,12 +292,14 @@ function emptyResult(spec: PlotSpec, items: readonly PlotItem[], issues: string[
 export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext = {}): ResolvedPlot {
   const versionIssue = plotIssue(spec);
   if (versionIssue) return emptyResult(spec, items, [versionIssue], ctx);
+  const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
+  // A sweep reads runs of tests, not fields: the sweep panel draws it, and the callers branch on the mark first.
+  if (spec.chart === 'sweep') return fail('A sweep is drawn by the sweep panel');
   const rows = flatten(items);
   const r: Resolver = { items, rows, ctx };
-  const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
 
-  const mark = spec.mark;
-  const enc = spec.encoding;
+  const mark = spec.chart;
+  const enc = spec.fields ?? {};
   const xField: PlotField | undefined = enc.x ?? ((mark === 'box' || mark === 'bar') ? { builtin: 'wafer' } : undefined);
   const yField: PlotField | undefined = enc.y;
   const valueField = mark === 'histogram' ? (yField ?? xField) : yField;
@@ -644,7 +647,7 @@ export type PlotRole = 'x' | 'y' | 'color';
  * values must be numeric; a bar or box groups by a category (or a lot field with a handful of values); a colour is
  * always a category, since a continuous colour is not drawn yet.
  */
-export function fieldsForRole(catalogue: readonly FieldOption[], mark: PlotSpec['mark'], role: PlotRole): FieldOption[] {
+export function fieldsForRole(catalogue: readonly FieldOption[], mark: PlotSpec['chart'], role: PlotRole): FieldOption[] {
   const valueRole = role === 'y' || (role === 'x' && (mark === 'scatter' || mark === 'line' || mark === 'histogram'));
   // A scatter can also be coloured on a gradient by a measured value or a wafer figure.
   if (role === 'color') return catalogue.filter(f => f.categorical || (mark === 'scatter' && f.kind === 'numeric'));
@@ -659,9 +662,9 @@ export function fieldsForRole(catalogue: readonly FieldOption[], mark: PlotSpec[
  */
 export function defaultPlot(catalogue: readonly FieldOption[], id: string): PlotSpec {
   const tests = catalogue.filter(f => f.group === 'Tests');
-  if (tests.length >= 2) return { id, mark: 'scatter', encoding: { x: tests[0].field, y: tests[1].field } };
-  if (tests.length === 1) return { id, mark: 'histogram', encoding: { y: tests[0].field } };
-  return { id, mark: 'scatter', encoding: { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' } } };
+  if (tests.length >= 2) return { id, chart: 'scatter', fields: { x: tests[0].field, y: tests[1].field } };
+  if (tests.length === 1) return { id, chart: 'histogram', fields: { y: tests[0].field } };
+  return { id, chart: 'scatter', fields: { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' } } };
 }
 
 
@@ -696,13 +699,13 @@ export function titleDrift(spec: PlotSpec, catalogue: readonly FieldOption[]): T
   const title = spec.title?.trim();
   const none: TitleDrift = { names: [], omits: [] };
   if (!title) return none;
-  const colour = spec.encoding.color;
-  const used = [spec.encoding.x, spec.encoding.y, colour].filter((f): f is PlotField => isField(f));
+  const colour = spec.fields?.color;
+  const used = [spec.fields?.x, spec.fields?.y, colour].filter((f): f is PlotField => isField(f));
   const isUsed = (f: PlotField) => used.some(u => sameField(u, f));
   const names = catalogue
     .filter(o => !GENERIC_NAMES.has(o.name.toLowerCase()) && !('meta' in o.field) && !isUsed(o.field) && mentions(title, o.name))
     .map(o => o.name);
-  const roles = [spec.encoding.x, spec.encoding.y].filter((f): f is PlotField => isField(f));
+  const roles = [spec.fields?.x, spec.fields?.y].filter((f): f is PlotField => isField(f));
   const nameOf = (f: PlotField) => catalogue.find(o => sameField(o.field, f))?.name ?? fieldLabel(f);
   const named = roles.filter(f => !GENERIC_NAMES.has(nameOf(f).toLowerCase()) && mentions(title, nameOf(f)));
   const missing = roles.filter(f => !GENERIC_NAMES.has(nameOf(f).toLowerCase()) && !mentions(title, nameOf(f)));
@@ -726,21 +729,23 @@ export function describeTitleDrift(d: TitleDrift): string | null {
  * One example of each chart type that this population can show, so a reader who has not built a plot before has
  * something to start from: a scatter of the first two tests, a histogram of the first, a box of the first by wafer, a
  * bar of yield by the first lot field that divides the wafers (by wafer when none does), and the first test over wafer
- * order as a line. A type is left out when the population cannot support it (a line needs two wafers). Untitled, so
- * each one is named by what it plots.
+ * order as a line, and a sweep of the first few tests in test order. A type is left out when the population cannot
+ * support it (a line needs two wafers, a sweep two tests). Untitled, so each one is named by what it plots; the sweep,
+ * which has no fields to name it by, is titled "Example sweep".
  */
 export function examplePlots(catalogue: readonly FieldOption[], waferCount: number, newId: () => string): PlotSpec[] {
   const tests = catalogue.filter(f => f.group === 'Tests').map(f => f.field);
   const out: PlotSpec[] = [];
   const manyWafers = waferCount > 1;
-  if (tests.length >= 2) out.push({ id: newId(), mark: 'scatter', encoding: { x: tests[0], y: tests[1] } });
-  if (tests.length >= 1) out.push({ id: newId(), mark: 'histogram', encoding: { y: tests[0], color: { none: true } } });
-  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), mark: 'box', encoding: { x: { builtin: 'wafer' }, y: tests[0], color: { none: true } } });
+  if (tests.length >= 2) out.push({ id: newId(), chart: 'scatter', fields: { x: tests[0], y: tests[1] } });
+  if (tests.length >= 1) out.push({ id: newId(), chart: 'histogram', fields: { y: tests[0], color: { none: true } } });
+  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), chart: 'box', fields: { x: { builtin: 'wafer' }, y: tests[0], color: { none: true } } });
   if (manyWafers) {
     const dividing = catalogue.find(f => 'meta' in f.field && f.distinct !== undefined && f.distinct >= 2 && f.distinct <= Math.max(2, Math.floor(waferCount / 2)));
-    out.push({ id: newId(), mark: 'bar', encoding: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
+    out.push({ id: newId(), chart: 'bar', fields: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
   }
-  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), mark: 'line', encoding: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean' });
+  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean' });
+  if (tests.length >= 2) out.push({ ...startingSweep(tests.flatMap(f => ('test' in f ? [f.test] : [])), newId()), title: 'Example sweep' });
   return out;
 }
 
@@ -752,8 +757,22 @@ export function examplePlots(catalogue: readonly FieldOption[], waferCount: numb
  * where the wafer's own default map is the right one.
  */
 export function plotTestNumber(spec: PlotSpec): number | undefined {
-  const { x, y, color } = spec.encoding;
-  const order = spec.mark === 'scatter' ? [x, y, color] : spec.mark === 'histogram' ? [y, x] : [y];
+  const { x, y, color } = spec.fields ?? {};
+  const order = spec.chart === 'scatter' ? [x, y, color] : spec.chart === 'histogram' ? [y, x] : [y];
   for (const f of order) if (isField(f) && 'test' in f) return f.test;
   return undefined;
+}
+
+/**
+ * A new sweep to start from: one series of the lot's first few parametric tests, in test order, on the ordinal axis
+ * (no X scale is claimed). Never an empty editor; the reader edits the tests and adds the series they meant.
+ */
+export function defaultSweep(testDefs: readonly TestDef[], id: string): PlotSpec {
+  return startingSweep(testDefs.filter(isParametricTest).map(t => t.testNumber), id);
+}
+
+/** One series of the first five of `tests`, in test order. */
+function startingSweep(tests: readonly number[], id: string): PlotSpec {
+  const run = [...tests].sort((a, b) => a - b).slice(0, 5);
+  return { id, chart: 'sweep', sweep: { series: [{ label: 'Series 1', tests: run }] } };
 }

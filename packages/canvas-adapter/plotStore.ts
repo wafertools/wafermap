@@ -7,7 +7,10 @@
 // still waiting, for when the view goes away.
 
 import type { PlotSpec } from '../stats/plotSpec.js';
+import { sweepToPlot } from '../stats/plotSpec.js';
+import type { SweepSpec } from '../stats/sweep.js';
 import { newPlotId } from '../stats/plotId.js';
+import { noticeOnce } from '../renderer/deprecate.js';
 
 export interface PlotStore {
   get(): readonly PlotSpec[];
@@ -37,12 +40,35 @@ export function copyTitle(title: string, existing: ReadonlyArray<string | undefi
   return candidate;
 }
 
+/** Sweeps a host still supplies through `insights.sweeps`: they become sweep plots in the list. */
+export interface LegacySweeps {
+  sweeps: readonly SweepSpec[] | undefined;
+  /** Told when the reader deletes one of them, so the host stops supplying it (else the next render brings it back). */
+  onRemove?: (ids: string[]) => void;
+}
+
+/**
+ * The store for a host's `insights` options: its saved plots, with any `sweeps` it still supplies turned into sweep
+ * plots. A plot already saved under a sweep's id wins, so a host that keeps both does not show a sweep twice and an
+ * edit the reader made is not undone by the host's older definition.
+ */
+export function plotStoreFor(insights: { plots?: PlotSpec[]; onPlotsChange?: (plots: PlotSpec[]) => void; sweeps?: SweepSpec[]; onRemoveSweeps?: (ids: string[]) => void } | undefined): PlotStore {
+  return createPlotStore(insights?.plots, insights?.onPlotsChange, undefined, { sweeps: insights?.sweeps, onRemove: insights?.onRemoveSweeps });
+}
+
 export function createPlotStore(
   initial: readonly PlotSpec[] | undefined,
   onChange?: (plots: PlotSpec[]) => void,
   delayMs = 400,
+  legacy?: LegacySweeps,
 ): PlotStore {
-  let plots: PlotSpec[] = (initial ?? []).map(p => JSON.parse(JSON.stringify(p)) as PlotSpec);
+  const have = new Set((initial ?? []).map(p => p.id));
+  const fromSweeps = (legacy?.sweeps ?? []).filter(sw => !have.has(sw.id));
+  if ((legacy?.sweeps?.length ?? 0) > 0) {
+    noticeOnce('insights.sweeps', '`insights.sweeps` is deprecated: sweeps are plots now. Pass them in `insights.plots` as sweep plots (readPlotsFile reads a sweeps file), which the Plot tab can also save and share.');
+  }
+  const legacyIds = new Set((legacy?.sweeps ?? []).map(sw => sw.id));
+  let plots: PlotSpec[] = [...(initial ?? []), ...fromSweeps.map(sweepToPlot)].map(p => JSON.parse(JSON.stringify(p)) as PlotSpec);
   const listeners = new Set<() => void>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pending = false;
@@ -78,6 +104,7 @@ export function createPlotStore(
       const plot = plots[index];
       plots = plots.filter((_, k) => k !== index);
       changed();
+      if (legacyIds.has(id)) legacy?.onRemove?.([id]);
       return { plot, index };
     },
     duplicate(id) {

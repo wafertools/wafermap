@@ -38,22 +38,41 @@ export interface PlotEditorHandle {
 const FOLLOW = '\0follow';
 const NONE = '\0none';
 
-const MARK_OPTIONS: Array<[string, string]> = [['scatter', 'Scatter'], ['histogram', 'Histogram'], ['box', 'Box'], ['bar', 'Bar'], ['line', 'Line']];
+const CHART_OPTIONS: Array<[string, string]> = [['scatter', 'Scatter'], ['histogram', 'Histogram'], ['box', 'Box'], ['bar', 'Bar'], ['line', 'Line']];
 const AUTO = '\0auto';
 const COUNT = '\0count';
 
 const AGGREGATE_LABEL: Record<string, string> = { mean: 'Mean', median: 'Median', min: 'Minimum', max: 'Maximum', sum: 'Sum', count: 'Count', yield: 'Pooled yield (passing over judged dies)' };
 
-function inputStyle(): Partial<CSSStyleDeclaration> {
+export function inputStyle(): Partial<CSSStyleDeclaration> {
   return {
     background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control,
     padding: `${SPACE.xs} ${SPACE.sm}`, fontSize: FONT.body, fontFamily: FONT.family, boxSizing: 'border-box', minWidth: '0',
   };
 }
 
+/** A labelled control with an optional hint beneath it: the one layout every editor field uses. */
+export function fieldRow(doc: Document, label: string, control: HTMLElement, hint?: string): HTMLElement {
+  const wrap = doc.createElement('div');
+  Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xxs, minWidth: '0' } as Partial<CSSStyleDeclaration>);
+  const l = doc.createElement('div');
+  l.textContent = label;
+  Object.assign(l.style, { fontSize: FONT.sub, color: CLR.label, fontWeight: '600' } as Partial<CSSStyleDeclaration>);
+  wrap.append(l, control);
+  if (hint) {
+    const h = doc.createElement('div');
+    h.textContent = hint;
+    Object.assign(h.style, { fontSize: FONT.sub, color: CLR.label } as Partial<CSSStyleDeclaration>);
+    wrap.appendChild(h);
+  }
+  return wrap;
+}
+
 export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   const { doc } = o;
-  let plot = o.plot;
+  /** A plot of any field-based chart always has `fields` here (a sweep, which may lack them, is not edited by this editor). */
+  const withFields = (p: PlotSpec): PlotSpec => (p.fields ? p : { ...p, fields: {} });
+  let plot = withFields(o.plot);
   let tab: 'setup' | 'customise' = 'setup';
   const root = doc.createElement('div');
   root.dataset.wmapPlotEditor = '1';
@@ -66,30 +85,16 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     emit(draft);
   };
 
-  const row = (label: string, control: HTMLElement, hint?: string): HTMLElement => {
-    const wrap = doc.createElement('div');
-    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xxs, minWidth: '0' } as Partial<CSSStyleDeclaration>);
-    const l = doc.createElement('div');
-    l.textContent = label;
-    Object.assign(l.style, { fontSize: FONT.sub, color: CLR.label, fontWeight: '600' } as Partial<CSSStyleDeclaration>);
-    wrap.append(l, control);
-    if (hint) {
-      const h = doc.createElement('div');
-      h.textContent = hint;
-      Object.assign(h.style, { fontSize: FONT.sub, color: CLR.label } as Partial<CSSStyleDeclaration>);
-      wrap.appendChild(h);
-    }
-    return wrap;
-  };
+  const row = (label: string, control: HTMLElement, hint?: string): HTMLElement => fieldRow(doc, label, control, hint);
 
   const fieldOptions = (role: PlotRole): ListSelectOption[] =>
-    fieldsForRole(o.catalogue, plot.mark, role).map(f => ({ value: fieldKey(f.field), label: f.label, group: f.group }));
+    fieldsForRole(o.catalogue, plot.chart, role).map(f => ({ value: fieldKey(f.field), label: f.label, group: f.group }));
 
   const fieldByKey = (key: string): PlotField | undefined => o.catalogue.find(f => fieldKey(f.field) === key)?.field;
 
   /** A select for an X or Y role. A saved field the lot lacks, or one this chart type cannot use, stays selectable so the plot can be read. */
   function fieldSelect(role: 'x' | 'y', ariaLabel: string, opts: { optional?: string } = {}): HTMLElement {
-    const current = plot.encoding[role];
+    const current = plot.fields![role];
     const options = fieldOptions(role);
     if (opts.optional) options.unshift({ value: COUNT, label: opts.optional, group: 'Count' });
     if (current && !options.some(p => p.value === fieldKey(current))) {
@@ -99,9 +104,9 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     }
     const value = current ? fieldKey(current) : opts.optional ? COUNT : '';
     const sel = makeListSelect(options, value, key => {
-      if (key === COUNT) { edit(d => { delete d.encoding[role]; }); return; }
-      const f = fieldByKey(key) ?? plot.encoding[role];
-      if (f) edit(d => { d.encoding[role] = f; });
+      if (key === COUNT) { edit(d => { delete d.fields![role]; }); return; }
+      const f = fieldByKey(key) ?? plot.fields![role];
+      if (f) edit(d => { d.fields![role] = f; });
     }, { maxWidth: '100%', ownerDocument: doc, ariaLabel, emptyText: 'Choose a field…', searchPlaceholder: 'Filter fields…', hook: `plot-${role}` });
     sel.style.width = '100%';
     return sel;
@@ -112,31 +117,31 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   /** Fields chosen for the reader when a type needed one, as against fields the reader picked: only the latter are worth keeping. */
   const supplied: Partial<Record<'x' | 'y', PlotField>> = {};
 
-  function changeMark(next: PlotSpec['mark']): void {
+  function changeChart(next: PlotSpec['chart']): void {
     edit(d => {
-      d.mark = next;
+      d.chart = next;
       for (const role of ['x', 'y'] as const) {
         const options = fieldsForRole(o.catalogue, next, role);
         const usable = (f: PlotField | undefined) => !!f && options.some(p => sameField(p.field, f));
-        const current = d.encoding[role];
+        const current = d.fields![role];
         if (current && !usable(current)) {
           if (!sameField(current, supplied[role])) stash[role] = current;
-          delete d.encoding[role];
+          delete d.fields![role];
         }
-        if (d.encoding[role] || (role === 'y' && next === 'bar')) continue;
+        if (d.fields![role] || (role === 'y' && next === 'bar')) continue;
         const back = stash[role];
-        if (usable(back)) { d.encoding[role] = back; delete stash[role]; delete supplied[role]; continue; }
+        if (usable(back)) { d.fields![role] = back; delete stash[role]; delete supplied[role]; continue; }
         const pick = role === 'x' && (next === 'box' || next === 'bar') ? { builtin: 'wafer' } as PlotField
           : role === 'x' && next === 'line' ? (options.find(p => p.group === 'Wafer')?.field ?? options[0]?.field)
           : options[0]?.field;
-        if (pick && !(role === 'x' && (next === 'histogram'))) { d.encoding[role] = pick; supplied[role] = pick; }
+        if (pick && !(role === 'x' && (next === 'histogram'))) { d.fields![role] = pick; supplied[role] = pick; }
       }
     });
     build();
   }
 
   function aggregateSelect(): HTMLElement {
-    const yIsYield = !!plot.encoding.y && 'builtin' in plot.encoding.y && plot.encoding.y.builtin === 'yield';
+    const yIsYield = !!plot.fields!.y && 'builtin' in plot.fields!.y && plot.fields!.y.builtin === 'yield';
     const options: ListSelectOption[] = [{ value: AUTO, label: 'Automatic' }, ...(['mean', 'median', 'min', 'max', 'sum', 'count'] as const).map(k => ({ value: k, label: AGGREGATE_LABEL[k] }))];
     if (yIsYield) options.push({ value: 'yield', label: AGGREGATE_LABEL.yield });
     const sel = makeListSelect(options, plot.aggregate ?? AUTO, key => edit(d => {
@@ -147,7 +152,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   }
 
   function colourSelect(): HTMLElement {
-    const c = plot.encoding.color;
+    const c = plot.fields!.color;
     const follow = o.followLabel();
     const opts: ListSelectOption[] = [
       { value: FOLLOW, label: follow ? `Follow Group by (${follow})` : 'Follow Group by (single colour)', group: 'Colour' },
@@ -157,9 +162,9 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     const value = c === undefined || 'follow' in c ? FOLLOW : 'none' in c ? NONE : fieldKey(c);
     const sel = makeListSelect(opts, value, key => {
       edit(d => {
-        if (key === FOLLOW) delete d.encoding.color;
-        else if (key === NONE) d.encoding.color = { none: true };
-        else { const f = fieldByKey(key); if (f) d.encoding.color = f; }
+        if (key === FOLLOW) delete d.fields!.color;
+        else if (key === NONE) d.fields!.color = { none: true };
+        else { const f = fieldByKey(key); if (f) d.fields!.color = f; }
       });
     }, { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Colour', searchPlaceholder: 'Filter fields…', hook: 'plot-color' });
     sel.style.width = '100%';
@@ -297,9 +302,9 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     Object.assign(panel.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg } as Partial<CSSStyleDeclaration>);
 
     if (tab === 'setup') {
-      panel.appendChild(row('Chart type', makeSegmented(MARK_OPTIONS, plot.mark, v => changeMark(v as PlotSpec['mark']), doc, true)));
+      panel.appendChild(row('Chart type', makeSegmented(CHART_OPTIONS, plot.chart, v => changeChart(v as PlotSpec['chart']), doc, true)));
       const noun = plot.level === 'wafer' ? 'wafers' : 'dies';
-      switch (plot.mark) {
+      switch (plot.chart) {
         case 'scatter':
           panel.appendChild(row('X axis', fieldSelect('x', 'X axis')));
           panel.appendChild(row('Y axis', fieldSelect('y', 'Y axis')));
@@ -322,7 +327,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       }
       panel.appendChild(row('Colour', colourSelect(), 'Each value of the field gets its own colour. Follow Group by takes it from the Group by control.'));
       // How values become marks. Hidden where it cannot matter, so the common plot has no extra controls.
-      if (plot.mark === 'bar' || plot.mark === 'line' || plot.level === 'wafer') panel.appendChild(row('Combine values by', aggregateSelect()));
+      if (plot.chart === 'bar' || plot.chart === 'line' || plot.level === 'wafer') panel.appendChild(row('Combine values by', aggregateSelect()));
       panel.appendChild(row('One mark per', makeSegmented([[AUTO, 'Automatic'], ['die', 'Die'], ['wafer', 'Wafer']], plot.level ?? AUTO, v => {
         edit(d => { if (v === AUTO) delete d.level; else d.level = v as 'die' | 'wafer'; });
         build();
@@ -338,12 +343,12 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       panel.appendChild(driftEl);
       syncDrift();
       const auto = o.autoText();
-      const categorical = plot.mark === 'box' || plot.mark === 'bar';
-      panel.appendChild(axisBlock('x', plot.mark === 'histogram' ? 'Values axis' : categorical ? 'Categories axis' : 'X axis', auto.x,
+      const categorical = plot.chart === 'box' || plot.chart === 'bar';
+      panel.appendChild(axisBlock('x', plot.chart === 'histogram' ? 'Values axis' : categorical ? 'Categories axis' : 'X axis', auto.x,
         { scale: !categorical, limits: !categorical }));
-      panel.appendChild(axisBlock('y', plot.mark === 'histogram' ? 'Count axis' : categorical || plot.mark === 'line' ? 'Values axis' : 'Y axis', auto.y,
-        { scale: plot.mark !== 'histogram' }));
-      if (plot.mark === 'histogram') {
+      panel.appendChild(axisBlock('y', plot.chart === 'histogram' ? 'Count axis' : categorical || plot.chart === 'line' ? 'Values axis' : 'Y axis', auto.y,
+        { scale: plot.chart !== 'histogram' }));
+      if (plot.chart === 'histogram') {
         panel.appendChild(row('Bins', numberBox(plot.bins, 'Number of bins', v => edit(d => {
           if (v === undefined || !Number.isInteger(v) || v < 1) delete d.bins; else d.bins = Math.min(v, 200);
         })), 'Automatic is 16 equal bins.'));
@@ -357,8 +362,9 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   return {
     el: root,
     setPlot(next) {
-      if (sameField(next.encoding.x, plot.encoding.x) && sameField(next.encoding.y, plot.encoding.y) && next.mark === plot.mark && JSON.stringify(next) === JSON.stringify(plot)) return;
-      plot = next;
+      const incoming = withFields(next);
+      if (JSON.stringify(incoming) === JSON.stringify(plot)) return;
+      plot = incoming;
       build();
     },
     refreshAuto() {

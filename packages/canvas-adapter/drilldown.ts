@@ -15,6 +15,7 @@ import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
 import { isParametricTest } from '../renderer/buildWaferMap.js';
 import { buildSweepData, type SweepSpec } from '../stats/sweep.js';
+import { plotToSweep } from '../stats/plotSpec.js';
 import { renderSweepPanel } from './charts/sweep.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCapabilityPanel } from './charts/capability.js';
@@ -33,7 +34,6 @@ export type { DrilldownSource, DrilldownItem };
 
 /** What the targets can draw on — the host's chart definitions and hooks. */
 export interface DrilldownContext {
-  sweeps?: SweepSpec[];
   /** The reader's saved plots: each is a row in the menu, opened on the selection. */
   plots?: PlotStore;
   onSaveImage?: SaveImageHandler;
@@ -103,7 +103,7 @@ function sweepTarget(spec: SweepSpec, source: DrilldownSource, ctx: DrilldownCon
     if (!data.series.some(s => s.points.some(p => p.count > 0))) unavailable = 'These dies have no values for this sweep’s tests';
   }
   return {
-    section: 'Sweep', label: spec.title, unavailable,
+    section: 'Plots', label: spec.title, unavailable,
     open: () => {
       // The sweep states its own population in its hint, with its own count.
       const panel = renderSweepPanel({
@@ -200,6 +200,9 @@ function plotTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: Ele
   };
 
   const saved: Target[] = store.get().map(plot => {
+    // A sweep is a plot of its own kind: the sweep panel draws it, over the dies picked.
+    const sweep = plotToSweep(plot);
+    if (sweep) return sweepTarget(sweep, source, ctx, anchor);
     const r = resolvePlot(plot, items, plotCtx);
     return {
       section: 'Plots', label: plotTitle(r) || 'Plot',
@@ -264,7 +267,6 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
 function targetsFor(source: DrilldownSource, ctx: DrilldownContext, anchor: Element): Target[] {
   return [
     ...distributionTargets(source, ctx, anchor),
-    ...(ctx.sweeps ?? []).map(spec => sweepTarget(spec, source, ctx, anchor)),
     ...plotTargets(source, ctx, anchor),
     ...tableTargets(source, ctx, anchor),
   ];

@@ -45,6 +45,8 @@ const { renderWaferMap, renderWaferGallery } = await import('../dist/packages/ca
 const { openDrilldownMenu } = await import('../dist/packages/canvas-adapter/drilldown.js');
 const { selectionPopulation, waferPopulation } = await import('../dist/packages/canvas-adapter/chartPopulation.js');
 const { renderBarPanel } = await import('../dist/packages/canvas-adapter/charts/barPanel.js');
+const { createPlotStore } = await import('../dist/packages/canvas-adapter/plotStore.js');
+const { sweepToPlot } = await import('../dist/packages/stats/plotSpec.js');
 
 const TEST_DEFS = [
   { testNumber: 1000, name: 'Step 0' },
@@ -53,6 +55,8 @@ const TEST_DEFS = [
 ];
 const SWEEP = { id: 's', title: 'Drive sweep', series: [{ label: 'Up', tests: [1000, 1001] }] };
 const ABSENT = { id: 'a', title: 'Absent sweep', series: [{ label: 'Up', tests: [3000, 3001] }] };
+/** Sweeps are plots: the menu lists them from the saved plots. */
+const sweepPlots = (...sweeps) => createPlotStore(sweeps.map(sweepToPlot), undefined, 0);
 
 function wafer(extra = {}) {
   return buildWaferMap({
@@ -94,9 +98,9 @@ function closeModal() {
 
 test('the menu names its population and lists the distribution charts and each sweep', () => {
   const src = selectionPopulation(wafer().dies.slice(0, 5), facts);
-  const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { sweeps: [SWEEP] });
+  const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { plots: sweepPlots(SWEEP) });
   assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 5 dies selected on W07');
-  assert.deepEqual(rows().map(i => i.textContent), ['Value histogram', 'Process capability', 'Drive sweep', 'Dies', 'Test statistics']);
+  assert.deepEqual(rows().map(i => i.textContent), ['Value histogram', 'Process capability', 'Drive sweep', 'New plot…', 'Dies', 'Test statistics']);
   assert.ok(rows().every(i => i.getAttribute('aria-disabled') === null));
   close();
   assert.equal(menus().length, 0);
@@ -110,7 +114,7 @@ test('a whole wafer is named as one', () => {
 
 test('a sweep with no values in the population stays listed, disabled', () => {
   const src = selectionPopulation(wafer().dies.slice(0, 3), facts);
-  const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { sweeps: [SWEEP, ABSENT] });
+  const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { plots: sweepPlots(SWEEP, ABSENT) });
   const byLabel = Object.fromEntries(rows().map(i => [i.textContent, i.getAttribute('aria-disabled')]));
   assert.equal(byLabel['Drive sweep'], null);
   assert.equal(byLabel['Absent sweep'], 'true');
@@ -127,7 +131,7 @@ test('capability needs two dies with values; one die leaves it listed but disabl
 
 test('aggregated (lot-stack) dies make every chart unavailable', () => {
   const src = selectionPopulation(wafer().dies.slice(0, 3), { ...facts, isLotStack: true });
-  const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { sweeps: [SWEEP] });
+  const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { plots: sweepPlots(SWEEP) });
   assert.ok(rows().every(i => i.getAttribute('aria-disabled') === 'true'));
   close();
 });
@@ -144,7 +148,7 @@ test('opening a second menu closes the first; Escape returns focus to the anchor
 });
 
 test('a sweep opens with the population in the title and on the chart', () => {
-  openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(wafer().dies.slice(0, 4), facts), { sweeps: [SWEEP] });
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(wafer().dies.slice(0, 4), facts), { plots: sweepPlots(SWEEP) });
   rows().find(r => r.textContent === 'Drive sweep').click();
   const box = document.querySelector('.wmap-overlay-box');
   assert.match(box.textContent, /Drive sweep — 4 dies selected on W07/);
@@ -313,7 +317,7 @@ test('right-click on a gallery card outside the map charts that wafer', async ()
 test("a gallery's saved plots are in the right-click menu on each card's own map, not only on the header", async () => {
   const host = document.getElementById('root');
   host.innerHTML = '';
-  const plot = { id: 'p', title: 'Step 0 vs Step 1', mark: 'scatter', encoding: { x: { test: 1000 }, y: { test: 1001 }, color: { none: true } } };
+  const plot = { id: 'p', title: 'Step 0 vs Step 1', chart: 'scatter', fields: { x: { test: 1000 }, y: { test: 1001 }, color: { none: true } } };
   const gallery = renderWaferGallery(host, [wafer(), wafer()], { insights: { enabled: true, plots: [plot] } });
   assert.equal(rightClick(host.querySelector('canvas')), true);
   await tick(); await tick();
@@ -346,7 +350,7 @@ test("a chart's wafer row hands its wafer to the right-click handler; a group ro
 
 test("a sweep's title states the dies it plots, not the dies it was given", () => {
   const picked = wafer().dies.slice(0, 4).map((d, i) => i === 0 ? { ...d, edgeExcluded: true } : d);
-  openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(picked, facts), { sweeps: [SWEEP] });
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(picked, facts), { plots: sweepPlots(SWEEP) });
   rows().find(r => r.textContent === 'Drive sweep').click();
   const title = document.querySelector('.wmap-overlay-box').textContent;
   assert.match(title, /Drive sweep — 3 of 4 dies selected on W07 \(partial and edge-excluded dies left out\)/);

@@ -444,7 +444,7 @@ The menu offers:
   test limits when it has none, with its
   Ppk. Below 30 dies the chart says each Ppk is a rough estimate: a Ppk from a
   handful of dies can be far from the process's real capability.
-- **Sweeps** your application has defined (see [Sweep cards](#sweep-cards)).
+- **Plots** you have saved, sweeps included (see [Plots](#plots) and [Sweep cards](#sweep-cards)), and **New plot…**.
 - **Dies** and **Test statistics** — the same tables as Insights' Data tab (see
   [Data tables](#data-tables)), over just these dies: every die as a row, or the
   Test Values and Functional Tests tables. Each has Export CSV and Copy, and a
@@ -700,9 +700,9 @@ Any chart mark that stands for one wafer — a bar in *Yield by wafer*, a box in
 right-clicked to chart that wafer on its own (see
 [Section 4.4](#44-charting-dies-and-wafers)); its tooltip says so.
 
-Insights is organised into three chart sub-tabs, plus **Sweeps** when the
-application has defined any sweeps (see *Sweep cards* below), and a last
-**Data** sub-tab holding the same numbers as tables (see *Data tables* below):
+Insights is organised into three chart sub-tabs, a **Data** sub-tab holding the
+same numbers as tables (see *Data tables* below), and a **Plot** sub-tab for your
+own charts and sweeps (see *Plots* and *Sweep cards* below):
 
 - **Overview** — a **test pass rate** chart showing which test fails most (and,
   with "Group by" active, whether it fails more in one split than another). It
@@ -865,7 +865,8 @@ The **Plot** sub-tab is where you build your own charts. **+ New plot** starts o
 already filled in with the first two tests of the lot, and opens it beside a large
 copy of the chart. **Add examples** draws one plot of each chart type the lot can
 show (a scatter of the first two tests, a histogram, a box, a bar of yield by the
-first lot field that divides the wafers, and a line over wafer order), to start from
+first lot field that divides the wafers, a line over wafer order, and a sweep of the
+first tests in test order), to start from
 or to see what each type is for; pressing it again adds only what is missing. Every change you make there is drawn at once; there is no Apply
 button, and the plot is kept as you go.
 
@@ -959,10 +960,17 @@ captioned with them.
 ![The right-click menu on a selection, with the Plots section](images/guide-plot-drilldown.png) **New plot…** in the same menu starts a draft on the selection;
 a draft is kept only if you press **Add to my plots**.
 
+Every change is kept as you make it. If you make a mistake, **Reset** (under the settings) puts the plot back as it was
+when you opened the editor, and **Cancel** does the same and closes it. Closing the window with its own button keeps what
+you changed.
+
 ### Sweep cards
 
-A **sweep** appears in its own **Sweeps** sub-tab when your application has
-defined one. It exists for a test program that measures the same quantity at a
+A **sweep** is a card on the **Plot** sub-tab, beside your other plots. **+ New
+sweep** starts one on the first tests of the lot, and **Edit** opens it beside a
+live copy of the curve. A sweep is kept, duplicated, deleted, exported and
+imported like any plot, and is offered in the right-click menu's **Plots**
+section. It exists for a test program that measures the same quantity at a
 series of drive levels and records each level as its own test number — often one
 block sweeping up and another sweeping down. Read one test at a time that is a
 row of unrelated distributions; read as a sweep it is a pair of response curves,
@@ -993,6 +1001,20 @@ Two measurements are drawn on the plot and restated underneath:
 
 Only the **first two** curves are measured. Any further ones are drawn for
 context.
+
+**Editing a sweep.** The editor has a title, one block per series, and the axis
+and measurement settings. For each series, type its **tests in sweep order**:
+test numbers and ranges, such as `1010, 1011, 1020..1030` (a range means the
+tests declared between its ends). Then choose where each test's X comes from:
+**Test order** (the position in the run, labelled by test), **Values** (one
+number per test, in the same order) or **From test name** (a pattern such as
+`LRS_STATS_{x}`, for programs that record the swept value only in the test
+text). The editor lists the first few test names with what your pattern reads
+from each as you type, and **Pattern examples** shows worked ones: `@ {x}`
+reads 0.55 from `Fmax @ 0.55 V`, and `-{x}` reads 5 from `1234-5`). Text that is not a test number or a range is flagged under the box,
+naming the word, and is not applied, so the curve beside it never shows
+something you did not mean. **+ Add series** adds a curve and **Remove** drops
+one; the crossing and widths appear once there are two.
 
 **The x axis is the sweep, not the lot** — that is what distinguishes this card
 from the wafer-to-wafer trend, which walks one test across wafers. If the

@@ -20,7 +20,7 @@ import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
 import { waferPopulation, LOT_STACK_REASON, type DrilldownSource } from './chartPopulation.js';
 import type { DrilldownContext } from './drilldown.js';
-import { createPlotStore, type WithPlotStore } from './plotStore.js';
+import { plotStoreFor, type WithPlotStore } from './plotStore.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS, findingBin } from './renderWaferMap.js';
 import { findingPatternKey } from '../stats/filterFindings.js';
@@ -553,8 +553,8 @@ export function renderWaferGallery(
   /** What each card's own map gets of `insights`: the sweep definitions, for
    *  drilldown on that card's selection, and nothing that makes it an Insights host. */
   // The reader's saved plots, one list for the Plot tab and for every drilldown menu, including each card's own.
-  const plotStore = createPlotStore(options.insights?.plots, options.insights?.onPlotsChange);
-  const cardInsights: InsightsOptions & WithPlotStore = { enabled: false, sweeps: options.insights?.sweeps, plotStore };
+  const plotStore = plotStoreFor(options.insights);
+  const cardInsights: InsightsOptions & WithPlotStore = { enabled: false, plotStore };
   // Host-supplied overlay stacking (no-op when undefined; safe high default
   // applies). Restored on destroy() via the returned disposer.
   const disposeOverlayZ      = applyOverlayZ(options.zIndex);
@@ -903,7 +903,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { sweeps: options.insights?.sweeps, plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -978,7 +978,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { sweeps: options.insights?.sweeps, plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -2247,8 +2247,6 @@ export function renderWaferGallery(
       getBinColors: () => sharedOpts.binColors ?? lotBinColors(),
       getRingCount: lotRingCount,
       defaultView: options.insights?.defaultView,
-      sweeps: options.insights?.sweeps,
-      onRemoveSweeps: options.insights?.onRemoveSweeps,
       plotStore, onPickPlotsFile: options.insights?.onPickPlotsFile,
       // Never. The bar stays visible in Insights and carries Help whenever the
       // host asked for it, so the tab row has nothing to fall back for. The
@@ -3453,7 +3451,6 @@ export function renderWaferGallery(
     // handled, so only what it declined reaches here. See chartPopulation.ts.
     card.addEventListener('contextmenu', (e) => {
       if (e.defaultPrevented) return;
-      const sweeps = options.insights?.sweeps;
       e.preventDefault();
       const view = item.viewOptions ? { ...sharedOpts, ...item.viewOptions } : sharedOpts;
       // Snapshotted now, before the lazy import — see chartPopulation.ts.
@@ -3468,8 +3465,8 @@ export function renderWaferGallery(
         // The card's own hook, so the charts are named for its wafer, as on a single map.
         if (card.isConnected) {
           openDrilldownMenu(at, card, source, across
-            ? { sweeps, plots: plotStore, ...across.ctx }
-            : { sweeps, plots: plotStore, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
+            ? { plots: plotStore, ...across.ctx }
+            : { plots: plotStore, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
         }
       });
     });
@@ -3490,8 +3487,8 @@ export function renderWaferGallery(
       onClick:         item.onClick,
       onSelect:        cardOnSelect(item),
       drilldownSourceOverride: () => acrossSelectionSource() ?? pickedWafersSource(cardIndex),
-      // Sweep definitions only — the card is not an Insights host (`enabled`
-      // stays off); it needs them to offer a sweep of its selected dies.
+      // The shared plot list only — the card is not an Insights host (`enabled`
+      // stays off); it needs the plots to offer them on its selected dies.
       insights:        cardInsights,
       onExpand:        () => openWindowForCard(cardIndex, item),
       // The card's own header already shows item.label (wafer identity), and

@@ -803,3 +803,26 @@ for a later one, since each either does nothing or does something inconsistent.
 A security issue in how names from input files are displayed was found while reviewing the
 tooltip exports. It is unrelated to any deprecation decision and is fixed in 0.30.1. Details
 are deliberately not recorded here, since earlier versions remain in use.
+
+# Part 3: deprecated options
+
+Options (not exports) that still work and log a one-time notice through `noticeOnce`, so they are not in
+`DEPRECATED_EXPORTS`.
+
+## `InsightsOptions.sweeps` and `onRemoveSweeps`
+
+- **What it was.** A list of sweep definitions, drawn as cards in their own Sweeps tab, with a Remove button on that tab's
+  notice about sweeps that name no test of the lot.
+- **Why it is leaving.** A sweep is a named, serialisable recipe with a stable `id`, no population, kept by the host and
+  offered on a drilldown selection: exactly what a plot is. Keeping both meant two tabs, two lists, two file formats
+  (`tsmap-sweeps` and `wafermap-plots`), two persistence paths and two sections in the right-click menu for one idea.
+  Sweeps are now plots with `chart: 'sweep'` (design: `notes/wafermap/design-plot-builder.md` § 3.8).
+- **What happens to existing use.** Nothing breaks. Each `sweeps` entry becomes a sweep plot under its own `id`, in the
+  same list as the host's `plots`. A plot already saved under that `id` wins, so a host that supplies both shows it once
+  and an edit the reader made is not undone. Deleting a supplied sweep calls `onRemoveSweeps` with its id; without that
+  the host's next render would bring it back. `defaultView: 'sweeps'` opens the Plot tab.
+- **The danger of keeping it indefinitely.** A host that never moves to `plots` never persists the reader's edits to a
+  sweep (its next render supplies the original again), so the reader loses them. The notice says so, and the move is a
+  rename: `{ id, title, ...rest }` becomes `{ id, title, chart: 'sweep', sweep: rest }`.
+- **Verdict.** Keep deprecated; remove in a later minor once tsmap has moved over (its saved sweeps file is migrated into
+  its plots once).

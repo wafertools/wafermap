@@ -38,7 +38,7 @@
     and how far apart they are, horizontally, at a given level (the
     <strong>width</strong>).
     <br><br>
-    Every sweep you define gets a card in the Insights <strong>Sweeps</strong> tab, which
+    Every sweep you define is a card on the Insights <strong>Plot</strong> tab, which
     this page opens on. Each line is the median across the dies in scope, with a
     p10–p90 band; the <strong>Show</strong> and <strong>Group by</strong> controls above
     rescope all five at once. The five below are common characterisation sweeps, each
@@ -51,15 +51,17 @@
 
   <div class="spec-part">
     <h2>Where a sweep goes</h2>
-    <p>Each snippet below is one entry of <code>insights.sweeps</code> — a chart
-      definition passed to the renderer, not a test and not part of
-      <code>buildWaferMap</code>'s input:</p>
+    <p>A sweep is a plot with <code>chart: 'sweep'</code>: a chart definition passed to
+      the renderer in <code>insights.plots</code>, not a test and not part of
+      <code>buildWaferMap</code>'s input. Each snippet below is its <code>sweep</code>
+      (the series and settings); the plot adds the <code>id</code> and <code>title</code>:</p>
     <pre class="spec-wiring">renderWaferGallery(container, items, {
-  insights: { enabled: true, defaultView: 'sweeps', sweeps: [ /* the five below */ ] },
+  insights: { enabled: true, defaultView: 'plot', plots: [ /* the five below, each as
+    { id, title, chart: 'sweep', sweep: { series, … } } */ ] },
 });</pre>
-    <p>In <a href="https://wafertools.github.io/tsmap/">tsmap</a> the same entries go in a
-      sweeps file of their own (Setup ▾ → Sweeps…, or <code>--sweeps</code>), separate
-      from the test definitions.</p>
+    <p>They appear as cards on the Plot tab, where <strong>Edit</strong> opens a sweep
+      editor beside the curve. In <a href="https://wafertools.github.io/tsmap/">tsmap</a>
+      they are saved with the rest of your plots.</p>
   </div>
   <div class="spec-list">
     <section>
@@ -427,7 +429,7 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
 
     renderWaferGallery(document.getElementById('gallery'), items, {
       lotStatsSummary: analyzeWaferLot(items),
-      insights: { enabled: true, sweeps: SWEEPS, defaultOpen: true, defaultView: 'sweeps' },
+      insights: { enabled: true, plots: SWEEPS.map(({ id, title, ...sweep }) => ({ id, title, chart: 'sweep', sweep })), defaultOpen: true, defaultView: 'plot' },
       // Behind the Insights view, the map opens on a derived per-die test.
       viewOptions: { plotMode: 'value', activeTest: 900010 },
       showHelpButton: true,

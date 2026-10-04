@@ -22,8 +22,6 @@
 // were by default, from the first render, whenever "Group by" was set.
 
 import type { Die } from '../core/dies.js';
-import { isYieldEligibleDie } from '../core/dies.js';
-import { testValue } from '../core/dieTable.js';
 import type { Wafer } from '../core/wafer.js';
 import type { LotStatsSummary, StatsSummary } from '../stats/types.js';
 import { MEAN_WAFER_YIELD_LABEL } from '../stats/presentation.js';
@@ -37,7 +35,7 @@ import type { WaferMapDisplayItem } from './renderWaferGallery.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { waferPopulation } from './chartPopulation.js';
 import { openDrilldownMenu } from './drilldown.js';
-import { createPlotStore, type PlotStore } from './plotStore.js';
+import { plotStoreFor, type PlotStore } from './plotStore.js';
 import type { PlotSpec } from '../stats/plotSpec.js';
 import { INPUT_DEFAULT_PASS_BINS, itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
@@ -48,8 +46,7 @@ import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
 import { renderBoxplotPanel } from './charts/boxplot.js';
 import { renderTrendPanel } from './charts/trend.js';
-import { renderSweepPanel } from './charts/sweep.js';
-import { sweepAppliesTo, type SweepSpec } from '../stats/sweep.js';
+import type { SweepSpec } from '../stats/sweep.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
 import { renderScatterPanel } from './charts/scatter.js';
@@ -64,6 +61,7 @@ import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStrip
 import { runChunked } from './chunked.js';
 import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions, diesInRegion, type RegionYieldDatum } from '../stats/regions.js';
 import { renderDataSection, type DataView } from './dataTab.js';
+import { sourceFromDies } from './plotItems.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
 export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot';
@@ -75,23 +73,21 @@ export interface InsightsOptions {
    * grid with wmap's own chart suite across three sub-tabs — Overview
    * (yield, bins, ring/quadrant yield), Distributions
    * (process capability, boxplot, histogram), and Correlation (matrix +
-   * scatter) — plus Sweeps when `sweeps` defines any, and a last Data tab: the
-   * scope as tables (statistics, dies, wafers) with CSV export. Default true with a toolbar
+   * scatter) — a Data tab (the scope as tables: statistics, dies, wafers, with CSV
+   * export) and a Plot tab, where the reader's own plots and sweeps live. Default true with a toolbar
    * (a gallery always has one); `false` opts out.
    */
   enabled?: boolean;
-  /** Which sub-tab is shown first. Default 'overview'. `'sweeps'` with no
-   *  `sweeps` defined falls back to 'overview' — there is no such tab to open. */
+  /** Which sub-tab is shown first. Default 'overview'. `'sweeps'` opens the Plot tab, where sweeps are drawn. */
   defaultView?: InsightsView;
   /**
-   * Parametric sweeps, one card each in their own Sweeps sub-tab — which appears
-   * only when this is non-empty.
+   * @deprecated Sweeps are plots now: give them in `plots` as sweep plots, or read a sweeps file with
+   * `readPlotsFile`. Each entry here is still drawn, as a sweep plot on the Plot tab (and offered on selected dies),
+   * under the same `id`; a plot saved under that id takes precedence. The first use logs a notice.
    *
-   * A sweep reads an ordered run of tests as a response curve rather than as
-   * independent tests, and measures the PAIR: where the first two series cross,
-   * and how far apart they are at given levels. The case it exists for is the
-   * same quantity measured at a series of power levels, recorded as a block of
-   * consecutive test numbers, swept up in one block and down in another.
+   * A sweep reads an ordered run of tests as a response curve rather than as independent tests, and measures the
+   * PAIR: where the first two series cross, and how far apart they are at given levels. It carries no population:
+   * the dies it aggregates are whatever the view is scoped to or the reader selected.
    *
    * ```ts
    * insights: { enabled: true, sweeps: [{
@@ -104,39 +100,13 @@ export interface InsightsOptions {
    * }] }
    * ```
    *
-   * Deliberately carries no population scope of its own: a sweep definition
-   * says which tests form the curve, and is therefore valid for any population
-   * and portable between hosts. The dies it aggregates are whatever the
-   * Insights view is currently scoped to.
-   *
-   * The same definitions drive drilldown: a user can select dies on a map and
-   * right-click (or use the toolbar's "Chart the selection") to sweep just
-   * those dies. A single map offers this even when `enabled` is off.
-   *
-   * **Provisional.** This arrived as one site's request. The mechanism — an
-   * ordered run of tests read as a curve — is a recurring semiconductor shape
-   * (shmoo, VDD/temperature sweeps, retention, endurance, IV), which is the case
-   * for it being library-level; against it is that only one host has asked. It
-   * is shipping so tsmap can put it in front of that user, and the answer
-   * decides it: a second sweep-shaped use means it is general and stays, while
-   * "also measure X, and split by Y" means it is a bespoke chart and belongs
-   * behind a host-contributed-panel extension point instead. `separationAt` is
-   * the narrowest part of the surface and the first thing to drop if it is not
-   * used. Do not widen this shape before that question is settled.
-   *
-   * Range strings in `tests` (`"1010..1030"`) are NOT a widening in that sense:
-   * they are input syntax for the same list of tests, and add nothing to what a
-   * sweep measures. They were added because ranges are the first thing anyone
-   * writing a sweep by hand asks for, and they share the derived-test parser so
-   * the syntax is one syntax library-wide.
+   * Range strings in `tests` (`"1010..1030"`) share the derived-test parser, so the syntax is one syntax library-wide.
    */
   sweeps?: SweepSpec[];
   /**
-   * Offers a "Remove" button on the Sweeps tab's notice about sweeps that name
-   * none of the data's tests — typically sweeps a host kept from another test
-   * program. Called with those sweeps' ids; the host drops them and re-renders
-   * with the remaining `sweeps`. Without it the notice still shows, with no
-   * button. The library never edits the host's sweep list itself.
+   * @deprecated With `sweeps`. Called with the id of a sweep from `sweeps` that the reader deletes on the Plot tab, so the
+   * host stops supplying it (otherwise the next render brings it back). Plots deleted from `plots` arrive through
+   * `onPlotsChange` like any other.
    */
   onRemoveSweeps?: (ids: string[]) => void;
   /**
@@ -295,17 +265,6 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
   { key: 'correlation',   label: 'Correlation' },
 ];
 
-/**
- * Sweeps get their own sub-tab, shown only when any are defined — neither an
- * option nor a count threshold. A threshold would make a sweep's location
- * depend on how many siblings it has, so a chart would move tabs the day a
- * colleague added another; an option would be a layout flag with one right
- * answer. And they never belonged in Distributions: that view is driven by one
- * selected test (capability → boxplot → histogram → trend), while a sweep
- * ignores the selected test and draws many tests as one curve.
- */
-const SWEEPS_VIEW: { key: InsightsView; label: string } = { key: 'sweeps', label: 'Sweeps' };
-
 /** After the charts: the same scope as tables, with their exports (dataTab.ts). */
 const DATA_VIEW: { key: InsightsView; label: string } = { key: 'data', label: 'Data' };
 
@@ -442,12 +401,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   rootEl.appendChild(tabBar);
   rootEl.appendChild(bodyEl);
 
-  const hasSweeps = (deps.sweeps?.length ?? 0) > 0;
-  const views = hasSweeps ? [...VIEWS, SWEEPS_VIEW, DATA_VIEW, PLOT_VIEW] : [...VIEWS, DATA_VIEW, PLOT_VIEW];
-  const plotStore = deps.plotStore ?? createPlotStore(deps.plots, deps.onPlotsChange);
-  let activeView: InsightsView = deps.defaultView === 'sweeps' && !hasSweeps
-    ? 'overview'
-    : deps.defaultView ?? 'overview';
+  const views = [...VIEWS, DATA_VIEW, PLOT_VIEW];
+  const plotStore = deps.plotStore ?? plotStoreFor(deps);
+  // Sweeps are plots now: the old Sweeps tab opens the Plot tab, where they are.
+  let activeView: InsightsView = deps.defaultView === 'sweeps' ? 'plot' : deps.defaultView ?? 'overview';
   let analysisGroupKey: string | undefined;
   // The Data tab's own choices live here for the same reason as the shared test
   // below: `render()` rebuilds the section, and the choice must outlive that.
@@ -550,7 +507,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         waferLabel: it.identity, testDefs: it.testDefs,
         activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex, wafer: it.wafer,
       });
-      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { sweeps: deps.sweeps, plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
+      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
     };
   }
 
@@ -565,15 +522,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
   /** `openDiesMenu` for a gesture that reports where it ended rather than handing over its event (a drag). */
   function openDiesMenuAt(at: { x: number; y: number }, anchor: HTMLElement, items: Item[], what: string, keep: (d: Die) => boolean, activeTest?: number): void {
-    const picked = items
-      .map(it => ({ it, dies: it.dies.filter(keep) }))
-      .filter(x => x.dies.length > 0)
-      .map(({ it, dies }) => ({ label: it.identity ?? it.label, dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins }));
-    if (picked.length === 0) return;
-    const population = picked.length === 1 ? `${what} on ${picked[0].label}` : `${what}, across ${picked.length} wafers`;
-    openDrilldownMenu(at, anchor,
-      { items: picked, population, testDefs: mergeTestDefs(items).defs, activeTest },
-      { sweeps: deps.sweeps, plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
+    const source = sourceFromDies(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins })),
+      what, keep, mergeTestDefs(items).defs, activeTest);
+    if (!source) return;
+    openDrilldownMenu(at, anchor, source, { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
   }
 
   function testLeafAction(items: Item[]): { open: (waferIndex: number, testNumber: number) => void; label?: string } | null {
@@ -1222,7 +1174,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount?.() ?? 4,
         groupBy, groupLabel, onSaveImage, onSaveText,
         openWafer: openWafer ? (wi, label, test) => openWafer(wi, label, test) : undefined,
-        focusTest, locateDie, sweeps: deps.sweeps, pickPlotsFile: deps.onPickPlotsFile,
+        focusTest, locateDie, pickPlotsFile: deps.onPickPlotsFile,
       });
       host.appendChild(section.card);
       inner = section;
@@ -1430,67 +1382,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     };
   }
 
-  /**
-   * One card per defined sweep. Each aggregates over whatever population the
-   * Insights view is scoped to — the spec names only the tests, never the dies,
-   * which is what keeps a saved sweep portable between lots and between hosts.
-   */
-  function renderSweepsSection(items: Item[]): { card: HTMLElement; destroy: () => void } {
-    const wrap = makeChartGridWrap(doc);
-    // The FULL reconciled set, not the parametric-only list the other sections
-    // use: a sweep must be able to see that one of its tests is functional in
-    // order to say so, rather than silently plotting a gap.
-    const testDefs = mergeTestDefs(items).defs;
-    const dies = items.flatMap(it => it.dies);
-    const sweeps = deps.sweeps ?? [];
-    const unmatched = sweeps.filter(spec => !sweepAppliesTo(spec, testDefs));
-    if (unmatched.length > 0) wrap.appendChild(sweepMismatchNotice(unmatched, sweeps.length));
-    const panels = sweeps.map(spec => renderSweepPanel({
-      spec, dies, testDefs, onSaveImage, ownerDocument: doc,
-      // A level of the curve is a set of tests: click it for the dies that were measured there.
-      onSelectPoint: (sel, e) => {
-        const measured = (d: Die) => sel.testNumbers.some(n => { const v = testValue(d, n); return v !== undefined && Number.isFinite(v); });
-        openDiesMenu(e, items, `measured at ${sel.label}`, d => isYieldEligibleDie(d) && measured(d), sel.testNumbers[0]);
-      },
-    }));
-    for (const p of panels) wrap.appendChild(p.card);
-    return { card: wrap, destroy: () => { for (const p of panels) p.destroy(); } };
-  }
-
-  /**
-   * The notice above the sweep cards when some sweeps name no test of this data.
-   * Said here, where the empty cards are, not only in a host's log — and with
-   * the way out beside it when the host can act on it.
-   */
-  function sweepMismatchNotice(unmatched: SweepSpec[], total: number): HTMLElement {
-    const box = doc.createElement('div');
-    box.setAttribute('role', 'status');
-    Object.assign(box.style, {
-      gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.md,
-      padding: `${SPACE.sm} ${SPACE.md}`, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`,
-      borderRadius: RADIUS.container, color: CLR.warnText, fontSize: FONT.body, lineHeight: LEADING.base,
-    } as Partial<CSSStyleDeclaration>);
-    const n = unmatched.length;
-    const text = doc.createElement('span');
-    text.style.flex = '1 1 24ch';
-    text.textContent = (n === total
-      ? (n === 1 ? 'This sweep names no test in this data' : 'None of these sweeps names a test in this data')
-      : `${n} of ${total} sweeps name no test in this data: ${unmatched.map(s => s.title).join(', ')}`)
-      + ` — ${n === 1 ? 'it' : 'they'} may belong to another test program.`;
-    box.appendChild(text);
-    if (deps.onRemoveSweeps) {
-      const btn = doc.createElement('button');
-      btn.type = 'button';
-      Object.assign(btn.style, controlStyle('outlined'));
-      btn.textContent = n === 1 ? 'Remove this sweep' : `Remove these ${n} sweeps`;
-      wireControlHover(btn);
-      const ids = unmatched.map(s => s.id);
-      btn.addEventListener('click', () => deps.onRemoveSweeps!(ids));
-      box.appendChild(btn);
-    }
-    return box;
-  }
-
   /** Correlation matrix + scatter together, wired so clicking a matrix cell
    *  drives the scatter panel's X/Y in place. Correlation restricts to one
    *  group at a time via its own "Group:" dropdown (matching capability's
@@ -1527,7 +1418,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
           ? `selected on ${picked[0].label} in the scatter`
           : `selected in the scatter, across ${picked.length} wafers`;
         openDrilldownMenu(at, anchor, { items: picked, population, testDefs, activeTest: xTest },
-          { sweeps: deps.sweeps, plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
+          { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
       },
       ownerDocument: doc,
     });
@@ -1705,7 +1596,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const section = cached ?? (
       activeView === 'overview'      ? renderOverviewSection(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
       activeView === 'distributions' ? renderDistributionsSection(scopeItems, scopedTestDefs, scopeGroups, groupLabelText) :
-      activeView === 'sweeps'        ? renderSweepsSection(scopeItems) :
       activeView === 'data'          ? renderDataBlock(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
       activeView === 'plot'          ? renderPlotBlock(scopeItems, scopedAllDefs,
         // The Group by in force: a narrowed scope has collapsed it, so plots follow nothing then.

@@ -10,14 +10,18 @@
 
 import type { Die } from '../core/dies.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
-import { defaultPlot, describeTitleDrift, examplePlots, fieldCatalogue, resolvePlot, titleDrift, type PlotContext, type PlotPoint } from '../stats/plotData.js';
+import { defaultPlot, defaultSweep, describeTitleDrift, examplePlots, fieldCatalogue, resolvePlot, titleDrift, type PlotContext, type PlotPoint } from '../stats/plotData.js';
 import { addPlots, newPlotId, readPlotsFile, writePlotsFile, type PlotSpec } from '../stats/plotSpec.js';
-import type { SweepSpec } from '../stats/sweep.js';
-import { renderPlotChart, type PlotChartHandle } from './charts/plotChart.js';
+import { isYieldEligibleDie } from '../core/dies.js';
+import { testValue } from '../core/dieTable.js';
+import { sweepAppliesTo } from '../stats/sweep.js';
+import { plotToSweep } from '../stats/plotSpec.js';
+import { renderPlotChart } from './charts/plotChart.js';
+import { renderSweepPanel } from './charts/sweep.js';
 import { makeChartGridWrap } from './charts/chartShell.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { openPlotEditor } from './plotModal.js';
-import { sourceFromPoints, toPlotItems } from './plotItems.js';
+import { sourceFromDies, sourceFromPoints, toPlotItems } from './plotItems.js';
 import type { PlotStore } from './plotStore.js';
 import type { InsightsItem } from './insightsTab.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, markNoPrint, saveTextFile, wireControlHover, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
@@ -39,7 +43,6 @@ export interface PlotSectionDeps {
   /** A single-wafer host's version of the same: show the test on the map that is already there. */
   focusTest?: (testNumber: number) => void;
   locateDie?: (die: Die, waferIndex: number | undefined) => void;
-  sweeps?: SweepSpec[];
   /** The host's own way to choose a plots file (a native dialog). Without it a file input is used. */
   pickPlotsFile?: () => Promise<string | null>;
 }
@@ -72,6 +75,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
   };
   bar.append(
     button('+ New plot', 'wmapPlotNew', () => newPlot()),
+    button('+ New sweep', 'wmapPlotNewSweep', () => newSweep()),
     button('Add examples', 'wmapPlotExamples', () => addExamples()),
     button('Import plots…', 'wmapPlotImport', () => { void importPlots(); }),
     button('Export plots…', 'wmapPlotExport', () => exportPlots()),
@@ -119,7 +123,8 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
   const grid = makeChartGridWrap(doc);
   root.append(empty, grid);
 
-  interface Entry { chart: PlotChartHandle; json: string; driftNote: HTMLElement }
+  /** What the list keeps for a card: a plot's chart, or a sweep's curve panel. Both are cards with a row of buttons. */
+  interface Entry { card: HTMLElement; actions: HTMLElement; json: string; driftNote?: HTMLElement; update: (plot: PlotSpec) => void; destroy: () => void }
   const entries = new Map<string, Entry>();
 
   const chartHooks = () => ({
@@ -135,15 +140,28 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     onSelectPoints: (points: PlotPoint[], at: { x: number; y: number }, anchor: HTMLElement) => selectPoints(points, at, anchor),
   });
 
+  const menuContext = () => ({ plots: store, onSaveImage: d.onSaveImage, onSaveText: d.onSaveText, onLocateDie: d.locateDie });
+
   function selectPoints(points: PlotPoint[], at: { x: number; y: number }, anchor: HTMLElement): void {
     const source = sourceFromPoints(points, items, d.testDefs);
     if (!source) return;
-    openDrilldownMenu(at, anchor, source,
-      { sweeps: d.sweeps, plots: store, onSaveImage: d.onSaveImage, onSaveText: d.onSaveText, onLocateDie: d.locateDie });
+    openDrilldownMenu(at, anchor, source, menuContext());
   }
 
   function edit(plot: PlotSpec, draft = false): void {
-    openPlotEditor({ doc, anchor: root, store, plot, draft, items, ctx, groupLabel: d.groupLabel, chart: chartHooks() });
+    openPlotEditor({ doc, anchor: root, store, plot, draft, items, ctx, groupLabel: d.groupLabel, chart: chartHooks(), onSelectLevel: selectLevel });
+  }
+  function newSweep(): void {
+    const plot = defaultSweep(d.testDefs, newPlotId());
+    store.upsert(plot);
+    edit(plot);
+  }
+
+  /** A level of a sweep's curve: the dies measured there, as a menu of what to open on them. */
+  function selectLevel(sel: { testNumbers: number[]; label: string }, e: MouseEvent): void {
+    const measured = (die: Die) => sel.testNumbers.some(n => { const v = testValue(die, n); return v !== undefined && Number.isFinite(v); });
+    const source = sourceFromDies(items, `measured at ${sel.label}`, die => isYieldEligibleDie(die) && measured(die), d.testDefs, sel.testNumbers[0]);
+    if (source) openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, menuContext());
   }
   function newPlot(): void {
     const plot = defaultPlot(catalogue, newPlotId());
@@ -153,7 +171,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
 
   /** One example of each chart type the lot can show, skipping any the reader already has. */
   function addExamples(): void {
-    const key = (p: PlotSpec) => JSON.stringify([p.mark, p.encoding, p.aggregate ?? null]);
+    const key = (p: PlotSpec) => JSON.stringify([p.chart, p.fields, p.aggregate ?? null, p.sweep ?? null]);
     const have = new Set(store.get().map(key));
     const fresh = examplePlots(catalogue, items.length, newPlotId).filter(p => !have.has(key(p)));
     if (fresh.length === 0) {
@@ -161,26 +179,71 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
       return;
     }
     for (const p of fresh) store.upsert(p);
-    say(`Added ${fresh.length} example plot${fresh.length === 1 ? '' : 's'}: ${fresh.map(p => p.mark).join(', ')}. Edit one to make it yours, or Delete what you do not need.`);
+    say(`Added ${fresh.length} example plot${fresh.length === 1 ? '' : 's'}: ${fresh.map(p => p.chart).join(', ')}. Edit one to make it yours, or Delete what you do not need.`);
   }
 
-  function makeEntry(plot: PlotSpec): Entry {
-    const chart = renderPlotChart({ ownerDocument: doc, waferLabel: i => items[i]?.label ?? '', ...chartHooks() });
-    chart.card.dataset.wmapPlotId = plot.id;
-    markNoPrint(chart.actions);   // Edit, Duplicate, Delete and the title warning are for the screen
-    const act = (text: string, hook: string, run: () => void) => chart.actions.appendChild(button(text, hook, run));
+  /** Edit, Duplicate and Delete on a card's button row: the same three for every kind of plot. */
+  function addActions(actions: HTMLElement, plot: PlotSpec): void {
+    const act = (text: string, hook: string, run: () => void) => actions.appendChild(button(text, hook, run));
     act('Edit', 'wmapPlotEdit', () => { const p = store.get().find(x => x.id === plot.id); if (p) edit(p); });
     act('Duplicate', 'wmapPlotDuplicate', () => { store.duplicate(plot.id); });
     act('Delete', 'wmapPlotDelete', () => {
       const gone = store.remove(plot.id);
       if (gone) say(`Deleted “${gone.plot.title ?? 'plot'}”.`, { label: 'Undo', run: () => store.insertAt(gone.index, gone.plot) });
     });
+  }
+
+  function makeEntry(plot: PlotSpec): Entry {
+    return plot.chart === 'sweep' ? makeSweepEntry(plot) : makePlotEntry(plot);
+  }
+
+  function makePlotEntry(plot: PlotSpec): Entry {
+    const chart = renderPlotChart({ ownerDocument: doc, waferLabel: i => items[i]?.label ?? '', ...chartHooks() });
+    chart.card.dataset.wmapPlotId = plot.id;
+    markNoPrint(chart.actions);   // Edit, Duplicate, Delete and the title warning are for the screen
+    addActions(chart.actions, plot);
     const driftNote = doc.createElement('div');
     driftNote.dataset.wmapPlotTitleDrift = '1';
     Object.assign(driftNote.style, { display: 'none', flexWrap: 'wrap', gap: SPACE.md, alignItems: 'center', flexBasis: '100%', padding: `${SPACE.xs} ${SPACE.md}`,
       background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, color: CLR.warnText, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
     chart.actions.appendChild(driftNote);
-    const entry: Entry = { chart, json: '', driftNote };
+    const entry: Entry = {
+      card: chart.card, actions: chart.actions, json: '', driftNote, destroy: () => chart.destroy(),
+      update: p => {
+        const r = resolve(p);
+        chart.setPlot(r);
+        // A plot this lot cannot draw is kept, and looks it.
+        chart.card.style.opacity = r.issues.length ? '0.7' : '1';
+        showDrift(driftNote, p);
+      },
+    };
+    entries.set(plot.id, entry);
+    return entry;
+  }
+
+  /**
+   * A sweep is a card of its own kind over the same population: the sweep panel draws it, and a level of the curve
+   * opens the menu on the dies measured there. One whose tests are not in this lot is kept and greyed, with the way out.
+   */
+  function makeSweepEntry(plot: PlotSpec): Entry {
+    const first = plotToSweep(plot)!;
+    const dies = items.flatMap(it => it.dies);
+    const panel = renderSweepPanel({
+      spec: first, dies, testDefs: d.testDefs, onSaveImage: d.onSaveImage, ownerDocument: doc,
+      onSelectPoint: selectLevel,
+    });
+    panel.card.dataset.wmapPlotId = plot.id;
+    panel.card.dataset.wmapSweepPlot = '1';
+    markNoPrint(panel.actions);
+    addActions(panel.actions, plot);
+    const entry: Entry = {
+      card: panel.card, actions: panel.actions, json: '', destroy: () => panel.destroy(),
+      update: p => {
+        const spec = plotToSweep(p)!;
+        panel.setSpec(spec);
+        panel.card.style.opacity = sweepAppliesTo(spec, d.testDefs) ? '1' : '0.7';
+      },
+    };
     entries.set(plot.id, entry);
     return entry;
   }
@@ -206,20 +269,16 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     const plots = store.get();
     for (const [id, e] of entries) {
       if (plots.some(p => p.id === id)) continue;
-      e.chart.destroy(); e.chart.card.remove(); entries.delete(id);
+      e.destroy(); e.card.remove(); entries.delete(id);
     }
     plots.forEach((p, i) => {
       const e = entries.get(p.id) ?? makeEntry(p);
       const json = JSON.stringify(p);
       if (e.json !== json) {
         e.json = json;
-        const r = resolve(p);
-        e.chart.setPlot(r);
-        // A plot this lot cannot draw is kept, and looks it.
-        e.chart.card.style.opacity = r.issues.length ? '0.7' : '1';
-        showDrift(e.driftNote, p);
+        e.update(p);
       }
-      if (grid.children[i] !== e.chart.card) grid.insertBefore(e.chart.card, grid.children[i] ?? null);
+      if (grid.children[i] !== e.card) grid.insertBefore(e.card, grid.children[i] ?? null);
     });
     empty.style.display = plots.length === 0 ? '' : 'none';
   }
@@ -265,7 +324,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     destroy: () => {
       unsubscribe();
       if (noticeTimer !== undefined) clearTimeout(noticeTimer);
-      for (const e of entries.values()) e.chart.destroy();
+      for (const e of entries.values()) e.destroy();
       entries.clear();
       store.flush();
     },

@@ -36,6 +36,7 @@ const { analyzeWaferLot } = await import('../dist/packages/stats/index.js');
 const { createInsightsTab } = await import('../dist/packages/canvas-adapter/insightsTab.js');
 const { createPlotStore, copyTitle } = await import('../dist/packages/canvas-adapter/plotStore.js');
 const { createPlotEditor } = await import('../dist/packages/canvas-adapter/plotEditor.js');
+const { createSweepEditor } = await import('../dist/packages/canvas-adapter/sweepEditor.js');
 const { fieldCatalogue } = await import('../dist/packages/stats/plotData.js');
 const { readPlotsFile, writePlotsFile } = await import('../dist/packages/stats/plotSpec.js');
 const { openDrilldownMenu } = await import('../dist/packages/canvas-adapter/drilldown.js');
@@ -75,9 +76,9 @@ function lotItems(count = 3, dieCount = 24) {
   return { items, lot };
 }
 
-const SCATTER = { id: 'p1', title: 'Vth vs Idsat', mark: 'scatter', encoding: { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' }, color: { none: true } } };
-const HIST = { id: 'p2', mark: 'histogram', encoding: { y: { test: 1050 }, color: { none: true } } };
-const MISSING = { id: 'p3', title: 'Leak', mark: 'scatter', encoding: { x: { test: 3001, name: 'Leak' }, y: { test: 1060 } } };
+const SCATTER = { id: 'p1', title: 'Vth vs Idsat', chart: 'scatter', fields: { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' }, color: { none: true } } };
+const HIST = { id: 'p2', chart: 'histogram', fields: { y: { test: 1050 }, color: { none: true } } };
+const MISSING = { id: 'p3', title: 'Leak', chart: 'scatter', fields: { x: { test: 3001, name: 'Leak' }, y: { test: 1060 } } };
 
 function mountPlot(extra = {}) {
   const { items, lot } = lotItems();
@@ -195,8 +196,8 @@ test('every chart type is offered, and a histogram keeps the fields it does not 
   assert.deepEqual([...marks.querySelectorAll('input')].map(r => r.value), ['scatter', 'histogram', 'box', 'bar', 'line']);
   chooseMark(e, 'histogram');
   const last = emitted.at(-1);
-  assert.equal(last.mark, 'histogram');
-  assert.deepEqual(last.encoding.x, SCATTER.encoding.x, 'the X field is kept for when the type changes back');
+  assert.equal(last.chart, 'histogram');
+  assert.deepEqual(last.fields.x, SCATTER.fields.x, 'the X field is kept for when the type changes back');
   assert.ok(e.el.querySelector('[data-wmap-select="plot-y"]'), 'Values');
   assert.ok(!e.el.querySelector('[data-wmap-select="plot-x"]'), 'a histogram has no X field');
 });
@@ -204,25 +205,25 @@ test('every chart type is offered, and a histogram keeps the fields it does not 
 test('switching to a bar swaps a continuous X for wafer, and switching back restores it', () => {
   const { e, emitted } = editor(SCATTER);
   chooseMark(e, 'bar');
-  assert.equal(emitted.at(-1).mark, 'bar');
-  assert.deepEqual(emitted.at(-1).encoding.x, { builtin: 'wafer' }, 'a bar groups by a category');
-  assert.deepEqual(emitted.at(-1).encoding.y, SCATTER.encoding.y, 'the value field is still usable and stays');
+  assert.equal(emitted.at(-1).chart, 'bar');
+  assert.deepEqual(emitted.at(-1).fields.x, { builtin: 'wafer' }, 'a bar groups by a category');
+  assert.deepEqual(emitted.at(-1).fields.y, SCATTER.fields.y, 'the value field is still usable and stays');
   chooseMark(e, 'scatter');
-  assert.deepEqual(emitted.at(-1).encoding.x, SCATTER.encoding.x, 'Vth comes back, not a default');
+  assert.deepEqual(emitted.at(-1).fields.x, SCATTER.fields.x, 'Vth comes back, not a default');
 });
 
 test('a bar can count what it stands for; box and line have the fields their type needs', () => {
-  const { e, emitted } = editor({ ...SCATTER, mark: 'bar', encoding: { x: { builtin: 'wafer' }, color: { none: true } } });
+  const { e, emitted } = editor({ ...SCATTER, chart: 'bar', fields: { x: { builtin: 'wafer' }, color: { none: true } } });
   assert.match(e.el.querySelector('[data-wmap-select="plot-y"]').textContent, /Count of dies/);
   chooseMark(e, 'box');
-  assert.ok(emitted.at(-1).encoding.y, 'a box needs values, so one is chosen');
+  assert.ok(emitted.at(-1).fields.y, 'a box needs values, so one is chosen');
   chooseMark(e, 'line');
-  const x = emitted.at(-1).encoding.x;
+  const x = emitted.at(-1).fields.x;
   assert.ok(x && !('builtin' in x && x.builtin === 'wafer'), 'a line needs a continuous X, not a category');
 });
 
 test('combine values by appears for bar and line, with pooled yield only for the yield field', () => {
-  const { e, emitted } = editor({ ...SCATTER, mark: 'bar', encoding: { x: { meta: 'split' }, y: { builtin: 'yield' }, color: { none: true } } });
+  const { e, emitted } = editor({ ...SCATTER, chart: 'bar', fields: { x: { meta: 'split' }, y: { builtin: 'yield' }, color: { none: true } } });
   assert.ok(e.el.querySelector('[data-wmap-select="plot-aggregate"]'));
   click(e.el.querySelector('[data-wmap-select="plot-aggregate"]'));
   const labels = [...document.querySelectorAll('[role="option"]')].map(r => r.textContent);
@@ -246,7 +247,7 @@ test('"One mark per" sets the level, and wafer level shows how values are combin
 });
 
 test('a category axis has a title but no limits or scale', () => {
-  const { e } = editor({ ...SCATTER, mark: 'box', encoding: { x: { builtin: 'wafer' }, y: SCATTER.encoding.y, color: { none: true } } });
+  const { e } = editor({ ...SCATTER, chart: 'box', fields: { x: { builtin: 'wafer' }, y: SCATTER.fields.y, color: { none: true } } });
   click(tabButton(e.el, 'Customise'));
   assert.ok(e.el.querySelector('input[aria-label="Categories axis title"]'));
   assert.ok(!e.el.querySelector('input[aria-label="Categories axis minimum"]'));
@@ -269,18 +270,18 @@ test('a field list is grouped, filterable by number, and offers only numeric fie
 test('picking a field edits only that role', () => {
   const { e, emitted } = editor(SCATTER);
   pick(e.el, 'plot-y', 'Vth · 1050');
-  assert.deepEqual(emitted.at(-1).encoding.y, { test: 1050, name: 'Vth' });
-  assert.deepEqual(emitted.at(-1).encoding.x, SCATTER.encoding.x);
+  assert.deepEqual(emitted.at(-1).fields.y, { test: 1050, name: 'Vth' });
+  assert.deepEqual(emitted.at(-1).fields.x, SCATTER.fields.x);
 });
 
 test('colour: follow Group by, none, or a category', () => {
   const { e, emitted } = editor(SCATTER);
   pick(e.el, 'plot-color', 'Follow Group by (Split)');
-  assert.equal(emitted.at(-1).encoding.color, undefined);
+  assert.equal(emitted.at(-1).fields.color, undefined);
   pick(e.el, 'plot-color', 'Split');
-  assert.deepEqual(emitted.at(-1).encoding.color, { meta: 'split' });
+  assert.deepEqual(emitted.at(-1).fields.color, { meta: 'split' });
   pick(e.el, 'plot-color', 'None');
-  assert.deepEqual(emitted.at(-1).encoding.color, { none: true });
+  assert.deepEqual(emitted.at(-1).fields.color, { none: true });
 });
 
 test('titles are automatic until typed in, and clearing brings the automatic one back', () => {
@@ -344,8 +345,8 @@ test('New plot adds a first plot from the lot and opens its editor; the host is 
   click(button(s, 'wmap-plot-new'));
   assert.equal(store.get().length, 1);
   const p = store.get()[0];
-  assert.equal(p.mark, 'scatter');
-  assert.deepEqual([p.encoding.x.test, p.encoding.y.test], [1050, 1060]);
+  assert.equal(p.chart, 'scatter');
+  assert.deepEqual([p.fields.x.test, p.fields.y.test], [1050, 1060]);
   assert.ok(document.querySelector('[data-wmap-plot-window]'), 'the editor window opened');
   assert.match(document.querySelector('[data-wmap-plot-window]').textContent, /Changes are saved to/);
   await tick(10);
@@ -361,7 +362,7 @@ test('editing in the window edits the saved plot and the card follows', async ()
   const win = document.querySelector('[data-wmap-plot-window]');
   assert.ok(win);
   pick(win, 'plot-y', 'Vth · 1050');
-  assert.deepEqual(store.get()[0].encoding.y, { test: 1050, name: 'Vth' });
+  assert.deepEqual(store.get()[0].fields.y, { test: 1050, name: 'Vth' });
   assert.equal(cards(tab)[0].dataset.wmapChartTitle, 'Vth vs Idsat', 'a typed title stays');
   document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
 });
@@ -379,7 +380,7 @@ test('Duplicate places a copy after the plot', async () => {
 });
 
 test('an automatic title follows the fields: in the card, in the editor window, and in a copy', async () => {
-  const { tab, store } = mountPlot({ plots: [{ id: 'u', mark: 'scatter', encoding: { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' }, color: { none: true } } }] });
+  const { tab, store } = mountPlot({ plots: [{ id: 'u', chart: 'scatter', fields: { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' }, color: { none: true } } }] });
   const s = await section(tab);
   assert.equal(cards(tab)[0].dataset.wmapChartTitle, 'Idsat vs Vth');
   click(button(cards(tab)[0], 'wmap-plot-duplicate'));
@@ -444,7 +445,7 @@ test('Export writes the plots file through the host hook; with nothing to export
 });
 
 test('Import adds the file\'s plots, keeps copies for an id already used, and names what it could not read', async () => {
-  const file = writePlotsFile([SCATTER, { ...HIST, id: 'p9' }]).replace('"mark": "histogram"', '"mark": "histogram", "level": "galaxy"');
+  const file = writePlotsFile([SCATTER, { ...HIST, id: 'p9' }]).replace('"chart": "histogram"', '"chart": "histogram", "level": "galaxy"');
   const { tab, store } = mountPlot({ plots: [SCATTER], deps: { onPickPlotsFile: async () => file } });
   const s = await section(tab);
   click(button(s, 'wmap-plot-import'));
@@ -509,7 +510,7 @@ test('a saved plot opens in the editor window over the selection, naming it', as
 test('a plot opened from the menu keeps an accurate heading as its fields change', async () => {
   const { items } = lotItems(1);
   const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
-  const untitled = { id: 'u', mark: 'scatter', encoding: { x: { test: 1050 }, y: { test: 1060 }, color: { none: true } } };
+  const untitled = { id: 'u', chart: 'scatter', fields: { x: { test: 1050 }, y: { test: 1060 }, color: { none: true } } };
   const store = createPlotStore([untitled], undefined, 0);
   openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
   click(menuRows().find(r => r.textContent === 'Idsat vs Vth'));
@@ -536,7 +537,7 @@ test('"New plot…" opens a draft that is kept only when added', async () => {
   assert.equal(store.get().length, 0, 'editing a draft does not save it');
   click(win.querySelector('[data-wmap-plot-add]'));
   assert.equal(store.get().length, 1);
-  assert.deepEqual(store.get()[0].encoding.y, { test: 1050, name: 'Vth' }, 'the edits made as a draft are what was added');
+  assert.deepEqual(store.get()[0].fields.y, { test: 1050, name: 'Vth' }, 'the edits made as a draft are what was added');
   assert.match(win.textContent, /Changes are saved to/);
   document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
 });
@@ -567,9 +568,9 @@ test('"New plot…" is unavailable for dies with no parametric values', () => {
 
 // ── box, bar and line ────────────────────────────────────────────────────────
 
-const BOX = { id: 'b1', mark: 'box', encoding: { y: { test: 1050, name: 'Vth' }, color: { none: true } } };
-const BAR = { id: 'b2', mark: 'bar', encoding: { x: { meta: 'split' }, y: { builtin: 'yield' }, color: { none: true } } };
-const LINE = { id: 'b3', mark: 'line', encoding: { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' }, color: { none: true } }, aggregate: 'mean' };
+const BOX = { id: 'b1', chart: 'box', fields: { y: { test: 1050, name: 'Vth' }, color: { none: true } } };
+const BAR = { id: 'b2', chart: 'bar', fields: { x: { meta: 'split' }, y: { builtin: 'yield' }, color: { none: true } } };
+const LINE = { id: 'b3', chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' }, color: { none: true } }, aggregate: 'mean' };
 const tip = (card) => [...card.querySelectorAll('div')].find(d => d.style.display === 'block' && /rgba\(30, 32, 40/.test(d.style.background));
 const hover = (card, x) => card.querySelector('canvas').dispatchEvent(new dom.window.MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: 20 }));
 
@@ -629,7 +630,7 @@ test('hovering a line names the x and each series\' value there', async () => {
 });
 
 test('a plot that cannot be drawn still has a name in its heading', async () => {
-  const bad = { id: 'x', mark: 'bar', encoding: { x: { builtin: 'hbin' }, y: { builtin: 'yield' }, color: { none: true } } };
+  const bad = { id: 'x', chart: 'bar', fields: { x: { builtin: 'hbin' }, y: { builtin: 'yield' }, color: { none: true } } };
   const { tab } = mountPlot({ plots: [bad] });
   await section(tab);
   const card = cards(tab)[0];
@@ -638,7 +639,7 @@ test('a plot that cannot be drawn still has a name in its heading', async () => 
 });
 
 test('a scatter coloured by a measured value shows a colourbar instead of a legend', async () => {
-  const { tab } = mountPlot({ plots: [{ ...SCATTER, encoding: { ...SCATTER.encoding, color: { test: 1050, name: 'Vth' } } }] });
+  const { tab } = mountPlot({ plots: [{ ...SCATTER, fields: { ...SCATTER.fields, color: { test: 1050, name: 'Vth' } } }] });
   await section(tab);
   const card = cards(tab)[0];
   const bar = card.querySelector('[data-wmap-plot-colorbar]');
@@ -651,7 +652,7 @@ test('a scatter coloured by a measured value shows a colourbar instead of a lege
 // ── titles that drift, and examples ──
 
 test('a typed title that no longer matches its plot is flagged on the card, with a way back to the automatic one', async () => {
-  const stale = { ...SCATTER, encoding: { ...SCATTER.encoding, y: { test: 1050, name: 'Vth' } } };   // title still says Idsat
+  const stale = { ...SCATTER, fields: { ...SCATTER.fields, y: { test: 1050, name: 'Vth' } } };   // title still says Idsat
   const { tab, store } = mountPlot({ plots: [stale, HIST] });
   await section(tab);
   const [card, other] = cards(tab);
@@ -686,12 +687,12 @@ test('Add examples draws one of each type from the lot, and does not add them tw
   const { tab, store, changes } = mountPlot();
   const s = await section(tab);
   click(button(s, 'wmap-plot-examples'));
-  assert.deepEqual(store.get().map(p => p.mark), ['scatter', 'histogram', 'box', 'bar', 'line']);
-  assert.equal(cards(tab).length, 5);
+  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep']);
+  assert.equal(cards(tab).length, 6);
   for (const c of cards(tab)) assert.ok(c.querySelector('canvas'), c.dataset.wmapChartTitle);
-  assert.match(s.textContent, /Added 5 example plots: scatter, histogram, box, bar, line/);
+  assert.match(s.textContent, /Added 6 example plots: scatter, histogram, box, bar, line, sweep/);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 5, 'a second click adds nothing');
+  assert.equal(store.get().length, 6, 'a second click adds nothing');
   assert.match(s.textContent, /already in your plots/);
   await tick(10);
   assert.ok(changes.length >= 1, 'the host is told');
@@ -704,8 +705,8 @@ test('Add examples keeps what the reader already has and adds only what is missi
   const second = store.get()[1];
   store.remove(second.id);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 5);
-  assert.equal(store.get().at(-1).mark, 'histogram');
+  assert.equal(store.get().length, 6);
+  assert.equal(store.get().at(-1).chart, 'histogram');
 });
 
 // ── saving and printing ──
@@ -726,10 +727,285 @@ test('a plot saved as a PNG carries its title, its population and its colour key
   const flats = [];
   dom.window.HTMLCanvasElement.prototype.toBlob = function toBlob(cb) { flats.push(this); cb(new dom.window.Blob(['x'])); };
   const saved = [];
-  const colored = { ...SCATTER, title: undefined, encoding: { ...SCATTER.encoding, color: { meta: 'split' } } };
+  const colored = { ...SCATTER, title: undefined, fields: { ...SCATTER.fields, color: { meta: 'split' } } };
   const { tab } = mountPlot({ plots: [colored], deps: { onSaveImage: (blob, name) => saved.push(name) } });
   await section(tab);
   cards(tab)[0].querySelector('button[aria-label="Save as PNG"]').click();
   assert.deepEqual(saved, ['Idsat vs Vth · by Split.png']);
   assert.equal(flats.length, 1);
+});
+
+// ── sweeps as plots ──────────────────────────────────────────────────────────
+
+const SWEEP = { id: 'sw1', title: 'Two-test sweep', chart: 'sweep', sweep: { series: [{ label: 'Run', tests: [1050, 1060] }] } };
+const FOREIGN_SWEEP = { id: 'sw2', title: 'Other program', chart: 'sweep', sweep: { series: [{ label: 'Run', tests: [9001, 9002] }] } };
+const SWEEP_TEXT = (win, hook, i) => win.querySelector(`[data-${hook}="${i}"]`);
+const type = (input, text) => { input.value = text; input.dispatchEvent(new dom.window.Event('input', { bubbles: true })); };
+
+test('a sweep is a card on the Plot tab, drawn by the sweep panel, with the same buttons as any plot', async () => {
+  const { tab } = mountPlot({ plots: [SWEEP, SCATTER] });
+  await section(tab);
+  const card = cards(tab).find(c => c.dataset.wmapPlotId === 'sw1');
+  assert.ok(card.dataset.wmapSweepPlot);
+  assert.equal(card.dataset.wmapChartTitle, 'Two-test sweep');
+  for (const hook of ['wmap-plot-edit', 'wmap-plot-duplicate', 'wmap-plot-delete']) assert.ok(button(card, hook), hook);
+  assert.match(card.textContent, /median across 72 dies/);
+  assert.deepEqual(cards(tab).map(c => c.dataset.wmapPlotId), ['sw1', 'p1'], 'plots and sweeps share one list and order');
+});
+
+test('a sweep whose tests are not in the lot is kept, greyed, and says so', async () => {
+  const { tab, store } = mountPlot({ plots: [FOREIGN_SWEEP] });
+  await section(tab);
+  const card = cards(tab)[0];
+  assert.match(card.textContent, /None of this sweep’s tests are in this data/);
+  assert.equal(card.style.opacity, '0.7');
+  assert.equal(store.get().length, 1);
+});
+
+test('there is no Sweeps tab: the Plot tab holds them, and the old default view opens it', async () => {
+  const { tab } = mountPlot({ plots: [SWEEP], deps: { defaultView: 'sweeps' } });
+  await section(tab);
+  const labels = [...tab.el.querySelectorAll('[role="tab"]')].map(t => t.textContent);
+  assert.ok(!labels.includes('Sweeps'), labels.join(','));
+  assert.ok(labels.includes('Plot'));
+  assert.equal(cards(tab).length, 1);
+});
+
+test('New sweep adds one on the lot\'s tests and opens the sweep editor', async () => {
+  const { tab, store, changes } = mountPlot();
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-new-sweep'));
+  assert.equal(store.get().length, 1);
+  assert.equal(store.get()[0].chart, 'sweep');
+  assert.deepEqual(store.get()[0].sweep.series[0].tests, [1050, 1060]);
+  assert.ok(document.querySelector('[data-wmap-sweep-editor]'), 'the sweep editor, not the plot editor');
+  assert.ok(!document.querySelector('[data-wmap-plot-editor]'));
+  await tick(10);
+  assert.equal(changes.at(-1)[0].chart, 'sweep', 'the host is told, as for any plot');
+  document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('typing the tests of a series edits the saved sweep; text that is not a test is flagged and not applied', async () => {
+  const { tab, store } = mountPlot({ plots: [SWEEP] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-edit'));
+  const win = document.querySelector('[data-wmap-plot-window]');
+  const box = SWEEP_TEXT(win, 'wmap-sweep-tests', 0);
+  type(box, '1060, 1050');
+  assert.deepEqual(store.get()[0].sweep.series[0].tests, [1060, 1050], 'order is the X axis and is kept as typed');
+  type(box, '1060, oops');
+  assert.deepEqual(store.get()[0].sweep.series[0].tests, [1060, 1050], 'a bad entry changes nothing');
+  assert.equal(box.getAttribute('aria-invalid'), 'true');
+  assert.match(win.textContent, /"oops" is not a test number/);
+  type(box, '1050..1060');
+  assert.deepEqual(store.get()[0].sweep.series[0].tests, ['1050..1060']);
+  assert.equal(box.getAttribute('aria-invalid'), 'false');
+  document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('the title, series and axis settings of a sweep are edited in place and removed when cleared', async () => {
+  const { tab, store } = mountPlot({ plots: [SWEEP] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-edit'));
+  const win = document.querySelector('[data-wmap-plot-window]');
+  type(win.querySelector('[data-wmap-sweep-title]'), 'Renamed');
+  assert.equal(store.get()[0].title, 'Renamed');
+  assert.equal(cards(tab)[0].dataset.wmapChartTitle, 'Renamed', 'the card follows');
+  type(win.querySelector('[data-wmap-sweep-title]'), '');
+  assert.ok(!('title' in store.get()[0]));
+  click(win.querySelector('[data-wmap-sweep-add-series]'));
+  assert.equal(store.get()[0].sweep.series.length, 2);
+  assert.equal(store.get()[0].sweep.series[1].label, 'Series 2');
+  click(win.querySelector('[data-wmap-sweep-remove-series]'));
+  assert.equal(store.get()[0].sweep.series.length, 1);
+  assert.ok(!win.querySelector('[data-wmap-sweep-remove-series]'), 'the last series cannot be removed');
+  document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('the X values of a series are one of: test order, typed values, or read from the test names', async () => {
+  const { tab, store } = mountPlot({ plots: [SWEEP] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-edit'));
+  const win = document.querySelector('[data-wmap-plot-window]');
+  const radio = (label) => [...win.querySelectorAll('[role="radio"], input[type="radio"]')].find(r => (r.closest('label')?.textContent ?? r.textContent) === label);
+  click(radio('Values'));
+  assert.deepEqual(store.get()[0].sweep.series[0].xValues, []);
+  type(win.querySelector('[aria-label="Series 1 X values"]'), '0, 5');
+  assert.deepEqual(store.get()[0].sweep.series[0].xValues, [0, 5]);
+  click(radio('From test name'));
+  assert.ok(!('xValues' in store.get()[0].sweep.series[0]), 'one source at a time: the values are not kept alongside a pattern');
+  assert.equal(store.get()[0].sweep.series[0].xFromName, '');
+  click(radio('Test order'));
+  assert.ok(!('xFromName' in store.get()[0].sweep.series[0]));
+  document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('crossing and widths are offered only with two series', async () => {
+  const { tab } = mountPlot({ plots: [SWEEP] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-edit'));
+  const win = document.querySelector('[data-wmap-plot-window]');
+  assert.ok(!/Mark where the first two series cross/.test(win.textContent));
+  click(win.querySelector('[data-wmap-sweep-add-series]'));
+  assert.match(win.textContent, /Mark where the first two series cross/);
+  document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('Duplicate and Delete work on a sweep like any plot', async () => {
+  const { tab, store } = mountPlot({ plots: [SWEEP] });
+  const s = await section(tab);
+  click(button(cards(tab)[0], 'wmap-plot-duplicate'));
+  assert.deepEqual(store.get().map(p => p.title), ['Two-test sweep', 'Two-test sweep (copy)']);
+  assert.notEqual(store.get()[0].id, store.get()[1].id);
+  click(button(cards(tab)[0], 'wmap-plot-delete'));
+  assert.equal(store.get().length, 1);
+  click([...s.querySelectorAll('[data-wmap-plot-notice-action]')].find(b => b.textContent === 'Undo'));
+  assert.equal(store.get().length, 2);
+});
+
+test('a sweep is a row of the drilldown menu under Plots, and unavailable when the dies lack its tests', () => {
+  const { items } = lotItems(1);
+  const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
+  const store = createPlotStore([SWEEP, FOREIGN_SWEEP, SCATTER], undefined, 0);
+  const close = openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
+  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Two-test sweep', 'Other program', 'Vth vs Idsat', 'New plot…', 'Dies', 'Test statistics']);
+  const state = Object.fromEntries(menuRows().map(r => [r.textContent, r.getAttribute('aria-disabled')]));
+  assert.equal(state['Two-test sweep'], null);
+  assert.equal(state['Other program'], 'true');
+  close();
+});
+
+test('the old sweeps option still draws: each entry is a sweep plot under its own id, and a saved plot of that id wins', () => {
+  const legacy = { id: 'sw1', title: 'From the host', series: [{ label: 'Run', tests: [1050] }] };
+  const other = { id: 'sw9', title: 'Only legacy', series: [{ label: 'Run', tests: [1060] }] };
+  const store = createPlotStore([{ ...SWEEP, title: 'Edited by the reader' }], undefined, 0, { sweeps: [legacy, other] });
+  assert.deepEqual(store.get().map(p => [p.id, p.title, p.chart]), [['sw1', 'Edited by the reader', 'sweep'], ['sw9', 'Only legacy', 'sweep']]);
+});
+
+test('deleting a sweep the host supplies tells the host, so its next render does not bring it back', () => {
+  const removed = [];
+  const store = createPlotStore([SCATTER], undefined, 0, { sweeps: [{ id: 'sw9', title: 'Legacy', series: [{ label: 'Run', tests: [1060] }] }], onRemove: ids => removed.push(...ids) });
+  store.remove('p1');
+  assert.deepEqual(removed, [], 'a plot that was never a host sweep is not reported');
+  store.remove('sw9');
+  assert.deepEqual(removed, ['sw9']);
+});
+
+// ── Reset and Cancel ─────────────────────────────────────────────────────────
+
+const closeWindow = () => document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+
+test('Reset puts a plot back as it was when the window opened, and is disabled until something changed', async () => {
+  const { tab, store } = mountPlot({ plots: [SCATTER] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-edit'));
+  const win = document.querySelector('[data-wmap-plot-window]');
+  const reset = button(win, 'wmap-plot-reset');
+  assert.ok(reset.disabled, 'nothing to reset yet');
+  pick(win, 'plot-y', 'Vth · 1050');
+  assert.deepEqual(store.get()[0].fields.y, { test: 1050, name: 'Vth' });
+  assert.ok(!reset.disabled);
+  click(reset);
+  assert.deepEqual(store.get()[0], SCATTER, 'the saved plot is as it was');
+  assert.ok(reset.disabled);
+  assert.ok(document.querySelector('[data-wmap-plot-window]'), 'the window stays open');
+  closeWindow();
+});
+
+test('Cancel reverts the edits and closes; the window\'s own close button keeps them', async () => {
+  const { tab, store } = mountPlot({ plots: [SCATTER] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-edit'));
+  pick(document.querySelector('[data-wmap-plot-window]'), 'plot-y', 'Vth · 1050');
+  click(button(document, 'wmap-plot-cancel'));
+  assert.ok(!document.querySelector('[data-wmap-plot-window]'), 'closed');
+  assert.deepEqual(store.get()[0], SCATTER);
+
+  click(button(s, 'wmap-plot-edit'));
+  pick(document.querySelector('[data-wmap-plot-window]'), 'plot-y', 'Vth · 1050');
+  closeWindow();
+  assert.deepEqual(store.get()[0].fields.y, { test: 1050, name: 'Vth' }, 'closing keeps what was changed');
+});
+
+test('Reset and Cancel work on a sweep, and Reset brings back the editor\'s own fields', async () => {
+  const { tab, store } = mountPlot({ plots: [SWEEP] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-edit'));
+  const win = document.querySelector('[data-wmap-plot-window]');
+  type(SWEEP_TEXT(win, 'wmap-sweep-tests', 0), '1060');
+  type(win.querySelector('[data-wmap-sweep-title]'), 'Mistake');
+  assert.equal(store.get()[0].title, 'Mistake');
+  click(button(win, 'wmap-plot-reset'));
+  assert.deepEqual(store.get()[0], SWEEP);
+  assert.equal(win.querySelector('[data-wmap-sweep-title]').value, 'Two-test sweep', 'the editor shows the restored value');
+  assert.equal(SWEEP_TEXT(win, 'wmap-sweep-tests', 0).value, '1050, 1060');
+  type(win.querySelector('[data-wmap-sweep-title]'), 'Again');
+  click(button(win, 'wmap-plot-cancel'));
+  assert.deepEqual(store.get()[0], SWEEP);
+  assert.ok(!document.querySelector('[data-wmap-plot-window]'));
+});
+
+test('cancelling a draft leaves the saved list alone', async () => {
+  const { items } = lotItems(1);
+  const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
+  const store = createPlotStore([], undefined, 0);
+  openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
+  click(menuRows().find(r => r.textContent === 'New plot…'));
+  const win = await until(() => document.querySelector('[data-wmap-plot-window]'), 'the draft window');
+  click(button(win, 'wmap-plot-cancel'));
+  assert.ok(!document.querySelector('[data-wmap-plot-window]'));
+  assert.equal(store.get().length, 0);
+});
+
+test('the chart in the editor window takes its column\'s width, so an expanded view that is restored cannot cover the settings', async () => {
+  const { tab } = mountPlot({ plots: [SWEEP, SCATTER] });
+  const s = await section(tab);
+  for (const id of ['sw1', 'p1']) {
+    click(button(cards(tab).find(c => c.dataset.wmapPlotId === id), 'wmap-plot-edit'));
+    const win = document.querySelector('[data-wmap-plot-window]');
+    assert.equal(win.querySelector('[data-wmap-chart-card]').style.alignSelf, 'stretch', id);
+    closeWindow();
+  }
+});
+
+test('a series read from test names shows those names while the pattern is written, and what it reads from each', () => {
+  const defs = [{ testNumber: 10, name: 'Fmax @ 0.55 V' }, { testNumber: 11, name: 'Fmax @ 0.60 V' }, { testNumber: 12, name: 'Fmax @ 0.65 V' }, { testNumber: 13, name: 'Fmax @ 0.70 V' }, { testNumber: 14, name: 'Fmax @ 0.75 V' }];
+  const plot = { id: 's', chart: 'sweep', sweep: { series: [{ label: 'Up', tests: ['10..14'], xFromName: '' }] } };
+  const emitted = [];
+  const e = createSweepEditor({ doc: document, plot, testDefs: defs, onChange: p => emitted.push(p) });
+  document.body.appendChild(e.el);
+  const names = () => e.el.querySelector('[data-wmap-sweep-names="0"]');
+  assert.match(names().textContent, /write a pattern with \{x\}/);
+  assert.match(names().textContent, /10 {2}“Fmax @ 0\.55 V”/);
+  assert.match(names().textContent, /… and 1 more/, 'four are shown, the rest counted');
+  const box = e.el.querySelector('[aria-label="Series 1 name pattern"]');
+  type(box, '@ {x}');
+  assert.match(names().textContent, /What the pattern reads/);
+  assert.match(names().textContent, /10 {2}“Fmax @ 0\.55 V” {2}→ 0\.55/);
+  type(box, 'LRS_{x}');
+  assert.match(names().textContent, /→ no match/);
+  assert.equal(emitted.at(-1).sweep.series[0].xFromName, 'LRS_{x}');
+  type(e.el.querySelector('[data-wmap-sweep-tests="0"]'), '10, 11');
+  assert.ok(!/and \d+ more/.test(names().textContent), 'the list follows the tests');
+  e.el.remove();
+});
+
+test('without the lot\'s tests the editor has no name preview, and a series not read from names has none', () => {
+  const plot = { id: 's', chart: 'sweep', sweep: { series: [{ label: 'Up', tests: [10], xFromName: '@ {x}' }, { label: 'B', tests: [10] }] } };
+  const none = createSweepEditor({ doc: document, plot, onChange() {} });
+  assert.ok(!none.el.querySelector('[data-wmap-sweep-names]'));
+  const withDefs = createSweepEditor({ doc: document, plot, testDefs: [{ testNumber: 10, name: 'x 1' }], onChange() {} });
+  assert.ok(withDefs.el.querySelector('[data-wmap-sweep-names="0"]'));
+  assert.ok(!withDefs.el.querySelector('[data-wmap-sweep-names="1"]'));
+});
+
+test('the sweep editor offers worked pattern examples for a series read from names, folded away until wanted', () => {
+  const plot = { id: 's', chart: 'sweep', sweep: { series: [{ label: 'Up', tests: [10], xFromName: '' }, { label: 'B', tests: [10] }] } };
+  const e = createSweepEditor({ doc: document, plot, onChange() {} });
+  const ex = e.el.querySelectorAll('[data-wmap-sweep-examples]');
+  assert.equal(ex.length, 1, 'only the series that is read from names');
+  assert.equal(ex[0].open, false);
+  assert.match(ex[0].textContent, /“1234-5” with -\{x\} reads 5/);
+  assert.match(ex[0].textContent, /“Fmax @ 0\.55 V” with @ \{x\} reads 0\.55/);
+  assert.match(ex[0].textContent, /cannot take part of a number/, 'what a pattern cannot do is said beside the examples');
 });

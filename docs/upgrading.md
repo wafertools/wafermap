@@ -8,6 +8,26 @@ each removal, and whether it could come back, are in
 
 ## Next release
 
+### Sweeps are plots
+
+Sweeps are drawn on the Insights **Plot** tab, beside your other plots, and the **Sweeps** tab is gone. Nothing needs
+changing to keep working: `insights.sweeps` and `insights.onRemoveSweeps` still draw, and log a notice the first time.
+`defaultView: 'sweeps'` opens the Plot tab.
+
+To move over, give each sweep as a plot, with its `id` and `title` on the plot and the rest under `sweep`:
+
+```ts
+// before
+insights: { sweeps: [{ id: 'power', title: 'Power Sweep', series: [...], xLabel: 'dBm' }] }
+
+// after
+insights: { plots: [{ id: 'power', title: 'Power Sweep', chart: 'sweep', sweep: { series: [...], xLabel: 'dBm' } }] }
+```
+
+A sweeps file (`{ "format": "tsmap-sweeps", "sweeps": [...] }`) is read by `readPlotsFile`, which returns the same sweep
+plots, so a host that stored one can pass its text through. The reader can then edit sweeps, save them with the rest of
+their plots, and keep them across lots. If you supply both a plot and a sweep with the same `id`, the plot is used.
+
 ### Insights is on by default
 
 `insights.enabled` now defaults to `true` wherever there is a toolbar: always for

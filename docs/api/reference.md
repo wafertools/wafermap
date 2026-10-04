@@ -388,7 +388,7 @@ exists so the name is discoverable, not to restate the shape.
 | --- | --- | --- |
 | `DieEligibilityOptions` | `/core` | `isYieldEligibleDie` options — `includeEdgeExcluded?`. |
 | `ViewportTransform` | `/render` | Pan/zoom state — `{ originX, originY, ppm, snapDist }`. Usable as `renderWaferMap`'s initial viewport. |
-| `InsightsView` | `/render` | `'overview' \| 'distributions' \| 'correlation' \| 'sweeps'`. |
+| `InsightsView` | `/render` | `'overview' \| 'distributions' \| 'correlation' \| 'sweeps' \| 'data' \| 'plot'`. `'sweeps'` opens the Plot tab. |
 | `DetachWindowOpener` | `/render` | `(label) => Window \| null` — `setDetachWindowOpener`, for hosts where `window.open` is blocked. |
 | `DieListDisplayOptions` | `/render` | `RenderOptions.dieList` / `GalleryOptions.dieList` — §5.4.4. |
 | `AnalyzeWaferMapInput` | `/stats` | `WaferMapInput \| WaferMapResult`. |

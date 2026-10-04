@@ -10,7 +10,7 @@ import type { DrilldownSource } from './chartPopulation.js';
 /** What a population hands over for each wafer: a drilldown source's items, or the Insights tab's. */
 export interface WaferShare {
   label: string;
-  dies: Die[];
+  dies: readonly Die[];
   waferIndex?: number;
   wafer?: Wafer;
   passBins?: readonly number[];
@@ -43,4 +43,22 @@ export function sourceFromPoints(
   if (picked.length === 0) return null;
   const population = picked.length === 1 ? `selected on ${picked[0].label} in the plot` : `selected in the plot, across ${picked.length} wafers`;
   return { items: picked, population, testDefs: testDefs ? [...testDefs] : undefined };
+}
+
+/**
+ * The dies of each wafer that satisfy `keep`, as a drilldown population worded "`what` on W03" or "`what`, across N
+ * wafers". `null` when none does. Per wafer, so the tables name each die's wafer and a chart opened on it is of
+ * exactly those dies.
+ */
+export function sourceFromDies(
+  shares: readonly WaferShare[], what: string, keep: (d: Die) => boolean,
+  testDefs: readonly TestDef[] | undefined, activeTest?: number,
+): DrilldownSource | null {
+  const picked = shares
+    .map(it => ({ it, dies: it.dies.filter(keep) }))
+    .filter(x => x.dies.length > 0)
+    .map(({ it, dies }) => ({ label: it.label, dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins }));
+  if (picked.length === 0) return null;
+  const population = picked.length === 1 ? `${what} on ${picked[0].label}` : `${what}, across ${picked.length} wafers`;
+  return { items: picked, population, testDefs: testDefs ? [...testDefs] : undefined, activeTest };
 }
