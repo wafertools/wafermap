@@ -15,7 +15,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSweepData, previewXFromName } from '../dist/packages/stats/sweep.js';
+import { buildSweepData, previewXFromName, recordSweepTestNames } from '../dist/packages/stats/sweep.js';
 import { NAME_PATTERN_EXAMPLES } from '../dist/packages/stats/sweepXFromName.js';
 import { parseTestReference, parseExpression } from '../dist/packages/renderer/derivedTests/parser.js';
 
@@ -581,4 +581,32 @@ test('? cannot make a pattern slow: a long name with many wildcards is read at o
   const t0 = Date.now();
   assert.equal(previewXFromName({ label: 'S', tests: [1], xFromName: '?*?*?*?*?*?*{x}' }, [{ testNumber: 1, name }]).rows[0].x, 5);
   assert.ok(Date.now() - t0 < 500, 'bounded by pattern length times name length');
+});
+
+// ── A sweep set up on one test program, opened on another that reuses its numbers ──
+
+test('recordSweepTestNames keeps the names the tests have, and leaves out tests the data does not hold', () => {
+  const sweep = recordSweepTestNames({ series: [{ label: 'R', tests: ['1010..1012', 9999] }] }, defs([...RISING]));
+  assert.deepEqual(sweep.series[0].testNames, { 1010: 'T1010', 1011: 'T1011', 1012: 'T1012' });
+});
+
+test('tests that carry other names than the sweep recorded are not drawn, and the sweep says so', () => {
+  const spec = recordSweepTestNames(SPEC, defs([...RISING, ...FALLING]));
+  const other = defs([...RISING, ...FALLING]).map(d => ({ ...d, name: `Other ${d.testNumber}` }));
+  const d = buildSweepData(CROSSING_DIES, other, spec);
+  assert.ok(d.series.every(s => s.points.every(p => p.count === 0)), 'no value is drawn from a renamed test');
+  assert.ok(d.warnings.some(w => /not the one this sweep was set up on/.test(w) && /"T1010"/.test(w) && /"Other 1010"/.test(w)));
+  assert.equal(d.crossing ?? null, null);
+  assert.match(d.notMeasured, /not the ones this sweep was set up on/);
+});
+
+test('the same names, in any case, draw as before; a sweep with no recorded names is not checked', () => {
+  const recorded = recordSweepTestNames(SPEC, defs([...RISING, ...FALLING]));
+  const upper = defs([...RISING, ...FALLING]).map(d => ({ ...d, name: ` ${d.name.toUpperCase()} ` }));
+  const same = buildSweepData(CROSSING_DIES, upper, recorded);
+  assert.deepEqual(same.warnings, []);
+  assert.ok(same.crossing);
+  const other = defs([...RISING, ...FALLING]).map(d => ({ ...d, name: 'Else' }));
+  const unchecked = buildSweepData(CROSSING_DIES, other, SPEC);
+  assert.ok(unchecked.crossing);
 });

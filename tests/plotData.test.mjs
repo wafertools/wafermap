@@ -439,7 +439,7 @@ test('examples: one of each type the lot can show, built from its own tests and 
   }
   const sweep = ex[5];
   assert.equal(sweep.title, 'Example sweep', 'a sweep has no fields to name it, so it is titled');
-  assert.deepEqual(sweep.sweep.series, [{ label: 'Series 1', tests: [1050, 1060] }], 'the lot\'s own tests, in test order');
+  assert.deepEqual(sweep.sweep.series, [{ label: 'Series 1', tests: [1050, 1060], testNames: { 1050: 'Vth', 1060: 'Idsat' } }], 'the lot\'s own tests, in test order');
 });
 
 test('examples: a single wafer gets only what makes sense for one', () => {

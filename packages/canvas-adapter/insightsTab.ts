@@ -1149,6 +1149,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       border: 'none', background: 'none', padding: '0', cursor: 'pointer', font: 'inherit',
       color: CLR.iconActive, textDecoration: 'underline',
     } as Partial<CSSStyleDeclaration>);
+    wireControlHover(btn, 'bare');
     btn.addEventListener('click', () => { activeView = 'data'; render({ keepSections: true }); });
     row.append('Test statistics, every die and every wafer as tables, with CSV export: see the ', btn, '.');
     return row;

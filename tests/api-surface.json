@@ -467,6 +467,7 @@
     "InsightsOptions.sweeps[].series[]": [
       "color",
       "label",
+      "testNames",
       "tests",
       "xFromName",
       "xValues"

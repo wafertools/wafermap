@@ -1902,9 +1902,9 @@ export function renderWaferGallery(
   selectAcrossBadge.dataset.wmapSelectAcrossCount = '1';
   Object.assign(selectAcrossBadge.style, {
     // Inside the button's own box, not hanging off its corner: the toolbar clips what overflows it.
-    position: 'absolute', top: '0', right: '0', minWidth: '13px', height: '13px', boxSizing: 'border-box',
-    padding: '0 2px', borderRadius: '7px', background: CLR.iconActive, color: CLR.menuBg,
-    fontSize: '9px', lineHeight: '13px', fontWeight: '700', textAlign: 'center', pointerEvents: 'none', display: 'none',
+    position: 'absolute', top: '0', right: '0', minWidth: '14px', height: '14px', boxSizing: 'border-box',
+    padding: '0 3px', borderRadius: RADIUS.pill, background: CLR.iconActive, color: CLR.menuBg,
+    fontSize: '11px', lineHeight: '14px', fontWeight: '700', textAlign: 'center', pointerEvents: 'none', display: 'none',
   } as Partial<CSSStyleDeclaration>);
   btnSelectAcross.appendChild(selectAcrossBadge);
   function syncSelectAcrossBtn(): void {
@@ -1928,6 +1928,7 @@ export function renderWaferGallery(
     display: 'none', border: 'none', background: CLR.bgActive, color: CLR.iconActive, borderRadius: RADIUS.control,
     padding: `${SPACE.xs} ${SPACE.md}`, fontSize: FONT.body, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0',
   } as Partial<CSSStyleDeclaration>);
+  wireControlHover(btnPicked, 'bare');
   btnPicked.addEventListener('click', clearPickedCards);
 
   type ColsValue = '1' | '2' | '3' | '4' | '5' | 'auto';

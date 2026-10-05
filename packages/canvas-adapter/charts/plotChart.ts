@@ -14,7 +14,7 @@ import { fiveNumberSummary } from '../../stats/math.js';
 import { fmt } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { plotFootnote, plotTestNumber, plotTitle, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
-import { SPACE, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
+import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
   cardShell, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
@@ -522,7 +522,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: SPACE.md, marginTop: SPACE.md, marginBottom: SPACE.xl, fontSize: FONT.body, color: CLR.label } as Partial<CSSStyleDeclaration>);
     const strip = doc.createElement('canvas');
     strip.width = 200; strip.height = 10;
-    Object.assign(strip.style, { width: '200px', height: '10px', borderRadius: '2px', flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
+    Object.assign(strip.style, { width: '200px', height: '10px', borderRadius: RADIUS.control, flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
     const g = strip.getContext('2d');
     const gradient = resolveValueColorFn();
     if (g) for (let i = 0; i < 200; i++) { g.fillStyle = gradient(i / 199); g.fillRect(i, 0, 1, 10); }

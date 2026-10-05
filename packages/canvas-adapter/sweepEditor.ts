@@ -10,7 +10,7 @@
 
 import { formatNumberList, formatTestList, parseNumberList, parseTestList } from '../stats/sweepText.js';
 import type { PlotSpec } from '../stats/plotSpec.js';
-import { previewXFromName, type SweepSeriesSpec } from '../stats/sweep.js';
+import { previewXFromName, recordSweepTestNames, type SweepSeriesSpec } from '../stats/sweep.js';
 import { NAME_PATTERN_EXAMPLES, NAME_PATTERN_LIMIT } from '../stats/sweepXFromName.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover } from './toolbar.js';
@@ -47,6 +47,8 @@ export function createSweepEditor(o: SweepEditorOptions): SweepEditorHandle {
     const draft = JSON.parse(JSON.stringify(plot)) as PlotSpec;
     draft.sweep = draft.sweep ?? { series: [] };
     fn(draft);
+    // What the tests are called now, so a lot that numbers other tests the same way is told apart from this one.
+    draft.sweep = recordSweepTestNames(draft.sweep, o.testDefs);
     plot = draft;
     o.onChange(draft);
   };
@@ -121,6 +123,7 @@ export function createSweepEditor(o: SweepEditorOptions): SweepEditorHandle {
     const summary = doc.createElement('summary');
     summary.textContent = 'Pattern examples';
     Object.assign(summary.style, { cursor: 'pointer' } as Partial<CSSStyleDeclaration>);
+    wireControlHover(summary, 'bare');
     details.appendChild(summary);
     const list = doc.createElement('div');
     Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: SPACE.sm, paddingTop: SPACE.sm } as Partial<CSSStyleDeclaration>);

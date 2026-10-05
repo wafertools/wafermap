@@ -90,7 +90,7 @@ test('a new sweep starts on the lot\'s first parametric tests in test order, wit
   const defs = [{ testNumber: 30, name: 'c' }, { testNumber: 10, name: 'a' }, { testNumber: 20, name: 'f', testType: 'F' }, { testNumber: 40, name: 'd' }];
   const p = defaultSweep(defs, 'new');
   assert.equal(p.chart, 'sweep');
-  assert.deepEqual(p.sweep.series, [{ label: 'Series 1', tests: [10, 30, 40] }], 'functional tests have no value to sweep');
+  assert.deepEqual(p.sweep.series, [{ label: 'Series 1', tests: [10, 30, 40], testNames: { 10: 'a', 30: 'c', 40: 'd' } }], 'functional tests have no value to sweep; the names are recorded to tell another program apart');
 });
 
 test('tests are typed as numbers and ranges, separated by commas or spaces', () => {

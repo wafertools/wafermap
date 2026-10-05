@@ -82,6 +82,14 @@ export interface SweepSeriesSpec {
   xFromName?: string;
   /** Optional explicit colour. Omit to take one from the chart's palette. */
   color?: string;
+  /**
+   * What each test was called when the sweep was set up, by test number (`{ "3000": "Iread 0.1V" }`). The number is
+   * the key and the name is a check, as in a plot's fields: a lot from another test program can reuse the numbers for
+   * other measurements, and a sweep read from them would draw a plausible curve of the wrong quantity. A test whose
+   * name differs from the one recorded here is not drawn and the sweep says so. Filled in by the sweep editor;
+   * absent from a sweep written by hand, which is then not checked.
+   */
+  testNames?: Record<string, string>;
 }
 
 export interface SweepSpec {
@@ -248,6 +256,29 @@ export function sweepAppliesTo(spec: SweepSpec, testDefs: readonly TestDef[] | u
     const def = defs.get(tn);
     return def !== undefined && isParametricTest(def);
   }));
+}
+
+/** Whether two test names are the same test's name: case and surrounding space do not count. */
+export const sameTestName = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * `sweep` with each series' `testNames` set to the names its tests have in `testDefs`, for the check in `buildSweepData`.
+ * A test the data does not hold is left out, so a sweep written for a lot with more tests stays checkable on those it has.
+ */
+export function recordSweepTestNames<T extends { series: SweepSeriesSpec[] }>(sweep: T, testDefs: readonly TestDef[] | undefined): T {
+  const defs = new Map((testDefs ?? []).map(d => [d.testNumber, d]));
+  return {
+    ...sweep,
+    series: sweep.series.map(s => {
+      const names: Record<string, string> = {};
+      for (const tn of resolveSeries(s, defs, []).tests) {
+        const name = defs.get(tn)?.name;
+        if (name) names[String(tn)] = name;
+      }
+      const { testNames: _old, ...rest } = s;
+      return Object.keys(names).length > 0 ? { ...rest, testNames: names } : rest;
+    }),
+  };
 }
 
 /** At most `max` numbers, then a count — a mismatch message must name what a
@@ -465,19 +496,27 @@ export function buildSweepData(
       : 'A log x axis needs x values (xValues or xFromName) — drawn in test order.');
   }
 
+  // A test that is not the one the sweep was set up on is left undrawn, however well its number fits.
+  let renamed = 0;
   const series: SweepSeriesData[] = resolved.map(({ spec: s, tests }, si) => {
     const physical = xIsPhysical ? xs[si]!.xs : undefined;
+    const wrong: string[] = [];
 
     const points = tests.map((tn, i) => {
       const def = defs.get(tn);
-      if (def === undefined) {
+      const was = s.testNames?.[String(tn)];
+      const isRenamed = def !== undefined && !!was && !!def.name && !sameTestName(was, def.name);
+      if (isRenamed) {
+        wrong.push(`${tn} is "${was}" in this sweep and "${def.name}" here`);
+        renamed++;
+      } else if (def === undefined) {
         warnings.push(`"${s.label}": test ${tn} is not in this program's test definitions.`);
       } else if (!isParametricTest(def)) {
         warnings.push(`"${s.label}": test ${tn} is functional and has no measured value.`);
       }
 
       const values: number[] = [];
-      if (def !== undefined && isParametricTest(def)) {
+      if (def !== undefined && isParametricTest(def) && !isRenamed) {
         for (const die of eligible) {
           const v = testValue(die, tn);
           if (v !== undefined && Number.isFinite(v)) values.push(v);
@@ -497,11 +536,14 @@ export function buildSweepData(
       } satisfies SweepPoint;
     });
 
+    if (wrong.length > 0) {
+      warnings.push(`"${s.label}": ${wrong.length} test${wrong.length !== 1 ? 's are' : ' is'} not the one this sweep was set up on, so ${wrong.length !== 1 ? 'they are' : 'it is'} not drawn (${wrong.slice(0, 3).join('; ')}${wrong.length > 3 ? '; …' : ''}). It may belong to another test program.`);
+    }
     return { label: s.label, color: s.color, points };
   });
 
   const [a, b] = series;
-  const measurable = a !== undefined && b !== undefined && !xBroken && repeat === null;
+  const measurable = a !== undefined && b !== undefined && !xBroken && repeat === null && renamed === 0;
   const wantCrossing = spec.crossing ?? true;
 
   // Measured in the axis's own space: on a log axis the curve between two
@@ -512,7 +554,7 @@ export function buildSweepData(
   const aAxis = measurable ? inAxis(a.points) : [];
   const bAxis = measurable ? inAxis(b.points) : [];
 
-  const separations: SweepSeparation[] = (xBroken || repeat !== null ? [] : spec.separationAt ?? []).map(y => {
+  const separations: SweepSeparation[] = (xBroken || repeat !== null || renamed > 0 ? [] : spec.separationAt ?? []).map(y => {
     if (!measurable) return { y, distance: null };
     const la = xAtY(aAxis, y);
     const lb = xAtY(bAxis, y);
@@ -549,7 +591,9 @@ export function buildSweepData(
     separations,
     dieCount: eligible.length,
     warnings,
-    ...(xBroken && spec.series.length >= 2
+    ...(renamed > 0
+      ? { notMeasured: 'some tests are not the ones this sweep was set up on, so the crossing and widths are not measured' }
+      : xBroken && spec.series.length >= 2
       ? { notMeasured: 'x values do not match the tests, so the sweep is drawn in test order and the crossing and widths are not measured' }
       : repeat !== null && spec.series.length >= 2
         ? { notMeasured: 'a series revisits an x value, so its points cannot be paired with the other series' }

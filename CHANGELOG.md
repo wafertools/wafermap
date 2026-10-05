@@ -26,6 +26,8 @@ under `### Breaking`.
 
 ### Added
 
+- **A sweep remembers its tests' names.** `series[].testNames` records what each test was called when the sweep was set up (the sweep editor and **+ New sweep** fill it in). A test whose name now differs is not drawn and the card names it, and the crossing and widths are not measured, so a sweep opened on a lot from another test program that reuses the numbers does not draw another measurement as if it were the original. A sweep without it is not checked.
+
 - **A Data tab in Insights.** The last Insights sub-tab shows the scope as tables, one at a time: **Statistics** (the
   test-values and functional-tests tables, one set per group under Group by), **Dies** (one row per die, a column per
   test, sortable, drawn as a virtual table so a lot of hundreds of thousands of dies scrolls smoothly) and **Wafers**

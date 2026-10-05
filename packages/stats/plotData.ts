@@ -24,6 +24,7 @@ import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
+import { sameTestName } from './sweep.js';
 import { sameField, plotIssue, isField } from './plotSpec.js';
 import type { PlotSpec, PlotField, PlotAxis, PlotAggregate, PlotBuiltin } from './plotSpec.js';
 
@@ -142,7 +143,6 @@ function prettyMetaKey(key: string): string {
   return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : key;
 }
 
-const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 interface Resolver {
   items: readonly PlotItem[];
@@ -165,7 +165,7 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
         const col: FieldColumn = { ...base, level: 'die', kind: 'numeric', issue: `Needs test ${field.test}${field.name ? ` (${field.name})` : ''}, which is not in these dies` };
         return col;
       }
-    } else if (field.name && def.name && !sameName(field.name, def.name)) {
+    } else if (field.name && def.name && !sameTestName(field.name, def.name)) {
       return { ...base, level: 'die', kind: 'numeric', unit: def.unit, issue: `Test ${field.test} is "${field.name}" in this plot and "${def.name}" here` };
     }
     const num = new Float64Array(nDie);
@@ -745,7 +745,7 @@ export function examplePlots(catalogue: readonly FieldOption[], waferCount: numb
     out.push({ id: newId(), chart: 'bar', fields: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
   }
   if (tests.length >= 1 && manyWafers) out.push({ id: newId(), chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean' });
-  if (tests.length >= 2) out.push({ ...startingSweep(tests.flatMap(f => ('test' in f ? [f.test] : [])), newId()), title: 'Example sweep' });
+  if (tests.length >= 2) out.push({ ...startingSweep(tests.flatMap(f => ('test' in f ? [f] : [])), newId()), title: 'Example sweep' });
   return out;
 }
 
@@ -768,11 +768,12 @@ export function plotTestNumber(spec: PlotSpec): number | undefined {
  * (no X scale is claimed). Never an empty editor; the reader edits the tests and adds the series they meant.
  */
 export function defaultSweep(testDefs: readonly TestDef[], id: string): PlotSpec {
-  return startingSweep(testDefs.filter(isParametricTest).map(t => t.testNumber), id);
+  return startingSweep(testDefs.filter(isParametricTest).map(t => ({ test: t.testNumber, name: t.name })), id);
 }
 
-/** One series of the first five of `tests`, in test order. */
-function startingSweep(tests: readonly number[], id: string): PlotSpec {
-  const run = [...tests].sort((a, b) => a - b).slice(0, 5);
-  return { id, chart: 'sweep', sweep: { series: [{ label: 'Series 1', tests: run }] } };
+/** One series of the first five of `tests`, in test order, with the names they have now (the check against another program's numbers). */
+function startingSweep(tests: readonly { test: number; name?: string }[], id: string): PlotSpec {
+  const run = [...tests].sort((a, b) => a.test - b.test).slice(0, 5);
+  const names = Object.fromEntries(run.flatMap(t => (t.name ? [[String(t.test), t.name]] : [])));
+  return { id, chart: 'sweep', sweep: { series: [{ label: 'Series 1', tests: run.map(t => t.test), ...(Object.keys(names).length ? { testNames: names } : {}) }] } };
 }

@@ -172,6 +172,7 @@ export function readSweepPayload(raw: unknown, where: string, warnings: string[]
     if ('xValues' in s && !(Array.isArray(s.xValues) && s.xValues.every(isFiniteNumber))) { warnings.push(`${at}.xValues: not a list of numbers, left out`); delete one.xValues; }
     if ('xFromName' in s && typeof s.xFromName !== 'string') { warnings.push(`${at}.xFromName: not text, left out`); delete one.xFromName; }
     if ('color' in s && typeof s.color !== 'string') delete one.color;
+    if ('testNames' in s && !(isObject(s.testNames) && Object.values(s.testNames).every(v => typeof v === 'string'))) { warnings.push(`${at}.testNames: not a list of names, left out`); delete one.testNames; }
     series.push(one);
   });
   out.series = series;
