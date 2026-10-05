@@ -25,7 +25,7 @@ import {
   openReparentedModal, type CheckMenuRow, type SaveImageHandler, type SaveTextHandler,
 } from './toolbar.js';
 import type { DrilldownSource, DrilldownItem } from './chartPopulation.js';
-import { defaultPlot, fieldCatalogue, plotTitle, resolvePlot, type PlotContext } from '../stats/plotData.js';
+import { defaultPlot, defaultSweep, fieldCatalogue, plotTitle, resolvePlot, type PlotContext } from '../stats/plotData.js';
 import { newPlotId, type PlotSpec } from '../stats/plotSpec.js';
 import { sourceFromPoints, toPlotItems } from './plotItems.js';
 import type { PlotStore } from './plotStore.js';
@@ -41,6 +41,12 @@ export interface DrilldownContext {
   onSaveText?: SaveTextHandler;
   /** A die row clicked in a table: show that die on the map it belongs to. The table steps aside first. */
   onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+  /**
+   * A narrower population for the same dies, offered as the menu's first row: the menu reopens on it, and its own
+   * `narrower` is the population it left, so the row swaps back. Set by a gallery when dies are selected on several
+   * wafers and the right-click is on one of them.
+   */
+  narrower?: { label: string; source: DrilldownSource; ctx?: DrilldownContext };
 }
 
 interface Target {
@@ -187,7 +193,7 @@ function plotTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: Ele
     void import('./plotModal.js').then(({ openPlotEditor }) => openPlotEditor({
       doc, anchor: anchor as HTMLElement, store, plot, draft, items, ctx: plotCtx, population: phrase,
       // Not the plot's own title: that follows its fields, and a window heading fixed at open would go on naming the old ones.
-      title: `${draft ? 'New plot' : 'Plot'} — ${phrase}`,
+      title: `${draft ? (plot.chart === 'sweep' ? 'New sweep' : 'New plot') : (plot.chart === 'sweep' ? 'Sweep' : 'Plot')} — ${phrase}`,
       chart: {
         onSaveImage: ctx.onSaveImage,
         // A drag on the plot opens this menu again on the dies inside it.
@@ -216,6 +222,13 @@ function plotTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: Ele
     section: 'Plots', label: 'New plot…',
     unavailable: none ?? (hasTests ? null : 'These dies have no parametric test values'),
     open: open(defaultPlot(catalogue, newPlotId()), true),
+  });
+  // A sweep starts on the first tests the dies hold, in test order, and is kept only if the reader adds it.
+  const sweepTests = (source.testDefs ?? []).filter(d => isParametricTest(d));
+  saved.push({
+    section: 'Plots', label: 'New sweep…',
+    unavailable: none ?? (sweepTests.length > 0 ? null : 'These dies have no parametric test values'),
+    open: open(defaultSweep(source.testDefs ?? [], newPlotId()), true),
   });
   return saved;
 }
@@ -296,6 +309,18 @@ export function openDrilldownMenu(
 
   const targets = targetsFor(source, ctx, anchor);
   const rows: CheckMenuRow[] = [];
+  if (ctx.narrower) {
+    const { label, source: other, ctx: otherCtx } = ctx.narrower;
+    const back: DrilldownContext['narrower'] = {
+      label: `All selected — ${populationPhrase(allDies(source).length, allDies(source).length, source.population)}`,
+      source, ctx,
+    };
+    rows.push({ section: 'Dies' });
+    rows.push({
+      label, active: false, action: true, enabled: true,
+      onClick: () => { close(); openDrilldownMenu(at, anchor, other, { ...(otherCtx ?? ctx), narrower: back }); },
+    });
+  }
   let section: string | undefined;
   for (const t of targets) {
     if (t.section !== section) { rows.push({ section: t.section }); section = t.section; }

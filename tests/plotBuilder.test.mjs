@@ -479,7 +479,7 @@ test('each saved plot is a row of the drilldown menu, with "New plot…", betwee
   const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
   const store = createPlotStore([SCATTER, MISSING], undefined, 0);
   const close = openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
-  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Vth vs Idsat', 'Leak', 'New plot…', 'Dies', 'Test statistics']);
+  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Vth vs Idsat', 'Leak', 'New plot…', 'New sweep…', 'Dies', 'Test statistics']);
   const state = Object.fromEntries(menuRows().map(r => [r.textContent, r.getAttribute('aria-disabled')]));
   assert.equal(state['Vth vs Idsat'], null);
   assert.equal(state['Leak'], 'true', 'a plot the dies cannot draw is listed, disabled');
@@ -542,6 +542,23 @@ test('"New plot…" opens a draft that is kept only when added', async () => {
   document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
 });
 
+test('"New sweep…" opens a sweep draft on the first tests of the selection, kept only when added', async () => {
+  const { items } = lotItems(1);
+  const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
+  const store = createPlotStore([], undefined, 0);
+  openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
+  click(menuRows().find(r => r.textContent === 'New sweep…'));
+  const win = await until(() => document.querySelector('[data-wmap-plot-window]'), 'the draft window');
+  assert.ok(win.querySelector('[data-wmap-sweep-editor]'), 'the sweep editor, not the plot editor');
+  assert.match(win.textContent, /This is a draft/);
+  assert.equal(store.get().length, 0, 'not saved yet');
+  click(win.querySelector('[data-wmap-plot-add]'));
+  assert.equal(store.get().length, 1);
+  assert.equal(store.get()[0].chart, 'sweep');
+  assert.ok(store.get()[0].sweep.series[0].tests.length >= 1);
+  document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
 test('closing a draft without adding it leaves the saved list alone', async () => {
   const { items } = lotItems(1);
   const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
@@ -562,6 +579,7 @@ test('"New plot…" is unavailable for dies with no parametric values', () => {
   const close = openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: createPlotStore([SCATTER], undefined, 0) });
   const state = Object.fromEntries(menuRows().map(r => [r.textContent, r.getAttribute('aria-disabled')]));
   assert.equal(state['New plot…'], 'true');
+  assert.equal(state['New sweep…'], 'true');
   assert.equal(state['Vth vs Idsat'], 'true');
   close();
 });
@@ -868,7 +886,7 @@ test('a sweep is a row of the drilldown menu under Plots, and unavailable when t
   const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
   const store = createPlotStore([SWEEP, FOREIGN_SWEEP, SCATTER], undefined, 0);
   const close = openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
-  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Two-test sweep', 'Other program', 'Vth vs Idsat', 'New plot…', 'Dies', 'Test statistics']);
+  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Two-test sweep', 'Other program', 'Vth vs Idsat', 'New plot…', 'New sweep…', 'Dies', 'Test statistics']);
   const state = Object.fromEntries(menuRows().map(r => [r.textContent, r.getAttribute('aria-disabled')]));
   assert.equal(state['Two-test sweep'], null);
   assert.equal(state['Other program'], 'true');

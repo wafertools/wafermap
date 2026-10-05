@@ -18,7 +18,7 @@ import { diePassStatus, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
-import { waferPopulation, LOT_STACK_REASON, type DrilldownSource } from './chartPopulation.js';
+import { waferPopulation, selectionPopulation, LOT_STACK_REASON, type DrilldownSource } from './chartPopulation.js';
 import type { DrilldownContext } from './drilldown.js';
 import { plotStoreFor, type WithPlotStore } from './plotStore.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
@@ -907,6 +907,107 @@ export function renderWaferGallery(
     };
   }
 
+  /**
+   * The dies selected on the cards now, whichever way they got there (a finding, a box on one card, a box on each):
+   * one item per wafer that has any, in lot order. `undefined` when fewer than two wafers have a selection, so a
+   * card then offers its own as it always has.
+   */
+  function selectedOnCardsSource(): { source: DrilldownSource; ctx: Partial<DrilldownContext> } | undefined {
+    const picked: DrilldownSource['items'] = [];
+    let stacked = false;
+    currentItems.forEach((it, i) => {
+      const dies = it ? cardControllers[i]?.getSelectedDies() ?? [] : [];
+      if (!it || dies.length === 0) return;
+      if (it.isLotStack) stacked = true;
+      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
+    });
+    if (picked.length < 2) return undefined;
+    const view = sharedOpts;
+    return {
+      source: {
+        items: picked,
+        population: `selected on ${picked.length} wafers`,
+        testDefs: mergedTestDefs().defs,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
+        notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
+      },
+      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+    };
+  }
+
+  /**
+   * What a right-click on card `cardIndex`'s map opens the drilldown on: the lot-wide selection when "same dies on every
+   * wafer" is on, the picked wafers when no dies are selected, and otherwise the dies selected on every wafer (with a
+   * row to narrow to this wafer's) when more than one wafer has some. `undefined` leaves it to the card's own selection.
+   */
+  function cardDrilldownScope(cardIndex: number): { source: DrilldownSource; ctx: Partial<DrilldownContext>; narrowable?: boolean } | undefined {
+    const direct = acrossSelectionSource() ?? pickedWafersSource(cardIndex);
+    if (direct) return direct;
+    const all = selectedOnCardsSource();
+    const mine = all?.source.items.some(it => it.waferIndex === cardIndex);
+    return all && mine ? { ...all, narrowable: true } : undefined;
+  }
+
+  /** Right-click on a finding in the lot Summary panel: show it on the cards if it is not shown, then open the drilldown menu on all the dies it selected. */
+  function onFindingMenu(id: string, row: HTMLElement, at: { x: number; y: number }): void {
+    if (activeLotFindingId !== id) row.click();
+    const anchor = gallerySummaryPanelEl;
+    if (!anchor) return;
+    // A finding that names wafers but no dies (a wafer's yield, say) opens on those whole wafers.
+    const finding = currentLotStats?.findings.find(f => f.id === id);
+    const sel = acrossSelectionSource() ?? selectedOnCardsSource() ?? singleCardSelectionSource()
+      ?? (finding ? wholeWafersSource(findingWaferIndices(finding)) : undefined);
+    if (!sel) return;
+    void import('./drilldown.js').then(({ openDrilldownMenu }) => {
+      if (anchor.isConnected) openDrilldownMenu(at, anchor, sel.source, { plots: plotStore, ...sel.ctx });
+    });
+  }
+
+  /** Every die of the wafers on cards `indices`, as a source; `undefined` when there are none. */
+  function wholeWafersSource(indices: readonly number[] | null, kind = ''): { source: DrilldownSource; ctx: Partial<DrilldownContext> } | undefined {
+    const picked: DrilldownSource['items'] = [];
+    let stacked = false;
+    for (const i of [...(indices ?? [])].sort((a, b) => a - b)) {
+      const it = currentItems[i];
+      if (!it) continue;
+      if (it.isLotStack) stacked = true;
+      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies: it.dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
+    }
+    if (picked.length === 0) return undefined;
+    const view = sharedOpts;
+    return {
+      source: {
+        items: picked,
+        population: picked.length === 1 ? `on ${picked[0].label}` : `on ${picked.length} ${kind}wafers`,
+        testDefs: mergedTestDefs().defs,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
+        notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
+      },
+      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+    };
+  }
+
+  /** The one card that has a selection, as a source; `undefined` when none or several do. */
+  function singleCardSelectionSource(): { source: DrilldownSource; ctx: Partial<DrilldownContext> } | undefined {
+    let found: number | undefined;
+    for (let i = 0; i < cardControllers.length; i++) {
+      if ((cardControllers[i]?.getSelectedDies().length ?? 0) === 0) continue;
+      if (found !== undefined) return undefined;
+      found = i;
+    }
+    const it = found === undefined ? undefined : currentItems[found];
+    if (found === undefined || !it) return undefined;
+    const dies = cardControllers[found]!.getSelectedDies();
+    const view = sharedOpts;
+    return {
+      source: selectionPopulation(dies, {
+        waferLabel: waferIdentityLabel(it), testDefs: it.testDefs, isLotStack: it.isLotStack,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: found, wafer: it.wafer,
+      }),
+      ctx: { onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi ?? found, die) },
+    };
+  }
+
   function setSelectAcrossWafers(on: boolean): void {
     // Switching it off ends the lot-wide selection: with propagation gone the cards could only be
     // cleared one at a time.
@@ -960,26 +1061,7 @@ export function renderWaferGallery(
   function pickedWafersSource(cardIndex: number): { source: DrilldownSource; ctx: Partial<DrilldownContext> } | undefined {
     if (pickedCards.size === 0 || !pickedCards.has(cardIndex)) return undefined;
     for (const n of cardSelectionCounts.values()) if (n > 0) return undefined;
-    const picked: DrilldownSource['items'] = [];
-    let stacked = false;
-    [...pickedCards].sort((a, b) => a - b).forEach(i => {
-      const it = currentItems[i];
-      if (!it) return;
-      if (it.isLotStack) stacked = true;
-      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies: it.dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
-    });
-    if (picked.length === 0) return undefined;
-    const view = sharedOpts;
-    return {
-      source: {
-        items: picked,
-        population: picked.length === 1 ? `on ${picked[0].label}` : `on ${picked.length} picked wafers`,
-        testDefs: mergedTestDefs().defs,
-        activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
-        notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
-      },
-      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
-    };
+    return wholeWafersSource([...pickedCards], 'picked ');
   }
 
   // ── Gallery summary panel ──────────────────────────────────────────────────
@@ -2651,7 +2733,7 @@ export function renderWaferGallery(
   {
     if (summaryPanelOpts?.placement) {
       const placement = summaryPanelOpts.placement;
-      gallerySummaryPanelEl = createSummaryPanelEl(placement, EDGE_GUTTER, container.ownerDocument);
+      gallerySummaryPanelEl = createSummaryPanelEl(placement, EDGE_GUTTER, container.ownerDocument, onFindingMenu);
       gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
       gallerySummaryPanelEl.style.position  = 'sticky';
       gallerySummaryPanelEl.style.top       = '8px';
@@ -2659,7 +2741,7 @@ export function renderWaferGallery(
       gallerySummaryPanelEl.style.flexDirection = 'column';
     } else if (currentLotStats || hasAnyPerWaferFindings()) {
       const openOnMount = !!summaryPanelOpts?.defaultOpen;
-      gallerySummaryPanelEl = createSummaryPanelEl('right', EDGE_GUTTER, container.ownerDocument);
+      gallerySummaryPanelEl = createSummaryPanelEl('right', EDGE_GUTTER, container.ownerDocument, onFindingMenu);
       gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
       gallerySummaryPanelEl.style.position  = 'sticky';
       gallerySummaryPanelEl.style.top       = '8px';
@@ -3487,7 +3569,7 @@ export function renderWaferGallery(
       downloadFilename: options.downloadFilename,
       onClick:         item.onClick,
       onSelect:        cardOnSelect(item),
-      drilldownSourceOverride: () => acrossSelectionSource() ?? pickedWafersSource(cardIndex),
+      drilldownSourceOverride: () => cardDrilldownScope(cardIndex),
       // The shared plot list only — the card is not an Insights host (`enabled`
       // stays off); it needs the plots to offer them on its selected dies.
       insights:        cardInsights,
@@ -3705,7 +3787,7 @@ export function renderWaferGallery(
       scheduleSharedValueRangeSync();
       // If this item introduced per-wafer findings and no panel exists yet, create it now.
       if (!gallerySummaryPanelEl && !summaryPanelOpts?.placement && item.statsSummary?.findings.length) {
-        gallerySummaryPanelEl = createSummaryPanelEl('right', EDGE_GUTTER, container.ownerDocument);
+        gallerySummaryPanelEl = createSummaryPanelEl('right', EDGE_GUTTER, container.ownerDocument, onFindingMenu);
         gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
         gallerySummaryPanelEl.style.position  = 'sticky';
         gallerySummaryPanelEl.style.top       = '8px';

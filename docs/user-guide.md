@@ -424,6 +424,12 @@ What you right-click decides the population:
 - **Selected dies** — select some dies, then right-click on the map. Right-
   clicking a die that is **not** selected selects that die alone first;
   right-clicking a selected die, or empty space, keeps the selection.
+- **Dies selected on several wafers of a gallery** — by clicking a finding, or by selecting on more than one card.
+  Right-click a selected die on any of those cards and the menu opens on every selected die, with a first row,
+  **Only this wafer**, that narrows it to the dies selected on the card you clicked (and **All selected** to go back).
+- **A finding** — right-click it in the Summary panel. If it is not already shown, its dies are selected first, then
+  the menu opens on them: on all the wafers of a gallery that the finding selects dies on. A finding that is about
+  whole wafers and selects no dies (a wafer's yield) opens the menu on those wafers.
 - **A whole wafer** — right-click empty map space with nothing selected, a
   gallery card anywhere outside its map (its header, the space around the map),
   or one wafer's bar, box or point in an Insights chart (*Yield by wafer*,
@@ -444,7 +450,7 @@ The menu offers:
   test limits when it has none, with its
   Ppk. Below 30 dies the chart says each Ppk is a rough estimate: a Ppk from a
   handful of dies can be far from the process's real capability.
-- **Plots** you have saved, sweeps included (see [Plots](#plots) and [Sweep cards](#sweep-cards)), and **New plot…**.
+- **Plots** you have saved, sweeps included (see [Plots](#plots) and [Sweep cards](#sweep-cards)), and **New plot…** and **New sweep…**.
 - **Dies** and **Test statistics** — the same tables as Insights' Data tab (see
   [Data tables](#data-tables)), over just these dies: every die as a row, or the
   Test Values and Functional Tests tables. Each has Export CSV and Copy, and a
@@ -957,7 +963,7 @@ questions:
 opens on a selection or a wafer (**Plots** section), drawn over just those dies and
 captioned with them.
 
-![The right-click menu on a selection, with the Plots section](images/guide-plot-drilldown.png) **New plot…** in the same menu starts a draft on the selection;
+![The right-click menu on a selection, with the Plots section](images/guide-plot-drilldown.png) **New plot…** and **New sweep…** in the same menu start a draft on the selection;
 a draft is kept only if you press **Add to my plots**.
 
 Every change is kept as you make it. If you make a mistake, **Reset** (under the settings) puts the plot back as it was

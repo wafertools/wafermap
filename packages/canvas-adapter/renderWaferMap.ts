@@ -530,7 +530,7 @@ export interface CardRenderOptions extends Omit<RenderOptions, 'viewOptions'> {
    * on every wafer) supplies the drilldown population and context here. Returns `undefined` to fall back
    * to this map's own selection or wafer.
    */
-  drilldownSourceOverride?: () => { source: DrilldownSource; ctx?: Partial<DrilldownContext> } | undefined;
+  drilldownSourceOverride?: () => { source: DrilldownSource; ctx?: Partial<DrilldownContext>; narrowable?: boolean } | undefined;
   /**
    * Draw the canvas only while it is on screen (or near it). An off-screen card
    * keeps its view up to date and is drawn when it scrolls into view, or by
@@ -554,6 +554,8 @@ export interface CardController extends WaferMapController {
   getOptions(): CardViewOptions;
   /** Show or hide the Summary toolbar button without affecting the panel's content. */
   setSummaryVisible(visible: boolean): void;
+  /** The dies selected on this map now. */
+  getSelectedDies(): Die[];
   /** Show or hide the view-control toolbar buttons (mode, orientation, etc). */
   setViewControlsVisible(visible: boolean): void;
   /** Show or hide the expand toolbar button. */
@@ -1678,7 +1680,7 @@ export function renderWaferMapCard(
 
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
-    summaryPanelEl = createSummaryPanelEl(placement, chromeInset, ownerDocument);
+    summaryPanelEl = createSummaryPanelEl(placement, chromeInset, ownerDocument, onFindingMenu);
 
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
@@ -1692,7 +1694,7 @@ export function renderWaferMapCard(
     // (showToolbar: false) can still render a persistent panel beside it; the toolbar
     // only owns the toggle button. defaultOpen: true starts the panel visible.
     const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
-    autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument);
+    autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument, onFindingMenu);
 
     autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
     const parent = canvasWrap.parentElement;
@@ -3085,11 +3087,23 @@ export function renderWaferMapCard(
       : waferPopulation(currentDies, facts);
   }
 
+  /** Right-click on a finding in the Summary panel: show it on the map if it is not shown, then open the drilldown menu on its dies. */
+  function onFindingMenu(id: string, row: HTMLElement, at: { x: number; y: number }): void {
+    if (summaryActiveFindingId !== id) row.click();
+    openDrilldown(at, summaryPanelEl ?? autoSummaryPanelEl ?? canvas);
+  }
+
   function openDrilldown(at: { x: number; y: number }, anchor: HTMLElement): void {
     if (!drilldownOffered()) return;
     const over = (options as CardRenderOptions).drilldownSourceOverride?.();
     const source = over?.source ?? drilldownSource();
-    const ctx: DrilldownContext = over?.ctx ? { ...drilldownCtx, ...over.ctx } : drilldownCtx;
+    const ctx: DrilldownContext = { ...drilldownCtx, ...over?.ctx };
+    // The override covers dies selected on several wafers; this wafer's own selection is one row away.
+    if (over?.narrowable) {
+      const own = drilldownSource();
+      const n = own.items.reduce((sum, it) => sum + it.dies.length, 0);
+      ctx.narrower = { label: `Only this wafer — ${n.toLocaleString()} die${n === 1 ? '' : 's'}`, source: own, ctx: drilldownCtx };
+    }
     void import('./drilldown.js').then(({ openDrilldownMenu }) => {
       if (destroyed) return;
       closeDrilldownMenu = openDrilldownMenu(at, anchor, source, ctx);
@@ -3403,6 +3417,8 @@ export function renderWaferMapCard(
       render();
     },
 
+    getSelectedDies: () => selectionAsDies(),
+
     clearSelection(): void {
       selectedKeys = new Set();
       releaseActiveFinding();
@@ -3430,7 +3446,7 @@ export function renderWaferMapCard(
       } else if (summary && !summaryPanelOpts?.placement) {
         // Late-mount: statsSummary provided after initial render with no placement option.
         const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
-        autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument);
+        autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument, onFindingMenu);
         autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
         const parent = canvasWrap.parentElement;
         const next = canvasWrap.nextSibling;

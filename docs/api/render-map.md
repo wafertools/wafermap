@@ -579,7 +579,7 @@ an older build loses nothing. Importing adds plots and never replaces: a plot wh
 added as a copy.
 
 **Plots in drilldown.** Each saved plot, sweeps included, is a row in the right-click menu (a **Plots** section between the charts and
-the tables), drawn over the selected dies; **New plot…** opens a draft on the selection that is kept only if the
+the tables), drawn over the selected dies; **New plot…** and **New sweep…** open a draft on the selection that is kept only if the
 reader adds it. The Plot tab, its editor and the chart are loaded the first time they are opened.
 
 #### 5.4.4 Die list & CSV export

@@ -26,6 +26,10 @@ under `### Breaking`.
 
 ### Added
 
+- **Drill down on every die a finding selects.** Right-click a finding in the Summary panel to show it and open the drilldown menu on its dies, across all the wafers of a gallery. Right-clicking a selected die on a gallery card, when dies are selected on other cards too, opens the menu on all of them, with a first row (**Only this wafer** / **All selected**) to narrow it to that card's own selection. A finding about whole wafers, with no dies to select, opens the menu on those wafers.
+
+- **The right-click menu on a selection offers New sweep….** It opens the sweep editor as a draft on the first tests the selected dies hold, drawn over just those dies, and keeps the sweep only if the reader adds it, as New plot… does.
+
 - **A sweep remembers its tests' names.** `series[].testNames` records what each test was called when the sweep was set up (the sweep editor and **+ New sweep** fill it in). A test whose name now differs is not drawn and the card names it, and the crossing and widths are not measured, so a sweep opened on a lot from another test program that reuses the numbers does not draw another measurement as if it were the original. A sweep without it is not checked.
 
 - **A Data tab in Insights.** The last Insights sub-tab shows the scope as tables, one at a time: **Statistics** (the

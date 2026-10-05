@@ -100,7 +100,7 @@ test('the menu names its population and lists the distribution charts and each s
   const src = selectionPopulation(wafer().dies.slice(0, 5), facts);
   const close = openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, { plots: sweepPlots(SWEEP) });
   assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 5 dies selected on W07');
-  assert.deepEqual(rows().map(i => i.textContent), ['Value histogram', 'Process capability', 'Drive sweep', 'New plot…', 'Dies', 'Test statistics']);
+  assert.deepEqual(rows().map(i => i.textContent), ['Value histogram', 'Process capability', 'Drive sweep', 'New plot…', 'New sweep…', 'Dies', 'Test statistics']);
   assert.ok(rows().every(i => i.getAttribute('aria-disabled') === null));
   close();
   assert.equal(menus().length, 0);

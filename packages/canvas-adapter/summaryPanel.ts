@@ -2778,6 +2778,11 @@ export function createSummaryPanelEl(
   // panel root builds into the bare global document while everything else
   // in that render correctly follows the popup's own document.
   ownerDocument: Document = document,
+  /**
+   * Right-click on a finding (its row, a parent row or a finding named in the text): the host selects that finding's
+   * dies if they are not already and opens the drilldown menu on them. Without it the browser's menu is left alone.
+   */
+  onFindingMenu?: (findingId: string, row: HTMLElement, at: { x: number; y: number }) => void,
 ): HTMLDivElement {
   const isVertical = placement === 'top' || placement === 'bottom';
   const panel = el('div', {
@@ -2858,6 +2863,14 @@ export function createSummaryPanelEl(
     panel.style.width  = '100%';
   }
 
+  if (onFindingMenu) {
+    panel.addEventListener('contextmenu', (e: MouseEvent) => {
+      const row = (e.target as Element | null)?.closest<HTMLElement>('[data-wmap-finding]');
+      if (!row?.dataset.wmapFinding) return;
+      e.preventDefault();
+      onFindingMenu(row.dataset.wmapFinding, row, { x: e.clientX, y: e.clientY });
+    });
+  }
   return panel;
 }
 

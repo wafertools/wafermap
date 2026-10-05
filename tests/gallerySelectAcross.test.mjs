@@ -355,3 +355,36 @@ test('new items discard the picks, which belonged to the cards just replaced', a
   assert.ok(cardsOf(host).every(c => c.style.outline === ''));
   gallery.destroy();
 });
+
+// ── Dies selected on several cards, without "same dies on every wafer" ──────────
+
+test('dies selected on two cards: a right-click on one opens on both, with a row to narrow to this wafer and back', async () => {
+  const { gallery, canvases, selections } = await mount();
+  await selectADie(canvases[0], selections, 'W1');
+  await selectADie(canvases[1], selections, 'W2');
+  assert.equal(rightClick(canvases[0]), true);
+  await waitFor(() => menus().length > 0, 'the menu opened');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 2 dies selected on 2 wafers');
+  const first = [...menus()[0].querySelectorAll('[role="menuitem"]')][0];
+  assert.equal(first.textContent, 'Only this wafer — 1 die');
+  first.click();
+  await waitFor(() => menus().length > 0 && /1 die/.test(menus()[0].getAttribute('aria-label')), 'the menu reopened on this wafer');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 1 die selected on W1');
+  const back = [...menus()[0].querySelectorAll('[role="menuitem"]')][0];
+  assert.match(back.textContent, /^All selected — 2 dies selected on 2 wafers/);
+  back.click();
+  await waitFor(() => menus().length > 0 && /2 wafers/.test(menus()[0].getAttribute('aria-label')), 'the menu is back on both');
+  closeMenu();
+  gallery.destroy();
+});
+
+test('dies selected on one card only: no narrowing row, the card opens on its own selection as before', async () => {
+  const { gallery, canvases, selections } = await mount();
+  await selectADie(canvases[0], selections, 'W1');
+  rightClick(canvases[0]);
+  await waitFor(() => menus().length > 0, 'the menu opened');
+  assert.equal(menus()[0].getAttribute('aria-label'), 'Open a chart or table of 1 die selected on W1');
+  assert.ok(![...menus()[0].querySelectorAll('[role="menuitem"]')].some(i => /^Only this wafer/.test(i.textContent)));
+  closeMenu();
+  gallery.destroy();
+});

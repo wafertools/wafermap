@@ -2773,3 +2773,87 @@ test('Insights is on by default with a toolbar, off without one, and a gallery c
     cleanup();
   }
 });
+
+// ── Right-click a finding: select its dies and open the drilldown menu on them ──
+
+test('renderWaferMap: right-click on a finding shows it and opens the drilldown menu on its dies', async () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    Object.assign(container.style, { position: 'relative', width: '600px', height: '400px' });
+    root.appendChild(container);
+    const { wafer, statsSummary } = buildWaferWithFinding();
+    const ctrl = renderWaferMap(container, wafer, { statsSummary, summaryPanel: { defaultOpen: true } });
+    const rows = [...root.querySelectorAll('button[data-wmap-finding]')];
+    assert.ok(rows.length > 0);
+    const ev = new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 2 });
+    rows[0].dispatchEvent(ev);
+    assert.equal(ev.defaultPrevented, true, 'the browser menu is replaced');
+    for (let i = 0; i < 100 && !window.document.querySelector('[data-wmap-drilldown-menu]'); i++) await new Promise(r => setTimeout(r, 5));
+    assert.ok(window.document.querySelector('[data-wmap-drilldown-menu]'), 'the drilldown menu opened');
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery: right-click on a finding opens the drilldown menu on the dies it selected on every wafer', async () => {
+  const { analyzeWaferLot } = await import('../dist/packages/stats/index.js');
+  const { window, root: container, cleanup } = setupDom();
+  try {
+    const mk = (id) => ({
+      ...buildWaferMap({
+        // Ring 3 (the outside) fails on every wafer, so the lot has an edge finding.
+        results: Array.from({ length: 64 }, (_, k) => ({ x: k % 8, y: Math.floor(k / 8), hbin: Math.hypot((k % 8) - 3.5, Math.floor(k / 8) - 3.5) > 3 ? 2 : 1 })),
+        waferConfig: { diameter: 90 }, dieConfig: { width: 10, height: 10 }, passBins: [1], ringCount: 3,
+      }),
+      label: id,
+    });
+    const items = [mk('W01'), mk('W02'), mk('W03')];
+    const lotStatsSummary = analyzeWaferLot(items, { minimumSampleSize: 3, minimumEffectSize: 0.2 });
+    const gallery = renderWaferGallery(container, items, { lotStatsSummary, summaryPanel: { defaultOpen: true } });
+    await new Promise(r => setTimeout(r, 20));
+    const row = [...container.querySelectorAll('button[data-wmap-finding]')].find(b => /ring|edge|outer/i.test(b.textContent)) ?? container.querySelector('button[data-wmap-finding]');
+    assert.ok(row, 'the lot has a finding row');
+    row.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 2 }));
+    for (let i = 0; i < 100 && !window.document.querySelector('[data-wmap-drilldown-menu]'); i++) await new Promise(r => setTimeout(r, 5));
+    const menu = window.document.querySelector('[data-wmap-drilldown-menu]');
+    assert.ok(menu, 'the drilldown menu opened');
+    assert.match(menu.getAttribute('aria-label'), /selected on 3 wafers/);
+    gallery.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('renderWaferGallery: right-click on a finding that selects no dies opens the menu on the wafers it names', async () => {
+  const { analyzeWaferLot } = await import('../dist/packages/stats/index.js');
+  const { window, root: container, cleanup } = setupDom();
+  try {
+    // W04 fails everywhere, evenly: a wafer-yield finding with no region to select.
+    const mk = (id, bad) => ({
+      ...buildWaferMap({
+        results: Array.from({ length: 64 }, (_, k) => ({ x: k % 8, y: Math.floor(k / 8), hbin: bad ? 2 : 1 })),
+        waferConfig: { diameter: 90 }, dieConfig: { width: 10, height: 10 }, passBins: [1],
+      }),
+      label: id,
+    });
+    const items = ['W01', 'W02', 'W03', 'W04', 'W05'].map((id, i) => mk(id, i === 3));
+    const lotStatsSummary = analyzeWaferLot(items, { minimumSampleSize: 3, minimumEffectSize: 0.2 });
+    const gallery = renderWaferGallery(container, items, { lotStatsSummary, summaryPanel: { defaultOpen: true } });
+    await new Promise(r => setTimeout(r, 20));
+    const rows = [...container.querySelectorAll('button[data-wmap-finding]')];
+    const byWafer = lotStatsSummary.findings.find(f => f.highlight?.kind === 'wafer' && f.highlight.waferIndices?.length);
+    assert.ok(byWafer, `a wafer-level finding: ${lotStatsSummary.findings.map(f => f.highlight?.kind).join(',')}`);
+    const row = rows.find(b => b.dataset.wmapFinding === byWafer.id);
+    assert.ok(row, 'its row');
+    row.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 2 }));
+    for (let i = 0; i < 100 && !window.document.querySelector('[data-wmap-drilldown-menu]'); i++) await new Promise(r => setTimeout(r, 5));
+    const menu = window.document.querySelector('[data-wmap-drilldown-menu]');
+    assert.ok(menu, 'the menu opened');
+    assert.match(menu.getAttribute('aria-label'), /on (W04|\d+ wafers)/);
+    gallery.destroy();
+  } finally {
+    cleanup();
+  }
+});
