@@ -39,7 +39,7 @@ For wafers built with different ones they are not offered, because a stack of th
 
 Every σ the library shows (the Test Values table, per-test statistics, the lot trend, lot drift and the report) divides by
 n−1, as the capability indices already did. A σ you read from the library is √(n/(n−1)) times the population σ of the same
-values: about 2.5% at n = 20, negligible on large lots. Exported `sampleVariance` in `stats/math.ts` is the single
+values: about 2.6% at n = 20, negligible on large lots. Exported `sampleVariance` in `stats/math.ts` is the single
 implementation. Exported CSVs carry the same σ.
 
 ### Sweeps are plots

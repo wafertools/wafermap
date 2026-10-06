@@ -239,7 +239,7 @@ under `### Breaking`.
 - **One σ rule: the sample standard deviation (n−1).** The Test Values table, per-test statistics, the
   lot trend, the lot drift σ and the report's pooled σ all divide by n−1, as the capability indices
   already did, so a cell shows the same σ whichever path filled it. A displayed σ is √(n/(n−1)) times
-  the population σ of the same values (about 2.5% at n = 20; negligible on large lots). Exported
+  the population σ of the same values (about 2.6% at n = 20; negligible on large lots). Exported
   `sampleVariance` in `stats/math.ts` is the single implementation.
 
 ## [0.33.0] — 2026-10-02
