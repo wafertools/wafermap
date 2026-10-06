@@ -1,5 +1,4 @@
-import { classifyDie, getRingLabel } from '../core/classify.js';
-import { getReticleCell } from '../core/reticle.js';
+import { DIE_REGIONS, type DieRegionKey, type RegionContext } from './dieRegions.js';
 import { isPositionedDie, diePassStatus, getDieKey } from '../core/dies.js';
 import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
@@ -187,47 +186,27 @@ export function parseRegionKey(key: string): ParsedRegionKey {
   return { family: 'unknown' };
 }
 
-export function buildRingRegions(dies: PositionedDie[], wafer: Wafer, ringCount: number): StatsRegion[] {
+/** Group dies into the regions of one family, in the family's own row order — the one grouping every builder below uses. */
+function groupInto(dies: PositionedDie[], region: DieRegionKey, ctx: RegionContext): StatsRegion[] {
+  const grouping = DIE_REGIONS[region].grouping!;
   const regions = new Map<string, StatsRegion>();
-
   for (const die of dies) {
-    const { ring } = classifyDie(die, wafer, { ringCount });
-    const key = `ring:${ring}`;
-    const existing = regions.get(key) ?? {
-      family: 'ring' as const,
-      key,
-      label: getRingLabel(ring, ringCount),
-      dieKeys: [],
-      dies: [],
-    };
+    const placed = grouping.place(die, ctx);
+    if (!placed) continue;
+    const existing = regions.get(placed.key) ?? { family: grouping.family, key: placed.key, label: placed.label, dieKeys: [], dies: [] };
     existing.dieKeys.push(dieKey(die));
     existing.dies.push(die);
-    regions.set(key, existing);
+    regions.set(placed.key, existing);
   }
+  return [...regions.values()].sort((left, right) => grouping.order(left.key, right.key));
+}
 
-  return [...regions.values()].sort((left, right) => left.key.localeCompare(right.key));
+export function buildRingRegions(dies: PositionedDie[], wafer: Wafer, ringCount: number): StatsRegion[] {
+  return groupInto(dies, 'ring', { wafer, ringCount });
 }
 
 export function buildQuadrantRegions(dies: PositionedDie[], wafer: Wafer, ringCount: number): StatsRegion[] {
-  const regions = new Map<string, StatsRegion>();
-
-  for (const die of dies) {
-    const { quadrant } = classifyDie(die, wafer, { ringCount });
-    const key = `quadrant:${quadrant}`;
-    const existing = regions.get(key) ?? {
-      family: 'quadrant' as const,
-      key,
-      label: quadrant,
-      dieKeys: [],
-      dies: [],
-    };
-    existing.dieKeys.push(dieKey(die));
-    existing.dies.push(die);
-    regions.set(key, existing);
-  }
-
-  const rank = new Map([['quadrant:NE', 0], ['quadrant:NW', 1], ['quadrant:SE', 2], ['quadrant:SW', 3]]);
-  return [...regions.values()].sort((left, right) => (rank.get(left.key) ?? 4) - (rank.get(right.key) ?? 4));
+  return groupInto(dies, 'quadrant', { wafer, ringCount });
 }
 
 export function buildReticlePositionRegions(
@@ -235,25 +214,7 @@ export function buildReticlePositionRegions(
   reticleConfig: ReticleConfig | undefined,
 ): StatsRegion[] {
   if (!reticleConfig) return [];
-
-  const regions = new Map<string, StatsRegion>();
-
-  for (const die of dies) {
-    const { column, row } = getReticleCell(die, reticleConfig);
-    const key = `reticle-position:cell:${column},${row}`;
-    const existing = regions.get(key) ?? {
-      family: 'reticle-position' as const,
-      key,
-      label: `Reticle cell (${column}, ${row})`,
-      dieKeys: [],
-      dies: [],
-    };
-    existing.dieKeys.push(dieKey(die));
-    existing.dies.push(die);
-    regions.set(key, existing);
-  }
-
-  return [...regions.values()].sort((left, right) => left.key.localeCompare(right.key));
+  return groupInto(dies, 'reticleCell', { ringCount: 0, reticle: reticleConfig });
 }
 
 // Minimum dies-per-site to consider a site meaningfully populated.

@@ -14,12 +14,20 @@ export interface WaferNotch {
   type: 'top' | 'bottom' | 'left' | 'right';
 }
 
+/** The stepper field: how many dies one exposure covers, and which die sits at a field's min-x/min-y corner. */
+export interface WaferReticle {
+  width: number;
+  height: number;
+  anchorDie?: { x: number; y: number };
+}
+
 export interface WaferSpec {
   diameter: number;
   center?: { x: number; y: number };
   notch?: WaferNotch;
   orientation?: number; // degrees
   metadata?: WaferMetadata;
+  reticle?: WaferReticle;
 }
 
 export interface Wafer {
@@ -33,6 +41,11 @@ export interface Wafer {
   notch?: { type: 'top' | 'bottom' | 'left' | 'right'; length: number };
   orientation: number;
   metadata?: WaferMetadata;
+  /**
+   * The stepper field the host gave, when it did. It lives on the wafer so that everything holding a wafer (a plot, a
+   * table, a region yield) can place a die in its reticle cell and field without the config travelling beside it.
+   */
+  reticle?: WaferReticle;
 }
 
 /** Standard flat/notch chord length in mm for the given wafer diameter. */
@@ -56,5 +69,6 @@ export function createWafer(config: WaferSpec): Wafer {
                    : undefined,
     orientation: config.orientation ?? 0,
     metadata:    config.metadata,
+    ...(config.reticle ? { reticle: config.reticle } : {}),
   };
 }

@@ -580,7 +580,8 @@ Sections, top to bottom:
   follows the map's plot mode: a soft-bin map gets a soft-bin breakdown. When a
   wafer carries both bin types, a **Hard / Soft** selector in the section header
   overrides that.
-- **Region yield** — ring yield by default, with a **Ring / Quadrant** selector.
+- **Region yield** — ring yield by default, with a **Ring / Quadrant** selector (and **Reticle cell**, the yield of each
+  position within the stepper field, when a reticle is set).
   Each row prints its difference from the wafer's yield in points and is tinted
   when it is 1, 2 or 4 or more points below it (nothing above is tinted).
   Ring is the default because edge roll-off is the pattern that dominates real
@@ -848,7 +849,7 @@ same "Group by" and "Show" scope as the charts.
   Ppk, limits and the limit yield for each test, with its N stated) and the
   **Functional Tests** pass-rate table. With "Group by" active there is one set
   per group.
-- **Dies** — one row per die: wafer, X, Y, ring, quadrant, site, bins, a column
+- **Dies** — one row per die: wafer, X, Y, ring, quadrant (and reticle cell and shot when a reticle is set), site, bins, a column
   for each test, and the wafer's metadata. Only the rows in view are drawn, so a
   lot of hundreds of thousands of dies scrolls smoothly. Click a column heading
   to sort by it (again to reverse; a die with no value sorts last).
@@ -906,7 +907,12 @@ In **Setup**, choose the **chart type**, then the field for each role:
   a few hundred tests you type `1050` or `vth` rather than scrolling. A field the chart
   type cannot use is not offered; switching type keeps your fields where they still
   apply and brings back the ones that did not when you switch back.
-- **Colour**: a category such as wafer, split, hard bin, site or ring, or, on a
+- **Compare by.** Two controls pick what a chart compares: **Colour** and, on a bar or box, **Categories**. Either takes a
+  **wafer attribute** (lot, split, temperature: it separates whole wafers) or a **die region or field** (ring, quadrant, reticle
+  cell, reticle shot, bin, site: it separates the dies within each wafer). **Group by**, above the charts, is the other way to
+  separate wafers: it pools whole wafers by a wafer attribute for every chart on the tab, and a plot's Colour can follow it. A
+  die region is never a Group by choice, because a wafer is in one lot but a die is in a ring and a reticle cell at once.
+- **Colour**: a category such as wafer, split, hard bin, site, ring or, with a reticle set, reticle cell or reticle shot, or, on a
   scatter, a measured value or wafer figure drawn on a gradient (a colour bar under
   the title states its range). **Follow Group by** (the default) takes the colours from
   the Group by control above, so changing it recolours every plot that follows it;

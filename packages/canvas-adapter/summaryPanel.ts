@@ -13,7 +13,7 @@
 // there) without ever being able to drift apart.
 
 import type { Wafer } from '../core/wafer.js';
-import type { Die } from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
 import { itemRingCount } from '../core/ringCount.js';
@@ -21,7 +21,7 @@ import { commonPassBins, itemPassBins, passBinsLabel, requirePassBins } from '..
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { testLabel, markedTestLabel, unmarkedLabel, derivedFields, derivedKeyText, derivedCsvCell, isDerivedTest, DERIVED_CSV_HEADER } from '../renderer/testLabel.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
-import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from '../stats/regions.js';
+import { buildRingRegions, buildQuadrantRegions, buildReticlePositionRegions, buildRegionYieldData } from '../stats/regions.js';
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 // The report builders are loaded when a report is opened, not with the map (see `openReportModal`'s callers):
 // they are most of the report's markup and stylesheet, and a panel that is never exported to a report never needs them.
@@ -127,7 +127,7 @@ interface PanelUiState {
   collapsed: Set<string>;
   /** Bin-section override. `undefined` = follow the map's plot mode. */
   binMode?: 'hard' | 'soft';
-  regionMode: 'ring' | 'quadrant';
+  regionMode: 'ring' | 'quadrant' | 'reticleCell';
   waferSort: 'slot' | 'yield';
 }
 
@@ -997,17 +997,22 @@ export function buildRegionYieldPanelSection(params: {
   const { diesByWafer, allWafers, ringCount, passBins, panel } = params;
   const ui = panelUiState(panel);
 
-  const build = (family: 'ring' | 'quadrant') => buildRegionYieldData(
-    diesByWafer, allWafers, ringCount, passBins,
-    family === 'ring' ? buildRingRegions : buildQuadrantRegions,
-  );
+  // A reticle cell is a region only when the wafers carry a stepper field (`wafer.reticle`).
+  const hasReticle = allWafers.some(w => w.reticle !== undefined);
+  const builders = {
+    ring: buildRingRegions,
+    quadrant: buildQuadrantRegions,
+    reticleCell: (dies: PositionedDie[], wafer: Wafer) => buildReticlePositionRegions(dies, wafer.reticle),
+  };
+  const build = (family: 'ring' | 'quadrant' | 'reticleCell') => buildRegionYieldData(diesByWafer, allWafers, ringCount, passBins, builders[family]);
 
   // Nothing to show at all if neither family resolves (no positioned dies).
   if (!build('ring').length && !build('quadrant').length) return null;
 
-  const family = ui.regionMode;
+  // A remembered Reticle cell choice does not outlive the reticle it was made for.
+  const family = ui.regionMode === 'reticleCell' && !hasReticle ? 'ring' : ui.regionMode;
   const { outer } = collapsibleSection(
-    family === 'ring' ? 'Ring Yield' : 'Quadrant Yield',
+    family === 'ring' ? 'Ring Yield' : family === 'quadrant' ? 'Quadrant Yield' : 'Reticle Cell Yield',
     true,
     undefined,
     {
@@ -1026,10 +1031,10 @@ export function buildRegionYieldPanelSection(params: {
       },
       control: panel
         ? () => makeSegmented(
-            [['ring', 'Ring'], ['quadrant', 'Quadrant']],
+            [['ring', 'Ring'], ['quadrant', 'Quadrant'], ...(hasReticle ? [['reticleCell', 'Reticle cell']] as Array<[string, string]> : [])],
             family,
             v => {
-              ui.regionMode = v as 'ring' | 'quadrant';
+              ui.regionMode = v as 'ring' | 'quadrant' | 'reticleCell';
               // Whole-section rebuild: the title names the family.
               const replacement = buildRegionYieldPanelSection(params);
               if (replacement) outer.replaceWith(replacement);
@@ -1574,6 +1579,7 @@ export function* buildTestSectionSteps(
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
   exportBtn.textContent = 'Test values CSV';
+  wireTooltip(exportBtn, 'Save the test-values table as a CSV file');
   Object.assign(exportBtn.style, {
     ...controlStyle('outlined'),
   } as Partial<CSSStyleDeclaration>);
@@ -1794,6 +1800,7 @@ export function buildFunctionalTestSection(
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
   exportBtn.textContent = 'Functional CSV';
+  wireTooltip(exportBtn, 'Save the functional-tests table as a CSV file');
   Object.assign(exportBtn.style, {
     ...controlStyle('outlined'),
   } as Partial<CSSStyleDeclaration>);

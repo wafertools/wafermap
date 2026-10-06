@@ -177,6 +177,26 @@ Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by 
 
 ---
 
+### 10.6 `getReticleShot(die, config)`
+
+```ts
+import { getReticleShot } from '@wafertools/wafermap';
+// also available from '@wafertools/wafermap/core'
+
+getReticleShot(
+  die:    { x: number; y: number },
+  config: { width: number; height: number; anchorDie?: { x: number; y: number } },
+): { column: number; row: number }
+```
+
+Which **shot** a die was exposed in: the `(column, row)` of that placement of the reticle on the wafer, `floor((die − anchorDie) / field size)`, so the field containing `anchorDie` is `(0, 0)` and shots to its left or below it are negative. Where `getReticleCell` says where a die sits *inside* the mask, this says *where on the wafer* the mask was placed for it. Together they identify a die by exposure and by position in the exposure.
+
+It is the same index arithmetic as `getReticleCell` and is unaffected by any display convention. It is what **Reticle shot** is in the plot builder and the Dies table.
+
+`ReticleConfig` → §4.1.4
+
+---
+
 ### 10.6 Colours
 
 #### Bin colours for a host surface — `binColorsForMaps(maps, options?)`
@@ -304,6 +324,9 @@ A registered scheme appears in the matching toolbar menu automatically. Register
                // length = standard chord/half-width in mm, derived from diameter
   orientation: number
   metadata?:   WaferMetadata
+  reticle?:    { width: number; height: number; anchorDie?: { x: number; y: number } }
+               // the stepper field passed as `reticleConfig`, kept on the wafer so a plot, a table or a
+               // region yield can place a die in its reticle cell and field
 }
 ```
 

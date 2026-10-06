@@ -627,3 +627,18 @@ test('a sweep naming no test of this data is kept and says so on its card; delet
   assert.deepEqual(removed, ['other'], 'only the deleted sweep is handed back');
   assert.ok(!tab.el.querySelector('[data-wmap-plot-id="other"]'));
 });
+
+// The Plot tab's buttons carry a hover hint: "Add examples", "Import plots…" and the rest do not explain
+// themselves, and a card's Edit / Duplicate / Delete are bare words. The hint's text is recorded on the
+// button, so this reads it rather than simulating a hover.
+test('every button on the Plot tab has a hover hint', async () => {
+  const { items, lot } = lotItems(2);
+  const plotTab = mountWithSweeps(items, lot, 'plot', [SWEEP]);
+  await waitFor(() => chartTitleAttrs(plotTab).includes('Vth sweep card'), 'the sweep card');
+  const buttons = [...plotTab.el.querySelectorAll("button")].filter(b => Object.keys(b.dataset).some(k => k.startsWith('wmapPlot')));
+  const hooks = buttons.map(b => Object.keys(b.dataset).find(k => k.startsWith('wmapPlot')));
+  for (const hook of ['wmapPlotNew', 'wmapPlotNewSweep', 'wmapPlotExamples', 'wmapPlotImport', 'wmapPlotExport', 'wmapPlotDeleteAll', 'wmapPlotEdit', 'wmapPlotDuplicate', 'wmapPlotDelete']) {
+    assert.ok(hooks.includes(hook), `the tab has a ${hook} button`);
+  }
+  for (const b of buttons) assert.ok((b.dataset.wmapTip ?? '').length > 10, `${b.textContent.trim()} has a hint`);
+});

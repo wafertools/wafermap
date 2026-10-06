@@ -24,8 +24,31 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **Reticle cell and Reticle shot, as die fields.** With a `reticleConfig`, a die's position within the mask (**Reticle cell**,
+  `Reticle cell (1, 3)`) and where on the wafer the mask was placed for it (**Reticle shot**, `Reticle shot (-1, 2)`) join ring and
+  quadrant as categories to colour a plot by, to put on a bar or box's axis and to split yield by, as columns of the Dies table, and
+  **Reticle cell** is a third choice beside Ring | Quadrant in the Summary panel's region yield, one row per cell in numeric order.
+  They are offered only when a reticle is set. The wafer carries it as `wafer.reticle`. A cell repeats in every shot, so it shows a
+  problem with the mask; a shot is one place on the wafer, so it shows one that varies across it. `getReticleShot` is exported
+  beside `getReticleCell`.
+
 ### Changed
 
+- **The plot editor's Categories and Colour hints say what they compare.** A hint now reads "Compare by this field" and names the two kinds
+  of field it takes, a wafer attribute or a die region, and the guide explains how that differs from Group by.
+- **Ring, quadrant and the reticle regions are defined once.** The plot fields and the Dies table read one definition
+  (`stats/dieRegions.ts`: `DIE_REGIONS`, `availableRegions`), so a region is offered, named and valued the same way in both, and findings and region yield group dies by the same definition. The
+  Dies table says `Ring 2` where it said `2` (the exported file keeps the bare number) and shows Ring and Quadrant only for dies
+  whose position in millimetres is known.
+- **Escape in a menu closes the menu and leaves its window open.** A menu opened from a plot or sweep editor, or any other
+  window, closes on Escape; a second Escape closes the window. Keys that something inside a window has already handled no
+  longer also close it.
+- **The Plot tab's buttons, the chart axis toggles and the CSV buttons carry a hover hint.** New plot, New sweep, Add
+  examples, Import, Export, Delete all and each card's Edit, Duplicate and Delete say what they do; so do Axis includes
+  limits, Clip outliers, Log scale, Max tests, and the Test values, Functional and Correlation CSV buttons. A hint's text is
+  recorded on its element as `data-wmap-tip`.
 - **Limit labels on a scatter's two axes keep clear of each other.** A high limit on Y and a low limit on X both labelled
   the top-left corner and drew on top of one another; a label now moves down a row until it overlaps none already drawn, in
   the Plot tab's scatter and the Insights scatter alike (`placeClearOf` in `charts/chartShell.ts` is the one rule).

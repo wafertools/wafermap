@@ -16,7 +16,7 @@ import { requireRingCount } from '../core/ringCount.js';
 import type { Die } from '../core/dies.js';
 import { hasPosition, isPositionedDie } from '../core/dies.js';
 import { testsPresent, testValue } from '../core/dieTable.js';
-import { classifyDie } from '../core/classify.js';
+import { DIE_REGIONS, DIE_REGION_KEYS } from '../stats/dieRegions.js';
 import type { Wafer } from '../core/index.js';
 import { isParametricTest, getTestPassStatus, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMetadata } from '../core/metadata.js';
@@ -238,28 +238,40 @@ function resolveTestColumns(dies: Die[], testDefs: TestDef[] | undefined): TestD
 }
 
 /**
- * Ring/quadrant per die, via `options.getWafer` — `undefined` (not just an
- * empty Map) when no die resolves a wafer at all, so the caller can omit the
- * columns entirely rather than render them empty. Only positioned dies are
- * classified (`classifyDie` requires it); an unpositioned die's cells are
- * left blank by the column's own `get`, same as every other spatial column.
+ * One column per die region the population can place a die in (ring, quadrant, reticle cell, reticle shot), read from the
+ * one definition of them (`stats/dieRegions.ts`). A die with no position, or on a wafer that cannot place it, is left blank
+ * by the column's own `get`, like every other spatial column. Needs `options.getWafer`: a table with no wafer geometry has
+ * no region columns at all.
  */
-function resolveClassifications(
+function resolveRegionColumns(
   dies: Die[],
   getWafer: ((die: Die) => Wafer | undefined) | undefined,
   options: { ringCount?: number },
-): Map<Die, { ring: number; quadrant: string }> | undefined {
-  if (!getWafer) return undefined;
-  // Only a table that classifies dies needs a ring count; one with no wafer geometry has no ring or quadrant column at all.
+): DieColumn[] {
+  if (!getWafer) return [];
+  // Only a table that places dies in rings needs a ring count; one with no wafer geometry has no region column at all.
   const ringCount = requireRingCount(options, 'the die list');
-  const byDie = new Map<Die, { ring: number; quadrant: string }>();
-  for (const die of dies) {
-    if (!isPositionedDie(die)) continue;
-    const wafer = getWafer(die);
-    if (!wafer) continue;
-    byDie.set(die, classifyDie(die, wafer, { ringCount }));
+  const columns: DieColumn[] = [];
+  for (const key of DIE_REGION_KEYS) {
+    const region = DIE_REGIONS[key];
+    const ctxOf = (die: Die) => ({ wafer: getWafer(die), ringCount });
+    // Judged on the dies themselves: a region with a value for no die is not a column.
+    if (!dies.some(d => isPositionedDie(d) && region.valueOf(d, ctxOf(d)) !== undefined)) continue;
+    // A value is placed once per die however often the table asks (sorting and drawing both read it).
+    const memo = new Map<Die, string>();
+    const value = (d: Die) => {
+      let v = memo.get(d);
+      if (v === undefined) { v = region.valueOf(d, ctxOf(d)) ?? ''; memo.set(d, v); }
+      return v;
+    };
+    columns.push({
+      label: region.label,
+      // The screen says "Ring 2"; a file carries the bare number a spreadsheet can sort and filter.
+      get: value,
+      ...(region.rawOf ? { csvGet: (d: Die) => region.rawOf!(d, ctxOf(d)) ?? '' } : {}),
+    });
   }
-  return byDie.size > 0 ? byDie : undefined;
+  return columns;
 }
 
 export type DieColumn = {
@@ -286,7 +298,7 @@ export function resolveDieColumns(
   options: DieListOptions = {},
 ): { columns: DieColumn[]; visibleColumns: DieColumn[]; testColumns: TestDef[]; truncatedKeys: string[] } {
   const testColumns = resolveTestColumns(dies, testDefs);
-  const classifications = resolveClassifications(dies, options.getWafer, options);
+  const regionColumns = resolveRegionColumns(dies, options.getWafer, options);
   // applyEdgeExclusion (buildWaferMap.ts) only ever stamps `edgeExcluded: true`
   // on the dies it excludes — an included die is left untouched, never set to
   // `false` — so "no die here is true" is the only signal available and is
@@ -302,7 +314,7 @@ export function resolveDieColumns(
   // whether this particular export happens to populate them.
   const reservedLabels = [
     ...(options.extraColumn ? [options.extraColumn.label] : []),
-    'X', 'Y', 'Ring', 'Quadrant', 'Edge excluded', 'Site', 'Hard bin', 'Soft bin',
+    'X', 'Y', ...DIE_REGION_KEYS.map(k => DIE_REGIONS[k].label), 'Edge excluded', 'Site', 'Hard bin', 'Soft bin',
     ...testColumns.map(td => withUnit(testLabel(td, td.testNumber), td.unit)),
   ];
 
@@ -321,10 +333,7 @@ export function resolveDieColumns(
     ...(options.extraColumn ? [{ label: options.extraColumn.label, get: (d: Die) => options.extraColumn!.get(d) ?? '' }] : []),
     { label: 'X', get: xLabel },
     { label: 'Y', get: yLabel },
-    ...(classifications ? [
-      { label: 'Ring', get: (d: Die) => { const c = classifications.get(d); return c ? String(c.ring) : ''; } },
-      { label: 'Quadrant', get: (d: Die) => classifications.get(d)?.quadrant ?? '' },
-    ] : []),
+    ...regionColumns,
     ...(hasEdgeExcluded ? [{ label: 'Edge excluded', get: (d: Die) => d.edgeExcluded ? 'Yes' : 'No' }] : []),
     { label: 'Site', get: (d) => d.siteNum !== undefined ? String(d.siteNum) : '' },
     { label: 'Hard bin', get: (d) => d.hbin !== undefined ? String(d.hbin) : '' },

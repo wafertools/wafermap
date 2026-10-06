@@ -22,7 +22,7 @@ import { CORRELATION_POSITIVE, CORRELATION_NEGATIVE } from './palette.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
-import { wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, type SaveTextHandler } from '../toolbar.js';
+import { wireControlHover, wireTooltip, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, type SaveTextHandler } from '../toolbar.js';
 import { exportCsv } from '../tableExport.js';
 import { attachChartTip, cardShell, setChartGrow, isExpandedCard, bodyRoom, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
 import { escHtml } from '../../core/utils.js';
@@ -129,6 +129,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   const matrixLimitLabel = card.ownerDocument.createElement('label');
   matrixLimitLabel.textContent = 'Max tests:';
+  wireTooltip(matrixLimitLabel, `The most tests the matrix shows, from ${MATRIX_LIMIT_MIN} to ${MATRIX_LIMIT_MAX}`);
 
   Object.assign(matrixLimitLabel.style, { color: CLR.label, fontSize: FONT.body, display: 'flex', alignItems: 'center', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
   const matrixLimitInput = card.ownerDocument.createElement('input');
@@ -172,6 +173,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     const exportBtn = card.ownerDocument.createElement('button');
     exportBtn.type = 'button';
     exportBtn.textContent = 'Correlation CSV';
+    wireTooltip(exportBtn, 'Save the correlation coefficients as a CSV file, one row per pair of tests');
     Object.assign(exportBtn.style, {
       ...controlStyle('outlined'), color: CLR.text,
     } as Partial<CSSStyleDeclaration>);

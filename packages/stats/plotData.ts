@@ -15,16 +15,15 @@
 
 import type { Die } from '../core/dies.js';
 import { hasPosition } from '../core/dies.js';
+import { DIE_REGIONS, DIE_REGION_KEYS } from './dieRegions.js';
 import type { Wafer } from '../core/wafer.js';
 import type { WaferMetadata } from '../core/metadata.js';
-import { classifyDie } from '../core/classify.js';
 import { testValue, testsPresent } from '../core/dieTable.js';
 import { compareNatural, minOf, maxOf } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
-import { requireRingCount } from '../core/ringCount.js';
 import { sameTestName } from './sweep.js';
 import { sameField, plotIssue, isField } from './plotSpec.js';
 import type { PlotSpec, PlotField, PlotAxis, PlotAggregate, PlotBuiltin } from './plotSpec.js';
@@ -147,7 +146,8 @@ function flatten(items: readonly PlotItem[]): Rows {
 }
 
 const BUILTIN_LABEL: Record<PlotBuiltin, string> = {
-  wafer: 'Wafer', x: 'Die X', y: 'Die Y', ring: 'Ring', quadrant: 'Quadrant', hbin: 'Hard bin', sbin: 'Soft bin',
+  wafer: 'Wafer', x: 'Die X', y: 'Die Y', ring: DIE_REGIONS.ring.label, quadrant: DIE_REGIONS.quadrant.label,
+  reticleCell: DIE_REGIONS.reticleCell.label, reticleShot: DIE_REGIONS.reticleShot.label, hbin: 'Hard bin', sbin: 'Soft bin',
   site: 'Site', yield: 'Yield', dieCount: 'Dies', waferOrder: 'Wafer order',
 };
 
@@ -240,12 +240,14 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
     case 'site':
       return { ...base, level: 'die', kind: 'categorical', cat: rows.dies.map(d => (d.siteNum === undefined ? undefined : `Site ${d.siteNum}`)) };
     case 'ring':
-    case 'quadrant': {
+    case 'quadrant':
+    case 'reticleCell':
+    case 'reticleShot': {
+      // One definition of every die region (dieRegions.ts): the plot, the Dies table and the rest read the same one.
+      const region = DIE_REGIONS[field.builtin];
       const cat = rows.dies.map((d, i) => {
-        const w = items[rows.item[i]].wafer;
-        if (!w || !hasPosition(d) || d.physX === undefined || d.physY === undefined) return undefined;
-        const c = classifyDie(d as Parameters<typeof classifyDie>[0], w, { ringCount: requireRingCount(items[rows.item[i]], 'a ring or quadrant of a plot') });
-        return field.builtin === 'ring' ? `Ring ${c.ring}` : c.quadrant;
+        const it = items[rows.item[i]];
+        return region.valueOf(d, { wafer: it.wafer, ringCount: it.ringCount });
       });
       return { ...base, level: 'die', kind: 'categorical', cat };
     }
@@ -724,7 +726,11 @@ export function fieldCatalogue(items: readonly PlotItem[], ctx: PlotContext = {}
   const die = (builtin: PlotBuiltin, kind: FieldKind, categorical: boolean) =>
     out.push({ field: { builtin }, label: BUILTIN_LABEL[builtin], name: BUILTIN_LABEL[builtin], group: 'Die', kind, level: 'die', categorical });
   if (has(d => hasPosition(d))) { die('x', 'numeric', false); die('y', 'numeric', false); }
-  if (items.some(it => it.wafer) && has(d => hasPosition(d))) { die('ring', 'categorical', true); die('quadrant', 'categorical', true); }
+  // Die regions: each is offered only when this population can place a die in it (reticle ones need a stepper field).
+  const placed = has(d => hasPosition(d));
+  for (const key of DIE_REGION_KEYS) {
+    if (items.some(it => DIE_REGIONS[key].available({ wafer: it.wafer, ringCount: it.ringCount }, placed))) die(key, 'categorical', true);
+  }
   if (has(d => d.hbin !== undefined)) die('hbin', 'categorical', true);
   if (has(d => d.sbin !== undefined)) die('sbin', 'categorical', true);
   if (has(d => d.siteNum !== undefined)) die('site', 'categorical', true);

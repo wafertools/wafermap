@@ -25,7 +25,7 @@ import { openPlotEditor } from './plotModal.js';
 import { sourceFromDies, sourceFromPoints, toPlotItems } from './plotItems.js';
 import type { PlotStore } from './plotStore.js';
 import type { InsightsItem } from './insightsTab.js';
-import { CLR, FONT, RADIUS, SPACE, controlStyle, markNoPrint, saveTextFile, wireControlHover, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
+import { CLR, FONT, RADIUS, SPACE, controlStyle, markNoPrint, saveTextFile, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
 
 export interface PlotSectionDeps {
   doc: Document;
@@ -64,23 +64,24 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
   // ── toolbar ──
   const bar = doc.createElement('div');
   Object.assign(bar.style, { display: 'flex', flexWrap: 'wrap', gap: SPACE.md, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
-  const button = (text: string, hook: string, onClick: () => void): HTMLButtonElement => {
+  const button = (text: string, hook: string, hint: string, onClick: () => void): HTMLButtonElement => {
     const b = doc.createElement('button');
     b.type = 'button';
     b.textContent = text;
     b.dataset[hook] = '1';
     Object.assign(b.style, { ...controlStyle('outlined'), fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
     wireControlHover(b);
+    wireTooltip(b, hint);
     b.addEventListener('click', onClick);
     return b;
   };
-  const deleteAllBtn = button('Delete all plots…', 'wmapPlotDeleteAll', () => { void deleteAll(); });
+  const deleteAllBtn = button('Delete all plots…', 'wmapPlotDeleteAll', 'Remove every plot and sweep. You are asked first, and Undo brings them back for ten seconds', () => { void deleteAll(); });
   bar.append(
-    button('+ New plot', 'wmapPlotNew', () => newPlot()),
-    button('+ New sweep', 'wmapPlotNewSweep', () => newSweep()),
-    button('Add examples', 'wmapPlotExamples', () => addExamples()),
-    button('Import plots…', 'wmapPlotImport', () => { void importPlots(); }),
-    button('Export plots…', 'wmapPlotExport', () => exportPlots()),
+    button('+ New plot', 'wmapPlotNew', 'Start a chart of your own: choose its type, what goes on each axis and how it is coloured', () => newPlot()),
+    button('+ New sweep', 'wmapPlotNewSweep', 'Read an ordered run of tests as a response curve, and measure where two curves cross', () => newSweep()),
+    button('Add examples', 'wmapPlotExamples', 'Draw one example of each chart type this lot can show, to edit or delete', () => addExamples()),
+    button('Import plots…', 'wmapPlotImport', 'Add the plots from a file written by Export plots…', () => { void importPlots(); }),
+    button('Export plots…', 'wmapPlotExport', 'Save all your plots to a file, to share or to keep a copy', () => exportPlots()),
     deleteAllBtn,
   );
   markNoPrint(bar);   // New, Import, Export and Delete all mean nothing on paper
@@ -101,7 +102,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     t.textContent = text;
     notice.appendChild(t);
     if (action) {
-      const b = button(action.label, 'wmapPlotNoticeAction', () => { action.run(); hideNotice(); });
+      const b = button(action.label, 'wmapPlotNoticeAction', action.label === 'Undo' ? 'Put back what was just removed' : action.label, () => { action.run(); hideNotice(); });
       notice.appendChild(b);
     }
     for (const l of lines) {
@@ -187,10 +188,10 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
 
   /** Edit, Duplicate and Delete on a card's button row: the same three for every kind of plot. */
   function addActions(actions: HTMLElement, plot: PlotSpec): void {
-    const act = (text: string, hook: string, run: () => void) => actions.appendChild(button(text, hook, run));
-    act('Edit', 'wmapPlotEdit', () => { const p = store.get().find(x => x.id === plot.id); if (p) edit(p); });
-    act('Duplicate', 'wmapPlotDuplicate', () => { store.duplicate(plot.id); });
-    act('Delete', 'wmapPlotDelete', () => {
+    const act = (text: string, hook: string, hint: string, run: () => void) => actions.appendChild(button(text, hook, hint, run));
+    act('Edit', 'wmapPlotEdit', 'Change this plot’s type, fields, titles, limits and axes', () => { const p = store.get().find(x => x.id === plot.id); if (p) edit(p); });
+    act('Duplicate', 'wmapPlotDuplicate', 'Make a copy of this plot to vary', () => { store.duplicate(plot.id); });
+    act('Delete', 'wmapPlotDelete', 'Remove this plot. Undo brings it back for ten seconds', () => {
       const gone = store.remove(plot.id);
       if (gone) say(`Deleted “${gone.plot.title ?? 'plot'}”.`, { label: 'Undo', run: () => store.insertAt(gone.index, gone.plot) });
     });
@@ -259,7 +260,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     if (!text) return;
     const t = doc.createElement('span');
     t.textContent = text;
-    el.append(t, button('Use the automatic title', 'wmapPlotAutoTitle', () => {
+    el.append(t, button('Use the automatic title', 'wmapPlotAutoTitle', 'Replace the title you typed with the one written from the plot’s settings', () => {
       const cur = store.get().find(x => x.id === plot.id);
       if (!cur) return;
       const next = { ...cur };

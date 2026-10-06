@@ -2071,7 +2071,8 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       diameter,
       notch:       norm.waferOpts?.notch,
       orientation: norm.waferOpts?.orientation ?? 0,
-      metadata:    norm.waferOpts?.metadata });
+      metadata:    norm.waferOpts?.metadata,
+      reticle:     norm.reticleOpts });
 
     // Pre-built dies carry the caller's own physX/physY, but waferConfig.orientation
     // is still honored — applyOrientation rotates them to match, the same as the
@@ -2299,7 +2300,8 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     diameter:    waferDiameter,
     notch:       norm.waferOpts?.notch,
     orientation: norm.waferOpts?.orientation ?? 0,
-    metadata:    norm.waferOpts?.metadata });
+    metadata:    norm.waferOpts?.metadata,
+    reticle:     norm.reticleOpts });
 
   // Build dies directly from data positions — never generate positions without data.
   //

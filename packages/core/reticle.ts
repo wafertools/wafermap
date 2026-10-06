@@ -57,6 +57,23 @@ export function getReticleCell(
 }
 
 /**
+ * Which reticle shot a die was exposed in, as the shot's (column, row) on the wafer: the die's position less the anchor,
+ * divided by the field's size and rounded down. A shot is one placement of the mask on the wafer; `getReticleCell` is
+ * where the die sits inside the mask. The same phase convention as `getReticleCell`, so a die's cell and its
+ * field can never disagree about where a field starts.
+ */
+export function getReticleShot(
+  die: { x: number; y: number },
+  config: { width: number; height: number; anchorDie?: { x: number; y: number } },
+): { column: number; row: number } {
+  const { width, height, anchorDie = { x: 0, y: 0 } } = config;
+  return {
+    column: Math.floor((die.x - anchorDie.x) / Math.max(1, Math.floor(width))),
+    row: Math.floor((die.y - anchorDie.y) / Math.max(1, Math.floor(height))),
+  };
+}
+
+/**
  * Generate the grid of reticle rectangles that cover the wafer area.
  * Returns positions in wafer-local coordinates (before orientation rotation).
  * Reticles that don't overlap the wafer circle are excluded.

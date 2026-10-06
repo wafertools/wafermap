@@ -19,7 +19,7 @@ const SNAPSHOTS = {
     'DERIVED_KEY', 'DERIVED_MARK',
     'analyzeWaferLot', 'analyzeWaferMap', 'buildFacetTable', 'buildWaferMap',
     'diePassStatus', 'facetValueOf', 'FACET_NONE_VALUE', 'filterFindings',
-    'getDieKey', 'getReticleCell', 'getTestPassStatus', 'hasPosition', 'isYieldEligibleDie',
+    'getDieKey', 'getReticleCell', 'getReticleShot', 'getTestPassStatus', 'hasPosition', 'isYieldEligibleDie',
     'listBinColorSchemes', 'listValueColorSchemes', 'mergeTestDefs', 'metadataDisplayValue',
     'registerBinColorScheme', 'registerValueColorScheme', 'resolveValueColorFn',
     'setReportOpener', 'visibleFindings',
@@ -27,7 +27,7 @@ const SNAPSHOTS = {
     'readPlotsFile', 'writePlotsFile',
   ],
   './core': [
-    'diePassStatus', 'getDieKey', 'getReticleCell', 'hasPosition', 'isYieldEligibleDie',
+    'diePassStatus', 'getDieKey', 'getReticleCell', 'getReticleShot', 'hasPosition', 'isYieldEligibleDie',
     'metadataDisplayValue',
   ],
   // findTestDef / generateTextOverlay / getUniqueTestNumbers / resolveTestNumber were

@@ -205,7 +205,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
   const select = testSel.el;
   controlsRow.appendChild(select);
 
-  controlsRow.appendChild(makeToggle('Log scale', logScale, v => { logScale = v; rebuildBody(); }, card.ownerDocument));
+  controlsRow.appendChild(makeToggle('Log scale', logScale, v => { logScale = v; rebuildBody(); }, card.ownerDocument, 'Draw the value axis on a logarithmic scale'));
   // Rebuilt on every rebuildBody so the "Axis includes limits" checkbox reflects
   // the RESOLVED state — with the default derived from the data, an unchecked box
   // beside an axis that plainly does include the limits would be a lie.

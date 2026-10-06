@@ -63,10 +63,54 @@ const MIME = {
 // are separate deliberately: their toolbars differ (the gallery adds Columns and
 // an aggregation picker, and its stacked plot modes are always available), and
 // that difference is exactly the kind of thing worth seeing side by side.
+/** Click the first visible button/tab whose label starts or ends with `text`; throw if there is none. */
+async function press(page, text) {
+  const ok = await page.evaluate((text) => {
+    const el = [...document.querySelectorAll('button,[role="button"],[role="tab"]')]
+      .filter(e => e.offsetParent !== null)
+      .find(e => {
+        const t = (e.textContent || e.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ');
+        return t.startsWith(text) || t.endsWith(text);
+      });
+    if (!el) return false;
+    el.click();
+    return true;
+  }, text);
+  if (!ok) throw new Error(`no visible "${text}" button`);
+  await page.waitForTimeout(900);
+}
+
+// `menus`: true walks every menu the toolbar offers (the default); an array names the
+// ones worth recording; false skips them. The first scenes record them all once, so
+// later scenes only record the menus their own data changes.
+//
+// `views`: further states reached from the scene without reloading, each recorded
+// under its own heading. A view that opens an editor goes last, and names its own
+// menus, because the Escape that closes a menu would otherwise close the editor.
 const SCENES = [
   { name: 'Single wafer map',  url: '/examples/first-map.html' },
   { name: 'Lot gallery',       url: '/examples/statistics.html#lot-gallery' },
-  { name: 'Insights tab',      url: '/examples/insights.html' },
+  {
+    // Every Insights sub-tab, then the plot editor and its menus.
+    name: 'Insights tab',
+    url: '/examples/insights.html',
+    views: [
+      { name: 'Distributions', setup: (p) => press(p, 'Distributions') },
+      { name: 'Correlation', setup: (p) => press(p, 'Correlation') },
+      { name: 'Data', setup: (p) => press(p, 'Data') },
+      { name: 'Plot', setup: (p) => press(p, 'Plot') },
+      { name: 'Plot › + New plot editor', setup: (p) => press(p, '+ New plot'), menus: ['X axis', 'Y axis', 'Colour'] },
+      { name: 'Plot › + New plot editor › Customise', setup: (p) => press(p, 'Customise'), menus: false },
+    ],
+  },
+  // Features a host has to switch on, each on the example page that does.
+  { name: 'Sweeps',                       url: '/examples/sweeps.html',            menus: ['Plot mode'] },
+  { name: 'Derived tests',                url: '/examples/derived-tests.html',     menus: ['Plot mode'] },
+  { name: 'Multi-project wafer (compact layout offered)', url: '/examples/multi-project-wafer.html', menus: ['Overlays'] },
+  { name: 'Reticle overlays',             url: '/examples/reticle.html',           menus: ['Overlays'] },
+  { name: 'Metadata / layout plot mode',  url: '/examples/metadata-mode.html',     menus: ['Plot mode', 'Colour scheme'] },
+  { name: 'Multi-site parallel testing',  url: '/examples/test-sites.html',        menus: false },
+  { name: 'Retests',                      url: '/examples/retests.html',           menus: false },
 ];
 
 // ── Serialisation ────────────────────────────────────────────────────────────
@@ -85,23 +129,36 @@ function normalise(text) {
     .trim();
 }
 
+// Buttons, menu rows and tabs, plus the form inputs (checkboxes, radios, number
+// fields, native selects) the chart cards and editors use. Inputs have no text of
+// their own, so they are named by their aria-label, an associated <label>, or the
+// text beside them. Without them an Insights chart's own controls were invisible
+// to this snapshot.
 const controlsIn = (scope) => `
-  [...${scope}.querySelectorAll('button,[role="button"],[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"],[role="option"],[role="tab"]')]
+  [...${scope}.querySelectorAll('button,[role="button"],[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"],[role="option"],[role="tab"],input[type="checkbox"],input[type="radio"],input[type="number"],input[type="range"],select')]
     .filter(e => e.offsetParent !== null)
-    .map(e => ({
-      label: (e.textContent || '').trim(),
-      aria:  e.getAttribute('aria-label') || '',
-      hint:  e.getAttribute('data-tip') || e.getAttribute('title') || '',
-      role:  e.getAttribute('role') || e.tagName.toLowerCase(),
-      pop:   e.getAttribute('aria-haspopup') || '',
-      disabled: e.disabled === true || e.getAttribute('aria-disabled') === 'true',
-      checked:  e.getAttribute('aria-checked') || '',
-    }))
+    .map(e => {
+      const isInput = e.tagName === 'INPUT' || e.tagName === 'SELECT';
+      const beside = isInput
+        ? ((e.labels && e.labels[0]?.textContent) || e.closest('label')?.textContent || e.parentElement?.textContent || '').trim().slice(0, 60)
+        : '';
+      return {
+        label: isInput ? beside : (e.textContent || '').trim(),
+        aria:  e.getAttribute('aria-label') || '',
+        hint:  e.getAttribute('data-tip') || e.getAttribute('data-wmap-tip') || e.getAttribute('title') || '',
+        role:  e.getAttribute('role') || e.tagName.toLowerCase(),
+        kind:  isInput ? (e.tagName === 'SELECT' ? 'select' : e.type) : '',
+        pop:   e.getAttribute('aria-haspopup') || '',
+        disabled: e.disabled === true || e.getAttribute('aria-disabled') === 'true',
+        checked:  e.getAttribute('aria-checked') || ((e.type === 'checkbox' || e.type === 'radio') ? String(e.checked) : ''),
+      };
+    })
 `;
 
 function renderControl(c, indent = '  ') {
   const name = normalise(c.label || c.aria || '(unnamed)');
   const bits = [];
+  if (c.kind) bits.push(c.kind);
   if (c.aria && c.label && normalise(c.aria) !== name) bits.push(`aria="${normalise(c.aria)}"`);
   if (c.checked) bits.push(c.checked === 'true' ? 'checked' : 'unchecked');
   if (c.disabled) bits.push('disabled');
@@ -113,12 +170,7 @@ function renderControl(c, indent = '  ') {
 
 // ── Walk ─────────────────────────────────────────────────────────────────────
 
-async function walkScene(page, scene, port) {
-  const lines = [`## ${scene.name}`, ''];
-
-  await page.goto(`http://127.0.0.1:${port}${scene.url}`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2500);
-
+async function captureView(page, lines, seenMenus, opts) {
   const top = await page.evaluate(`(${controlsIn('document')})`);
   lines.push('Controls:');
   // A gallery repeats one card's chrome per wafer — 13 identical zoom/pan sets
@@ -139,11 +191,16 @@ async function walkScene(page, scene, port) {
     lines.push(n > 1 ? `${line}   (×${n})` : line);
   }
   lines.push('');
+  return captureMenus(page, lines, seenMenus, opts, top);
+}
 
+async function captureMenus(page, lines, seenMenus, opts, top) {
   // Descend into anything that says it opens a menu. Identified by accessible
   // name rather than position, so reordering the toolbar does not reshuffle the
   // whole snapshot and drown the real change in noise.
-  const menus = top.filter(c => c.pop === 'menu');
+  const wanted = opts.menus ?? true;
+  const menus = wanted === false ? [] : top.filter(c =>
+    c.pop === 'menu' && (wanted === true || wanted.includes(normalise(c.aria || c.label))));
   for (const m of menus) {
     const name = normalise(m.aria || m.label);
     const opened = await page.evaluate((wanted) => {
@@ -155,27 +212,54 @@ async function walkScene(page, scene, port) {
       return true;
     }, m.aria || m.label);
 
-    lines.push(`Menu — ${name}:`);
+    const block = [`Menu — ${name}:`];
     if (!opened) {
-      lines.push('    (could not be opened by name — see ui-surface.mjs)');
-      lines.push('');
+      block.push('    (could not be opened by name — see ui-surface.mjs)');
+    } else {
+      await page.waitForTimeout(400);
+      // Menu rows live in a popup appended to the body, so read the whole document
+      // and subtract what was already on the page.
+      const after = await page.evaluate(`(${controlsIn('document')})`);
+      const before = new Set(top.map(c => `${c.label}|${c.aria}`));
+      const rows = after.filter(c => !before.has(`${c.label}|${c.aria}`));
+      for (const r of rows) block.push(renderControl(r, '    '));
+      if (rows.length === 0) block.push('    (no rows captured)');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+    }
+    // A gallery has one identical "Charts and tables" menu per card: record it once.
+    const key = block.join('\n');
+    if (!seenMenus.has(key)) {
+      seenMenus.add(key);
+      lines.push(...block, '');
+    }
+  }
+}
+
+async function walkScene(page, scene, port) {
+  const lines = [`## ${scene.name}`, ''];
+
+  await page.goto(`http://127.0.0.1:${port}${scene.url}`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2500);
+
+  const seenMenus = new Set();
+  await captureView(page, lines, seenMenus, scene);
+
+  for (const view of scene.views ?? []) {
+    lines.push(`## ${scene.name} › ${view.name}`, '');
+    try {
+      await view.setup(page);
+      await page.waitForTimeout(800);
+    } catch (err) {
+      // Said in the snapshot, not thrown: a renamed tab or button then shows up as
+      // a changed line next to the code that renamed it.
+      lines.push(`    (view not reachable: ${String(err.message).split('\n')[0]})`, '');
       continue;
     }
-    await page.waitForTimeout(400);
-
-    // Menu rows live in a popup appended to the body, so read the whole document
-    // and subtract what was already on the page.
-    const after = await page.evaluate(`(${controlsIn('document')})`);
-    const before = new Set(top.map(c => `${c.label}|${c.aria}`));
-    const rows = after.filter(c => !before.has(`${c.label}|${c.aria}`));
-    for (const r of rows) lines.push(renderControl(r, '    '));
-    if (rows.length === 0) lines.push('    (no rows captured)');
-
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(250);
-    lines.push('');
+    // A view may name its own menus: an open editor must not have the toolbar's walked
+    // behind it, because the Escape that closes a menu would close the editor with it.
+    await captureView(page, lines, seenMenus, { menus: view.menus ?? scene.menus });
   }
-
   return lines;
 }
 

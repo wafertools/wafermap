@@ -5,7 +5,7 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, saveImageBlob, openReparentedModal, type OverlayHandle, type SaveImageHandler } from '../toolbar.js';
+import { SHADOW, LEADING, wireTooltip, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, saveImageBlob, openReparentedModal, type OverlayHandle, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { minOf, maxOf } from '../../core/utils.js';
 import { robustFence } from '../../stats/math.js';
@@ -1370,7 +1370,7 @@ export function makeListSelect(
       // "position: sticky or fixed" entry before copying this elsewhere.
       Object.assign(searchBox.style, { position: 'sticky', top: '0', zIndex: '1', background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
       searchBox.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { closeMenuAndRefocus(); return; }
+        if (e.key === 'Escape') { e.preventDefault(); closeMenuAndRefocus(); return; }
         if (e.key === 'ArrowDown') { e.preventDefault(); visibleRows()[0]?.focus(); }
       });
       menu.appendChild(searchBox);
@@ -1573,12 +1573,12 @@ export function makeLinkedAxisPrefs(
         row.appendChild(makeToggle('Axis includes limits', resolvedIncludeLimits, v => {
           includeLimits = v;
           fire();
-        }, ownerDocument));
+        }, ownerDocument, 'Widen the axis to show every limit, even where the data sits well clear of them'));
       }
       row.appendChild(makeToggle('Clip outliers', clipOutliers, v => {
         clipOutliers = v;
         fire();
-      }, ownerDocument));
+      }, ownerDocument, 'Narrow the axis so a few extreme values do not flatten the rest. Statistics still use every value'));
     },
     set(prefs) {
       const nextLimits = prefs.limits ?? 'both';
@@ -1753,7 +1753,7 @@ export function makeWaferSelect(
 // that needed one. Callers are responsible for redrawing on change (via
 // `onChange`), matching each panel's own rebuild contract.
 
-export function makeToggle(labelText: string, checked: boolean, onChange: (v: boolean) => void, ownerDocument: Document = document): HTMLLabelElement {
+export function makeToggle(labelText: string, checked: boolean, onChange: (v: boolean) => void, ownerDocument: Document = document, hint?: string): HTMLLabelElement {
   const label = ownerDocument.createElement('label');
   Object.assign(label.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, fontSize: FONT.body, color: CLR.label, cursor: 'pointer', userSelect: 'none' } as Partial<CSSStyleDeclaration>);
   wireControlHover(label, 'bare');
@@ -1763,6 +1763,7 @@ export function makeToggle(labelText: string, checked: boolean, onChange: (v: bo
   checkbox.style.cssText = 'margin:0;cursor:pointer;';
   checkbox.addEventListener('change', () => onChange(checkbox.checked));
   label.append(checkbox, ownerDocument.createTextNode(labelText));
+  if (hint) wireTooltip(label, hint);
   return label;
 }
 

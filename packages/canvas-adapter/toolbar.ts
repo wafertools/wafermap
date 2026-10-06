@@ -1231,6 +1231,9 @@ export function wireTooltip(
 ): void {
   const resolve = () =>
     (typeof text === 'function' ? text() : text) ?? target.getAttribute('aria-label') ?? '';
+  // Written down so the hint is part of the DOM: a reader of the interactive surface, or a test, can
+  // see which controls have one. A hint computed on hover is not recorded, as it has no fixed text.
+  if (typeof text === 'string') target.dataset.wmapTip = text;
   if (opts.asDataPoint) {
     target.tabIndex = 0;
     target.setAttribute('role', 'img');
@@ -2718,7 +2721,9 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
   // be ambiguous with any other map's own "E expands this map" shortcut now that
   // the rest of the page can be interacted with.
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') { close(); return; }
+    // An Escape something inside has already handled (a menu closing itself, a filter box
+    // clearing) must not also close the window the menu sits in.
+    if (e.key === 'Escape') { if (!e.defaultPrevented) close(); return; }
     if (isModal && (e.key === 'e' || e.key === 'E')) { close(); return; }
     if (isModal && e.key === 'Tab') { trapTab(e); return; }
     if (canMaximize && (e.key === 'f' || e.key === 'F') && !minimized) { setMaximized(!maximized); }

@@ -181,7 +181,7 @@ test('Dies: Copy is offered for a small table and puts tab-separated text on the
 
 test('Dies: Copy is refused, with the reason, for a table too big to paste', () => {
   const { items, lot } = lotItems(1, 24);
-  items[0] = { ...items[0], dies: Array.from({ length: 20000 }, (_, i) => ({ x: i % 200, y: Math.floor(i / 200), hbin: 1, testValues: { 1050: 0.5, 1060: 0.001 } })) };
+  items[0] = { ...items[0], dies: Array.from({ length: 40000 }, (_, i) => ({ x: i % 200, y: Math.floor(i / 200), hbin: 1, testValues: { 1050: 0.5, 1060: 0.001 } })) };
   const tab = mount(items, lot);
   choose(tab, 'dies');
   assert.equal(dataRoot(tab).querySelector('[data-wmap-data-copy]').disabled, true);

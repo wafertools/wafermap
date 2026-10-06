@@ -334,11 +334,11 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
           panel.appendChild(row('Values', fieldSelect('y', 'Values')));
           break;
         case 'box':
-          panel.appendChild(row('Categories (X axis)', fieldSelect('x', 'Categories'), 'One box per value of this field.'));
+          panel.appendChild(row('Categories (X axis)', fieldSelect('x', 'Categories'), 'Compare by this field: one box per value, whether it is a wafer attribute (lot, split) or a die region (ring, reticle cell).'));
           panel.appendChild(row('Values (Y axis)', fieldSelect('y', 'Values')));
           break;
         case 'bar':
-          panel.appendChild(row('Categories (X axis)', fieldSelect('x', 'Categories'), 'One bar per value of this field.'));
+          panel.appendChild(row('Categories (X axis)', fieldSelect('x', 'Categories'), 'Compare by this field: one bar per value, whether it is a wafer attribute (lot, split) or a die region (ring, reticle cell).'));
           panel.appendChild(row('Values (Y axis)', fieldSelect('y', 'Values', { optional: `Count of ${noun}` })));
           break;
         case 'line':
@@ -346,7 +346,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
           panel.appendChild(row('Y axis', fieldSelect('y', 'Y axis')));
           break;
       }
-      panel.appendChild(row('Colour', colourSelect(), 'Each value of the field gets its own colour. Follow Group by takes it from the Group by control.'));
+      panel.appendChild(row('Colour', colourSelect(), 'Compare by this field: each value gets its own colour. Follow Group by takes it from the Group by control.'));
       // How values become marks. Hidden where it cannot matter, so the common plot has no extra controls.
       if (plot.chart === 'bar' || plot.chart === 'line' || plot.level === 'wafer') panel.appendChild(row('Combine values by', aggregateSelect()));
       panel.appendChild(row('One mark per', makeSegmented([[AUTO, 'Automatic'], ['die', 'Die'], ['wafer', 'Wafer']], plot.level ?? AUTO, v => {

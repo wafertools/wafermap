@@ -13,7 +13,9 @@ entries visible — they are invisible while each menu is only ever seen alone.
 Controls:
   · LOT-DEMO · W01▾Product: DEMO-DEVICE
   · Map
+      hint: The wafer map
   · Insights
+      hint: Charts and statistics for this wafer
   · Download PNG
   · Zoom (drag to zoom region)
   · Zoom in
@@ -51,6 +53,7 @@ Menu — Colour scheme:
 
 Menu — Overlays:
     · ✓Compact layout  [unchecked, disabled]
+        hint: Needs a repeating multi-project layout
     · Layout diagnostics
     · ✓Ring boundaries  [unchecked]
     · ✓Quadrant lines  [unchecked]
@@ -59,6 +62,7 @@ Menu — Overlays:
     · ✓Axis labels  [unchecked]
     · ✓Mark failing dies  [unchecked]
     · Clear overlays  [disabled]
+        hint: No overlays are active
 
 Menu — Legend style:
     · ✓Default (right)  [checked]
@@ -73,6 +77,7 @@ Menu — Orientation:
     · ✓Flip horizontal  [unchecked]
     · ✓Flip vertical  [unchecked]
     · Reset orientation  [disabled]
+        hint: Already in the original orientation
 
 ## Lot gallery
 
@@ -93,11 +98,17 @@ Controls:
   · Summary panel
   · User guide
   · Maps
+      hint: The wafer maps
   · Insights
+      hint: Charts and statistics for this lot
   · 1 · Pass3,39485.6%
+      hint: Right-click: charts and tables for these dies
   · 2 · Contact Open2606.6%
+      hint: Right-click: charts and tables for these dies
   · 3 · Vth - Hi1584.0%
+      hint: Right-click: charts and tables for these dies
   · 4 · Leakage1543.9%
+      hint: Right-click: charts and tables for these dies
   · W01 · 85.0%▾  [aria="Wafer info for W01 · 85.0%. Click to expand."]
   · Open full view   (×6)
   · Download PNG   (×6)
@@ -114,6 +125,7 @@ Controls:
   · W05 · 81.8%▾  [aria="Wafer info for W05 · 81.8%. Click to expand."]
   · W06 · 80.5%▾  [aria="Wafer info for W06 · 80.5%. Click to expand."]
   · ◂ Summary
+      hint: Open the Summary panel: what stands out, findings and statistics
 
 Menu — Plot mode:
     · Idsat (A)  [unchecked]
@@ -133,6 +145,7 @@ Menu — Colour scheme:
 
 Menu — Overlays:
     · ✓Compact layout  [unchecked, disabled]
+        hint: Needs a repeating multi-project layout
     · Layout diagnostics
     · ✓Ring boundaries  [unchecked]
     · ✓Quadrant lines  [unchecked]
@@ -141,21 +154,29 @@ Menu — Overlays:
     · ✓Axis labels  [unchecked]
     · ✓Mark failing dies  [unchecked]
     · Clear overlays  [disabled]
+        hint: No overlays are active
 
 Menu — Legend style:
     · ✓Legend on each map  [unchecked]
     · ✓Default (right)  [unchecked, disabled]
+        hint: Turn on "Legend on each map" to position it
     · ✓Compact (right)  [unchecked, disabled]
+        hint: Turn on "Legend on each map" to position it
     · ✓Left  [unchecked, disabled]
+        hint: Turn on "Legend on each map" to position it
     · ✓Top  [unchecked, disabled]
+        hint: Turn on "Legend on each map" to position it
     · ✓Bottom  [unchecked, disabled]
+        hint: Turn on "Legend on each map" to position it
     · ✓Floating  [unchecked, disabled]
+        hint: Turn on "Legend on each map" to position it
 
 Menu — Orientation:
     · ✓Rotate 90° clockwise  [unchecked]
     · ✓Flip horizontal  [unchecked]
     · ✓Flip vertical  [unchecked]
     · Reset orientation  [disabled]
+        hint: Already in the original orientation
 
 Menu — Columns:
     · Auto  [checked]
@@ -173,52 +194,14 @@ Menu — Charts and tables for this wafer (or right-click):
     · Dies
     · Test statistics
 
-Menu — Charts and tables for this wafer (or right-click):
-    · Value histogram
-    · Process capability
-    · New plot…
-    · New sweep…
-    · Dies
-    · Test statistics
-
-Menu — Charts and tables for this wafer (or right-click):
-    · Value histogram
-    · Process capability
-    · New plot…
-    · New sweep…
-    · Dies
-    · Test statistics
-
-Menu — Charts and tables for this wafer (or right-click):
-    · Value histogram
-    · Process capability
-    · New plot…
-    · New sweep…
-    · Dies
-    · Test statistics
-
-Menu — Charts and tables for this wafer (or right-click):
-    · Value histogram
-    · Process capability
-    · New plot…
-    · New sweep…
-    · Dies
-    · Test statistics
-
-Menu — Charts and tables for this wafer (or right-click):
-    · Value histogram
-    · Process capability
-    · New plot…
-    · New sweep…
-    · Dies
-    · Test statistics
-
 ## Insights tab
 
 Controls:
   · User guide
   · Maps
+      hint: The wafer maps
   · Insights
+      hint: Charts and statistics for this lot
   · Overview
   · Distributions
   · Correlation
@@ -227,8 +210,663 @@ Controls:
   · None▾  [aria="Group by", opens menu]
   · Save as PNG   (×5)
   · Expand   (×5)
+  · Sort: yield  [radio, unchecked]
+  · Sort: wafer ID  [radio, checked]
+  · Hard bins  [radio, checked]
+  · Soft bins  [radio, unchecked]
+  · Test limits  [radio, checked]
+  · Tester flag  [radio, unchecked]
+  · Functional  [radio, unchecked]
   · Data tab
 
 Menu — Group by:
     · None
     · Process Split (2)
+
+## Insights tab › Distributions
+
+Controls:
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · Overview
+  · Distributions
+  · Correlation
+  · Data
+  · Plot
+  · None▾  [aria="Group by", opens menu]
+  · Save as PNG   (×4)
+  · Expand   (×4)
+  · Idsat▾  [aria="Test", opens menu]   (×3)
+  · Log scale  [checkbox, unchecked]
+  · Axis includes limits  [checkbox, checked]   (×3)
+  · Clip outliers  [checkbox, unchecked]   (×3)
+  · All wafers▾  [aria="Wafer", opens menu]
+
+Menu — Test:
+    · Idsat
+    · Vth
+    · Ioff
+
+Menu — Wafer:
+    · All wafers
+    · W01
+    · W02
+    · W03
+    · W04
+    · W05
+    · W06
+    · W07
+    · W08
+
+## Insights tab › Correlation
+
+Controls:
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · Overview
+  · Distributions
+  · Correlation
+  · Data
+  · Plot
+  · None▾  [aria="Group by", opens menu]
+  · Save as PNG   (×2)
+  · Expand   (×2)
+  · Max tests:  [number]
+  · All wafers▾  [aria="Wafer", opens menu]   (×2)
+  · Correlation CSV
+      hint: Save the correlation coefficients as a CSV file, one row per pair of tests
+  · Idsat▾  [aria="Test", opens menu]
+  · Vth▾  [aria="Test", opens menu]
+  · Bin 1
+  · Bin 2
+  · Bin 3
+  · Bin 4
+
+## Insights tab › Data
+
+Controls:
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · Overview
+  · Distributions
+  · Correlation
+  · Data
+  · Plot
+  · None▾  [aria="Group by", opens menu]
+  · Statistics  [checked]
+  · Dies  [unchecked]
+  · Wafers  [unchecked]
+  · Test values CSV
+      hint: Save the test-values table as a CSV file
+  · Functional CSV
+      hint: Save the functional-tests table as a CSV file
+
+## Insights tab › Plot
+
+Controls:
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · Overview
+  · Distributions
+  · Correlation
+  · Data
+  · Plot
+  · None▾  [aria="Group by", opens menu]
+  · + New plot
+      hint: Start a chart of your own: choose its type, what goes on each axis and how it is coloured
+  · + New sweep
+      hint: Read an ordered run of tests as a response curve, and measure where two curves cross
+  · Add examples
+      hint: Draw one example of each chart type this lot can show, to edit or delete
+  · Import plots…
+      hint: Add the plots from a file written by Export plots…
+  · Export plots…
+      hint: Save all your plots to a file, to share or to keep a copy
+  · Delete all plots…  [disabled]
+      hint: Remove every plot and sweep. You are asked first, and Undo brings them back for ten seconds
+
+## Insights tab › Plot › + New plot editor
+
+Controls:
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · Overview
+  · Distributions
+  · Correlation
+  · Data
+  · Plot
+  · None▾  [aria="Group by", opens menu]
+  · + New plot
+      hint: Start a chart of your own: choose its type, what goes on each axis and how it is coloured
+  · + New sweep
+      hint: Read an ordered run of tests as a response curve, and measure where two curves cross
+  · Add examples
+      hint: Draw one example of each chart type this lot can show, to edit or delete
+  · Import plots…
+      hint: Add the plots from a file written by Export plots…
+  · Export plots…
+      hint: Save all your plots to a file, to share or to keep a copy
+  · Delete all plots…
+      hint: Remove every plot and sweep. You are asked first, and Undo brings them back for ten seconds
+  · Save as PNG   (×2)
+  · Expand   (×2)
+  · Edit
+      hint: Change this plot’s type, fields, titles, limits and axes
+  · Duplicate
+      hint: Make a copy of this plot to vary
+  · Delete
+      hint: Remove this plot. Undo brings it back for ten seconds
+  · W01   (×2)
+  · W02   (×2)
+  · W03   (×2)
+  · W04   (×2)
+  · W05   (×2)
+  · W06   (×2)
+  · W07   (×2)
+  · W08   (×2)
+  · Maximize (F)
+  · Close (Esc)
+  · Setup
+  · Customise
+  · Scatter  [radio, checked]
+  · Histogram  [radio, unchecked]
+  · Box  [radio, unchecked]
+  · Bar  [radio, unchecked]
+  · Line  [radio, unchecked]
+  · Idsat · 1050▾  [aria="X axis", opens menu]
+  · Vth · 1060▾  [aria="Y axis", opens menu]
+  · Follow Group by (a colour per wafer)▾  [aria="Colour", opens menu]
+  · Automatic  [radio, checked]
+  · Die  [radio, unchecked]
+  · Wafer  [radio, unchecked]
+  · Reset  [disabled]
+  · Cancel
+
+Menu — X axis:
+    · Idsat · 1050
+    · Vth · 1060
+    · Ioff · 1070
+    · Die X
+    · Die Y
+    · Wafer order
+    · Yield
+    · Dies
+
+Menu — Y axis:
+    · Idsat · 1050
+    · Vth · 1060
+    · Ioff · 1070
+    · Die X
+    · Die Y
+    · Wafer order
+    · Yield — Yield is per wafer: use a bar or line chart  [disabled]
+    · Dies
+
+Menu — Colour:
+    · Follow Group by (a colour per wafer)
+    · None
+    · Idsat · 1050
+    · Vth · 1060
+    · Ioff · 1070
+    · Die X
+    · Die Y
+    · Ring
+    · Quadrant
+    · Hard bin
+    · Soft bin
+    · Wafer order
+    · Yield
+    · Dies
+    · Lot
+    · Product
+    · Process Split
+
+## Insights tab › Plot › + New plot editor › Customise
+
+Controls:
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · Overview
+  · Distributions
+  · Correlation
+  · Data
+  · Plot
+  · None▾  [aria="Group by", opens menu]
+  · + New plot
+      hint: Start a chart of your own: choose its type, what goes on each axis and how it is coloured
+  · + New sweep
+      hint: Read an ordered run of tests as a response curve, and measure where two curves cross
+  · Add examples
+      hint: Draw one example of each chart type this lot can show, to edit or delete
+  · Import plots…
+      hint: Add the plots from a file written by Export plots…
+  · Export plots…
+      hint: Save all your plots to a file, to share or to keep a copy
+  · Delete all plots…
+      hint: Remove every plot and sweep. You are asked first, and Undo brings them back for ten seconds
+  · Save as PNG   (×2)
+  · Expand   (×2)
+  · Edit
+      hint: Change this plot’s type, fields, titles, limits and axes
+  · Duplicate
+      hint: Make a copy of this plot to vary
+  · Delete
+      hint: Remove this plot. Undo brings it back for ten seconds
+  · W01   (×2)
+  · W02   (×2)
+  · W03   (×2)
+  · W04   (×2)
+  · W05   (×2)
+  · W06   (×2)
+  · W07   (×2)
+  · W08   (×2)
+  · Maximize (F)
+  · Close (Esc)
+  · Setup
+  · Customise
+  · Linear  [radio, checked]   (×2)
+  · Log  [radio, unchecked]   (×2)
+  · Reverse direction  [checkbox, unchecked]   (×2)
+  · Test + spec  [radio, checked]
+  · Test  [radio, unchecked]
+  · Spec  [radio, unchecked]
+  · None  [radio, unchecked]
+  · Reset  [disabled]
+  · Cancel
+
+## Sweeps
+
+Controls:
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · Overview
+  · Distributions
+  · Correlation
+  · Data
+  · Plot
+  · None▾  [aria="Group by", opens menu]
+  · + New plot
+      hint: Start a chart of your own: choose its type, what goes on each axis and how it is coloured
+  · + New sweep
+      hint: Read an ordered run of tests as a response curve, and measure where two curves cross
+  · Add examples
+      hint: Draw one example of each chart type this lot can show, to edit or delete
+  · Import plots…
+      hint: Add the plots from a file written by Export plots…
+  · Export plots…
+      hint: Save all your plots to a file, to share or to keep a copy
+  · Delete all plots…
+      hint: Remove every plot and sweep. You are asked first, and Undo brings them back for ten seconds
+  · Save as PNG   (×5)
+  · Expand   (×5)
+  · Edit
+      hint: Change this plot’s type, fields, titles, limits and axes   (×5)
+  · Duplicate
+      hint: Make a copy of this plot to vary   (×5)
+  · Delete
+      hint: Remove this plot. Undo brings it back for ten seconds   (×5)
+
+## Derived tests
+
+Controls:
+  · Show the sweep ↓
+  · Plot mode  [opens menu]
+  · Colour scheme  [opens menu]
+  · Toggle log scale
+  · Colorbar range: test limits (click for data range)
+  · Overlays  [opens menu]
+  · Legend style  [opens menu]
+  · Orientation  [opens menu]
+  · Columns  [opens menu]
+  · 0  [aria="Select the same dies on every wafer: off (click to turn on)"]
+  · Download gallery PNG
+  · Summary panel
+  · User guide
+  · Maps
+      hint: The wafer maps
+  · Insights
+      hint: Charts and statistics for this lot
+  · W01▾  [aria="Wafer info for W01. Click to expand."]
+  · Open full view   (×4)
+  · Download PNG   (×4)
+  · Zoom (drag to zoom region)   (×4)
+  · Zoom in   (×4)
+  · Zoom out   (×4)
+  · Reset zoom (double-click)   (×4)
+  · Pan (drag to move)   (×4)
+  · Select (drag to select dies)   (×4)
+  · Charts and tables for this wafer (or right-click)  [opens menu]   (×4)
+  · W02▾  [aria="Wafer info for W02. Click to expand."]
+  · W03▾  [aria="Wafer info for W03. Click to expand."]
+  · W04▾  [aria="Wafer info for W04. Click to expand."]
+  · Summary report
+  · Data tables
+  · ▶What stands out
+  · Ring 4 (edge): pass rate, 216 dies
+      hint: Ring 4 (edge) yield is 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined
+  · Full report ▸
+  · ▶Findings (10)10
+  · ●●●Unusual 9
+  · ●●○Notable 1
+  · All kinds▾  [aria="Kind", opens menu]
+  · All regions▾  [aria="Region", opens menu]
+  · Detail ▸
+  · Spatial pattern: edge-local — seen on 2/4 wafers (50%)
+      hint: Spatial pattern: edge-local — seen on 2/4 wafers (50%)
+  · Hard bin 2 (Contact Open) and soft bin 20 (Contact Fail) (same dies) occurrence 8.9 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 8.9 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+  · Hard bin 3 (Vth - Hi) and soft bin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+  · Hard bin 4 (Leakage) and soft bin 21 (Leakage Fail) (same dies) occurrence 6.7 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (Leakage Fail) (same dies) occurrence 6.7 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+  · Yield is 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) yield is 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined
+  · ▶Wafer Yield (79.7–83.8%) · median 81.3%
+  · Slot  [radio, checked]
+  · Yield  [radio, unchecked]
+  · W01983.8%+2.5  [aria="W01, 83.8% yield, 9 findings, 7 unusual — open wafer"]
+  · W02879.7%−1.6  [aria="W02, 79.7% yield, 8 findings — open wafer"]
+  · W031281.8%+0.5  [aria="W03, 81.8% yield, 12 findings — open wafer"]
+  · W04880.8%−0.5  [aria="W04, 80.8% yield, 8 findings, 2 unusual — open wafer"]
+  · ▶Hard Bin Breakdown — % of dies (N=2,644)
+  · Hard  [radio, checked]
+  · Soft  [radio, unchecked]
+  · ▶Ring Yield
+  · Ring  [radio, checked]
+  · Quadrant  [radio, unchecked]
+  · ▶Test Values (24) · N=2,644
+  · ▶Functional Tests (3) · N=2,644
+
+Menu — Plot mode:
+    · Test Value ▶  [checked, opens menu]
+    · Hard Bin  [unchecked]
+    · Soft Bin  [unchecked]
+    · Stacked Test Values  [unchecked]
+    · Stacked Hard Bins  [unchecked]
+    · Stacked Soft Bins  [unchecked]
+
+## Multi-project wafer (compact layout offered)
+
+Controls:
+  · Wafer
+  · Compact
+  · Map
+      hint: The wafer map
+  · Insights
+      hint: Charts and statistics for this wafer
+  · Download PNG
+  · Zoom (drag to zoom region)
+  · Zoom in
+  · Zoom out
+  · Reset zoom (double-click)
+  · Pan (drag to move)
+  · Select (drag to select dies)
+  · Charts and tables for this wafer (or right-click)  [opens menu]
+  · Plot mode  [opens menu]
+  · Colour scheme  [opens menu]
+  · Overlays  [opens menu]
+  · Legend style  [opens menu]
+  · Orientation  [opens menu]
+  · Expand (E)
+  · User guide
+
+Menu — Overlays:
+    · ✓Compact layout  [checked]
+    · Layout diagnostics
+    · ✓Ring boundaries  [unchecked, disabled]
+        hint: Not drawn in the compact layout
+    · ✓Quadrant lines  [unchecked, disabled]
+        hint: Not drawn in the compact layout
+    · ✓Die labels  [unchecked]
+    · ✓Reticle grid  [unchecked, disabled]
+        hint: Not drawn in the compact layout
+    · ✓XY indicator  [unchecked]
+    · ✓Axis labels  [unchecked]
+    · ✓Mark failing dies  [unchecked]
+    · Clear overlays  [disabled]
+        hint: No overlays are active
+
+## Reticle overlays
+
+Controls:
+  · On
+  · Off
+  · Mode Hard Bin Value — Idsat  [select]
+  · LOT-DEMO · W01▾Product: DEMO-DEVICE
+  · Map
+      hint: The wafer map
+  · Insights
+      hint: Charts and statistics for this wafer
+  · Download PNG
+  · Zoom (drag to zoom region)
+  · Zoom in
+  · Zoom out
+  · Reset zoom (double-click)
+  · Pan (drag to move)
+  · Select (drag to select dies)
+  · Charts and tables for this wafer (or right-click)  [opens menu]
+  · Plot mode  [opens menu]
+  · Colour scheme  [opens menu]
+  · Overlays  [opens menu]
+  · Legend style  [opens menu]
+  · Orientation  [opens menu]
+  · Summary panel
+  · Expand (E)
+  · User guide
+  · Summary report
+  · Data tables
+  · ▶What stands out
+  · Ring 4 (edge)
+      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map
+  · hard bin 2 (Contact Open)
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map
+  · hard bin 3 (Vth - Hi)
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map
+  · Reticle cell (0, 1): pass rate, 21 dies
+      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions
+  · Full report ▸
+  · ▶Findings (19)17
+  · ●●●Unusual 7
+  · ●●○Notable 10
+  · ●○○Minor 2
+  · All kinds▾  [aria="Kind", opens menu]
+  · All regions▾  [aria="Region", opens menu]
+  · Detail ▸
+  · Spatial pattern: edge-local (medium confidence) — 40% of edge dies failing
+      hint: Spatial pattern: edge-local (medium confidence) — 40% of edge dies failing
+  · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map
+  · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map
+  · Yield is 28.1 percentage points lower than the rest of the map
+      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map
+  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
+  · Yield is 37.8 percentage points lower than other reticle positions
+      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions
+  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions
+  · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 13.3 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 13.3 percentage points higher than other reticle positions
+  · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 11.9 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 11.9 percentage points higher than other reticle positions
+  · ▶Hard Bin Breakdown — % of dies (N=661)
+  · Hard  [radio, checked]
+  · Soft  [radio, unchecked]
+  · ▶Ring Yield
+  · Ring  [radio, checked]
+  · Quadrant  [radio, unchecked]
+  · Reticle cell  [radio, unchecked]
+  · ▶Test Values (3) · N=661
+
+Menu — Overlays:
+    · ✓Compact layout  [unchecked, disabled]
+        hint: Needs a repeating multi-project layout
+    · Layout diagnostics
+    · ✓Ring boundaries  [unchecked]
+    · ✓Quadrant lines  [unchecked]
+    · ✓Die labels  [unchecked]
+    · ✓Reticle grid  [checked]
+    · ✓XY indicator  [unchecked]
+    · ✓Axis labels  [unchecked]
+    · ✓Mark failing dies  [unchecked]
+    · Clear overlays
+
+## Metadata / layout plot mode
+
+Controls:
+  · Map
+      hint: The wafer map
+  · Insights
+      hint: Charts and statistics for this wafer
+  · Download PNG
+  · Zoom (drag to zoom region)
+  · Zoom in
+  · Zoom out
+  · Reset zoom (double-click)
+  · Pan (drag to move)
+  · Select (drag to select dies)
+  · Charts and tables for this wafer (or right-click)  [opens menu]
+  · Plot mode  [opens menu]
+  · Overlays  [opens menu]
+  · Legend style  [opens menu]
+  · Orientation  [opens menu]
+  · Summary panel
+  · Expand (E)
+  · User guide
+  · Summary report
+  · Data tables
+  · ▶What stands out
+  · Full report ▸
+  · ▶Findings (1)1
+  · ●●○Notable 1
+  · Detail ▸
+  · Spatial pattern: near-full (medium confidence) — 67% of dies failing
+      hint: Spatial pattern: near-full (medium confidence) — 67% of dies failing
+  · ▶Hard Bin Breakdown — % of dies (N=24)
+  · ▶Ring Yield
+  · Ring  [radio, checked]
+  · Quadrant  [radio, unchecked]
+  · Reticle cell  [radio, unchecked]
+
+Menu — Plot mode:
+    · Hard Bin  [unchecked]
+    · Project  [checked]
+
+## Multi-site parallel testing
+
+Controls:
+  · Hard Bin
+  · Test Site
+  · Site 3 fail
+  · None
+  · LOT-DEMO · W01▾Product: DEMO-DEVICE
+  · Map
+      hint: The wafer map
+  · Insights
+      hint: Charts and statistics for this wafer
+  · Download PNG
+  · Zoom (drag to zoom region)
+  · Zoom in
+  · Zoom out
+  · Reset zoom (double-click)
+  · Pan (drag to move)
+  · Select (drag to select dies)
+  · Charts and tables for this wafer (or right-click)  [opens menu]
+  · Plot mode  [opens menu]
+  · Colour scheme  [opens menu]
+  · Overlays  [opens menu]
+  · Legend style  [opens menu]
+  · Orientation  [opens menu]
+  · Summary panel
+  · Expand (E)
+  · User guide
+  · Summary report
+  · Data tables
+  · ▶What stands out
+  · Ring 4 (edge)
+      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map
+  · hard bin 2 (Contact Open)
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map
+  · hard bin 3 (Vth - Hi)
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map
+  · Site 3: pass rate, 38 dies
+      hint: Site 3 yield is 22.5 percentage points lower than other test sites
+  · Full report ▸
+  · ▶Findings (17)17
+  · ●●○Notable 17
+  · All kinds▾  [aria="Kind", opens menu]
+  · All regions▾  [aria="Region", opens menu]
+  · Detail ▸
+  · Spatial pattern: edge-local (medium confidence) — 34% of edge dies failing
+      hint: Spatial pattern: edge-local (medium confidence) — 34% of edge dies failing
+  · Yield is 21.7 percentage points lower than the rest of the map
+      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map
+  · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map
+  · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map
+  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
+  · Yield is 22.5 percentage points lower than other test sites
+      hint: Site 3 yield is 22.5 percentage points lower than other test sites
+  · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 10.4 percentage points higher than other test sites
+      hint: Site 3 has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than other test sites
+  · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 7.9 percentage points higher than other test sites
+      hint: Site 3 has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 7.9 percentage points higher than other test sites
+  · ▶Hard Bin Breakdown — % of dies (N=661)
+  · Hard  [radio, checked]
+  · Soft  [radio, unchecked]
+  · ▶Ring Yield
+  · Ring  [radio, checked]
+  · Quadrant  [radio, unchecked]
+  · ▶Test Values (3) · N=661
+
+## Retests
+
+Controls:
+  · last
+  · first
+  · best
+  · worst
+  · LOT-DEMO · W01▾Product: DEMO-DEVICE
+  · Map
+      hint: The wafer map
+  · Insights
+      hint: Charts and statistics for this wafer
+  · Download PNG
+  · Zoom (drag to zoom region)
+  · Zoom in
+  · Zoom out
+  · Reset zoom (double-click)
+  · Pan (drag to move)
+  · Select (drag to select dies)
+  · Charts and tables for this wafer (or right-click)  [opens menu]
+  · Plot mode  [opens menu]
+  · Colour scheme  [opens menu]
+  · Overlays  [opens menu]
+  · Legend style  [opens menu]
+  · Orientation  [opens menu]
+  · Expand (E)
+  · User guide
