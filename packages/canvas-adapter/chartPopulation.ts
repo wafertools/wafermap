@@ -19,8 +19,10 @@ export interface DrilldownItem {
   /** The wafer's geometry and metadata, when the gesture knew it — a table of these dies
    *  uses it for ring/quadrant and for the lot and product columns. */
   wafer?: Wafer;
-  /** This wafer's own pass bins, for the yield a Wafers table states. */
-  passBins?: readonly number[];
+  /** This wafer's own pass bins (the result's, never a default): every yield a chart or table of these dies states judges by them. */
+  passBins: readonly number[];
+  /** This wafer's own ring count (the result's, never a default): a ring or quadrant of these dies is the map's ring. */
+  ringCount: number;
 }
 
 /** A population a chart can be opened on. */
@@ -50,11 +52,15 @@ interface WaferFacts {
   activeTest?: number;
   waferIndex?: number;
   wafer?: Wafer;
+  /** The wafer's pass bins, from its built result. */
+  passBins: readonly number[];
+  /** The wafer's ring count, from its built result. */
+  ringCount: number;
 }
 
 function make(dies: Die[], population: string, f: WaferFacts): DrilldownSource {
   return {
-    items: [{ label: f.waferLabel ?? 'this wafer', dies, waferIndex: f.waferIndex, wafer: f.wafer }],
+    items: [{ label: f.waferLabel ?? 'this wafer', dies, waferIndex: f.waferIndex, wafer: f.wafer, passBins: f.passBins, ringCount: f.ringCount }],
     population,
     testDefs: f.testDefs,
     activeTest: f.activeTest,

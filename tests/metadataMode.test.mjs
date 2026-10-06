@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/packages/renderer/buildWaferMap.js';
-import { buildView, buildMapTitle, buildHoverText, collectMetadataValues } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
+import { buildMapTitle, buildHoverText, collectMetadataValues } from '../dist/packages/renderer/buildView.js';
 import { metadataValueColor } from '../dist/packages/renderer/colorMap.js';
 
 const waferConfig = { diameter: 40 };

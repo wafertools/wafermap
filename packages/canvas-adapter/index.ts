@@ -45,12 +45,12 @@ export type { DetachWindowOpener } from './toolbar.js';
 // userGuideExtension option — a host's own documentation inserted into
 // wmap's built-in end-user guide window, so there's one help button instead
 // of two.
-export type { UserGuideExtension } from './toolbar.js';
+export type { UserGuideExtension } from './guideWindow.js';
 
 // Opens the same guide window WaferMapController/GalleryController's own
 // openUserGuide() opens, but with no live render required — for a host whose
 // help entry point must also work in an empty state (nothing loaded yet).
-export { openWaferMapGuide } from './toolbar.js';
+export { openWaferMapGuide } from './guideWindow.js';
 
 // The toolbar's own icon set — a host rendering its own chrome (buttons,
 // overlays) alongside wmap's can import ICONS to match wmap's iconography
@@ -67,4 +67,4 @@ export { ICONS } from './icons.js';
 export type { OverlayHandle } from './toolbar.js';
 // Shows report HTML in wmap's own modal — the partner of setReportOpener, for a
 // host whose opener saves or logs a report and still wants to show it here.
-export { openReportModal } from './toolbar.js';
+export { openReportModal } from './guideWindow.js';

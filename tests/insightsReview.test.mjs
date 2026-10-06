@@ -55,7 +55,7 @@ function lotItems(count) {
 function mountInsights(items, lot, defaultView) {
   const host = dom.window.document.getElementById('host');
   host.innerHTML = '';
-  const tab = createInsightsTab({
+  const tab = createInsightsTab({ getRingCount: () => 4,
     getItems: () => items,
     getLotStats: () => lot,
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
@@ -415,7 +415,7 @@ test('every CSV button names what it exports', async () => {
 function mountInsightsWith(items, lot, deps) {
   const host = dom.window.document.getElementById('host');
   host.innerHTML = '';
-  const tab = createInsightsTab({
+  const tab = createInsightsTab({ getRingCount: () => 4,
     getItems: () => items,
     getLotStats: () => lot,
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
@@ -562,7 +562,7 @@ test('insights — a data or grouping change still rebuilds, cache or not', () =
 function mountWithSweeps(items, lot, defaultView, sweeps, onRemoveSweeps) {
   const host = dom.window.document.getElementById('host');
   host.innerHTML = '';
-  const tab = createInsightsTab({
+  const tab = createInsightsTab({ getRingCount: () => 4,
     getItems: () => items,
     getLotStats: () => lot,
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),

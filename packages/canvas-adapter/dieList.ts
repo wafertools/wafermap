@@ -12,6 +12,7 @@
 // — a colour-coded grid risks being misread as real spatial layout by a user
 // skimming quickly, which is the whole reason this exists instead of that.
 
+import { requireRingCount } from '../core/ringCount.js';
 import type { Die } from '../core/dies.js';
 import { hasPosition, isPositionedDie } from '../core/dies.js';
 import { testsPresent, testValue } from '../core/dieTable.js';
@@ -246,9 +247,11 @@ function resolveTestColumns(dies: Die[], testDefs: TestDef[] | undefined): TestD
 function resolveClassifications(
   dies: Die[],
   getWafer: ((die: Die) => Wafer | undefined) | undefined,
-  ringCount: number,
+  options: { ringCount?: number },
 ): Map<Die, { ring: number; quadrant: string }> | undefined {
   if (!getWafer) return undefined;
+  // Only a table that classifies dies needs a ring count; one with no wafer geometry has no ring or quadrant column at all.
+  const ringCount = requireRingCount(options, 'the die list');
   const byDie = new Map<Die, { ring: number; quadrant: string }>();
   for (const die of dies) {
     if (!isPositionedDie(die)) continue;
@@ -283,7 +286,7 @@ export function resolveDieColumns(
   options: DieListOptions = {},
 ): { columns: DieColumn[]; visibleColumns: DieColumn[]; testColumns: TestDef[]; truncatedKeys: string[] } {
   const testColumns = resolveTestColumns(dies, testDefs);
-  const classifications = resolveClassifications(dies, options.getWafer, options.ringCount ?? 4);
+  const classifications = resolveClassifications(dies, options.getWafer, options);
   // applyEdgeExclusion (buildWaferMap.ts) only ever stamps `edgeExcluded: true`
   // on the dies it excludes — an included die is left untouched, never set to
   // `false` — so "no die here is true" is the only signal available and is

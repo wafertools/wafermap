@@ -47,7 +47,11 @@ export interface VirtualTable<R> {
   el: HTMLElement;
   /** Row count currently shown. */
   readonly length: number;
-  /** The rows in the order shown (after sorting). Lazily walks the permutation. */
+  /**
+   * The rows in the order shown NOW (after sorting). Lazily walks a snapshot of that order and of the rows: a sort or
+   * `setRows` made while the walk is under way (a large export yields to the page between slices) does not change it,
+   * so the file holds every row once, in the order it was started in.
+   */
   orderedRows(): Iterable<R>;
   /** Replace the rows, keeping the current sort. */
   setRows(rows: ArrayLike<R>): void;
@@ -234,7 +238,12 @@ export function createVirtualTable<R>(opts: VirtualTableOptions<R>): VirtualTabl
   return {
     el: scroller,
     get length() { return rows.length; },
-    *orderedRows() { for (let i = 0; i < rows.length; i++) yield rowAt(i); },
+    orderedRows() {
+      const snapshotRows = rows, snapshotOrder = order;
+      return (function* () {
+        for (let i = 0; i < snapshotRows.length; i++) yield snapshotRows[snapshotOrder ? snapshotOrder[i] : i];
+      })();
+    },
     setRows(next) {
       rows = next;
       table.setAttribute('aria-rowcount', String(rows.length + 1));

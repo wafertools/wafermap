@@ -12,6 +12,7 @@ globalThis.MouseEvent = dom.window.MouseEvent;
 
 const { buildMaplessSummary } = await import('../dist/packages/canvas-adapter/maplessSummary.js');
 const { buildBinSection } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+const { resolveBinColors } = await import('../dist/packages/renderer/binColors.js');
 const { buildTestHistogramData } = await import('../dist/packages/stats/histogram.js');
 const { getValueColorScheme } = await import('../dist/packages/renderer/colorSchemes.js');
 const { getTooltip } = await import('../dist/packages/canvas-adapter/toolbar.js');
@@ -35,15 +36,17 @@ function hoverText(el) {
 
 test('buildMaplessSummary — hardBin mode matches buildBinSection on the same dies', () => {
   const dies = [die({ hbin: 1 }), die({ hbin: 1 }), die({ hbin: 2 })];
-  const expected = buildBinSection(dies, undefined, 'hard');
-  const actual = buildMaplessSummary(dies, undefined, { plotMode: 'hardBin' });
+  const binColors = resolveBinColors(dies, { passBins: [1] });
+  const expected = buildBinSection(dies, undefined, 'hard', binColors);
+  const actual = buildMaplessSummary(dies, undefined, { plotMode: 'hardBin', binColors });
   assert.equal(actual.textContent, expected.textContent);
 });
 
 test('buildMaplessSummary — softBin mode matches buildBinSection on the same dies', () => {
   const dies = [die({ sbin: 3 }), die({ sbin: 3 }), die({ sbin: 4 })];
-  const expected = buildBinSection(dies, undefined, 'soft');
-  const actual = buildMaplessSummary(dies, undefined, { plotMode: 'softBin' });
+  const binColors = resolveBinColors(dies, { passBins: [1] });
+  const expected = buildBinSection(dies, undefined, 'soft', binColors);
+  const actual = buildMaplessSummary(dies, undefined, { plotMode: 'softBin', binColors });
   assert.equal(actual.textContent, expected.textContent);
 });
 
@@ -157,7 +160,8 @@ test('buildMaplessSummary — unhandled mode (metadata) falls back to a message,
 
 test('buildMaplessSummary — hardBin mode with no bin data on any die falls back to a message', () => {
   const dies = [die({})];
-  const el = buildMaplessSummary(dies, undefined, { plotMode: 'hardBin' });
+  const binColors = resolveBinColors(dies, { passBins: [1] });
+  const el = buildMaplessSummary(dies, undefined, { plotMode: 'hardBin', binColors });
   assert.match(el.textContent, /No summary available/);
 });
 

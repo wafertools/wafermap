@@ -41,7 +41,8 @@ export interface DataItem {
   dies: Die[];
   waferIndex: number;
   wafer?: Wafer;
-  passBins?: readonly number[];
+  /** The wafer's own pass bins: the Wafers view's yield judges by them. */
+  passBins: readonly number[];
   statsSummary?: InsightsItem['statsSummary'];
 }
 
@@ -343,7 +344,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
     const pre = deps.yieldByWaferIndex.get(item.waferIndex);
     const percent = buildYieldData([{
       label: item.label, dies: item.dies, passBins: item.passBins, yieldPercent: pre, key: item.waferIndex,
-    }], item.passBins ?? [1])[0]?.percent;
+    }])[0]?.percent;
     return { item, yieldPercent: item.dies.length ? (percent ?? null) : null };
   });
 
@@ -495,7 +496,7 @@ export interface DataTablesInput {
   doc: Document;
   /** One entry per wafer. `wafer` gives ring/quadrant and the lot/product columns; `passBins` and
    *  `statsSummary` give the Wafers view its yield and means. */
-  items: ReadonlyArray<{ label: string; dies: Die[]; waferIndex?: number; wafer?: Wafer; passBins?: readonly number[]; statsSummary?: DataItem['statsSummary'] }>;
+  items: ReadonlyArray<{ label: string; dies: Die[]; waferIndex?: number; wafer?: Wafer; passBins: readonly number[]; statsSummary?: DataItem['statsSummary'] }>;
   testDefs: TestDef[] | undefined;
   /** Set when the tables describe part of a population — a drilldown selection: who the dies are, in
    *  words ("selected on W03"). A saved file then says so in its name and a Wafer column. Omit for a whole wafer or lot. */
@@ -503,7 +504,8 @@ export interface DataTablesInput {
   view: DataView;
   /** Which views to offer. Default Dies and Statistics, plus Wafers when there is more than one wafer. */
   views?: readonly DataView[];
-  ringCount?: number;
+  /** The wafers' ring count (`WaferMapResult.ringCount`): ring and quadrant columns use it. Required, never defaulted. */
+  ringCount: number;
   metadataFields?: MetadataFieldDef[];
   /** A die row clicked: show that die on its map. The caller closes the table around it. */
   onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
@@ -542,7 +544,7 @@ export function renderDataTables(input: DataTablesInput): { el: HTMLElement; des
   const draw = (): void => {
     current?.destroy();
     current = renderDataSection({
-      doc, items, testDefs: parametric, allTestDefs: allDefs, ringCount: input.ringCount ?? 4,
+      doc, items, testDefs: parametric, allTestDefs: allDefs, ringCount: input.ringCount,
       yieldByWaferIndex: new Map(), onSaveText: input.onSaveText,
       views, view, dieListOptions: input.dieListOptions, metadataFields: input.metadataFields, onLocateDie: input.onLocateDie,
       population: input.population ? { phrase: input.population, fileTag: 'selection' } : undefined,
@@ -567,6 +569,8 @@ export function renderDataTables(input: DataTablesInput): { el: HTMLElement; des
 /** A drilldown population as tables: Dies and Statistics, named for who the dies are. */
 export function renderSelectionTables(input: {
   doc: Document;
+  /** The wafers' ring count (from their built results): ring and quadrant columns use it. */
+  ringCount: number;
   items: DataTablesInput['items'];
   testDefs: TestDef[] | undefined;
   population: string;

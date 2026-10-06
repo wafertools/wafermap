@@ -175,3 +175,25 @@ test('a plot without a chart is skipped by name', () => {
   assert.equal(r.plots.length, 1);
   assert.match(r.warnings.join(), /no chart, skipped/);
 });
+
+test('the limits setting is one of both, test, spec or none, and anything else is dropped with a warning', () => {
+  const file = (limits) => JSON.stringify({ format: PLOTS_FORMAT, version: PLOTS_VERSION, plots: [{ id: 'a', chart: 'histogram', fields: { y: { test: 1050 } }, limits }] });
+  assert.equal(readPlotsFile(file('spec')).plots[0].limits, 'spec');
+  const bad = readPlotsFile(file('both-ish'));
+  assert.equal(bad.plots[0].limits, undefined);
+  assert.match(bad.warnings.join(' '), /limits: "both-ish" is not both, test, spec or none/);
+});
+
+test('a field keeps the settings this build does not know, so a round trip through it strips nothing', () => {
+  const file = JSON.stringify({ format: 'wafermap-plots', version: 1, plots: [{
+    id: 'a', chart: 'scatter',
+    fields: { x: { test: 1050, name: 'Vth', unit: 'V' }, y: { builtin: 'yield', smoothing: 3 }, color: { meta: 'split', palette: 'warm' } },
+  }] });
+  const { plots, warnings } = readPlotsFile(file);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(plots[0].fields.x, { test: 1050, name: 'Vth', unit: 'V' });
+  assert.deepEqual(plots[0].fields.y, { builtin: 'yield', smoothing: 3 });
+  assert.deepEqual(plots[0].fields.color, { meta: 'split', palette: 'warm' });
+  const again = readPlotsFile(writePlotsFile(plots)).plots;
+  assert.deepEqual(again, plots, 'written and read again, unchanged');
+});

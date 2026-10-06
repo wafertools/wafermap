@@ -443,12 +443,12 @@ export function classifyPattern(
   wafer: Wafer,
   options: {
     passBins: number[];
-    ringCount?: number;
+    ringCount: number;
   },
 ): PatternClassification | null {
   const passSet = new Set(options.passBins);
   const failing = dies.filter(d => patternFailVerdict(d, passSet) === true);
-  return classifyFailingDies(failing, dies, wafer, options.ringCount ?? 4);
+  return classifyFailingDies(failing, dies, wafer, options.ringCount);
 }
 
 /**

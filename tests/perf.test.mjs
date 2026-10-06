@@ -13,7 +13,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
-import { buildView } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
 import { analyzeWaferMap, analyzeWaferLot } from '../dist/packages/stats/index.js';
 import { buildCapabilityData } from '../dist/packages/stats/capability.js';
 import { buildTestBoxplotData } from '../dist/packages/stats/boxplot.js';
@@ -384,8 +384,8 @@ test('buildTestHistogramData, buildYieldData/Combined, buildBinParetoData — 25
   // fine-grained per-builder timing (each already gets isolated coverage above).
   const ops = [
     ['buildTestHistogramData', () => buildTestHistogramData(items, 1000, 16)],
-    ['buildYieldData', () => buildYieldData(items, [1], 'label')],
-    ['buildYieldDataCombined', () => buildYieldDataCombined(groups, [1], 'label')],
+    ['buildYieldData', () => buildYieldData(items.map(i => ({ passBins: [1], ...i })), 'label')],
+    ['buildYieldDataCombined', () => buildYieldDataCombined(groups.map(g => ({ ...g, items: g.items.map(i => ({ passBins: [1], ...i })) })), 'label')],
     ['buildBinParetoData', () => buildBinParetoData(items, 'hbin')],
   ];
   for (const [name, fn] of ops) {

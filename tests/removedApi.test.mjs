@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildWaferMap } from '../dist/index.js';
-import { buildView } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dts = (rel) => fs.readFileSync(path.join(root, 'dist', rel), 'utf8');

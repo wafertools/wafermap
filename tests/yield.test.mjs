@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildYieldData, buildYieldDataCombined } from '../dist/packages/stats/yield.js';
+import { buildYieldData as buildYieldDataRaw, buildYieldDataCombined as buildYieldDataCombinedRaw } from '../dist/packages/stats/yield.js';
+
+// A yield item carries its own pass bins — there is no default to fall back on. These tests state bin 1.
+const stated = (items) => items.map(i => ({ passBins: [1], ...i }));
+const buildYieldData = (items, _unused, sortBy) => buildYieldDataRaw(stated(items), sortBy);
+const buildYieldDataCombined = (groups, _unused, sortBy) => buildYieldDataCombinedRaw(groups.map(g => ({ ...g, items: stated(g.items) })), sortBy);
 
 function die(hbin) { return { x: 0, y: 0, hbin }; }
 

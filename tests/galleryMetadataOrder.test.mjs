@@ -42,7 +42,7 @@ Object.defineProperty(proto, 'clientHeight', { configurable: true, get() { retur
 const { buildWaferMap } = await import('../dist/index.js');
 const { metadataValueColor } = await import('../dist/packages/renderer/colorMap.js');
 const { renderWaferGallery } = await import('../dist/packages/canvas-adapter/index.js');
-const { buildView } = await import('../dist/packages/renderer/buildView.js');
+const { buildView } = await import('./fixtures/buildViewStated.mjs');
 
 /** One wafer carrying exactly the given defect categories, one die each. */
 function wafer(label, cats) {

@@ -146,6 +146,8 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
   let activeItem: number | null = null; // index into `items`; null = all
   // undefined = derive from the data each rebuild (shouldIncludeLimitsByDefault).
   let lastClippedCount = 0;
+  /** The clip the buckets on screen were built with, so a click picks exactly the dies a bar counted. */
+  let drawnClip: { lo: number; hi: number } | undefined;
 
   const testSel = makeLinkedTestSelect(testOptions, activeTest, n => {
     activeTest = n;
@@ -261,6 +263,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         }
       }
       if (!facetedClip) lastClippedCount = 0;
+      drawnClip = facetedClip;
     }
     const faceted = isFaceted
       ? buildTestHistogramSeries(groups, activeTest, 16,
@@ -303,6 +306,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     const fence = clipOutliers ? robustFence(allValues) : null;
     const clip = fence ? { lo: Math.max(dataMin, fence.lo), hi: Math.min(dataMax, fence.hi) } : undefined;
     lastClippedCount = clip ? allValues.filter(v => v < clip.lo || v > clip.hi).length : 0;
+    drawnClip = clip;
 
     const buckets = buildTestHistogramData(
       scopedItems, activeTest, 16,
@@ -461,7 +465,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
       canvas.addEventListener('click', e => {
         const bar = barAt(e.clientX - canvas.getBoundingClientRect().left);
         if (bar < 0 || activeTest === null || buckets[bar].count === 0) return;
-        const picked = diesInBucket(scopedItems, activeTest, buckets, bar);
+        const picked = diesInBucket(scopedItems, activeTest, buckets, bar, drawnClip);
         if (picked.length === 0) return;
         tooltip.style.display = 'none';
         options.onSelectBucket!({ testNumber: activeTest, low: buckets[bar].rangeLow, high: buckets[bar].rangeHigh, items: picked }, e);
@@ -677,7 +681,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
         const b = bucketAt(e.clientX - canvas.getBoundingClientRect().left);
         if (b < 0 || activeTest === null) return;
         const shown = emphasizedGroup ? groups.filter(g => g.key === emphasizedGroup) : groups;
-        const picked = diesInBucket(shown.flatMap(g => g.items), activeTest, ranges, b);
+        const picked = diesInBucket(shown.flatMap(g => g.items), activeTest, ranges, b, drawnClip);
         if (picked.length === 0) return;
         tooltip.style.display = 'none';
         options.onSelectBucket!({ testNumber: activeTest, low: ranges[b].rangeLow, high: ranges[b].rangeHigh, items: picked, ...(emphasizedGroup ? { group: emphasizedGroup } : {}) }, e);

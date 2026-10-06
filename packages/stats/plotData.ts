@@ -24,6 +24,7 @@ import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
+import { requireRingCount } from '../core/ringCount.js';
 import { sameTestName } from './sweep.js';
 import { sameField, plotIssue, isField } from './plotSpec.js';
 import type { PlotSpec, PlotField, PlotAxis, PlotAggregate, PlotBuiltin } from './plotSpec.js';
@@ -34,8 +35,10 @@ export interface PlotItem {
   dies: readonly Die[];
   waferIndex?: number;
   metadata?: WaferMetadata;
-  /** This wafer's own pass bins; wins over the context's. */
-  passBins?: readonly number[];
+  /** This wafer's own pass bins, from its built result: every yield the plot states judges by them. */
+  passBins: readonly number[];
+  /** This wafer's own ring count, from its built result: a ring or quadrant of its dies is the map's ring. */
+  ringCount: number;
   /** Needed for ring and quadrant. */
   wafer?: Wafer;
 }
@@ -43,14 +46,23 @@ export interface PlotItem {
 export interface PlotContext {
   /** The population's reconciled test list (`mergeTestDefs`). */
   testDefs?: readonly TestDef[];
-  passBins?: readonly number[];
   /** The Insights tab's Group by key, which "follow Group by" resolves to. Absent outside the tab. */
   groupBy?: string;
-  ringCount?: number;
   curation?: Record<string, FacetCuration>;
 }
 
 export type FieldKind = 'numeric' | 'categorical';
+
+/** A test's limits: the tester's (`limitLow`/`limitHigh`) and the specification's (`specLow`/`specHigh`). Any may be absent. */
+export interface TestLimits { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number }
+
+/** The limits a test definition states, or `undefined` when it states none. */
+function limitsOf(def: TestDef | undefined): TestLimits | undefined {
+  if (!def) return undefined;
+  const out: TestLimits = {};
+  for (const k of ['limitLow', 'limitHigh', 'specLow', 'specHigh'] as const) if (Number.isFinite(def[k])) out[k] = def[k];
+  return Object.keys(out).length ? out : undefined;
+}
 
 /** A field resolved over the population, one value per die (`level: 'die'`) or per wafer (`'wafer'`). */
 export interface FieldColumn {
@@ -64,8 +76,12 @@ export interface FieldColumn {
   num?: Float64Array;
   /** Category text; undefined is missing. Present for a categorical field and for metadata (numbers as text). */
   cat?: (string | undefined)[];
-  /** Wafer-level only: judged dies behind each value, so a yield can be pooled. */
+  /** Judged dies behind each value (a wafer's yield), or 1 per judged die (a die's pass), so a yield can be pooled. */
   weights?: Float64Array;
+  /** The limits of a measured test, as the population's reconciled test list states them. */
+  limits?: TestLimits;
+  /** Set on a yield taken per die (100 for a passing die, 0 for a failing one): its mean over any set of dies is their yield. */
+  perDie?: true;
   /** Why this field cannot be used on this population. */
   issue?: string;
 }
@@ -83,7 +99,11 @@ export type PlotMarks =
   | { type: 'line'; xs: number[]; values: number[][]; counts: number[][]; cellUnits: number[][][]; unit: (u: number) => PlotUnit };
 
 /** `label` is the axis title WITHOUT its unit: the chart appends the unit, scaled to the ticks ("µA" for 0.000861 A). */
-export interface ResolvedAxis { label: string; unit?: string; scale: 'linear' | 'log'; min?: number; max?: number; reverse?: boolean }
+export interface ResolvedAxis {
+  label: string; unit?: string; scale: 'linear' | 'log'; min?: number; max?: number; reverse?: boolean;
+  /** The limits of the test this axis measures, when it measures one: the chart draws them as lines. */
+  limits?: TestLimits;
+}
 
 export interface ResolvedPlot {
   spec: PlotSpec;
@@ -151,6 +171,13 @@ interface Resolver {
   present?: Set<number>;
 }
 
+/**
+ * A number as a person writes one in a lot field: a sign, digits and an optional fraction. Not what `Number()` accepts:
+ * `1E3`, `0x10`, `0b11` and `Infinity` are names (a lot ID, a part number), not quantities, and reading them as numbers
+ * would turn a category into an axis.
+ */
+const PLAIN_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)$/;
+
 function resolveField(field: PlotField, r: Resolver): FieldColumn {
   const { items, rows, ctx } = r;
   const label = fieldLabel(field, ctx.testDefs);
@@ -170,7 +197,7 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
     }
     const num = new Float64Array(nDie);
     for (let i = 0; i < nDie; i++) num[i] = testValue(rows.dies[i], field.test) ?? NaN;
-    return { ...base, level: 'die', kind: 'numeric', unit: def?.unit, num };
+    return { ...base, level: 'die', kind: 'numeric', unit: def?.unit, num, limits: limitsOf(def) };
   }
 
   if ('meta' in field) {
@@ -178,7 +205,7 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
     if (cat.every(c => c === undefined)) {
       return { ...base, level: 'wafer', kind: 'categorical', cat, issue: `No wafer has a "${prettyMetaKey(field.meta)}" value` };
     }
-    const nums = cat.map(c => (c === undefined || c.trim() === '' ? NaN : Number(c)));
+    const nums = cat.map(c => (c === undefined || !PLAIN_NUMBER.test(c.trim()) ? NaN : Number(c)));
     const numeric = cat.every((c, i) => c === undefined || Number.isFinite(nums[i]));
     return { ...base, level: 'wafer', kind: numeric ? 'numeric' : 'categorical', cat, num: numeric ? Float64Array.from(nums) : undefined };
   }
@@ -193,7 +220,7 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
     case 'yield': {
       const num = new Float64Array(nWafer), weights = new Float64Array(nWafer);
       items.forEach((it, i) => {
-        const { pass, total } = yieldCounts(it.dies as Die[], it.passBins ?? ctx.passBins ?? [1]);
+        const { pass, total } = yieldCounts(it.dies as Die[], it.passBins);
         num[i] = total > 0 ? (pass / total) * 100 : NaN;
         weights[i] = total;
       });
@@ -214,11 +241,10 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
       return { ...base, level: 'die', kind: 'categorical', cat: rows.dies.map(d => (d.siteNum === undefined ? undefined : `Site ${d.siteNum}`)) };
     case 'ring':
     case 'quadrant': {
-      const ringCount = ctx.ringCount ?? 4;
       const cat = rows.dies.map((d, i) => {
         const w = items[rows.item[i]].wafer;
         if (!w || !hasPosition(d) || d.physX === undefined || d.physY === undefined) return undefined;
-        const c = classifyDie(d as Parameters<typeof classifyDie>[0], w, { ringCount });
+        const c = classifyDie(d as Parameters<typeof classifyDie>[0], w, { ringCount: requireRingCount(items[rows.item[i]], 'a ring or quadrant of a plot') });
         return field.builtin === 'ring' ? `Ring ${c.ring}` : c.quadrant;
       });
       return { ...base, level: 'die', kind: 'categorical', cat };
@@ -226,6 +252,23 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
     default:
       return { ...base, level: 'die', kind: 'categorical', issue: 'Needs a newer version of this tool' };
   }
+}
+
+/**
+ * The yield as one value per die, in the dies' own order: 100 where the die passes, 0 where it fails, NaN where it is not
+ * judged (partial, edge-excluded, no verdict) — the same rule `yieldCounts` applies, so a mean over a set of dies is
+ * exactly the wafer-level figure over those dies. Each judged die weighs 1, so a pooled yield sums passes over dies.
+ */
+function dieYieldColumn(r: Resolver, like: FieldColumn): FieldColumn {
+  const n = r.rows.dies.length;
+  const num = new Float64Array(n), weights = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const it = r.items[r.rows.item[i]];
+    const { pass, total } = yieldCounts([r.rows.dies[i]], it.passBins);
+    num[i] = total > 0 ? pass * 100 : NaN;
+    weights[i] = total;
+  }
+  return { ...like, level: 'die', num, weights, perDie: true };
 }
 
 // ── combining ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -288,6 +331,46 @@ function emptyResult(spec: PlotSpec, items: readonly PlotItem[], issues: string[
   };
 }
 
+/** What the cross-field rules need to know of a field: its level, whether it is a number, and whether it is a yield. */
+export interface FieldFacts { label: string; level: 'die' | 'wafer'; kind: FieldKind; yield: boolean }
+
+/**
+ * Whether the chosen fields can be drawn together, as the reason in two lengths: `long` for the chart card, `short` for the
+ * editor's field list, where a choice that would break the plot is greyed with it. ONE function, so the list and the chart
+ * can never disagree about what is allowed. Only rules that name two fields are here; a missing field is never a conflict.
+ *
+ * A yield is passing dies over judged dies, so it can be taken over any set of dies, but it is held per wafer: splitting it
+ * by a die-level field (ring, quadrant, bin, die position) needs the verdict per die, which a bar of pooled yield and a line
+ * have. Every other chart of it would be one wafer figure pretending to be per die.
+ */
+export function combinationIssue(
+  mark: PlotSpec['chart'],
+  f: { x?: FieldFacts; y?: FieldFacts; color?: FieldFacts },
+  o: { aggregate?: PlotAggregate; level?: 'die' | 'wafer'; continuousColor?: boolean } = {},
+): { long: string; short: string } | undefined {
+  const dieOnly = [f.x, o.continuousColor ? undefined : f.color].filter((c): c is FieldFacts => !!c && c.level === 'die');
+  const yieldY = !!f.y && f.y.yield && f.y.level === 'wafer';
+  const yieldSplits = (mark === 'bar' || mark === 'line') && (o.aggregate === undefined || o.aggregate === 'yield' || o.aggregate === 'mean');
+  if (yieldY && dieOnly.length && !yieldSplits) {
+    return {
+      long: `${f.y!.label} is one figure per wafer, and ${dieOnly[0].label} belongs to dies, so a ${mark} of it cannot be split by ${dieOnly[0].label}. `
+        + `A bar chart of yield can (pooled yield per ${dieOnly[0].label.toLowerCase()}), or plot a measured value instead`,
+      short: `${f.y!.label} is per wafer: use a bar or line chart`,
+    };
+  }
+  const used = [f.x, f.y].filter((c): c is FieldFacts => !!c);
+  let level: 'die' | 'wafer' = o.level ?? (used.some(c => c.level === 'die') ? 'die' : 'wafer');
+  if (mark === 'bar' && !f.y && dieOnly.length) level = 'die';   // counting dies per wafer and ring is a count of dies
+  if (f.color?.level === 'die' && level === 'wafer' && !o.continuousColor && !(yieldY && (mark === 'bar' || mark === 'line'))) {
+    return {
+      long: `${f.color.label} is per die, so it cannot colour a plot with one mark per wafer. `
+        + `Plot a measured value (one mark per die), or make a bar chart of yield, which can be split by ${f.color.label.toLowerCase()}`,
+      short: `${f.color.label} is per die: this plot has one mark per wafer`,
+    };
+  }
+  return undefined;
+}
+
 /** Resolves `spec` over `items`. Never throws for a plot that cannot be drawn: it returns the reasons. */
 export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext = {}): ResolvedPlot {
   const versionIssue = plotIssue(spec);
@@ -313,7 +396,17 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
   if (mark === 'histogram' && !valueField) return fail('Choose a field to count');
 
   const xCol = mark === 'histogram' ? undefined : (xField ? resolveField(xField, r) : undefined);
-  const yCol = valueField ? resolveField(valueField, r) : undefined;
+  let yCol = valueField ? resolveField(valueField, r) : undefined;
+
+  // A role that needs a number cannot take a category: say so, and where the category does belong.
+  const needsNumber: Array<[string, FieldColumn | undefined]> = mark === 'scatter' || mark === 'line' ? [['X', xCol], ['Y', yCol]]
+    : mark === 'histogram' ? [['to count', yCol]] : mark === 'box' || mark === 'bar' ? [['Y', yCol]] : [];
+  for (const [role, col] of needsNumber) {
+    if (col && !col.issue && col.kind === 'categorical' && !col.num) {
+      return fail(`${col.label} is a category, not a number, so it cannot be ${role === 'to count' ? 'the field a histogram counts' : `the ${role} of a ${mark}`}. `
+        + `Use it as the X of a bar or box chart (one bar per ${col.label.toLowerCase()}), or as the colour`);
+    }
+  }
 
   // Colour.
   const colorSpec = enc.color;
@@ -343,14 +436,18 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
   // Level.
   const used = [xCol, yCol].filter((c): c is FieldColumn => !!c);
   let level: 'die' | 'wafer' = spec.level ?? (used.some(c => c.level === 'die') ? 'die' : 'wafer');
-  if (colorCol?.level === 'die' && level === 'wafer' && !continuous) {
-    return fail(`${colorCol.label} is per die, so it cannot colour a plot of one mark per wafer`);
-  }
   const dieOnly = [xCol, continuous ? undefined : colorCol].filter((c): c is FieldColumn => !!c && c.level === 'die');
+  const facts = (c: FieldColumn | undefined): FieldFacts | undefined => c && { label: c.label, level: c.level, kind: c.kind, yield: !!c.weights };
+  const conflict = combinationIssue(mark, { x: facts(xCol), y: facts(yCol), color: facts(colorCol) }, { aggregate: spec.aggregate, level: spec.level, continuousColor: continuous });
+  if (conflict) return fail(conflict.long);
+  // Counting dies per wafer and ring is a count of dies, not of wafers.
+  if (mark === 'bar' && !yCol && dieOnly.length) level = 'die';
   if (yCol && yCol.level === 'wafer' && yCol.weights && dieOnly.length) {
-    return fail(`${yCol.label} is per wafer, so it cannot be split by ${dieOnly[0].label}, which is per die`);
+    // The verdict per die, so the yield can be pooled over any set of dies.
+    yCol = dieYieldColumn(r, yCol);
+    level = 'die';
   }
-  if (level === 'die' && yCol?.weights && !dieOnly.length) level = 'wafer';
+  if (level === 'die' && yCol?.weights && !yCol.perDie && !dieOnly.length) level = 'wafer';
 
   const nUnits = level === 'die' ? rows.dies.length : items.length;
   const itemOf = (u: number) => (level === 'die' ? rows.item[u] : u);
@@ -372,7 +469,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     if (c.level === 'wafer') return Array.from({ length: nUnits }, (_, u) => c.cat![itemOf(u)]);
     throw new Error('a per-die category cannot be used at wafer level');
   };
-  const weightAt = (c: FieldColumn): Float64Array | undefined => (c.weights && c.level === 'wafer' && level === 'wafer' ? c.weights : undefined);
+  const weightAt = (c: FieldColumn): Float64Array | undefined => (c.weights && c.level === level ? c.weights : undefined);
 
   // Colour groups.
   let groups = [''];
@@ -468,12 +565,13 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     marks = { type: 'line', xs: xsSorted, values, counts, cellUnits: lineUnits, unit: unitInfo };
     xAxis = axisFor('x', xCol!.label, xCol!.unit, spec, xsSorted, notes);
     const yAgg = how === 'yield' ? 'mean' : how;
-    yAxis = axisFor('y', `${AGG_WORD[yAgg]} ${yCol!.label}`, yCol!.unit, spec, values.flat(), notes);
-    aggregation = `${AGG_WORD[yAgg].toLowerCase()} of ${yCol!.label} per ${xCol!.label}`;
+    yAxis = axisFor('y', yCol!.perDie ? yCol!.label : `${AGG_WORD[yAgg]} ${yCol!.label}`, yCol!.unit, spec, values.flat(), notes);
+    aggregation = yCol!.perDie ? `passing dies over judged dies, per ${xCol!.label.toLowerCase()}` : `${AGG_WORD[yAgg].toLowerCase()} of ${yCol!.label} per ${xCol!.label}`;
   } else {
     // box and bar: one category per value of X.
     const xc = xCol!;
-    if (xc.kind === 'numeric' && xc.level === 'die') return fail(`${xc.label} is continuous; use a scatter or line, or choose a categorical X`);
+    const isCoordinate = 'builtin' in xc.field && (xc.field.builtin === 'x' || xc.field.builtin === 'y');
+    if (xc.kind === 'numeric' && xc.level === 'die' && !isCoordinate) return fail(`${xc.label} is continuous, so a ${mark} cannot have one ${mark === 'bar' ? 'bar' : 'box'} per value; use a scatter or line, or choose a categorical X such as wafer, ring or bin`);
     const labelsOf: (string | undefined)[] = xc.cat
       ? catAt(xc)
       : Array.from(numAt(xc), v => (Number.isFinite(v) ? String(v) : undefined));
@@ -530,6 +628,15 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
       aggregation = perWaferNote(yCol!);
     }
   }
+
+  // The limits of a measured test, on the axis that measures it. A value combined by sum or count, a yield or a
+  // wafer figure has no limits to compare with, so nothing is drawn against it.
+  const measuresTest = (c: FieldColumn | undefined, how?: PlotAggregate): TestLimits | undefined =>
+    c && !c.perDie && (how === undefined || how === 'mean' || how === 'median' || how === 'min' || how === 'max') ? c.limits : undefined;
+  const aggUsed = spec.aggregate ?? 'mean';
+  if (xAxis && (mark === 'scatter' || mark === 'line')) xAxis.limits = measuresTest(xCol);
+  if (yAxis && mark !== 'histogram') yAxis.limits = measuresTest(yCol, mark === 'scatter' || mark === 'box' ? undefined : aggUsed);
+  if (mark === 'histogram' && xAxis) xAxis.limits = measuresTest(yCol);
 
   const title = (): string => {
     const x = xCol?.label, y = yCol?.label;

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap, getTestPassStatus } from '../dist/packages/renderer/buildWaferMap.js';
-import { buildView, buildMapTitle, buildHoverText } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
+import { buildMapTitle, buildHoverText } from '../dist/packages/renderer/buildView.js';
 import { SPEC_PASS_FILL, SPEC_FAIL_HIGH } from '../dist/packages/renderer/colorMap.js';
 
 const waferConfig = { diameter: 300 };

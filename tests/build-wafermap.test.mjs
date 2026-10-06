@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
 import { aggregateValues } from '../dist/packages/core/aggregates.js';
 import { createWafer } from '../dist/packages/core/wafer.js';
-import { buildView } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
 
 function approxEqual(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} != ${expected}`);

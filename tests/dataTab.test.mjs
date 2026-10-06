@@ -55,7 +55,7 @@ function mount(items, lot, view = 'data', extra = {}) {
   host.innerHTML = '';
   const tab = createInsightsTab({
     getItems: () => items, getLotStats: () => lot,
-    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
+    getRingCount: () => 4, getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView: view, ...extra,
   });
   host.appendChild(tab.el);
@@ -247,6 +247,22 @@ test('virtual table: scrolling moves the window and the spacers keep the height'
     assert.equal(spacers[0] + (last - first + 1) * 24 + spacers[1], 10000 * 24);
     resolve();
   }));
+});
+
+test('virtual table: a walk of orderedRows is not disturbed by a sort or new rows made while it runs', () => {
+  // A large export yields to the page between slices, and the header is still clickable: the file must hold every row once,
+  // in the order it was started in.
+  const { t, rows } = table(50);
+  const started = [...t.orderedRows()].map(r => r.id);
+  const walk = t.orderedRows()[Symbol.iterator]();
+  const seen = [walk.next().value.id, walk.next().value.id];
+  t.el.querySelectorAll('thead th')[1].click();                 // sort by v mid-walk
+  seen.push(walk.next().value.id);
+  t.el.querySelectorAll('thead th')[1].click();                 // and again, descending
+  t.setRows(rows.slice(0, 10));                                 // and the rows are replaced
+  for (let r = walk.next(); !r.done; r = walk.next()) seen.push(r.value.id);
+  assert.deepEqual(seen, started, 'every row once, in the order the walk began in');
+  assert.equal(new Set(seen).size, 50);
 });
 
 test('virtual table: sorting orders by key, numbers by value, and orderedRows follows it', () => {

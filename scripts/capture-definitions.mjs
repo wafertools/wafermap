@@ -135,7 +135,7 @@ export const CAPTURES = [
     wait: 1500,
     viewport: { width: 1280, height: 900 },
     screenshotFn: async (page, outFile) => {
-      await page.getByRole('button', { name: 'Back to gallery view' }).first().click();
+      await page.locator('[data-wmap-view="maps"]').first().click();
       await page.waitForTimeout(800);
       const canvas = page.locator('#gallery canvas').first();
       await canvas.scrollIntoViewIfNeeded();
@@ -168,7 +168,7 @@ export const CAPTURES = [
     wait: 1500,
     viewport: { width: 1280, height: 900 },
     screenshotFn: async (page, outFile) => {
-      await page.getByRole('button', { name: 'Back to gallery view' }).first().click();
+      await page.locator('[data-wmap-view="maps"]').first().click();
       await page.waitForTimeout(800);
       const canvas = page.locator('#gallery canvas').first();
       await canvas.scrollIntoViewIfNeeded();
@@ -426,7 +426,7 @@ export const CAPTURES = [
     selector: '#wmap-host',
     wait: 2000,
     setup: [
-      ['clickButton', 'Insights', '#wmap-host'],
+      ['clickTab', 'Insights', '#wmap-host'],
       ['wait', 800],
     ],
   },
@@ -439,7 +439,7 @@ export const CAPTURES = [
     selector: '#wmap-host',
     wait: 2000,
     setup: [
-      ['clickButton', 'Insights', '#wmap-host'],
+      ['clickTab', 'Insights', '#wmap-host'],
       ['clickTab', 'Distributions', '#wmap-host'],
       ['wait', 800],
     ],
@@ -453,7 +453,7 @@ export const CAPTURES = [
     selector: '#wmap-host',
     wait: 2000,
     setup: [
-      ['clickButton', 'Insights', '#wmap-host'],
+      ['clickTab', 'Insights', '#wmap-host'],
       ['clickTab', 'Correlation', '#wmap-host'],
       ['wait', 800],
     ],
@@ -467,7 +467,7 @@ export const CAPTURES = [
     selector: '#wmap-host',
     wait: 2000,
     setup: [
-      ['clickButton', 'Insights', '#wmap-host'],
+      ['clickTab', 'Insights', '#wmap-host'],
       ['clickTab', 'Data', '#wmap-host'],
       ['wait', 800],
     ],
@@ -524,6 +524,25 @@ export const CAPTURES = [
       const box = await page.locator('.wmap-overlay-box').first().boundingBox();
       const chart = await page.locator('[data-wmap-plot-window] [data-wmap-chart-card]').first().boundingBox();
       await page.screenshot({ path: outFile, clip: { x: box.x, y: box.y, width: box.width, height: chart.y + chart.height - box.y + 24 } });
+    },
+  },
+  {
+    file: 'guide-sweep-editor',
+    group: 'plots',
+    page: '/examples/statistics.html#lot-gallery',
+    wait: 2000,
+    viewport: { width: 1280, height: 900 },
+    screenshotFn: async (page, outFile) => {
+      await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
+      await page.locator('[data-wmap-insights-tab="plot"]').click();
+      await page.locator('[data-wmap-plot-new-sweep]').click();
+      await page.waitForSelector('[data-wmap-plot-window] canvas');
+      await page.waitForTimeout(1200);
+      await page.mouse.move(2, 2);
+      await page.evaluate(() => document.activeElement?.blur?.());
+      await page.waitForTimeout(300);
+      const box = await page.locator('.wmap-overlay-box').first().boundingBox();
+      await page.screenshot({ path: outFile, clip: { x: box.x, y: box.y, width: box.width, height: box.height } });
     },
   },
   {

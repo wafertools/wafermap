@@ -6,7 +6,41 @@ release first. Each release's full list of changes is in the
 each removal, and whether it could come back, are in
 [API_REMOVALS.md](https://github.com/wafertools/wafermap/blob/main/API_REMOVALS.md).
 
-## Next release
+## 0.34.0
+
+### Pass bins and ring count have no defaults after the build
+
+Bin 1 passes, and there are four rings, only when an input to `buildWaferMap` states neither. `buildWaferMap` applies
+those defaults once and carries the result on the map (`result.passBins`, `result.ringCount`); every view, chart, table
+and report reads the map's own and **refuses** to state a yield or draw rings without them, instead of falling back to a
+guess. A map you built with `buildWaferMap` needs nothing. You are affected only if you call the report or view
+functions with hand-made data:
+
+- `renderSummaryReport({ ... })` needs `passBins` and `ringCount` (a built map has both).
+- `renderLotReportHtml` takes them per item (a built map carries its own) or as the top-level `passBins` / `ringCount`
+  for items that have none; an item with neither is refused with an error naming what is missing.
+- `buildView`'s `passBins` option is required, and `ringCount` is required when `showRingBoundaries` is on.
+
+```ts
+// before: relied on bin 1 passing
+renderSummaryReport({ wafer, dies, yieldSummary, dataCoverage });
+
+// after: state them, or pass the built map's own
+renderSummaryReport({ wafer, dies, yieldSummary, dataCoverage, passBins: result.passBins, ringCount: result.ringCount });
+```
+
+If you state pass bins such as `[3, 5]`, a chart or table opened on a selection, a wafer or a gallery card now judges
+yield by them too, as the map does.
+
+The gallery's stacked modes (stacked values and stacked bins) judge by the pass bins and ring count the wafers share.
+For wafers built with different ones they are not offered, because a stack of them has no single verdict.
+
+### Standard deviation is the sample standard deviation
+
+Every σ the library shows (the Test Values table, per-test statistics, the lot trend, lot drift and the report) divides by
+n−1, as the capability indices already did. A σ you read from the library is √(n/(n−1)) times the population σ of the same
+values: about 2.5% at n = 20, negligible on large lots. Exported `sampleVariance` in `stats/math.ts` is the single
+implementation. Exported CSVs carry the same σ.
 
 ### Sweeps are plots
 
@@ -32,7 +66,7 @@ their plots, and keep them across lots. If you supply both a plot and a sweep wi
 
 `insights.enabled` now defaults to `true` wherever there is a toolbar: always for
 `renderWaferGallery`, and for `renderWaferMap` unless `showToolbar` is `false`. A chromeless map
-stays a plain map. If your app does not want the Insights button, or the Map | Insights switch, pass `insights: { enabled: false }`. Gallery cards are never
+stays a plain map. If your app does not want the Map | Insights switch, pass `insights: { enabled: false }`. Gallery cards are never
 Insights hosts, and the chart code is still downloaded only when Insights is first opened.
 
 ### `onSaveText` can receive a `Blob`

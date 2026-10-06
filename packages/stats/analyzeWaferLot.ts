@@ -1,3 +1,4 @@
+import { requireRingCount } from '../core/ringCount.js';
 import {
   analyzeWaferMap, candidatesOf, describeRegional, resolveOptions, adjustPValues,
   twoProportionZ, zPValue, welchOfSums, rateRelativeEffect, passesRateGate,
@@ -675,20 +676,23 @@ export function analyzeWaferLot(
   const waferCandidates = comparisons.map((w, waferIndex) =>
     ({ waferIndex, byKey: new Map(w.candidates.map(c => [c.key, c])) }));
   const resolved = resolveOptions(options).resolved;
+  // The lot's ring figures use the first wafer's ring count, which each wafer carries from its build (wafers with different
+  // ring counts are named by `ring-count-mixed`). There is no default to fall back on; an empty lot has no ring figures.
+  const ringCount = results.length > 0 ? requireRingCount(results[0], 'analyzeWaferLot') : undefined;
   // From this many wafers showing it, a recurring area is a lot pattern; fewer and
   // the wafers keep their own classifications (the per-wafer counting below).
   const stacked = findLotPattern(results, resolved);
   const lotPattern = stacked && stacked.carriers.size >= REPEATED_PATTERN_MIN_WAFERS ? stacked : null;
   const findings = [
-    ...buildPooledRegionFindings(waferCandidates, resolved, lotRedundancyFacts(comparisons, resolved.sectorCount), results[0]?.ringCount ?? resolved.ringCount),
+    ...(ringCount === undefined ? [] : buildPooledRegionFindings(waferCandidates, resolved, lotRedundancyFacts(comparisons, resolved.sectorCount), ringCount)),
     ...buildRepeatedPatternFindings(perWafer, lotPattern),
     ...buildYieldOutlierFindings(perWafer, describeWaferPopulation(perWafer.map(w => w.summary.wafer))),
     ...buildDriftFindings(perWafer, resolved.significanceLevel),
   ];
-  if (lotPattern) {
+  if (lotPattern && ringCount !== undefined) {
     const pattern = buildLotPatternFinding(lotPattern, perWafer.length);
     pattern.relatedIds = claimForPattern([lotPattern.classification.pattern], pattern.severity, findings,
-      lotRingsOf, resolved.ringCount);
+      lotRingsOf, ringCount);
     if (!pattern.relatedIds.length) delete pattern.relatedIds;
     findings.push(pattern);
   }

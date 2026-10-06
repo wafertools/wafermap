@@ -13,7 +13,7 @@
 //   - A chart or field kind it does not know is kept and reported by `plotIssue`, never dropped.
 //   - New fields are optional with a stated default, so a plot saved today means the same plot in a year.
 //
-// Pure, no DOM. Design record: notes/wafermap/design-plot-builder.md.
+// Pure, no DOM.
 
 import { newPlotId } from './plotId.js';
 import type { SweepSpec } from './sweep.js';
@@ -55,6 +55,9 @@ export interface PlotAxis {
 export const PLOT_AGGREGATES = ['mean', 'median', 'min', 'max', 'sum', 'count', 'yield'] as const;
 export type PlotAggregate = (typeof PLOT_AGGREGATES)[number];
 
+export const PLOT_LIMITS = ['both', 'test', 'spec', 'none'] as const;
+export type PlotLimits = (typeof PLOT_LIMITS)[number];
+
 export type PlotColor = PlotField | { follow: 'groupBy' } | { none: true };
 
 export interface PlotSpec {
@@ -78,6 +81,8 @@ export interface PlotSpec {
   axes?: { x?: PlotAxis; y?: PlotAxis };
   /** Histogram bin count. Absent = automatic. */
   bins?: number;
+  /** Which of a plotted test's limits are drawn: `test` limits, `spec` limits (LSL/USL), `both` or `none`. Absent = both. */
+  limits?: PlotLimits;
   /** The definition of a `sweep` chart: ordered runs of tests read as curves. Such a plot has no `fields`. */
   sweep?: SweepPayload;
 }
@@ -115,20 +120,21 @@ function readField(raw: unknown, where: string, warnings: string[]): PlotField |
   if (!isObject(raw)) { warnings.push(`${where}: not a field, left out`); return undefined; }
   if ('test' in raw) {
     if (!Number.isInteger(raw.test)) { warnings.push(`${where}: test number ${JSON.stringify(raw.test)} is not an integer, left out`); return undefined; }
-    const out: { test: number; name?: string } = { test: raw.test as number };
-    if (typeof raw.name === 'string' && raw.name !== '') out.name = raw.name;
-    return out;
+    // Keys this build does not know are kept, so a round trip through it does not strip a newer build's settings.
+    const out: Record<string, unknown> = { ...raw, test: raw.test as number };
+    if (typeof raw.name === 'string' && raw.name !== '') out.name = raw.name; else delete out.name;
+    return out as unknown as PlotField;
   }
   if ('builtin' in raw) {
     if (!(PLOT_BUILTINS as readonly unknown[]).includes(raw.builtin)) {
       // Possibly a field a newer build added: kept as written, and reported by plotIssue.
       return raw as unknown as PlotField;
     }
-    return { builtin: raw.builtin as PlotBuiltin };
+    return { ...raw, builtin: raw.builtin as PlotBuiltin } as unknown as PlotField;
   }
   if ('meta' in raw) {
     if (typeof raw.meta !== 'string' || raw.meta === '') { warnings.push(`${where}: metadata key is empty, left out`); return undefined; }
-    return { meta: raw.meta };
+    return { ...raw, meta: raw.meta } as unknown as PlotField;
   }
   return raw as unknown as PlotField; // a kind from a newer build
 }
@@ -235,6 +241,7 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
   if ('aggregate' in raw && !(PLOT_AGGREGATES as readonly unknown[]).includes(raw.aggregate)) {
     warnings.push(`${where}.aggregate: "${String(raw.aggregate)}" is not known to this version, left out`); delete out.aggregate;
   }
+  if ('limits' in raw && !(PLOT_LIMITS as readonly unknown[]).includes(raw.limits)) { warnings.push(`${where}.limits: "${String(raw.limits)}" is not both, test, spec or none, left out`); delete out.limits; }
   if ('bins' in raw && !(Number.isInteger(raw.bins) && (raw.bins as number) >= 1)) { warnings.push(`${where}.bins: not a whole number of at least 1, left out`); delete out.bins; }
   if (chart === 'sweep') out.sweep = readSweepPayload(raw.sweep, `${where}.sweep`, warnings);
 

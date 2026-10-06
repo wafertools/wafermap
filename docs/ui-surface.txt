@@ -13,7 +13,7 @@ entries visible — they are invisible while each menu is only ever seen alone.
 Controls:
   · LOT-DEMO · W01▾Product: DEMO-DEVICE
   · Map
-  · Insights   (×2)
+  · Insights
   · Download PNG
   · Zoom (drag to zoom region)
   · Zoom in
@@ -33,6 +33,8 @@ Controls:
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · New plot…
+    · New sweep…
     · Dies
     · Test statistics
 
@@ -89,9 +91,9 @@ Controls:
   · 0  [aria="Select the same dies on every wafer: off (click to turn on)"]
   · Download gallery PNG
   · Summary panel
-  · Insights   (×2)
   · User guide
   · Maps
+  · Insights
   · 1 · Pass3,39485.6%
   · 2 · Contact Open2606.6%
   · 3 · Vth - Hi1584.0%
@@ -166,43 +168,54 @@ Menu — Columns:
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · New plot…
+    · New sweep…
     · Dies
     · Test statistics
 
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · New plot…
+    · New sweep…
     · Dies
     · Test statistics
 
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · New plot…
+    · New sweep…
     · Dies
     · Test statistics
 
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · New plot…
+    · New sweep…
     · Dies
     · Test statistics
 
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · New plot…
+    · New sweep…
     · Dies
     · Test statistics
 
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
     · Process capability
+    · New plot…
+    · New sweep…
     · Dies
     · Test statistics
 
 ## Insights tab
 
 Controls:
-  · Back to gallery view
   · User guide
   · Maps
   · Insights
@@ -210,6 +223,7 @@ Controls:
   · Distributions
   · Correlation
   · Data
+  · Plot
   · None▾  [aria="Group by", opens menu]
   · Save as PNG   (×5)
   · Expand   (×5)

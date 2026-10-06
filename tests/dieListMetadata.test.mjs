@@ -353,7 +353,7 @@ test('dieList — Ring/Quadrant are blank for an unpositioned die even when getW
     { x: 0, y: 0, physX: 10, physY: 10, hbin: 1 },
     { hbin: 2 }, // unpositioned — no x/y at all
   ];
-  const { section } = buildWithCapture(dies, undefined, { getWafer: () => w });
+  const { section } = buildWithCapture(dies, undefined, { getWafer: () => w, ringCount: 4 });
   const headers = [...section.querySelectorAll('th')].map(th => th.textContent);
   const ringIdx = headers.indexOf('Ring');
   const rows = [...section.querySelectorAll('tbody tr')].map(

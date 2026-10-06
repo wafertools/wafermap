@@ -33,6 +33,8 @@ export interface PlotEditorWindowOptions {
   chart: Omit<PlotChartOptions, 'ownerDocument' | 'waferLabel'>;
   /** What the plot is drawn over, in words, when it is not the whole tab ("selected on W03"). */
   population?: string;
+  /** The population before any count ("selected on W03"), which a sweep's own hint puts its count in front of. */
+  rawPopulation?: string;
   /** Click a level of a sweep's curve: the menu on the dies measured there. Sweeps only. */
   onSelectLevel?: SweepPanelOptions['onSelectPoint'];
   /** The window's heading. Default: Edit plot, or New plot for a draft. */
@@ -68,7 +70,7 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
   let chart: { card: HTMLElement; setPlot(spec: PlotSpec): void; destroy(): void };
   if (isSweep) {
     const panel = renderSweepPanel({
-      spec: plotToSweep(current)!, dies: o.items.flatMap(it => it.dies), testDefs: o.ctx.testDefs ? [...o.ctx.testDefs] : undefined, population: o.population,
+      spec: plotToSweep(current)!, dies: o.items.flatMap(it => it.dies), testDefs: o.ctx.testDefs ? [...o.ctx.testDefs] : undefined, population: o.rawPopulation ?? o.population,
       onSaveImage: o.chart.onSaveImage, onSelectPoint: o.onSelectLevel, ownerDocument: doc,
     });
     chart = { card: panel.card, setPlot: spec => panel.setSpec(plotToSweep(spec)!), destroy: () => panel.destroy() };

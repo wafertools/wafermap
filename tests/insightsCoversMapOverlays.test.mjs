@@ -67,10 +67,9 @@ function findByText(root, text) {
 }
 
 async function toggleInsights(root, open) {
-  const btn = root.querySelector('[data-wmap-insights-btn]');
-  assert.ok(btn, 'the toolbar carries an Insights toggle');
-  const isOpen = btn.ariaLabel !== 'Insights';
-  if (isOpen !== open) btn.click();
+  const tab = root.querySelector(`[data-wmap-view="${open ? 'insights' : 'maps'}"]`);
+  assert.ok(tab, 'the Maps | Insights switch is mounted');
+  if (tab.getAttribute('aria-selected') !== 'true') tab.click();
   // The chart suite is a dynamic import; let it resolve.
   for (let i = 0; i < 20; i++) await new Promise(r => setTimeout(r, 0));
 }

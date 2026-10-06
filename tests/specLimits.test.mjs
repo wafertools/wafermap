@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/packages/renderer/buildWaferMap.js';
-import { buildView } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
 import { analyzeWaferMap } from '../dist/packages/stats/analyzeWaferMap.js';
 
 // Use a standard 300 mm wafer, 10 mm dies, so (0,0) is safely in the centre.

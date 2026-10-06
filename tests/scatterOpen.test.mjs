@@ -267,7 +267,7 @@ test('in Insights, dragging over the scatter opens the drilldown menu for those 
   const host = dom.window.document.getElementById('host');
   host.innerHTML = '';
   arcs = [];
-  const tab = createInsightsTab({
+  const tab = createInsightsTab({ getRingCount: () => 4,
     getItems: () => items, getLotStats: () => lot, defaultView: 'correlation',
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
   });

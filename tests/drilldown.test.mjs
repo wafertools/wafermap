@@ -43,7 +43,7 @@ Object.defineProperty(proto, 'clientHeight', { configurable: true, get() { retur
 const { buildWaferMap } = await import('../dist/index.js');
 const { renderWaferMap, renderWaferGallery } = await import('../dist/packages/canvas-adapter/index.js');
 const { openDrilldownMenu } = await import('../dist/packages/canvas-adapter/drilldown.js');
-const { selectionPopulation, waferPopulation } = await import('../dist/packages/canvas-adapter/chartPopulation.js');
+const { selectionPopulation, waferPopulation } = await import('./fixtures/populationStated.mjs');
 const { renderBarPanel } = await import('../dist/packages/canvas-adapter/charts/barPanel.js');
 const { createPlotStore } = await import('../dist/packages/canvas-adapter/plotStore.js');
 const { sweepToPlot } = await import('../dist/packages/stats/plotSpec.js');
@@ -147,15 +147,21 @@ test('opening a second menu closes the first; Escape returns focus to the anchor
   assert.equal(document.activeElement, a2);
 });
 
-test('a sweep opens with the population in the title and on the chart', () => {
+test('a saved sweep opens in its editor, named for the population, so it can be edited', async () => {
   openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(wafer().dies.slice(0, 4), facts), { plots: sweepPlots(SWEEP) });
   rows().find(r => r.textContent === 'Drive sweep').click();
+  await waitFor(() => document.querySelector('[data-wmap-plot-window]'), 'the editor window opened');
+  const win = document.querySelector('[data-wmap-plot-window]');
   const box = document.querySelector('.wmap-overlay-box');
-  assert.match(box.textContent, /Drive sweep — 4 dies selected on W07/);
-  assert.match(box.textContent, /median across 4 dies selected on W07/);
-  // Already in its own modal: it must not offer to expand again.
-  assert.equal(box.querySelector('[data-wmap-chart-expand]').style.display, 'none');
-  closeModal();
+  try {
+    assert.ok(win.querySelector('[data-wmap-sweep-editor]'), 'the sweep editor, beside the chart');
+    assert.match(box.textContent, /Sweep — 4 dies selected on W07/);
+    assert.match(win.textContent, /median across 4 dies selected on W07/);
+    assert.doesNotMatch(win.textContent, /4 dies 4 dies/, 'the count is stated once');
+    assert.match(win.textContent, /Changes are saved to “Drive sweep”/);
+  } finally {
+    box.querySelector('button[aria-label^="Close"]')?.click();
+  }
 });
 
 test('a histogram opens on the test that was on screen, with its population stated', () => {
@@ -165,6 +171,35 @@ test('a histogram opens on the test that was on screen, with its population stat
   assert.match(box.textContent, /Value histogram — 24 dies on W07/);
   assert.equal(box.querySelector('[data-wmap-population]').textContent, 'Population: 24 dies on W07');
   assert.match(box.textContent, /Other/);
+  closeModal();
+});
+
+test('the value histogram offers Edit as new plot: the same test as a draft plot over the same dies', async () => {
+  const store = sweepPlots(SWEEP);
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), waferPopulation(wafer().dies, { ...facts, activeTest: 2000 }), { plots: store });
+  rows().find(r => r.textContent === 'Value histogram').click();
+  const btn = document.querySelector('.wmap-overlay-box [data-wmap-edit-as-plot]');
+  assert.ok(btn, 'an Edit as new plot button beside the population line');
+  assert.equal(document.querySelector('.wmap-overlay-box [data-wmap-population]').textContent, 'Population: 24 dies on W07', 'the population line is unchanged');
+  const before = store.get().length;
+  btn.click();
+  await waitFor(() => document.querySelector('[data-wmap-plot-window]'), 'the plot editor opened');
+  const win = document.querySelector('[data-wmap-plot-window]');
+  assert.ok(!document.querySelector('.wmap-overlay-box [data-wmap-edit-as-plot]'), 'the histogram window closed');
+  assert.match(win.textContent, /This is a draft/);
+  assert.match(document.querySelector('.wmap-overlay-box').textContent, /New plot — 24 dies on W07/);
+  assert.equal(store.get().length, before, 'a draft: nothing is saved until it is added');
+  win.querySelector('[data-wmap-plot-add]').click();
+  const added = store.get().at(-1);
+  assert.equal(added.chart, 'histogram');
+  assert.equal(added.fields.y.test, 2000, 'the test the histogram was on');
+  document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('without a plot store there is no Edit as new plot', () => {
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), waferPopulation(wafer().dies, { ...facts, activeTest: 2000 }), {});
+  rows().find(r => r.textContent === 'Value histogram').click();
+  assert.ok(!document.querySelector('.wmap-overlay-box [data-wmap-edit-as-plot]'));
   closeModal();
 });
 
@@ -348,13 +383,18 @@ test("a chart's wafer row hands its wafer to the right-click handler; a group ro
   panel.destroy();
 });
 
-test("a sweep's title states the dies it plots, not the dies it was given", () => {
+test("a sweep's title states the dies it plots, not the dies it was given", async () => {
   const picked = wafer().dies.slice(0, 4).map((d, i) => i === 0 ? { ...d, edgeExcluded: true } : d);
   openDrilldownMenu({ x: 10, y: 10 }, anchor(), selectionPopulation(picked, facts), { plots: sweepPlots(SWEEP) });
   rows().find(r => r.textContent === 'Drive sweep').click();
-  const title = document.querySelector('.wmap-overlay-box').textContent;
-  assert.match(title, /Drive sweep — 3 of 4 dies selected on W07 \(partial and edge-excluded dies left out\)/);
-  closeModal();
+  await waitFor(() => document.querySelector('[data-wmap-plot-window]'), 'the editor window opened');
+  const box = document.querySelector('.wmap-overlay-box');
+  try {
+    assert.match(box.textContent, /Sweep — 3 of 4 dies selected on W07 \(partial and edge-excluded dies left out\)/);
+    assert.match(box.querySelector('[data-wmap-plot-window]').textContent, /median across 3 of 4 dies selected on W07/);
+  } finally {
+    box.querySelector('button[aria-label^="Close"]')?.click();
+  }
 });
 
 test('a map known only by its host label is named by it, never by a positional stand-in', async () => {

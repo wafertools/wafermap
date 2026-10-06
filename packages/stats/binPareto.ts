@@ -145,7 +145,7 @@ export function buildBinClusterData(groups: { key: string; items: BinItem[] }[],
  */
 export function sortBinsForDisplay(
   entries: Iterable<[bin: number, count: number]>,
-  passBins: Iterable<number> = [1],
+  passBins: Iterable<number>,
 ): Array<[bin: number, count: number]> {
   const passSet = new Set(passBins);
   return [...entries].sort((a, b) => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTestHistogramData, buildTestHistogramSeries, testValueExtent } from '../dist/packages/stats/histogram.js';
+import { buildTestHistogramData, buildTestHistogramSeries, testValueExtent, diesInBucket } from '../dist/packages/stats/histogram.js';
 
 function die(v) { return { x: 0, y: 0, testValues: { 1: v } }; }
 
@@ -102,4 +102,37 @@ test('testValueExtent — matches Math.min/max, and survives a population that w
   const big = [{ label: 'big', dies: many }];
   assert.throws(() => Math.min(...many.map(d => d.testValues[1])), RangeError);
   assert.deepEqual(testValueExtent(big, 1), { min: -7, max: 999 });
+});
+
+// ── A click picks exactly the dies a bar counted ─────────────────────────────
+
+const counted = (buckets, items, clip) => buckets.map((_, i) => diesInBucket(items, 1, buckets, i, clip).reduce((n, g) => n + g.dies.length, 0));
+
+test('diesInBucket — every bar\'s picked dies number exactly its count, on edges and with awkward widths', () => {
+  // Values on the bucket edges and at floating-point-awkward spacings: a width recomputed from the span in one place and
+  // from the edges in another can put an edge value in different bars.
+  const values = [];
+  for (let i = 0; i <= 1000; i++) values.push(i * 0.1 + 0.07, i * 0.1 + 1e-9, i * 0.1);
+  const items = [{ label: 'W1', dies: values.map(die) }];
+  for (const n of [7, 10, 16, 33]) {
+    const buckets = buildTestHistogramData(items, 1, n);
+    assert.deepEqual(counted(buckets, items), buckets.map(b => b.count), `${n} buckets`);
+  }
+});
+
+test('diesInBucket — dies a clip left out of the bars are not picked from them', () => {
+  // Clip to 0..10 while a limit at 14 widens the buckets: the dies at 11 and 12 sit inside the bucket range but were
+  // never counted, so a click on the last bar must not return them.
+  const items = [{ label: 'W1', dies: [1, 2, 3, 8, 9, 10, 11, 12].map(die) }];
+  const clip = { lo: 0, hi: 10 };
+  const buckets = buildTestHistogramData(items, 1, 7, undefined, 14, clip);
+  assert.equal(buckets.reduce((n, b) => n + b.count, 0), 6, 'only the six dies inside the clip are counted');
+  assert.deepEqual(counted(buckets, items, clip), buckets.map(b => b.count));
+  assert.ok(counted(buckets, items).reduce((a, b) => a + b, 0) > 6, 'without the clip the same call would pick the two outside it');
+});
+
+test('buildTestHistogramSeries — each group\'s counts and picks agree too', () => {
+  const items = [{ label: 'W1', dies: [0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 3].map(die) }];
+  const { ranges, series } = buildTestHistogramSeries([{ key: 'a', items }], 1, 9);
+  assert.deepEqual(counted(ranges, items), series[0].counts);
 });

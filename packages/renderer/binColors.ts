@@ -1,6 +1,6 @@
 import type { Die } from '../core/dies.js';
 import { diePassStatus } from '../core/dies.js';
-import { INPUT_DEFAULT_PASS_BINS, itemPassBins } from '../core/passBins.js';
+import { itemPassBins, requirePassBins } from '../core/passBins.js';
 import type { BinDef, WaferWarning } from './buildWaferMap.js';
 import { getBinColorScheme, type BinColorScheme } from './colorSchemes.js';
 import { arrayEqual, mapEqual, setEqual } from '../core/utils.js';
@@ -34,8 +34,8 @@ export interface BinColors {
 }
 
 export interface BinColorOptions {
-  /** Which bins pass. Default `[1]`. Must match the `passBins` behind the yield figure. */
-  passBins?: readonly number[];
+  /** Which bins pass: the map's `passBins`. Required (no default); must match the `passBins` behind the yield figure. */
+  passBins: readonly number[];
   /** Registered bin palette name (`registerBinColorScheme`). Default `'default'`. */
   binColorScheme?: string;
   hbinDefs?: readonly BinDef[];
@@ -83,8 +83,8 @@ export interface BinColorOptions {
  * colours that bin on every card, and `shared` describes the whole gallery.
  * A lone map resolves over its own dies.
  */
-export function resolveBinColors(dies: Iterable<Die>, options: BinColorOptions = {}): BinColors {
-  return resolveBinColorsByWafer([{ dies, passBins: options.passBins }], options).colors;
+export function resolveBinColors(dies: Iterable<Die>, options: BinColorOptions): BinColors {
+  return resolveBinColorsByWafer([{ dies, passBins: requirePassBins(options, 'resolveBinColors') }], options).colors;
 }
 
 /** The inputs a built map carries for its bin colours. A `WaferMapResult` is one. */
@@ -152,8 +152,8 @@ export function mergeBinDefs(lists: Iterable<readonly BinDef[] | undefined>): Bi
 /** One wafer's dies and the pass bins that wafer was built with. */
 export interface BinPassGroup {
   dies: Iterable<Die>;
-  /** Omitted ⇒ the input convention `[1]` — pass `WaferMapResult.passBins`. */
-  passBins?: readonly number[];
+  /** Required: `WaferMapResult.passBins`. There is no default to judge a wafer by instead. */
+  passBins: readonly number[];
 }
 
 /**
@@ -187,7 +187,7 @@ export function resolveBinColorsByWafer(
  * caller that has dies but no resolved assignment (the summary report). The same
  * tally `resolveBinColors` uses, so the two cannot disagree about a verdict.
  */
-export function binPassSets(dies: Iterable<Die>, passBins?: readonly number[]): BinColors['pass'] {
+export function binPassSets(dies: Iterable<Die>, passBins: readonly number[]): BinColors['pass'] {
   return tallyGroups([{ dies, passBins }]).pass;
 }
 
@@ -204,7 +204,7 @@ function tallyGroups(groups: Iterable<BinPassGroup>) {
   const softAllPass = new Map<number, boolean>();
   const hardPassedSomewhere = new Set<number>();
   for (const g of groups) {
-    const passSet = new Set(g.passBins ?? INPUT_DEFAULT_PASS_BINS);
+    const passSet = new Set(requirePassBins(g, 'resolveBinColorsByWafer'));
     for (const d of g.dies) {
       const passes = diePassStatus(d, passSet) === true;
       if (d.hbin != null) {

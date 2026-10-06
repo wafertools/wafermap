@@ -9,7 +9,8 @@ import { buildWaferMap, getTestPassStatus, isParametricTest } from '../renderer/
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { openUserGuideWindow, type UserGuideExtension } from './guideWindow.js';
 import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
@@ -19,7 +20,6 @@ import {
 import { runChunked, type ChunkedRun } from './chunked.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
-import { ICONS } from './icons.js';
 // TYPE-ONLY. A value import here would pull the whole Insights chart suite
 // (chartShell, histogram, correlation, boxplot, scatter, capability, trend,
 // testPassRate, insightsTab — ~28 KB gzipped) into the initial /render chunk,
@@ -31,13 +31,15 @@ import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
 import type { DrilldownContext } from './drilldown.js';
 import { plotStoreFor, type WithPlotStore } from './plotStore.js';
 import { selectionPopulation, waferPopulation, type DrilldownSource } from './chartPopulation.js';
+import { sourceFromBins } from './plotItems.js';
 import { createIdentityHeader, collapsedLabel, type IdentityHeaderController } from './identityHeader.js';
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
-import { INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
-import { toggleHighlight } from '../core/utils.js';
+import { requirePassBins } from '../core/passBins.js';
+import { requireRingCount } from '../core/ringCount.js';
+import { asList, toggleHighlight } from '../core/utils.js';
 import { buildCompactMap, compactLayoutOffered, type CompactMap } from '../core/compact.js';
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -974,6 +976,8 @@ export function renderWaferMapCard(
   let viewSwitch: ViewSwitch | null = null;
   if (insightsEnabled) {
     viewSwitch = createViewSwitch(ownerDocument, 'Map', 'wafer', open => setInsightsOpen(open));
+    // Right-aligned by the toolbar's own margin when there is one; alone, it takes the margin itself.
+    if (!showToolbar) viewSwitch.el.style.marginLeft = 'auto';
     chromeRowEl.appendChild(viewSwitch.el);
   }
   // Zoom bounds, relative to the fitted view.
@@ -984,7 +988,7 @@ export function renderWaferMapCard(
   // with. A map not built by buildWaferMap states them as `passBins` on the map
   // object. There is deliberately no render option: a second place to set them
   // is how every surface ended up judging pass/fail by `[1]`.
-  const passBins: number[] = [...(result.passBins ?? INPUT_DEFAULT_PASS_BINS)];
+  const passBins: number[] = [...requirePassBins(result, 'renderWaferMap')];
 
   // Warnings default to ON. The library knows the map may mislead; telling the
   // user is its job, not the caller's. Hosts with their own notification UI opt
@@ -1207,7 +1211,7 @@ export function renderWaferMapCard(
         passBins,
         statsSummary: currentStatsSummary }],
       getBinColors: () => currentView.binColors,
-      getRingCount: () => currentResult.ringCount ?? 4,
+      getRingCount: () => requireRingCount(currentResult, 'renderWaferMap'),
       onSaveImage: exportHooks.onSaveImage,
       onSaveText: exportHooks.onSaveText,
       defaultView: insightsOpts?.defaultView,
@@ -1423,14 +1427,6 @@ export function renderWaferMapCard(
     // when Insights is opened without collapsing it first.
     if (metadataBadge && open) metadataBadge.collapse();
     refreshSummaryButton();
-    if (btnInsights) {
-      // The icon itself signals the toggle: a bar-chart glyph means "open
-      // Insights", a wafer glyph (while Insights is showing) means "back to
-      // the wafer view" — clicking Insights again is otherwise not obvious
-      // as the way back, since the button's position/label never move.
-      btnInsights.innerHTML = open ? ICONS.wafer : ICONS.analysis;
-      btnInsights.ariaLabel = open ? 'Back to wafer view' : 'Insights';
-    }
     if (!open) return;
     void ensureInsightsTab().then(tab => {
       // `insightsOpen` is re-read rather than captured: the user can toggle
@@ -1518,7 +1514,7 @@ export function renderWaferMapCard(
       showReticle:            so.showReticle,
       showXYIndicator:        so.showXYIndicator,
       reticles,
-      ringCount:              currentResult.ringCount ?? 4,
+      ringCount:              requireRingCount(currentResult, 'renderWaferMap'),
       highlightBin:           so.highlightBin,
       highlightMetadataValue: so.highlightMetadataValue,
       activeTest:              so.activeTest,
@@ -1617,7 +1613,7 @@ export function renderWaferMapCard(
       // advisories, which no UI surfaced before.
       warnings: warningsDisplay ? currentWarnings : [],
       passBins,
-      ringCount: currentResult.ringCount ?? 4,
+      ringCount: requireRingCount(currentResult, 'renderWaferMap'),
       binColors: currentView.binColors,
       // Drives which bin type the panel's bin breakdown opens on, so a soft-bin
       // map is never described by a hard-bin breakdown.
@@ -1727,7 +1723,6 @@ export function renderWaferMapCard(
   let btnBoxSelect:     HTMLButtonElement | null = null;
   let btnSummary:      HTMLButtonElement | null = null;
   let btnHelp:          HTMLButtonElement | null = null;
-  let btnInsights:   HTMLButtonElement | null = null;
   let btnWarnings:   HTMLButtonElement | null = null;
   let btnWarningsSep: HTMLDivElement | null = null;
   warningUiReady = true;
@@ -2187,29 +2182,9 @@ export function renderWaferMapCard(
           syncWarningButton();
         }
 
-        // Order from here to the end of the bar: Insights, Expand, Help.
-        // Insights sits beside Summary because the two are the same kind of
-        // thing — both swap what the panel area is showing for another way of
-        // reading this wafer — while Expand and Help act on the frame itself
-        // rather than on the data, so they hold the outer edge.
-
-        // Insights tab — toggles between the canvas and wmap's own chart suite.
-        // Gated on the OPTION, not on `insightsTab` — the tab no longer exists
-        // until first open, and a button that appears only after you have
-        // already opened the thing it opens would be useless.
-        if (insightsEnabled) {
-          sceneControlsEl!.appendChild(makeSep());
-          btnInsights = makeBtn('analysis', 'Insights', () => {
-            setInsightsOpen(!insightsOpen);
-            setActive(btnInsights!, insightsOpen);
-          });
-          // Stable identity hook — see renderWaferGallery.ts's identical
-          // comment: this button's aria-label toggles between 'Insights'
-          // and 'Back to wafer view', so it can't be found by aria-label
-          // alone once open.
-          btnInsights.dataset.wmapInsightsBtn = '1';
-          sceneControlsEl!.appendChild(btnInsights);
-        }
+        // Order from here to the end of the bar: Expand, Help. Insights is the Maps | Insights
+        // switch after the bar, not a button in it. Expand and Help act on the frame itself
+        // rather than on the data, so they hold the outer edge of the bar.
 
         // Expand — a view control, so it sits with the other persistent ones
         // rather than in the metadata header it was briefly moved to. It was
@@ -3080,6 +3055,8 @@ export function renderWaferMapCard(
       testDefs,
       isLotStack: currentResult.isLotStack,
       wafer: currentResult.wafer,
+      passBins,
+      ringCount: requireRingCount(currentResult, 'renderWaferMap'),
       activeTest: viewOpts.plotMode === 'value' ? viewOpts.activeTest : undefined,
     };
     return selectedKeys.size > 0
@@ -3091,6 +3068,29 @@ export function renderWaferMapCard(
   function onFindingMenu(id: string, row: HTMLElement, at: { x: number; y: number }): void {
     if (summaryActiveFindingId !== id) row.click();
     openDrilldown(at, summaryPanelEl ?? autoSummaryPanelEl ?? canvas);
+  }
+
+  /**
+   * Right-click on a bin's legend entry. Opens on that bin's dies on this wafer; when several bins are filtered in and
+   * this is one of them, on all of them, with a row to narrow to this bin. Nothing is selected: the legend filters
+   * what is shown, a drilldown is a snapshot of dies.
+   */
+  function openBinLegendMenu(bin: number, at: { x: number; y: number }): void {
+    if (!drilldownOffered()) return;
+    const kind = viewOpts.plotMode === 'softBin' ? 'soft' : 'hard';
+    const lit = asList(viewOpts.highlightBin);
+    const bins = lit.length > 1 && lit.includes(bin) ? [...lit] : [bin];
+    const share = [{ label: mapIdentity() ?? 'this wafer', dies: currentDies, wafer: currentResult.wafer, passBins, ringCount: requireRingCount(currentResult, 'renderWaferMap') }];
+    const source = sourceFromBins(share, kind, bins, testDefs);
+    if (!source) return;
+    const ctx: DrilldownContext = { ...drilldownCtx };
+    const own = bins.length > 1 ? sourceFromBins(share, kind, [bin], testDefs) : null;
+    if (own) ctx.narrower = { label: `Only ${kind} bin ${bin}`, backLabel: 'All filtered bins', source: own, ctx: drilldownCtx };
+    const anchor = canvas;
+    void import('./drilldown.js').then(({ openDrilldownMenu }) => {
+      if (destroyed) return;
+      closeDrilldownMenu = openDrilldownMenu(at, anchor, source, ctx);
+    });
   }
 
   function openDrilldown(at: { x: number; y: number }, anchor: HTMLElement): void {
@@ -3131,6 +3131,14 @@ export function renderWaferMapCard(
     if (!fromKeyboard) {
       const cssPx = e.clientX - rect.left;
       const cssPy = e.clientY - rect.top;
+      // A bin's legend entry: charts and tables for that bin's dies, no selection involved.
+      const legendRow = binLegendRows.find(r => cssPx >= r.x && cssPx < r.x + r.w && cssPy >= r.y && cssPy < r.y + r.h);
+      if (legendRow && typeof legendRow.bin === 'number' && !currentResult.isLotStack
+          && (viewOpts.plotMode === undefined || viewOpts.plotMode === 'hardBin' || viewOpts.plotMode === 'softBin')) {
+        e.preventDefault();
+        openBinLegendMenu(legendRow.bin, { x: e.clientX, y: e.clientY });
+        return;
+      }
       if (legendBoxRect && pointInRect(cssPx, cssPy, legendBoxRect)) return;
       const vp = currentViewport();
       const die = vp ? hitTest((cssPx - vp.originX) / vp.ppm, (vp.originY - cssPy) / vp.ppm, vp.snapDist)?.die : undefined;
@@ -3499,17 +3507,6 @@ export function renderWaferMapCard(
 
     setInsightsOpen(open: boolean): void {
       setInsightsOpen(open);
-      if (btnInsights) {
-        if (open) {
-          btnInsights.dataset.active   = '1';
-          btnInsights.style.background = CLR.bgActive;
-          btnInsights.style.color      = CLR.iconActive;
-        } else {
-          delete btnInsights.dataset.active;
-          btnInsights.style.background = 'transparent';
-          btnInsights.style.color      = CLR.icon;
-        }
-      }
     },
 
     destroy(): void {

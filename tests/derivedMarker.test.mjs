@@ -14,7 +14,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
-import { buildView, buildMapTitle, buildHoverText } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
+import { buildMapTitle, buildHoverText } from '../dist/packages/renderer/buildView.js';
 import { analyzeWaferMap } from '../dist/packages/stats/analyzeWaferMap.js';
 import { poolFunctionalYield } from '../dist/packages/stats/testPassRate.js';
 import { derivedFindingsKeyHtml } from '../dist/packages/stats/reportHtml.js';

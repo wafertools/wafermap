@@ -1,3 +1,4 @@
+import { requireRingCount } from './ringCount.js';
 import type { Wafer } from './wafer.js';
 import type { PositionedDie } from './dies.js';
 
@@ -9,7 +10,8 @@ export interface DieClassification {
 }
 
 export interface ClassifyOptions {
-  ringCount?: number;
+  /** The map's own ring count (`WaferMapResult.ringCount`). Required: there is no default ring count to classify by. */
+  ringCount: number;
 }
 
 /**
@@ -26,8 +28,8 @@ export interface ClassifyOptions {
  * first (region builders only ever classify positioned dies; an unpositioned
  * die has no ring/quadrant by definition).
  */
-export function classifyDie(die: PositionedDie, wafer: Wafer, options: ClassifyOptions = {}): DieClassification {
-  const ringCount = Math.max(1, options.ringCount ?? 4);
+export function classifyDie(die: PositionedDie, wafer: Wafer, options: ClassifyOptions): DieClassification {
+  const ringCount = Math.max(1, requireRingCount(options, 'classifyDie'));
   const dx = die.physX - wafer.center.x;
   const dy = die.physY - wafer.center.y;
   const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;

@@ -28,8 +28,8 @@ export interface MaplessSummaryOptions {
   activeTest?: number;
   hbinDefs?: BinDef[];
   sbinDefs?: BinDef[];
-  /** The map's resolved bin colours (`View.binColors`), so bars match its legend. */
-  binColors?: BinColors;
+  /** The map's resolved bin colours (`View.binColors`), so bars match its legend and judge by the map's own pass bins. Required: there is no default to resolve them by. */
+  binColors: BinColors;
   /** The map's value gradient name, so histogram bars match its colorbar. */
   valueColorScheme?: string;
   /** The map's `View.reverseValueScheme` — must travel with the name, or the

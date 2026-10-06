@@ -70,7 +70,7 @@ function mount(view, extra = {}, count = 3) {
   host.innerHTML = '';
   const opened = [];
   const focused = [];
-  const tab = createInsightsTab({
+  const tab = createInsightsTab({ getRingCount: () => 4,
     getItems: () => items, getLotStats: () => lot,
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView: view, plotStore: createPlotStore([], undefined, 0),

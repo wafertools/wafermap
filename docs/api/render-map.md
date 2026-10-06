@@ -217,7 +217,7 @@ Plus:
                                             // expand modal would be redundant
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a Summary toggle button to the toolbar
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state
-  insights?:               InsightsOptions  // adds an Insights toolbar button that swaps the map for this wafer's own
+  insights?:               InsightsOptions  // adds a Map | Insights switch that swaps the map for this wafer's own
                                             // chart suite (Overview, Distributions, Correlation) — default disabled. See §5.9.
   warnings?:               WarningsOptions  // built-in surfacing of the library's own advisories — ON by default.
                                             // { display?: boolean; onWarning?: (w: WaferWarning[]) => void }
@@ -492,7 +492,7 @@ The on-screen test table carries Test / Mean / **Ppk** / Limit yield only; the f
 
 ```ts
 {
-  enabled?:     boolean                                          // show the Insights toolbar button and the Maps | Insights switch; default true with a toolbar (single map: `showToolbar`), always true for a gallery; `false` opts out
+  enabled?:     boolean                                          // show the Maps | Insights switch; default true with a toolbar (single map: `showToolbar`), always true for a gallery; `false` opts out
   defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot'  // sub-tab shown first; default 'overview'.
                                                                       // 'sweeps' opens the Plot tab, where sweeps are drawn
   defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
@@ -553,6 +553,7 @@ them as a file (`onSaveText` receives the export; `onPickPlotsFile` supplies the
   aggregate?: 'mean' | 'median' | 'min' | 'max' | 'sum' | 'count' | 'yield',
   axes?: { x?: Axis, y?: Axis },             // Axis = { label?, scale?: 'linear' | 'log', min?, max?, reverse? }
   bins?: 16,
+  limits?: 'both' | 'test' | 'spec' | 'none',   // which of a plotted test's limits are drawn; absent = both
 }
 // Field = { test: 1050, name?: 'Vth' } | { builtin: 'wafer' | 'x' | 'y' | 'ring' | 'quadrant' | 'hbin' | 'sbin' | 'site' | 'yield' | 'dieCount' | 'waferOrder' } | { meta: 'split' }
 ```
@@ -565,7 +566,7 @@ Things that hold for every plot:
 - **The plot states its population and what it left out**: the wafers and dies, how values were combined, and the
   count of dies missing a value.
 - **One unit per mark.** With `level: 'wafer'`, die-level values are combined per wafer with `aggregate`, and a
-  per-wafer field (yield) cannot be split by a per-die one (hard bin): that is reported, not drawn.
+  per-wafer field (yield) can be split by a per-die one (ring, hard bin) only in a bar of pooled yield or a line, which take the pass verdict per die; any other chart of it is reported, not drawn. A field that cannot be a role's value (a category as a scatter's Y) is reported with what to use instead, never thrown.
 - **Grouping has three places.** The categories on an axis are the plot's X; the series within them are its colour;
   which wafers are in view is the tab's **Show**, and is not part of the plot.
 - **A plot this lot cannot draw is kept.** It is listed, dimmed, with the reason, and draws again on a lot that has
@@ -831,7 +832,7 @@ ctrl.destroy();
 
 ### 5.9 Insights tab
 
-Insights is on by default wherever the toolbar is shown (pass `insights: { enabled: false }` to remove it; a map with `showToolbar: false` stays a plain map unless `enabled: true`). It adds an **Insights** toolbar button and a **Map | Insights** switch at the start of the chrome row. Clicking either swaps the map for a chart suite computed from this wafer's own dies — the same panels a gallery's Insights tab shows (§6.10), scoped to one wafer. Clicking the button again (or the toolbar's Insights button) returns to the map view; the toolbar itself stays visible and usable the whole time so the Insights button is always reachable to close the tab.
+Insights is on by default wherever the toolbar is shown (pass `insights: { enabled: false }` to remove it; a map with `showToolbar: false` stays a plain map unless `enabled: true`). It adds a **Map | Insights** switch at the far right of the chrome row, after the toolbar, in the same place in both views (alone at the right edge when there is no toolbar). Choosing **Insights** swaps the map for a chart suite computed from this wafer's own dies — the same panels a gallery's Insights tab shows (§6.10), scoped to one wafer. Choosing **Maps** returns to the map view; the toolbar itself stays visible and usable the whole time, and the switch never moves, so the way back is always where the way in was.
 
 **Separate from the Summary panel (§5.4.2) on purpose.** A finding's entire value is click-to-highlight-on-map, which can't work inside a full takeover of the map — so the Summary panel (which includes findings) stays docked, always co-visible with the map, while Insights takes over the full view for chart-heavy content that doesn't reference specific dies. The two toggle independently; opening one never hides the other's toolbar button. Insights' Overview numbers and the Summary panel's compact bin/ring/quadrant/test-value rows read the same underlying computation, so they never disagree even though both can be on screen in principle.
 

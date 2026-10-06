@@ -77,7 +77,7 @@ function mount(view) {
   const host = dom.window.document.getElementById('host');
   host.innerHTML = '';
   const { items, lot } = twoLots();
-  const tab = createInsightsTab({
+  const tab = createInsightsTab({ getRingCount: () => 4,
     getItems: () => items, getLotStats: () => lot,
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView: view,

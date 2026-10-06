@@ -816,7 +816,7 @@ Options (not exports) that still work and log a one-time notice through `noticeO
 - **Why it is leaving.** A sweep is a named, serialisable recipe with a stable `id`, no population, kept by the host and
   offered on a drilldown selection: exactly what a plot is. Keeping both meant two tabs, two lists, two file formats
   (`tsmap-sweeps` and `wafermap-plots`), two persistence paths and two sections in the right-click menu for one idea.
-  Sweeps are now plots with `chart: 'sweep'` (design: `notes/wafermap/design-plot-builder.md` § 3.8).
+  Sweeps are now plots with `chart: 'sweep'`.
 - **What happens to existing use.** Nothing breaks. Each `sweeps` entry becomes a sweep plot under its own `id`, in the
   same list as the host's `plots`. A plot already saved under that `id` wins, so a host that supplies both shows it once
   and an edit the reader made is not undone. Deleting a supplied sweep calls `onRemoveSweeps` with its id; without that

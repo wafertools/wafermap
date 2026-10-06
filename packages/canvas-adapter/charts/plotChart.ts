@@ -18,7 +18,8 @@ import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
   cardShell, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
-  renderEmptyState, type SaveImageHandler, type SeriesLegendItem,
+  renderEmptyState, limitLines, limitExtent, stackLabelRows, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
+  type LimitLine, type SaveImageHandler, type SeriesLegendItem,
 } from './chartShell.js';
 import { categorical } from './palette.js';
 import { resolveValueColorFn } from '../../renderer/colorSchemes.js';
@@ -143,6 +144,62 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     return { w, h, plotW: Math.max(10, w - LEFT - RIGHT), plotH: Math.max(10, h - TOP - bottomMargin) };
   }
 
+  /** The limit lines of the test an axis measures, as the plot's `limits` setting asks for them. */
+  const linesOf = (axis: ResolvedAxis | undefined): LimitLine[] =>
+    limitLines(axis?.limits, resolved?.spec.limits ?? 'both').filter(l => axis?.scale !== 'log' || l.value > 0);
+
+  /** `values` with the limits added when that keeps the data a third of the axis: the rule the Insights charts use. */
+  const withLimits = (values: number[], lines: readonly LimitLine[]): number[] => {
+    const finite = values.filter(Number.isFinite);
+    if (!lines.length || finite.length === 0) return values;
+    const { lo, hi } = limitExtent(lines);
+    return shouldIncludeLimitsByDefault(minOf(finite), maxOf(finite), lo, hi) ? [...values, ...lines.map(l => l.value)] : values;
+  };
+
+  /**
+   * The limit lines of the test on one axis, drawn under the marks: dashed, short for test limits and long for spec, each
+   * labelled with its value. A limit outside the axis range gets an edge marker, so "off the plot" never reads as "no limit".
+   */
+  function drawLimits(ctx: CanvasRenderingContext2D, color: string, plotW: number, plotH: number,
+    scale: Scale, lines: readonly LimitLine[], axis: ResolvedAxis, orient: 'x' | 'y'): void {
+    if (lines.length === 0) return;
+    const inside = lines.filter(l => l.value >= scale.lo && l.value <= scale.hi);
+    const off = lines.filter(l => !inside.includes(l)).map(l => ({ value: l.value, label: l.label, side: (l.value < scale.lo ? 'lo' : 'hi') as 'lo' | 'hi' }));
+    ctx.save();
+    ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+    const text = (l: LimitLine) => `${l.label} ${fmt(l.value, axis.unit)}`;
+    const rowH = fontPx(-1) + 2;
+    if (orient === 'y') {
+      const placed = inside.map(l => { const y = TOP + (1 - scale.frac(l.value)) * plotH; return { l, y, start: y - 6 - rowH / 2, end: y - 6 + rowH / 2 }; });
+      const rows = stackLabelRows(placed, 1);
+      const colW = placed.length ? maxOf(placed.map(p => ctx.measureText(text(p.l)).width)) + 8 : 0;
+      placed.forEach(({ l, y }, k) => {
+        ctx.globalAlpha = 0.7;
+        strokeLimitLine(ctx, l, color, LEFT, y, LEFT + plotW, y);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(text(l), LEFT + 3 + rows[k] * colW, y - 4);
+      });
+    } else {
+      const placed = inside.map(l => {
+        const x = LEFT + scale.frac(l.value) * plotW;
+        const w = ctx.measureText(text(l)).width;
+        const side = limitLabelSide(x, w, LEFT, LEFT + plotW, l.end === 'lo');
+        return { l, x, side, start: side < 0 ? x - 3 - w : x + 3, end: side < 0 ? x - 3 : x + 3 + w };
+      });
+      const rows = stackLabelRows(placed, 4);
+      placed.forEach(({ l, x, side }, k) => {
+        ctx.globalAlpha = 0.7;
+        strokeLimitLine(ctx, l, color, x, TOP, x, TOP + plotH);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = color; ctx.textAlign = side < 0 ? 'right' : 'left'; ctx.textBaseline = 'top';
+        ctx.fillText(text(l), x + side * 3, TOP + 2 + rows[k] * rowH);
+      });
+    }
+    ctx.restore();
+    drawOffAxisLimits(ctx, off, { left: LEFT, right: LEFT + plotW, top: TOP, bottom: TOP + plotH }, orient === 'y' ? 'vertical' : 'horizontal', color, v => fmt(v, axis.unit));
+  }
+
   function unitFormat(axis: ResolvedAxis, lo: number, hi: number, step?: number) {
     return makeAxisFormat(Math.max(Math.abs(lo), Math.abs(hi)), axis.unit, step);
   }
@@ -230,10 +287,13 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const visible = active.size === 0 ? all : all.filter(p => active.has(p.group));
     const scale = resolved.colorScale;
     const gradient = resolveValueColorFn();
-    const x = makeScale(all.map(p => p.x), resolved.x);
-    const y = makeScale(all.map(p => p.y), resolved.y);
+    const xLines = linesOf(resolved.x), yLines = linesOf(resolved.y);
+    const x = makeScale(withLimits(all.map(p => p.x), xLines), resolved.x);
+    const y = makeScale(withLimits(all.map(p => p.y), yLines), resolved.y);
     geometry = { x, y, plotW, plotH };
     drawFrame(ctx, theme, w, h, plotW, plotH, x, y, resolved.x, resolved.y);
+    drawLimits(ctx, theme.limitLine, plotW, plotH, x, xLines, resolved.x, 'x');
+    drawLimits(ctx, theme.limitLine, plotW, plotH, y, yLines, resolved.y, 'y');
 
     const step = visible.length > SAMPLE_LIMIT ? Math.ceil(visible.length / SAMPLE_LIMIT) : 1;
     ctx.globalAlpha = Math.max(0.15, Math.min(0.7, 200 / (visible.length / step)));
@@ -274,7 +334,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const values = resolved.marks.values;
     const flat = values.flat();
     if (flat.length === 0) return;
-    const x = makeScale(flat, resolved.x);
+    const x = makeScale(withLimits(flat, linesOf(resolved.x)), resolved.x);
     const bins = Math.max(1, resolved.spec.bins ?? HISTOGRAM_BINS);
     // Bins are equal in the axis's own space: widths in decades on a log axis, in units on a linear one.
     const tLo = x.log ? Math.log10(x.lo) : x.lo, tHi = x.log ? Math.log10(x.hi) : x.hi;
@@ -304,6 +364,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const y = makeScale([0, maxCount], { label: resolved.y.label, scale: 'linear', min: 0, max: maxCount * 1.05 });
     geometry = { x, y, plotW, plotH };
     drawFrame(ctx, theme, w, h, plotW, plotH, x, y, resolved.x, resolved.y);
+    drawLimits(ctx, theme.limitLine, plotW, plotH, x, linesOf(resolved.x), resolved.x, 'x');
     const groups = counts.map((_, g) => g).filter(g => active.size === 0 || active.has(g));
     const overlay = groups.length > 1;
     for (const g of groups) {
@@ -349,9 +410,11 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const { ctx } = prep;
 
     const finite = (a: number[]) => a.filter(Number.isFinite);
-    const y = makeScale(m.type === 'bar' ? [...finite(m.values.flat()), 0] : finite(m.cells.flat(2)), resolved.y, { floorAtZero: m.type === 'bar' });
+    const yLines = linesOf(resolved.y);
+    const y = makeScale(withLimits(m.type === 'bar' ? [...finite(m.values.flat()), 0] : finite(m.cells.flat(2)), yLines), resolved.y, { floorAtZero: m.type === 'bar' });
     geometry = { x: y, y, plotW, plotH };   // only plotW/plotH are read for these marks
     drawFrame(ctx, theme, w, h, plotW, plotH, { labels: m.categories, rotate }, y, resolved.x, resolved.y);
+    drawLimits(ctx, theme.limitLine, plotW, plotH, y, yLines, resolved.y, 'y');
 
     const n = m.categories.length, groups = resolved.groups.length;
     const slotW = plotW / n, gw = (slotW * 0.8) / groups;
@@ -435,10 +498,13 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const prep = prepareCanvas(canvas, card, w, h);
     if (!prep) return;
     const { ctx } = prep;
-    const x = makeScale(m.xs, resolved.x);
-    const y = makeScale(m.values.flat().filter(Number.isFinite), resolved.y);
+    const xLines = linesOf(resolved.x), yLines = linesOf(resolved.y);
+    const x = makeScale(withLimits(m.xs, xLines), resolved.x);
+    const y = makeScale(withLimits(m.values.flat().filter(Number.isFinite), yLines), resolved.y);
     geometry = { x, y, plotW, plotH };
     drawFrame(ctx, theme, w, h, plotW, plotH, x, y, resolved.x, resolved.y);
+    drawLimits(ctx, theme.limitLine, plotW, plotH, x, xLines, resolved.x, 'x');
+    drawLimits(ctx, theme.limitLine, plotW, plotH, y, yLines, resolved.y, 'y');
     lineX = m.xs.map(v => LEFT + x.frac(v) * plotW);
     m.values.forEach((series, g) => {
       if (active.size > 0 && !active.has(g)) return;

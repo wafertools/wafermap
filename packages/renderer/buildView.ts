@@ -1,3 +1,5 @@
+import { requirePassBins } from '../core/passBins.js';
+import { requireRingCount } from '../core/ringCount.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die, PositionedDie } from '../core/dies.js';
 import { hasPosition } from '../core/dies.js';
@@ -399,7 +401,7 @@ export interface ViewOptions {
    */
   colorbarRangeMode?: 'spec' | 'data';
   /**
-   * Which bins count as passing. Default `[1]`.
+   * Which bins count as passing. Required — there is no default; a view built without them is refused.
    *
    * Sets `ViewRect.binFail` and decides which bins take the palette's pass
    * colours (see `resolveBinColors`) — never the bin number. `buildWaferMap` and
@@ -1371,7 +1373,7 @@ export function buildView(
     showDieLabels = false,
     showReticle = false,
     showProbePath = false,
-    ringCount = 4,
+    ringCount: ringCountOpt,
     showRingBoundaries = false,
     showQuadrantBoundaries = false,
     showXYIndicator = false,
@@ -1380,7 +1382,7 @@ export function buildView(
     reverseValueScheme = false,
     useDefinedBinColors = true,
     binColors: binColorsOpt,
-    passBins = [1],
+    passBins: passBinsOpt,
     highlightBin,
     highlightMetadataValue,
     interactiveTransform,
@@ -1420,6 +1422,7 @@ export function buildView(
 
   // Set rather than Array.includes — this is consulted once per die, and a lot
   // can carry hundreds of thousands.
+  const passBins = requirePassBins({ passBins: passBinsOpt }, 'buildView');
   const passBinSet = new Set(passBins);
 
   const binColors = binColorsOpt && binColorsCover(binColorsOpt, dies)
@@ -1698,7 +1701,7 @@ export function buildView(
   }) : [];
   const overlays = buildBoundaryOverlay(wafer, tf.physicalToScreen);
 
-  if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, tf.physicalToScreen, ringCount));
+  if (showRingBoundaries) overlays.push(...buildRingOverlays(wafer, tf.physicalToScreen, requireRingCount({ ringCount: ringCountOpt }, 'buildView')));
   if (showQuadrantBoundaries) {
     // The classification boundary in classifyDie is a hard cut at the wafer
     // centre (dx >= 0 / dy >= 0, i.e. physX/physY vs wafer.center). Draw the

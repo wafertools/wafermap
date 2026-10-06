@@ -10,8 +10,8 @@
 // name or test number, so there is no choice that can only fail. Titles are automatic until typed in; clearing the
 // box brings the automatic one back.
 
-import { describeTitleDrift, fieldKey, fieldsForRole, titleDrift, type FieldOption, type PlotRole } from '../stats/plotData.js';
-import { sameField, type PlotAxis, type PlotField, type PlotSpec } from '../stats/plotSpec.js';
+import { combinationIssue, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
+import { sameField, type PlotAxis, type PlotField, type PlotLimits, type PlotSpec } from '../stats/plotSpec.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover } from './toolbar.js';
 import { makeListSelect, makeSegmented, makeToggle, type ListSelectOption } from './charts/chartShell.js';
 
@@ -87,8 +87,29 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
 
   const row = (label: string, control: HTMLElement, hint?: string): HTMLElement => fieldRow(doc, label, control, hint);
 
-  const fieldOptions = (role: PlotRole): ListSelectOption[] =>
-    fieldsForRole(o.catalogue, plot.chart, role).map(f => ({ value: fieldKey(f.field), label: f.label, group: f.group }));
+  /** The facts the cross-field rules need of one field of the catalogue. */
+  const factsOf = (f: PlotField | undefined): FieldFacts | undefined => {
+    const opt = f && o.catalogue.find(c => sameField(c.field, f));
+    return opt ? { label: opt.name, level: opt.level, kind: opt.kind, yield: 'builtin' in opt.field && opt.field.builtin === 'yield' } : undefined;
+  };
+  /** Why choosing `candidate` for `role` would leave a plot that cannot be drawn, given the other fields now chosen. */
+  function conflictFor(role: PlotRole, candidate: FieldOption): string | undefined {
+    const f = plot.fields ?? {};
+    const colorField = f.color && !('follow' in f.color) && !('none' in f.color) ? f.color : undefined;
+    const chosen = { x: factsOf(f.x), y: factsOf(f.y), color: factsOf(colorField) };
+    chosen[role] = factsOf(candidate.field);
+    const continuousColor = plot.chart === 'scatter' && chosen.color?.kind === 'numeric' && !!colorField && !('meta' in colorField);
+    return combinationIssue(plot.chart, chosen, { aggregate: plot.aggregate, level: plot.level, continuousColor })?.short;
+  }
+  const fieldOptions = (role: PlotRole): ListSelectOption[] => {
+    const raw = plot.fields?.[role];
+    const current = raw && !('follow' in raw) && !('none' in raw) ? raw : undefined;
+    return fieldsForRole(o.catalogue, plot.chart, role).map(f => {
+      // The field already in place stays pickable: it is what the reader is looking at.
+      const why = current && sameField(f.field, current) ? undefined : conflictFor(role, f);
+      return { value: fieldKey(f.field), label: f.label, group: f.group, ...(why ? { disabled: why } : {}) };
+    });
+  };
 
   const fieldByKey = (key: string): PlotField | undefined => o.catalogue.find(f => fieldKey(f.field) === key)?.field;
 
@@ -352,6 +373,13 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         panel.appendChild(row('Bins', numberBox(plot.bins, 'Number of bins', v => edit(d => {
           if (v === undefined || !Number.isInteger(v) || v < 1) delete d.bins; else d.bins = Math.min(v, 200);
         })), 'Automatic is 16 equal bins.'));
+      }
+      // The limits of a measured test are drawn on the axis that measures it; the choice appears where there is one.
+      const f = plot.fields ?? {};
+      if ((f.x && 'test' in f.x) || (f.y && 'test' in f.y)) {
+        panel.appendChild(row('Limits', makeSegmented([['both', 'Test + spec'], ['test', 'Test'], ['spec', 'Spec'], ['none', 'None']], plot.limits ?? 'both',
+          v => edit(d => { if (v === 'both') delete d.limits; else d.limits = v as PlotLimits; }), doc),
+          'Drawn as dashed lines on the axis of a test that has them: short dashes for test limits, long for spec limits.'));
       }
       for (const input of panel.querySelectorAll<HTMLInputElement>('[data-wmap-plot-axis-title]')) axisBoxes.set(input.dataset.wmapPlotAxisTitle!, input);
     }

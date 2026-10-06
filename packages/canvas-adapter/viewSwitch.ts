@@ -1,7 +1,7 @@
-// The Maps | Insights switch: one labelled control, first in the host's chrome row,
-// that stays where it is when the view changes, so it works as a toggle and as the
-// discoverable way into Insights. Shared by renderWaferMap and renderWaferGallery.
-// The toolbar's own Insights button stays as the quick toggle.
+// The Maps | Insights switch: one labelled control at the far right of the host's chrome row,
+// after the toolbar, that stays where it is when the view changes, so it works as a toggle and as
+// the discoverable way into Insights. Shared by renderWaferMap and renderWaferGallery. It is the
+// only way into Insights: the toolbar has no Insights button of its own.
 
 import { CLR, FONT, RADIUS, SHADOW, SPACE, wireControlHover, wireTooltip } from './toolbar.js';
 
@@ -27,8 +27,10 @@ export function createViewSwitch(
   el.setAttribute('aria-label', 'View');
   el.dataset.wmapViewSwitch = '1';
   Object.assign(el.style, {
-    // First in the row whatever order the host appends its children in.
-    order: '-1', flexShrink: '0', display: 'inline-flex', alignItems: 'stretch',
+    // Last in the row whatever order the host appends its children in: the toolbar's right edge is
+    // pinned by its own `marginLeft: auto`, so the switch holds one place however many buttons the
+    // toolbar shows in each view. A host with no toolbar right-aligns it (`marginLeft: auto`).
+    order: '1', flexShrink: '0', display: 'inline-flex', alignItems: 'stretch',
     background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control,
     boxShadow: SHADOW.panel, overflow: 'hidden',
   } as Partial<CSSStyleDeclaration>);

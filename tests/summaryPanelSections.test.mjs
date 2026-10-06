@@ -18,10 +18,14 @@ globalThis.HTMLDivElement = dom.window.HTMLDivElement;
 globalThis.Node = dom.window.Node;
 
 const {
-  buildBinBreakdownSection, buildRegionYieldPanelSection, buildPerWaferYieldSection,
+  buildBinBreakdownSection: buildBinBreakdownSectionRaw, buildRegionYieldPanelSection, buildPerWaferYieldSection,
   buildTestSection, buildLotOverviewSection,
-  renderWaferSummaryContent, renderLotSummaryContent,
+  renderWaferSummaryContent: renderWaferSummaryContentRaw, renderLotSummaryContent: renderLotSummaryContentRaw,
 } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+// These panels are built without a map, so each test states the pass bins it judges by.
+const renderWaferSummaryContent = (panel, params) => renderWaferSummaryContentRaw(panel, { passBins: [1], ringCount: 4, ...params });
+const renderLotSummaryContent = (panel, params) => renderLotSummaryContentRaw(panel, { passBins: [1], ringCount: 4, ...params });
+const buildBinBreakdownSection = (params) => buildBinBreakdownSectionRaw({ passBins: [1], ringCount: 4, ...params });
 
 function die(overrides) {
   return { x: 0, y: 0, testValues: {}, ...overrides };

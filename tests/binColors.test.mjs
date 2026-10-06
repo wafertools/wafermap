@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { listBinColorSchemes, listValueColorSchemes, registerBinColorScheme } from '../dist/index.js';
-import { resolveBinColors } from '../dist/packages/renderer/binColors.js';
+import { resolveBinColors as resolveBinColorsRaw } from '../dist/packages/renderer/binColors.js';
+
+// No default pass bins exist: a test of the colours states the ones it judges by (an explicit `passBins` wins).
+const resolveBinColors = (dies, options = {}) => resolveBinColorsRaw(dies, { passBins: [1], ...options });
 import { getBinColorScheme } from '../dist/packages/renderer/colorSchemes.js';
-import { buildView } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
 import { createWafer } from '../dist/packages/core/wafer.js';
 import { generateDies } from '../dist/packages/core/dies.js';
 

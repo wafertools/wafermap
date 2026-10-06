@@ -22,6 +22,8 @@ import type { PlotMode } from './buildView.js';
 import { isStdfBin, isStdfCoord, isStdfTestNumber, isStdfSite, STDF_BIN_MAX, STDF_COORD_MAX, STDF_TEST_NUM_MAX, STDF_SITE_MAX } from '../core/stdf.js';
 import { hasAnyKey, maxOf, minOf, modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, stackHoldsMeasurements, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
+import { normalizePassBins } from '../core/passBins.js';
+import { defaultRingCount } from '../core/ringCount.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
@@ -829,8 +831,8 @@ function resolveRingCount(raw: unknown): { ringCount: number; ringCountWarning: 
       severity: 'warning' as const,
       message: `ringCount=${String(raw)} ${why} (using ${ringCount}).` },
   });
-  if (raw === undefined) return { ringCount: 4, ringCountWarning: undefined };
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return corrected(4, 'is not a finite number');
+  if (raw === undefined) return { ringCount: defaultRingCount(), ringCountWarning: undefined };
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return corrected(defaultRingCount(), 'is not a finite number');
   const whole = Math.max(1, Math.round(raw));
   return whole === raw ? { ringCount: raw, ringCountWarning: undefined } : corrected(whole, 'is not a whole number of at least 1');
 }
@@ -1133,8 +1135,8 @@ function normalizeInput(rawInput: DieResult[] | WaferMapInput): Normalized {
       explicitDies:     undefined,
       reticleOpts:      undefined,
       lotStackOpts:     undefined,
-      passBins:         [1],
-      ringCount:        4,
+      passBins:         normalizePassBins(undefined),
+      ringCount:        defaultRingCount(),
       ringCountWarning: undefined,
       removedFieldWarning: removedInputWarning(input),
       inputValueWarnings: checked.warnings,
@@ -1156,7 +1158,7 @@ function normalizeInput(rawInput: DieResult[] | WaferMapInput): Normalized {
     reticleOpts:      input.reticleConfig,
     lotStackOpts:     input.lotStack
       ? { ...input.lotStack, results: (checked.stackResults ?? input.lotStack.results).map(linked) } : undefined,
-    passBins:         input.passBins ?? [1],
+    passBins:         normalizePassBins(input.passBins),
     ...resolveRingCount(input.ringCount),
     removedFieldWarning: removedInputWarning(input),
     inputValueWarnings: checked.warnings,

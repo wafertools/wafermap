@@ -125,8 +125,19 @@ export function buildTestHistogramData(
     count: 0,
   }));
 
-  for (const v of values) buckets[bucketIndexOf(v, min, width, bucketCount)].count++;
+  const laid = bucketWidthOf(buckets);
+  for (const v of values) buckets[bucketIndexOf(v, min, laid, bucketCount)].count++;
   return buckets;
+}
+
+/**
+ * The width the buckets were laid out with, read back from them. Every count AND every pick of a bucket's dies bins with
+ * this one number, so the dies a click selects are exactly the bar's count: recomputing the width from the span in one
+ * place and from the bucket edges in another can differ by a rounding error, which moves a die on an edge to the next bar.
+ */
+export function bucketWidthOf(buckets: ReadonlyArray<{ rangeLow: number; rangeHigh: number }>): number {
+  const n = buckets.length;
+  return (buckets[n - 1].rangeHigh - buckets[0].rangeLow) / n || 1;
 }
 
 /** The bucket a value falls in: equal widths from `min`, the last bucket closed at the top. THE binning rule. */
@@ -141,17 +152,20 @@ export function bucketIndexOf(v: number, min: number, width: number, bucketCount
  */
 export function diesInBucket(
   items: HistogramItem[], testNumber: number, buckets: ReadonlyArray<Pick<HistogramBucket, 'rangeLow' | 'rangeHigh'>>, index: number,
+  /** The clip the buckets were built with, if any: values outside it were not counted, so they are not picked. */
+  clip?: { lo: number; hi: number },
 ): Array<{ item: HistogramItem; dies: Die[] }> {
   if (buckets.length === 0 || index < 0 || index >= buckets.length) return [];
   const min = buckets[0].rangeLow;
   const max = buckets[buckets.length - 1].rangeHigh;
-  const width = (buckets[0].rangeHigh - min) || 1;
+  const width = bucketWidthOf(buckets);
   const out: Array<{ item: HistogramItem; dies: Die[] }> = [];
   for (const item of items) {
     const dies: Die[] = [];
     for (const die of item.dies ?? []) {
       const v = testValue(die, testNumber);
       if (v === undefined || !Number.isFinite(v) || v < min || v > max) continue;
+      if (clip && (v < clip.lo || v > clip.hi)) continue;
       if (bucketIndexOf(v, min, width, buckets.length) === index) dies.push(die);
     }
     if (dies.length) out.push({ item, dies });
@@ -211,11 +225,11 @@ export function buildTestHistogramSeries(
     rangeHigh: min + (i + 1) * width,
   }));
 
+  const laid = bucketWidthOf(ranges);
   const series = nonEmpty.map(groupKey => {
     const counts = new Array(bucketCount).fill(0);
     for (const v of byGroup.get(groupKey)!) {
-      const index = Math.min(bucketCount - 1, Math.floor((v - min) / width));
-      counts[index]++;
+      counts[bucketIndexOf(v, min, laid, bucketCount)]++;
     }
     return { groupKey, counts };
   });

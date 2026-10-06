@@ -2,15 +2,15 @@
 // "Label + click-to-expand full metadata" component behind `renderWaferMap`'s
 // single-wafer header row (this file used to be `metadataBadge.ts`, a corner
 // overlay unique to renderWaferMap, before becoming this real layout row).
-// `renderWaferGallery` does NOT use this module — it has its own separate
-// `buildIdentityHeaderRow`, sharing only the low-level `wireExpandToggle`
-// helper with this file. That's a known remaining duplication, not yet
-// unified — see docs/architecture.md's `identityHeader` section.
+// `renderWaferGallery` mounts `createIdentityHeader` nowhere: its per-wafer
+// views (grid card, popup, floating window, overlay title) take the simpler
+// fixed-label form, `attachExpandableMetadata`, which shares this file's
+// metadata panel (`createMetaPanelEl`) so the two read identically.
 
 import type { WaferMetadata } from '../core/metadata.js';
 import { metadataEntries, buildCompactMetadataRows } from './summaryPanel.js';
 import { prettyKey } from '../stats/facets.js';
-import { SHADOW, LEADING, SPACE, FONT, CLR, Z_ABOVE, wireExpandToggle, type ExpandToggleHandle } from './toolbar.js';
+import { SHADOW, LEADING, SPACE, FONT, CLR, RADIUS, Z_ABOVE, wireExpandToggle, wireControlHover, type ExpandToggleHandle } from './toolbar.js';
 
 export interface IdentityHeaderLotStack {
   lotSize: number;
@@ -55,6 +55,68 @@ export interface IdentityHeaderController {
    *  collapsed. */
   collapse(): void;
   destroy(): void;
+}
+
+/**
+ * The overlay that holds a wafer's full metadata while its identity header is
+ * expanded: absolutely positioned over the top of the nearest `position:
+ * relative` ancestor, `display: none` until opened. Shared by the single-wafer
+ * header and the gallery's per-wafer views.
+ */
+export function createMetaPanelEl(doc: Document): HTMLDivElement {
+  const panel = doc.createElement('div');
+  Object.assign(panel.style, {
+    position:     'absolute',
+    top:          '0', left: '0', right: '0',
+    zIndex:       Z_ABOVE,
+    background:   CLR.menuBg,
+    borderBottom: `1px solid ${CLR.menuBorder}`,
+    boxShadow:    SHADOW.menu,
+    padding: `${SPACE.md} ${SPACE.lg}`,
+    fontSize:     FONT.body,
+    display:      'none',
+  } as Partial<CSSStyleDeclaration>);
+  return panel;
+}
+
+/**
+ * Make `toggleEl` (a label row the caller has already built) expand into the
+ * wafer's full metadata: appends the chevron, the hover, the ARIA state and
+ * the click/keyboard toggle, and returns the panel for the caller to mount in
+ * a `position: relative` ancestor. Returns `null`, touching nothing, when the
+ * wafer has no metadata to show. The fixed-label counterpart of
+ * `createIdentityHeader`, for views whose label never changes.
+ */
+export function attachExpandableMetadata(
+  doc: Document,
+  toggleEl: HTMLElement,
+  label: string,
+  metadata: WaferMetadata | null | undefined,
+): HTMLDivElement | null {
+  const meta = metadata ?? {};
+  if (metadataEntries(meta).length === 0) return null;
+
+  const chevron = doc.createElement('span');
+  Object.assign(chevron.style, { fontSize: FONT.body, lineHeight: LEADING.none, color: CLR.label, flexShrink: '0' });
+  chevron.textContent = '▾';
+  toggleEl.appendChild(chevron);
+  Object.assign(toggleEl.style, { cursor: 'pointer', borderRadius: RADIUS.control });
+  // A clickable header that never reacts reads as a static caption.
+  wireControlHover(toggleEl, 'bare');
+
+  const panel = createMetaPanelEl(doc);
+  panel.dataset.wmapCardMetaPanel = '1';
+  const rows = buildCompactMetadataRows(meta);
+  if (rows) panel.appendChild(rows);
+
+  toggleEl.setAttribute('aria-expanded', 'false');
+  toggleEl.setAttribute('aria-label', `Wafer info for ${label || 'this card'}. Click to expand.`);
+  wireExpandToggle(toggleEl, (open) => {
+    chevron.textContent = open ? '▴' : '▾';
+    toggleEl.setAttribute('aria-expanded', String(open));
+    panel.style.display = open ? 'block' : 'none';
+  });
+  return panel;
 }
 
 export function collapsedLabel(meta: WaferMetadata, lotStack: IdentityHeaderLotStack | undefined): string | undefined {
@@ -133,19 +195,8 @@ export function createIdentityHeader(
   } as Partial<CSSStyleDeclaration>);
   wrap.appendChild(inlineEl);
 
-  const metaPanel = doc.createElement('div');
+  const metaPanel = createMetaPanelEl(doc);
   metaPanel.dataset.wmapMetaPanel = '1';
-  Object.assign(metaPanel.style, {
-    position:     'absolute',
-    top:          '0', left: '0', right: '0',
-    zIndex:       Z_ABOVE,
-    background:   CLR.menuBg,
-    borderBottom: `1px solid ${CLR.menuBorder}`,
-    boxShadow:    SHADOW.menu,
-    padding: `${SPACE.md} ${SPACE.lg}`,
-    fontSize:     FONT.body,
-    display:      'none',
-  } as Partial<CSSStyleDeclaration>);
 
   function hasExpandableContent(): boolean {
     return metadataEntries(meta).length > 0 || !!lotStack;

@@ -21,7 +21,7 @@ export interface PlotStore {
   remove(id: string): { plot: PlotSpec; index: number } | undefined;
   /** A copy with a new id, placed after the original. A typed title gains "(copy)"; an untitled plot stays untitled, so its title keeps following its fields. */
   duplicate(id: string): PlotSpec | undefined;
-  /** Replaces the whole list (an import). */
+  /** Replaces the whole list (an import). A sweep the host still supplies that is not in it is reported through `onRemove`, as `remove` does. */
   replaceAll(plots: readonly PlotSpec[]): void;
   subscribe(fn: () => void): () => void;
   /** Sends a change still waiting for the debounce. */
@@ -120,7 +120,13 @@ export function createPlotStore(
       changed();
       return copy;
     },
-    replaceAll(next) { plots = next.map(p => JSON.parse(JSON.stringify(p)) as PlotSpec); changed(); },
+    replaceAll(next) {
+      const dropped = [...legacyIds].filter(id => plots.some(p => p.id === id) && !next.some(p => p.id === id));
+      plots = next.map(p => JSON.parse(JSON.stringify(p)) as PlotSpec);
+      changed();
+      // A sweep the host still supplies that the import dropped: tell it, as `remove` does, or the next render brings it back.
+      if (dropped.length > 0) legacy?.onRemove?.(dropped);
+    },
     subscribe(fn) { listeners.add(fn); return () => { listeners.delete(fn); }; },
     flush: send,
   };

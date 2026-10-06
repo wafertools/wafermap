@@ -191,7 +191,7 @@ test('in Insights, a Data tab row goes back to the map and rings the die', async
 test('where the host gives no way to show a die, rows are not offered as clickable', async () => {
   const { renderDataTables } = await import('../dist/packages/canvas-adapter/dataTab.js');
   const w = wafer('W1');
-  const { el } = renderDataTables({ doc: document, items: [{ label: 'W1', dies: w.dies, wafer: w.wafer }], testDefs: w.testDefs, view: 'dies' });
+  const { el } = renderDataTables({ doc: document, items: [{ label: 'W1', dies: w.dies, wafer: w.wafer, passBins: w.passBins }], ringCount: w.ringCount, testDefs: w.testDefs, view: 'dies' });
   document.getElementById('root').replaceChildren(el);
   assert.doesNotMatch(el.querySelector('[data-wmap-data-note]').textContent, /Click a row/);
   assert.equal(el.querySelector('tbody tr[aria-rowindex]').style.cursor, '');

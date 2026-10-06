@@ -16,7 +16,8 @@ import type { Wafer } from '../core/wafer.js';
 import type { Die } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
-import { commonPassBins, itemPassBins, passBinsLabel } from '../core/passBins.js';
+import { itemRingCount } from '../core/ringCount.js';
+import { commonPassBins, itemPassBins, passBinsLabel, requirePassBins } from '../core/passBins.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { testLabel, markedTestLabel, unmarkedLabel, derivedFields, derivedKeyText, derivedCsvCell, isDerivedTest, DERIVED_CSV_HEADER } from '../renderer/testLabel.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
@@ -47,7 +48,8 @@ import { pooledTestStatsSteps, type CapabilityItem } from '../stats/capability.j
 import { binBreakdownRows, binBreakdownTitle, binCountsFrom, totalOf } from '../stats/binRows.js';
 import { poolFunctionalYield } from '../stats/testPassRate.js';
 import { makeLabeledSelect, makeSegmented } from './charts/chartShell.js';
-import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, openReportModal, wireTooltip, type SaveTextHandler } from './toolbar.js';
+import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, wireTooltip, type SaveTextHandler } from './toolbar.js';
+import { openReportModal } from './guideWindow.js';
 import type { DieListDisplayOptions } from './dieList.js';
 import type { DataTablesInput } from './dataTab.js';
 import { exportCsv, type CsvColumn } from './tableExport.js';
@@ -795,7 +797,7 @@ export function buildMetadataInfoSection(
 export function buildYieldSection(
   yieldSummary: YieldSummary,
   dataCoverage: { filledDies: number; totalDies: number; edgeExcludedDies: number; ratio: number },
-  passBins: number[] = [1],
+  passBins: number[],
 ): HTMLDivElement {
   const wrap = el('div');
   wrap.appendChild(sectionTitle('Summary'));
@@ -850,7 +852,7 @@ export function buildBinSection(
   // The map's own resolution when given; otherwise the same resolver the map
   // uses, so a caller with no map beside it still gets one rule for both.
   const resolved = binColors ?? resolveBinColors(dies, {
-    passBins, ...(mode === 'hard' ? { hbinDefs: binDefs } : { sbinDefs: binDefs }) });
+    passBins: requirePassBins({ passBins }, 'buildBinSection'), ...(mode === 'hard' ? { hbinDefs: binDefs } : { sbinDefs: binDefs }) });
   const wrap = el('div');
   wrap.appendChild(sectionTitle(binBreakdownTitle(mode, totalOf(binCounts))));
   for (const row of binRows(binCounts, binDefs, resolved[mode], resolved.pass[mode])) wrap.appendChild(row);
@@ -894,11 +896,12 @@ export function buildBinBreakdownSection(params: {
   softCounts?: Record<number, number>;
   /** The map's active plot mode. `hardBin`/`softBin` pick the matching bin type. */
   plotMode?: PlotMode;
+  /** The pass bins to resolve colours by, when `binColors` is omitted. Never defaulted: with neither the section is refused. */
   passBins?: number[];
   panel?: HTMLElement;
 }): HTMLDivElement | null {
-  const { dies, hbinDefs, sbinDefs, hardCounts, softCounts, plotMode, passBins = [1], panel } = params;
-  const binColors = params.binColors ?? resolveBinColors(dies, { passBins, hbinDefs, sbinDefs });
+  const { dies, hbinDefs, sbinDefs, hardCounts, softCounts, plotMode, passBins, panel } = params;
+  const binColors = params.binColors ?? resolveBinColors(dies, { passBins: requirePassBins({ passBins }, 'buildBinBreakdownSection'), hbinDefs, sbinDefs });
 
   const countsFor = (mode: 'hard' | 'soft'): Map<number, number> =>
     binCountsFrom(dies, mode, mode === 'hard' ? hardCounts : softCounts);
@@ -3041,8 +3044,10 @@ export function* renderWaferSummaryContentSteps(
      * when omitted, which is the only set a bare panel could know about.
      */
     warnings?: WaferWarning[];
-    passBins?:    number[];
-    ringCount?:   number;
+    /** The map's own pass bins (`WaferMapResult.passBins`): every yield and bin verdict in the panel judges by them. */
+    passBins:     number[];
+    /** The map's own ring count (`WaferMapResult.ringCount`). Required, never defaulted. */
+    ringCount:    number;
     /** The map's resolved bin colours (`View.binColors`), so bars match die fills. */
     binColors?:   BinColors;
     /**
@@ -3086,7 +3091,7 @@ export function* renderWaferSummaryContentSteps(
   const {
     wafer, dies, yieldSummary, dataCoverage,
     hbinDefs, sbinDefs, testDefs,
-    statsSummary, passBins = [1], ringCount = 4,
+    statsSummary, passBins, ringCount,
     binColors, plotMode, fallbackFormat,
     onFindingClick, activeFindingId = null,
     findingsFilter, onFindingsFilterChange,
@@ -3119,7 +3124,7 @@ export function* renderWaferSummaryContentSteps(
   const dieListBtn = ((dieListOptions?.enabled ?? true) && dies.length)
     ? reportButton('Data tables', () => {
         openDataTablesModal(panel, {
-          items: [{ label: wafer.metadata?.waferId !== undefined ? String(wafer.metadata.waferId) : 'this wafer', dies, wafer }],
+          items: [{ label: wafer.metadata?.waferId !== undefined ? String(wafer.metadata.waferId) : 'this wafer', dies, wafer, passBins }],
           testDefs, ringCount, metadataFields, dieListOptions, onSaveText, onLocateDie,
         }, `Data tables — ${dies.length.toLocaleString()} dies`);
       })
@@ -3200,12 +3205,13 @@ type ReportItem = {
  * @internal Gallery items as report maps — the one conversion for the gallery's
  * and the lot panel's report buttons. A slot not yet loaded is skipped, but each
  * wafer keeps the label its position gives it, so a report names wafers exactly
- * as the cards do. `passBins`/`ringCount` fill in only for an item built without them.
+ * as the cards do. `ringCount` fills in only for an item built without one; `passBins` only from the caller's own option, never a default.
  */
 export function reportMapsFromItems(
   items: ReadonlyArray<ReportItem | null | undefined>,
-  passBins: readonly number[],
-  ringCount: number,
+  ringCount: number | undefined,
+  /** For an item built without pass bins, from the caller's own `passBins` option. Never a built-in default: an item with neither is refused. */
+  passBins?: readonly number[],
 ): ReportMap[] {
   const maps: ReportMap[] = [];
   items.forEach((item, i) => {
@@ -3216,7 +3222,7 @@ export function reportMapsFromItems(
       dies: item.dies,
       label: waferDisplayLabel(item, i),
       passBins: [...itemPassBins(item, passBins)],
-      ringCount: item.ringCount ?? ringCount,
+      ringCount: itemRingCount(item, ringCount),
     });
   });
   return maps;
@@ -3280,7 +3286,7 @@ export function* renderLotSummaryContentSteps(
   const {
     lotSummary, items,
     hbinDefs, sbinDefs, testDefs,
-    passBins = [1], ringCount = 4,
+    passBins, ringCount: ringCountOpt,
     binColors, plotMode, fallbackFormat,
     onFindingClick, activeFindingId = null,
     onWaferClick,
@@ -3288,6 +3294,10 @@ export function* renderLotSummaryContentSteps(
     findingsNotice,
     onSaveText, dieListOptions, onLocateDie, findingsFor,
   } = params;
+  // The lot-level ring figures use one ring count: the caller's own, else the first wafer's (wafers built with different
+  // ring counts are named by `ring-count-mixed`, not pooled). There is no default.
+  // Read only where a ring figure is drawn: a lot panel whose wafers have not resolved yet has none to draw.
+  const lotRingCount = (): number => ringCountOpt ?? itemRingCount(items.find((it): it is NonNullable<typeof it> => !!it));
 
   // Names the population, not an assumed lot: "Lot LOT123 · 13 wafers" only
   // when every wafer records that lot, else "26 wafers from 2 lots" / "13 wafers".
@@ -3307,7 +3317,7 @@ export function* renderLotSummaryContentSteps(
     // comment). The on-screen panel above still uses the pooled `lotSummary`
     // param for its own display, which is a separate, unaffected concern.
     void import('../stats/renderSummaryReport.js').then(({ renderLotReportHtml }) => {
-      openReportModal(renderLotReportHtml(reportMapsFromItems(items, passBins, ringCount), { binColors, live: !!onFindingClick }), {
+      openReportModal(renderLotReportHtml(reportMapsFromItems(items, ringCountOpt, passBins), { binColors, live: !!onFindingClick }), {
         anchor: panel,
         onFinding: (id, handle) => showFindingFromReport(panel, lotSummary.findings, id, handle, onFindingClick),
       });
@@ -3364,7 +3374,7 @@ export function* renderLotSummaryContentSteps(
             label: waferDisplayLabel(it, i), dies: it.dies ?? [], waferIndex: i, wafer: it.wafer,
             passBins: itemPassBins(it, passBins), statsSummary: it.statsSummary,
           })),
-          testDefs, ringCount, metadataFields: items.find(it => it?.metadataFields?.length)?.metadataFields,
+          testDefs, ringCount: lotRingCount(), metadataFields: items.find(it => it?.metadataFields?.length)?.metadataFields,
           dieListOptions, onSaveText, onLocateDie,
         }, `Data tables — ${allDies.length.toLocaleString()} dies across ${items.length} wafer${items.length === 1 ? '' : 's'}`);
       })
@@ -3424,7 +3434,7 @@ export function* renderLotSummaryContentSteps(
 
   // regionDies, not diesByWafer: diesByWafer also holds an entry for items with
   // no wafer, so its indices drift from allWafers'.
-  append(buildRegionYieldPanelSection({ diesByWafer: regionDies, allWafers, ringCount, passBins: (wi) => regionPassBins[wi], panel }));
+  if (allWafers.length > 0) append(buildRegionYieldPanelSection({ diesByWafer: regionDies, allWafers, ringCount: lotRingCount(), passBins: (wi) => regionPassBins[wi], panel }));
   yield;
 
   if (testDefs?.length) {

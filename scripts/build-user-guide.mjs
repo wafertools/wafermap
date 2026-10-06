@@ -177,7 +177,7 @@ const wrappedHtml = `<div class="wmap-guide">
 @media print{
   /* Print only the guide's own content, never the host page, and never a
      clipped single screenful. The guide window opens one of two ways
-     (toolbar.ts's openUserGuideWindow) and this must handle both:
+     (guideWindow.ts's openUserGuideWindow) and this must handle both:
      - a real popup (openGuideInPopup): buildGuideContent's content div
        (class wmap-guide-content) is body's ONLY child directly — body
        itself is height:100vh;overflow:hidden for the screen layout, which

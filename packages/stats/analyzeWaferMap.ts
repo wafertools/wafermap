@@ -22,6 +22,8 @@ import { buildClusterFindings } from './clusterDetection.js';
 import {
   classifyPattern, patternExplains, patternFailVerdict, PATTERN_LABELS,
   type PatternClassification, type PatternLabel } from './patternClassification.js';
+import { requirePassBins } from '../core/passBins.js';
+import { requireRingCount } from '../core/ringCount.js';
 import { benjaminiHochberg, fiveNumberSummary, normalCdf, sampleVariance } from './math.js';
 import { mean, clamp01, maxOf } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
@@ -151,9 +153,7 @@ export function resolveOptions(
   return { resolved: merged, warnings };
 }
 
-const DEFAULT_OPTIONS: ResolvedOptions = {
-  ringCount: 4,
-  passBins: [1],
+const DEFAULT_OPTIONS: Omit<ResolvedOptions, 'passBins' | 'ringCount'> = {
   significanceLevel: 0.05,
   minimumEffectSize: 0.20,
   minimumRelativeEffect: 1.0,
@@ -2132,12 +2132,12 @@ function analyzeWaferMapUncollected(
   // There is no analysis option to contradict them (removed: a second place to
   // set pass bins is how every surface came to judge by `[1]`). Assigned
   // unconditionally, so an untyped caller still passing the removed option
-  // cannot override them through the options spread above. DEFAULT_OPTIONS'
-  // `[1]` only reaches a hand-built result that carries none.
-  const baseResolved: ResolvedOptions = { ...optionResolved, passBins: result.passBins ?? DEFAULT_OPTIONS.passBins,
+  // cannot override them through the options spread above. A
+  // hand-built result that carries none is refused (`requirePassBins`), never judged by a default.
+  const baseResolved: ResolvedOptions = { ...optionResolved, passBins: [...requirePassBins(result, 'analyzeWaferMap')],
     // Ring count likewise: set once on buildWaferMap, so ring boundaries on the map
     // and ring findings here cannot describe different rings.
-    ringCount: result.ringCount ?? DEFAULT_OPTIONS.ringCount };
+    ringCount: requireRingCount(result, 'analyzeWaferMap') };
   const isLotStack  = result.isLotStack;
   const stackMethod = result.aggrMethod;
   const hasHbinData = !isLotStack ||

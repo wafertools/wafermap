@@ -5,7 +5,7 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, saveImageBlob, openReparentedModal, type SaveImageHandler } from '../toolbar.js';
+import { SHADOW, LEADING, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, saveImageBlob, openReparentedModal, type OverlayHandle, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import { minOf, maxOf } from '../../core/utils.js';
 import { robustFence } from '../../stats/math.js';
@@ -42,7 +42,7 @@ export function openChartExpandModal(
   card: HTMLElement,
   title: string,
   opts: { anchor?: Element; onClosed?: () => void } = {},
-): void {
+): OverlayHandle | null {
   // The card is about to be reparented into the modal. Any hover tip currently
   // showing would travel with it and never be dismissed — the control it
   // belongs to is hidden while expanded, so no mouseleave can fire.
@@ -70,7 +70,7 @@ export function openChartExpandModal(
       opts.onClosed?.();
     },
   });
-  if (!handle) { delete card.dataset.wmapExpanded; card.setAttribute('style', savedStyle); return; } // already expanded — re-entrancy guard
+  if (!handle) { delete card.dataset.wmapExpanded; card.setAttribute('style', savedStyle); return null; } // already expanded — re-entrancy guard
 
   if (expandBtn) expandBtn.style.display = 'none';
 
@@ -88,6 +88,7 @@ export function openChartExpandModal(
     // A card built for the modal (a drilldown) has not drawn yet.
     (card.ownerDocument.defaultView ?? window).requestAnimationFrame(fit);
   }
+  return handle;
 }
 
 /** Natural box size per growth direction — see `ChartGrow`. */
@@ -1242,6 +1243,8 @@ export interface ListSelectOption {
   label: string;
   /** A heading shown above the first option of each run with the same group. The list stays one flat, searchable list. */
   group?: string;
+  /** Why this option cannot be chosen now. It stays in the list, dimmed, with the reason after it, and does nothing when picked. */
+  disabled?: string;
 }
 
 /**
@@ -1388,13 +1391,15 @@ export function makeListSelect(
       lastGroup = o.group;
       const isSelected = o.value === current;
       const row = ownerDocument.createElement('div');
-      row.textContent = o.label;
+      row.textContent = o.disabled ? `${o.label} — ${o.disabled}` : o.label;
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+      if (o.disabled) row.setAttribute('aria-disabled', 'true');
       row.tabIndex = -1;   // roving tabindex — the ring comes from the browser
       Object.assign(row.style, {
-        padding: `${SPACE.sm} ${SPACE.xl}`, fontSize: FONT.body, cursor: 'pointer',
-        color: isSelected ? CLR.iconActive : CLR.text, fontWeight: isSelected ? '700' : '400',
+        padding: `${SPACE.sm} ${SPACE.xl}`, fontSize: FONT.body, cursor: o.disabled ? 'default' : 'pointer',
+        color: o.disabled ? CLR.label : isSelected ? CLR.iconActive : CLR.text, fontWeight: isSelected ? '700' : '400',
+        opacity: o.disabled ? '0.7' : '',
         background: isSelected ? CLR.menuActive : 'transparent', whiteSpace: 'nowrap',
       } as Partial<CSSStyleDeclaration>);
       // Hover only — NOT focus. Focus is the browser's ring; repainting the
@@ -1402,10 +1407,11 @@ export function makeListSelect(
       // and re-invent the hand-drawn indicator the shared contract removes.
       // (`outline: none` used to be set here, which suppressed the ring
       // outright and forced exactly that.)
-      row.addEventListener('mouseenter', () => { if (!isSelected) row.style.background = CLR.menuHover; });
+      row.addEventListener('mouseenter', () => { if (!isSelected && !o.disabled) row.style.background = CLR.menuHover; });
       row.addEventListener('mouseleave', () => { if (!isSelected) row.style.background = 'transparent'; });
       row.addEventListener('click', e => {
         e.stopPropagation();
+        if (o.disabled) return;   // the reason is on the row; the list stays open
         current = o.value;
         syncLabel();
         closeMenuAndRefocus();

@@ -9,8 +9,11 @@ globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.HTMLDivElement = dom.window.HTMLDivElement;
 globalThis.Node = dom.window.Node;
 
-const { buildBinSection, buildTestSection, buildLotTestSection, buildCompactMetadataRows, buildMetadataStripRow, buildMetadataStripBox, metadataEntries, renderWaferSummaryContent, renderLotSummaryContent } =
+const { buildBinSection, buildTestSection, buildLotTestSection, buildCompactMetadataRows, buildMetadataStripRow, buildMetadataStripBox, metadataEntries, renderWaferSummaryContent: renderWaferSummaryContentRaw, renderLotSummaryContent: renderLotSummaryContentRaw } =
   await import('../dist/packages/canvas-adapter/summaryPanel.js');
+// These panels are built without a map, so each test states the pass bins it judges by.
+const renderWaferSummaryContent = (panel, params) => renderWaferSummaryContentRaw(panel, { passBins: [1], ringCount: 4, ...params });
+const renderLotSummaryContent = (panel, params) => renderLotSummaryContentRaw(panel, { passBins: [1], ringCount: 4, ...params });
 
 function die(overrides) {
   return { x: 0, y: 0, testValues: {}, ...overrides };
@@ -25,18 +28,18 @@ test('buildBinSection — precomputed counts produce the same text as the raw-sc
     die({ hbin: 1 }), die({ hbin: 1 }), die({ hbin: 2 }),
     die({ hbin: 1, partial: true }), // excluded from both paths
   ];
-  const fallback = buildBinSection(dies, undefined, 'hard');
+  const fallback = buildBinSection(dies, undefined, 'hard', undefined, undefined, [1]);
   // 5th positional arg, not the 4th — the 4th is `binColors`. This previously
   // passed the counts object into the 4th (then colour-scheme) slot, so BOTH sides fell through
   // to the raw-die scan and the assertion compared the fallback with itself: the
   // precomputed path this test exists to cover was never actually exercised.
-  const precomputed = buildBinSection(dies, undefined, 'hard', undefined, { 1: 2, 2: 1 });
+  const precomputed = buildBinSection(dies, undefined, 'hard', undefined, { 1: 2, 2: 1 }, [1]);
   assert.equal(fallback.textContent, precomputed.textContent);
 });
 
 test('buildBinSection — precomputed counts are used even when they disagree with dies (proves the fast path is taken)', () => {
   const dies = [die({ hbin: 1 })];
-  const section = buildBinSection(dies, undefined, 'hard', undefined, { 1: 999 });
+  const section = buildBinSection(dies, undefined, 'hard', undefined, { 1: 999 }, [1]);
   assert.match(section.textContent, /999/);
 });
 

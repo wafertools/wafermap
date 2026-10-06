@@ -4,7 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
-import { resolvePlot, plotFootnote, plotTitle, combine, fieldCatalogue, fieldsForRole, defaultPlot, fieldKey, titleDrift, describeTitleDrift, examplePlots } from '../dist/packages/stats/plotData.js';
+import { resolvePlot, plotFootnote, plotTitle, combine, combinationIssue, fieldCatalogue, fieldsForRole, defaultPlot, fieldKey, titleDrift, describeTitleDrift, examplePlots } from '../dist/packages/stats/plotData.js';
+import { yieldCounts } from '../dist/packages/stats/yield.js';
 
 const DEFS = [
   { testNumber: 1050, name: 'Vth', unit: 'V' },
@@ -22,7 +23,7 @@ function wafer(label, { n = 10, pass = 9, vth0 = 0.4, idsat = 1, noIdsat = 0, me
     dieConfig: { width: 1, height: 1 },
     passBins: [1], testDefs: DEFS,
   });
-  return { label, dies: r.dies, metadata: r.metadata, passBins: [1], wafer: r.wafer };
+  return { label, dies: r.dies, metadata: r.metadata, passBins: [1], ringCount: r.ringCount, wafer: r.wafer };
 }
 
 const lot = () => [
@@ -190,13 +191,65 @@ test('line: a mean per distinct X, by colour group, in X order', () => {
   assert.ok(Number.isNaN(byTemp.marks.values[0][1]));
 });
 
-test('a wafer-level field cannot be split by a die-level one', () => {
-  const r = resolvePlot(spec('bar', { x: { builtin: 'hbin' }, y: { builtin: 'yield' } }), lot(), ctx);
-  assert.match(r.issues[0], /Yield is per wafer, so it cannot be split by Hard bin/);
-  const c = resolvePlot(spec('bar', { x: { meta: 'split' }, y: { builtin: 'yield' }, color: { builtin: 'hbin' } }), lot(), ctx);
-  assert.match(c.issues[0], /per wafer/);
-  const wc = resolvePlot(spec('scatter', { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' }, color: { builtin: 'site' } }), lot(), ctx);
+test('a wafer-level field cannot be split by a die-level one, except a yield in a bar or line', () => {
+  const r = resolvePlot(spec('box', { x: { builtin: 'hbin' }, y: { builtin: 'yield' } }), lot(), ctx);
+  assert.match(r.issues[0], /Yield is one figure per wafer, and Hard bin belongs to dies, so a box of it cannot be split by Hard bin/);
+  assert.match(r.issues[0], /A bar chart of yield can/);
+  const wc = resolvePlot(spec('scatter', { x: { builtin: 'waferOrder' }, y: { builtin: 'waferOrder' }, color: { builtin: 'site' } }), lot(), ctx);
   assert.match(wc.issues[0], /per die/);
+  assert.match(wc.issues[0], /bar chart of yield/);
+});
+
+test('yield is taken per ring, quadrant, bin or die position in a bar, pooled over judged dies', () => {
+  const items = lot();
+  const overall = items.reduce((a, it) => { const c = yieldCounts(it.dies, [1]); return { pass: a.pass + c.pass, total: a.total + c.total }; }, { pass: 0, total: 0 });
+  for (const x of [{ builtin: 'quadrant' }, { builtin: 'hbin' }, { builtin: 'x' }, { builtin: 'y' }]) {
+    const r = resolvePlot(spec('bar', { x, y: { builtin: 'yield' }, color: { none: true } }), items, ctx);
+    assert.deepEqual(r.issues, [], JSON.stringify(x));
+    assert.equal(r.level, 'die');
+    // Every judged die is in exactly one bar, so the bars' passes and counts add up to the lot's.
+    const cells = r.marks.cells[0];
+    const total = cells.reduce((a, c) => a + c.length, 0);
+    const pass = cells.reduce((a, c) => a + c.filter(v => v === 100).length, 0);
+    assert.deepEqual({ pass, total }, overall, JSON.stringify(x));
+    r.marks.values[0].forEach((v, i) => { const want = cells[i].length ? (cells[i].filter(q => q === 100).length / cells[i].length) * 100 : NaN; assert.ok(Number.isNaN(want) ? Number.isNaN(v) : Math.abs(v - want) < 1e-9, `${v} vs ${want}`); });
+    assert.match(r.aggregation, /passing dies over judged dies, pooled per/);
+  }
+});
+
+test('yield per ring split by wafer, and a line of yield over wafer order split by ring, resolve', () => {
+  const bar = resolvePlot(spec('bar', { x: { builtin: 'quadrant' }, y: { builtin: 'yield' }, color: { builtin: 'wafer' } }), lot(), ctx);
+  assert.deepEqual(bar.issues, []);
+  assert.equal(bar.groups.length, lot().length);
+  const line = resolvePlot(spec('line', { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' }, color: { builtin: 'quadrant' } }), lot(), ctx);
+  assert.deepEqual(line.issues, []);
+  assert.equal(line.y.label, 'Yield');
+});
+
+test('a bar of die counts per wafer can be coloured by a die-level field', () => {
+  const r = resolvePlot(spec('bar', { x: { builtin: 'wafer' }, color: { builtin: 'hbin' } }), lot(), ctx);
+  assert.deepEqual(r.issues, []);
+  assert.equal(r.level, 'die');
+});
+
+test('die X and die Y can be the categories of a bar or box', () => {
+  const r = resolvePlot(spec('bar', { x: { builtin: 'x' }, color: { none: true } }), lot(), ctx);
+  assert.deepEqual(r.issues, []);
+  assert.ok(r.marks.categories.every((c, i, a) => i === 0 || Number(c) > Number(a[i - 1])), 'in numeric order');
+  const c = resolvePlot(spec('bar', { x: { test: 1050 }, color: { none: true } }), lot(), ctx);
+  assert.match(c.issues[0], /is continuous, so a bar cannot have one bar per value/);
+});
+
+test('a category in a role that needs a number is a reason, never an exception', () => {
+  const kinds = ['scatter', 'line', 'histogram', 'box', 'bar'];
+  const fields = [{ builtin: 'ring' }, { builtin: 'wafer' }, { builtin: 'hbin' }, { meta: 'split' }, { builtin: 'yield' }, { builtin: 'x' }, { test: 1050 }, undefined];
+  for (const chart of kinds) for (const x of fields) for (const y of fields) for (const color of [undefined, { builtin: 'ring' }, { builtin: 'wafer' }]) {
+    const f = {}; if (x) f.x = x; if (y) f.y = y; if (color) f.color = color;
+    assert.doesNotThrow(() => resolvePlot(spec(chart, f), lot(), ctx), `${chart} ${JSON.stringify(f)}`);
+  }
+  const r = resolvePlot(spec('scatter', { x: { test: 1050 }, y: { builtin: 'ring' } }), lot(), ctx);
+  assert.match(r.issues[0], /Ring is a category, not a number, so it cannot be the Y of a scatter/);
+  assert.match(r.issues[0], /Use it as the X of a bar or box chart/);
 });
 
 test('a die-level category as X: hard bin, ring and quadrant', () => {
@@ -456,4 +509,77 @@ test('examples: yield is by wafer when no lot field divides them', () => {
   const items = [wafer('a'), wafer('b'), wafer('c')];
   const ex = examplePlots(fieldCatalogue(items, ctx), 3, () => 'x');
   assert.deepEqual(ex.find(p => p.chart === 'bar').fields.x, { builtin: 'wafer' });
+});
+
+test('combinationIssue: one rule for the chart and the editor, in a long and a short form', () => {
+  const yieldF = { label: 'Yield', level: 'wafer', kind: 'numeric', yield: true };
+  const ring = { label: 'Ring', level: 'die', kind: 'categorical', yield: false };
+  const wafer = { label: 'Wafer', level: 'wafer', kind: 'categorical', yield: false };
+  const vth = { label: 'Vth', level: 'die', kind: 'numeric', yield: false };
+  assert.equal(combinationIssue('bar', { x: ring, y: yieldF }), undefined, 'a bar of yield splits by a die-level field');
+  assert.equal(combinationIssue('line', { x: wafer, y: yieldF, color: ring }), undefined);
+  const box = combinationIssue('box', { x: ring, y: yieldF });
+  assert.match(box.long, /Yield is one figure per wafer, and Ring belongs to dies/);
+  assert.equal(box.short, 'Yield is per wafer: use a bar or line chart');
+  assert.equal(combinationIssue('box', { x: wafer, y: vth, color: ring }), undefined, 'a measured value is per die, so a die-level colour is fine');
+  assert.match(combinationIssue('scatter', { x: wafer, y: wafer, color: ring }).short, /Ring is per die/);
+  assert.equal(combinationIssue('bar', { x: wafer, color: ring }), undefined, 'counting dies per wafer and ring');
+  assert.equal(combinationIssue('box', { y: yieldF }), undefined, 'a missing field is never a conflict');
+});
+
+// ── limits on the axis of a measured test ──────────────────────────────────────────────────────────────────
+
+const LIMITED = { ...ctx, testDefs: DEFS.map(d => (d.testNumber === 1050 ? { ...d, limitLow: 2, limitHigh: 9, specLow: 1, specHigh: 10 } : d)) };
+const LIM = { limitLow: 2, limitHigh: 9, specLow: 1, specHigh: 10 };
+
+test('a test\'s limits ride on the axis that measures it, and only there', () => {
+  const sc = resolvePlot(spec('scatter', { x: T(1050, 'Vth'), y: T(1060, 'Idsat') }), lot(), LIMITED);
+  assert.deepEqual(sc.x.limits, LIM);
+  assert.equal(sc.y.limits, undefined, 'a test without limits has none');
+  const h = resolvePlot(spec('histogram', { y: T(1050, 'Vth') }), lot(), LIMITED);
+  assert.deepEqual(h.x.limits, LIM, 'the values axis');
+  assert.equal(h.y.limits, undefined, 'the count axis never carries the test\'s limits');
+  const box = resolvePlot(spec('box', { x: { builtin: 'wafer' }, y: T(1050, 'Vth') }), lot(), LIMITED);
+  assert.deepEqual(box.y.limits, LIM);
+  const mean = resolvePlot(spec('bar', { x: { builtin: 'wafer' }, y: T(1050, 'Vth') }), lot(), LIMITED);
+  assert.deepEqual(mean.y.limits, LIM, 'a mean is compared with the limits');
+  const sum = resolvePlot(spec('bar', { x: { builtin: 'wafer' }, y: T(1050, 'Vth') }, { aggregate: 'sum' }), lot(), LIMITED);
+  assert.equal(sum.y.limits, undefined, 'a sum or a count is not a value the limits describe');
+  const yld = resolvePlot(spec('bar', { x: { builtin: 'quadrant' }, y: { builtin: 'yield' } }), lot(), LIMITED);
+  assert.equal(yld.y.limits, undefined);
+  const line = resolvePlot(spec('line', { x: { builtin: 'waferOrder' }, y: T(1050, 'Vth') }), lot(), LIMITED);
+  assert.deepEqual(line.y.limits, LIM);
+});
+
+test('no limits on a test whose limits the lot disagrees about (the reconciled list drops them)', () => {
+  const none = { ...ctx, testDefs: DEFS };
+  assert.equal(resolvePlot(spec('histogram', { y: T(1050, 'Vth') }), lot(), none).x.limits, undefined);
+});
+
+test('a lot field is a number only when every value is written as a plain decimal', () => {
+  const kindOf = (...values) => {
+    const items = values.map((v, i) => wafer(`W${i + 1}`, { meta: { lot: v } }));
+    return fieldCatalogue(items, ctx).find(f => 'meta' in f.field && f.field.meta === 'lot')?.kind;
+  };
+  assert.equal(kindOf('25', '85', '125'), 'numeric', 'a temperature');
+  assert.equal(kindOf('-40', '25.5', '.5', '+3'), 'numeric', 'signs and fractions');
+  // Names that `Number()` would read as quantities.
+  assert.equal(kindOf('1E3', '2E5'), 'categorical', 'exponent-looking lot IDs');
+  assert.equal(kindOf('0x10', '0x1A'), 'categorical', 'hexadecimal');
+  assert.equal(kindOf('Infinity', '-Infinity'), 'categorical');
+  assert.equal(kindOf('12', '1E3'), 'categorical', 'one name among numbers makes the field a category');
+});
+
+test('a ring or quadrant of a plot is the wafer\'s own ring, whatever the default is', () => {
+  const grid = [];
+  for (let x = -4; x <= 4; x++) for (let y = -4; y <= 4; y++) grid.push({ x, y, hbin: 1 });
+  const item = (ringCount) => {
+    const r = buildWaferMap({ results: grid, waferConfig: { diameter: 90 }, dieConfig: { width: 10, height: 10 }, passBins: [1], ringCount });
+    return { label: `R${ringCount}`, dies: r.dies, passBins: r.passBins, ringCount: r.ringCount, wafer: r.wafer };
+  };
+  const rings = (it) => resolvePlot(spec('bar', { x: { builtin: 'ring' }, color: { none: true } }), [it], {}).marks.categories;
+  assert.equal(rings(item(6)).length, 6, 'a wafer built with six rings has six');
+  assert.deepEqual(rings(item(6)), ['Ring 1', 'Ring 2', 'Ring 3', 'Ring 4', 'Ring 5', 'Ring 6']);
+  assert.ok(rings(item(4)).length <= 4 && !rings(item(4)).includes('Ring 5'));
+  assert.throws(() => rings({ ...item(6), ringCount: undefined }), /no ring count/, 'no default stands in for a missing one');
 });

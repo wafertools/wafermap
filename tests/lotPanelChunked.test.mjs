@@ -26,9 +26,12 @@ globalThis.Node = dom.window.Node;
 
 const {
   renderLotSummaryContent, renderLotSummaryContentSteps,
-  renderWaferSummaryContent, renderWaferSummaryContentSteps,
+  renderWaferSummaryContent: renderWaferSummaryContentRaw, renderWaferSummaryContentSteps: renderWaferSummaryContentStepsRaw,
   buildTestSection, buildTestSectionSteps,
 } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+// These panels are built without a map, so each test states the pass bins it judges by.
+const renderWaferSummaryContent = (panel, params) => renderWaferSummaryContentRaw(panel, { passBins: [1], ringCount: 4, ...params });
+const renderWaferSummaryContentSteps = (panel, params) => renderWaferSummaryContentStepsRaw(panel, { passBins: [1], ringCount: 4, ...params });
 const { runChunked } = await import('../dist/packages/canvas-adapter/chunked.js');
 const { drain } = await import('../dist/packages/core/utils.js');
 
@@ -171,7 +174,7 @@ test('pooled pass — a precomputed full summary still wins, and still costs no 
 test('chunked — stepping produces exactly the same panel as running straight through', () => {
   const items = makeLot();
   const lotSummary = lotSummaryFor(items);
-  const params = { lotSummary, items, testDefs: TESTS, passBins: [1] };
+  const params = { lotSummary, items, testDefs: TESTS, passBins: [1], ringCount: 4 };
 
   const sync = panelEl();
   renderLotSummaryContent(sync, params);
@@ -184,7 +187,7 @@ test('chunked — stepping produces exactly the same panel as running straight t
 
 test('chunked — the panel takes at least one step per test, so no step carries the whole table', () => {
   const items = makeLot();
-  const gen = renderLotSummaryContentSteps(panelEl(), { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1] });
+  const gen = renderLotSummaryContentSteps(panelEl(), { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1], ringCount: 4 });
   let steps = 0;
   while (!gen.next().done) steps++;
   // Sections + one per wafer pooled + one per test. The exact number is not the
@@ -196,7 +199,7 @@ test('chunked — the panel takes at least one step per test, so no step carries
 test('chunked — sections are appended as they are built, not all at the end', () => {
   const items = makeLot();
   const panel = panelEl();
-  const gen = renderLotSummaryContentSteps(panel, { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1] });
+  const gen = renderLotSummaryContentSteps(panel, { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1], ringCount: 4 });
   let sawPartial = false;
   let steps = 0;
   while (!gen.next().done) {
@@ -210,7 +213,7 @@ test('chunked — sections are appended as they are built, not all at the end', 
 
 test('chunked — runChunked finishes small work synchronously, and stages big work', async () => {
   const items = makeLot();
-  const params = { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1] };
+  const params = { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1], ringCount: 4 };
 
   const oneShot = panelEl();
   const run = runChunked(renderLotSummaryContentSteps(oneShot, params));
@@ -231,7 +234,7 @@ test('chunked — a cancelled render stops, and does not keep appending to the p
   const items = makeLot();
   const panel = panelEl();
   const run = runChunked(
-    renderLotSummaryContentSteps(panel, { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1] }),
+    renderLotSummaryContentSteps(panel, { lotSummary: lotSummaryFor(items), items, testDefs: TESTS, passBins: [1], ringCount: 4 }),
     { firstSliceMs: 0, sliceMs: 0 },
   );
   run.cancel();
@@ -257,7 +260,7 @@ test('chunked — buildTestSectionSteps drained equals buildTestSection', () => 
 
 test('wafer panel — renderWaferSummaryContentSteps drained equals renderWaferSummaryContent', () => {
   const items = makeLot();
-  const params = { wafer: items[0].wafer, dies: items[0].dies, testDefs: TESTS, passBins: [1] };
+  const params = { wafer: items[0].wafer, dies: items[0].dies, testDefs: TESTS, passBins: [1], ringCount: 4 };
 
   const drained = panelEl();
   drain(renderWaferSummaryContentSteps(drained, params));

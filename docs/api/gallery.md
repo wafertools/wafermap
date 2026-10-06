@@ -157,7 +157,7 @@ to be pre-built.
                                             // button; requires summaryPanel to be reachable. Default ENABLED
                                             // (shows automatically whenever the Summary panel is); set
                                             // { enabled: false } to hide it. §5.4.4
-  insights?:               InsightsOptions   // adds an Insights toolbar button that swaps the grid for a lot-wide chart
+  insights?:               InsightsOptions   // adds a Maps | Insights switch that swaps the grid for a lot-wide chart
                                             // suite (Overview, Distributions, Correlation, with a "Group by" control)
                                             // — default disabled. See §6.10.
   warnings?:               WarningsOptions   // built-in surfacing of the library's own advisories — ON by default.
@@ -410,7 +410,7 @@ ctrl.destroy();
 
 ### 6.10 Insights tab
 
-Insights is on by default (pass `insights: { enabled: false }` to remove it). It adds an **Insights** toolbar button and a **Maps | Insights** switch at the start of the chrome row. Clicking either swaps the grid for a lot-wide chart suite, computed from every gallery item's `dies` — mutually exclusive with the grid view, since the chart suite wants the full body's room, not a side panel. The gallery grid's own state (mode, columns, etc.) is preserved underneath and restored when you switch back. Independent of the Summary panel (§6.5, opened separately) — the two toggle independently and neither hides the other's toolbar button, since the Summary panel's click-to-highlight has nothing to act on while Insights has replaced the grid.
+Insights is on by default (pass `insights: { enabled: false }` to remove it). It adds a **Maps | Insights** switch at the far right of the chrome row, after the toolbar, in the same place in both views. Choosing **Insights** swaps the grid for a lot-wide chart suite, computed from every gallery item's `dies` — mutually exclusive with the grid view, since the chart suite wants the full body's room, not a side panel. The gallery grid's own state (mode, columns, etc.) is preserved underneath and restored when you switch back. Independent of the Summary panel (§6.5, opened separately) — the two toggle independently and neither hides the other's controls, since the Summary panel's click-to-highlight has nothing to act on while Insights has replaced the grid.
 
 Insights has the same sub-tabs as the single-wafer version (§5.9) — **Overview**, **Distributions**, **Correlation**, and **Data**, whose **Statistics** view follows the Group by below with one set of tables per group, and whose **Wafers** view is the lot as one row per wafer — plus:
 

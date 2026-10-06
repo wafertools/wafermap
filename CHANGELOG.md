@@ -22,9 +22,24 @@ under `### Breaking`.
 
 ---
 
-## [Unreleased]
+## [0.34.0] — 2026-10-06
 
 ### Added
+
+- **The Plot tab has Delete all plots….** It removes every saved plot, sweeps included, after a confirmation that says how many and
+  points to **Export plots…** for a copy; **Undo** restores the whole list for ten seconds. The button is dimmed while the list is
+  empty. The confirmation is a small modal that starts on Cancel, closes on Escape or ✕ as Cancel, and has no Maximize button
+  (`OverlayOptions.maximizable: false`).
+
+- **The right-click Value histogram offers Edit as new plot.** It closes the histogram and opens the same test as a draft histogram plot over the same dies, in the plot editor, kept only if you add it. It appears where the host keeps plots.
+
+- **A plotted test's limits are drawn.** In a plot of a test that has limits, the axis that measures it carries them as dashed lines — short dashes for test limits, long for spec limits, each labelled with its value. They apply to a histogram's values, a scatter's X or Y, and a box, bar or line's values when those are measured values or their mean, median, minimum or maximum (not a sum, a count, a yield or a wafer figure). The axis includes them when that leaves the data a third of it, and a limit off the edge is marked there. Customise has a **Limits** choice (`limits`: `both`, `test`, `spec` or `none`). A test whose limits the wafers disagree on has none drawn.
+- **A saved sweep opens in its editor from the right-click menu**, over just the selected dies, like a saved plot: it can be edited there and the edit is saved to the sweep.
+
+- **Yield can be plotted per ring, quadrant, bin or die position.** In a bar (pooled yield: passing dies over judged dies) or a line, Yield can be split by a per-die field, and a bar of die counts per wafer can be coloured by one. Die X and die Y can be a bar's or box's categories.
+- **The plot editor says what goes with what.** In the X, Y and Colour lists a field that would leave a plot that cannot be drawn is dimmed with the reason ("Yield is per wafer: use a bar or line chart"), and does nothing when picked. A plot that cannot be drawn names the problem and what to use instead. A category given to a role that needs a number (a plot saved that way) is reported, where it used to throw. `combinationIssue` is the one rule behind both the list and the chart.
+
+- **Right-click a bin in the legend to chart or tabulate its dies.** On a map's legend, or the gallery's lot legend (also by the Menu key or Shift+F10 on a focused entry), the drilldown menu opens on the dies in that hard or soft bin — on that wafer, or on every wafer for the lot legend — without selecting them. With several bins filtered in, right-clicking one of them opens on all of them, with **Only bin N** / **All filtered bins** to switch. Lot-stack maps are unaffected.
 
 - **Drill down on every die a finding selects.** Right-click a finding in the Summary panel to show it and open the drilldown menu on its dies, across all the wafers of a gallery. Right-clicking a selected die on a gallery card, when dies are selected on other cards too, opens the menu on all of them, with a first row (**Only this wafer** / **All selected**) to narrow it to that card's own selection. A finding about whole wafers, with no dies to select, opens the menu on those wafers.
 
@@ -135,10 +150,21 @@ under `### Breaking`.
 
 ### Breaking
 
-- **Right-click on a map, a gallery card or a chart mark always opens the drilldown menu.** It used to open only where there
-  was something to chart (a parametric test or a sweep) and was otherwise left to the browser or the host. The menu now
-  always has **Dies**, so a host's own context menu on those surfaces no longer appears. The toolbar's Chart button is
-  always shown and is labelled "Charts and tables for …".
+- **Pass bins have one default, applied once.** Bin 1 passes when an input states no pass bins, and `buildWaferMap` applies that
+  default and nothing else does. Every view, report, chart and table takes the pass bins of the map it describes and refuses to
+  state a yield without them: `renderSummaryReport`'s `passBins`, `buildView`'s `passBins` option and each item of a lot report are
+  required unless the item is a built map, which carries its own. A chart or table opened on a selection, a wafer, a gallery card or
+  a saved plot judges by that wafer's own pass bins, so a lot built with pass bins 3 and 5 reports the same yield everywhere
+  it is shown. The gallery's stacked modes judge by the pass bins and ring count the wafers share and are not offered for wafers
+  that differ. The ring count follows the same rule: `buildWaferMap` applies its default (4) and every ring, quadrant and ring
+  figure reads the map's own, so `renderSummaryReport`'s `ringCount` and `buildView`'s `ringCount` option (when rings are drawn)
+  are required unless the map is a built one.
+
+- **The Maps | Insights switch is at the far right of the toolbar row, and the toolbar has no Insights button.** The switch sits after the toolbar and stays in the same place in both views (alone at the right edge when there is no toolbar), so it is both the way into Insights and the way back. The toolbar's Insights button and its `data-wmap-insights-btn` hook are gone: a host that clicked the hook should click `[data-wmap-view="insights"]` (or `[data-wmap-view="maps"]`), whose `aria-selected` says which view is showing. `setInsightsOpen` and `insights.enabled` are unchanged.
+
+- **Right-click on a map, a gallery card or a chart mark always opens the drilldown menu.** The menu always has **Dies**, and
+  lists charts and plots where there is something to draw (a parametric test or a saved plot), so a host's own context menu
+  on those surfaces does not appear. The toolbar's Chart button is always shown and is labelled "Charts and tables for …".
 - **`onSaveText` can receive a `Blob`.** `SaveTextHandler`'s first argument is now `string | Blob`. A table of a million
   cells or more (a lot's die list, 400k dies × 50 tests being 20 million) is written in slices and handed over as a
   `Blob`, so no single string holds the whole file. Smaller tables are still a string, saved before the call returns.
@@ -204,8 +230,8 @@ under `### Breaking`.
   in the panel and the report alike. The summary's `also` line is replaced by that list.
 - **One σ rule: the sample standard deviation (n−1).** The Test Values table, per-test statistics, the
   lot trend, the lot drift σ and the report's pooled σ all divide by n−1, as the capability indices
-  already did, so a cell shows the same σ whichever path filled it. Displayed σ rises by a factor of
-  √(n/(n−1)) wherever it was previously ÷n (about 2.5% at n = 20; negligible on large lots). Exported
+  already did, so a cell shows the same σ whichever path filled it. A displayed σ is √(n/(n−1)) times
+  the population σ of the same values (about 2.5% at n = 20; negligible on large lots). Exported
   `sampleVariance` in `stats/math.ts` is the single implementation.
 
 ## [0.33.0] — 2026-10-02

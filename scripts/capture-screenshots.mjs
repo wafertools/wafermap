@@ -43,8 +43,8 @@
  *   ['clickFindingByText', 'Failure cluster']   click the first finding whose text contains string
  *   ['clickFindingByText', 'Failure cluster', '#my-map']
  *
- *   ['clickButton', 'Insights']             click a button by aria-label
- *   ['clickButton', 'Insights', '#gallery-container']
+ *   ['clickButton', 'Summary panel']             click a button by aria-label
+ *   ['clickButton', 'Summary panel', '#gallery-container']
  *
  *   ['clickTab', 'Distributions']           click a button (e.g. Insights sub-tab) by exact text
  *   ['clickTab', 'Distributions', '#gallery-container']
@@ -470,7 +470,7 @@ async function runSetup(page, steps) {
         await clickFindingByText(page, args[1] ?? '#map', args[0]);
         break;
 
-      // Click a button by aria-label (e.g. the Insights toolbar button).
+      // Click a button by aria-label (e.g. the Summary panel toolbar button).
       // args: [ariaLabel, containerSel?]
       case 'clickButton':
         await page.evaluate(({ label, sel }) => {

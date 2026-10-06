@@ -5,7 +5,7 @@
 [![CI and deploy](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml/badge.svg)](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml)
 [![npm](https://img.shields.io/npm/v/@wafertools/wafermap.svg)](https://www.npmjs.com/package/@wafertools/wafermap)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
-![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~63%20kB-blue)
+![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~64%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 <img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
@@ -13,7 +13,7 @@
 Browser-first wafer map visualization for semiconductor test data.
 
 **Zero runtime dependencies.** Pure ES modules with TypeScript types — works in React,
-Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~63 kB
+Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~64 kB
 min+gz; the interactive renderer is larger, and its chart suite and in-app guide are
 loaded on demand rather than shipped up front — [measured sizes](docs/performance.md).
 
@@ -31,7 +31,7 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 - Geometry inference — pass full physical dimensions or raw prober step positions; die pitch, wafer diameter, and coordinate origin are resolved automatically
 - `renderWaferMap` — interactive canvas map with toolbar, zoom/pan, tooltips, die selection, and summary panel
 - `renderWaferGallery` — lot-level card grid with shared controls and click-to-expand
-- Insights tab (`insights: { enabled: true }`) — an in-toolbar chart suite (yield, per-test pass rate, bin pareto, capability, boxplot, histogram, wafer-to-wafer trend, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
+- Insights tab (`insights: { enabled: true }`) — a chart suite behind the Maps | Insights switch (yield, per-test pass rate, bin pareto, capability, boxplot, histogram, wafer-to-wafer trend, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
 - Derived tests (`derivedTests`) — tests computed per die from other tests (`abs(t[1020] - t[1010])`), which then work everywhere a measured test does, marked † as not measured
 - Parametric sweeps (plots with `chart: 'sweep'`, edited on the Plot tab) — an ordered run of tests read as a response curve, with the crossing and widths between two curves measured; x values given directly or read from the test names, on a linear or log axis
 - Drilldown — right-click selected dies, a wafer card or a wafer's bar to chart just that population, with the population stated on the chart

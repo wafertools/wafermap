@@ -100,14 +100,16 @@ test('resolveBinColorsByWafer — one wafer resolves exactly as resolveBinColors
   assert.deepEqual(one.mixedHardBins, []);
 });
 
-test('buildYieldData — an item\'s own pass bins win over the argument', () => {
+test('buildYieldData — each item is judged by its own pass bins, and an item with none is refused', () => {
   const a = wafer('A', [1, 2]), b = wafer('B', [1]);
   const rows = buildYieldData([
     { label: 'A', dies: a.dies, passBins: a.passBins },
-    { label: 'B', dies: b.dies },
-  ], [1]);
+    { label: 'B', dies: b.dies, passBins: b.passBins },
+  ]);
   assert.equal(rows.find((r) => r.label === 'A').percent, 50);
   assert.equal(rows.find((r) => r.label === 'B').percent, 25);
+  assert.throws(() => buildYieldData([{ label: 'C', dies: a.dies }]), /no pass bins/,
+    'no default stands in for pass bins that were not stated');
 });
 
 test('buildRegionYieldData — a per-wafer lookup matches a set given directly', () => {

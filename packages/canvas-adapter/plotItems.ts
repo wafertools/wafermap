@@ -5,7 +5,7 @@ import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
 import type { PlotItem, PlotPoint } from '../stats/plotData.js';
-import type { DrilldownSource } from './chartPopulation.js';
+import { LOT_STACK_REASON, type DrilldownSource } from './chartPopulation.js';
 
 /** What a population hands over for each wafer: a drilldown source's items, or the Insights tab's. */
 export interface WaferShare {
@@ -13,12 +13,13 @@ export interface WaferShare {
   dies: readonly Die[];
   waferIndex?: number;
   wafer?: Wafer;
-  passBins?: readonly number[];
+  passBins: readonly number[];
+  ringCount: number;
 }
 
 export function toPlotItems(items: readonly WaferShare[]): PlotItem[] {
   return items.map(it => ({
-    label: it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins,
+    label: it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: it.ringCount,
     metadata: it.wafer?.metadata,
   }));
 }
@@ -39,7 +40,7 @@ export function sourceFromPoints(
     if (have === 'all') continue;
     if (have) have.push(p.die); else byWafer.set(p.item, [p.die]);
   }
-  const picked = [...byWafer].map(([i, dies]) => ({ label: items[i].label, dies: dies === 'all' ? [...items[i].dies] : dies, waferIndex: items[i].waferIndex, wafer: items[i].wafer, passBins: items[i].passBins }));
+  const picked = [...byWafer].map(([i, dies]) => ({ label: items[i].label, dies: dies === 'all' ? [...items[i].dies] : dies, waferIndex: items[i].waferIndex, wafer: items[i].wafer, passBins: items[i].passBins, ringCount: items[i].ringCount }));
   if (picked.length === 0) return null;
   const population = picked.length === 1 ? `selected on ${picked[0].label} in the plot` : `selected in the plot, across ${picked.length} wafers`;
   return { items: picked, population, testDefs: testDefs ? [...testDefs] : undefined };
@@ -57,8 +58,23 @@ export function sourceFromDies(
   const picked = shares
     .map(it => ({ it, dies: it.dies.filter(keep) }))
     .filter(x => x.dies.length > 0)
-    .map(({ it, dies }) => ({ label: it.label, dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins }));
+    .map(({ it, dies }) => ({ label: it.label, dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: it.ringCount }));
   if (picked.length === 0) return null;
   const population = picked.length === 1 ? `${what} on ${picked[0].label}` : `${what}, across ${picked.length} wafers`;
   return { items: picked, population, testDefs: testDefs ? [...testDefs] : undefined, activeTest };
+}
+
+/**
+ * The dies in `bins` (hard or soft), per wafer, for a legend entry's right-click: the same population a bin pareto bar
+ * opens. `null` when no die is in them. A stack of a lot holds aggregates, not dies, so it is named as not measured.
+ */
+export function sourceFromBins(
+  shares: readonly WaferShare[], kind: 'hard' | 'soft', bins: readonly number[],
+  testDefs: readonly TestDef[] | undefined, activeTest?: number, stacked = false,
+): DrilldownSource | null {
+  const wanted = new Set(bins);
+  const what = `in ${kind} bin${bins.length === 1 ? '' : 's'} ${bins.join(', ')}`;
+  const source = sourceFromDies(shares, what, d => { const b = kind === 'hard' ? d.hbin : d.sbin; return b !== undefined && wanted.has(b); }, testDefs, activeTest);
+  if (source && stacked) source.notMeasuredReason = LOT_STACK_REASON;
+  return source;
 }

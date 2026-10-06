@@ -40,7 +40,7 @@ const { createSweepEditor } = await import('../dist/packages/canvas-adapter/swee
 const { fieldCatalogue } = await import('../dist/packages/stats/plotData.js');
 const { readPlotsFile, writePlotsFile } = await import('../dist/packages/stats/plotSpec.js');
 const { openDrilldownMenu } = await import('../dist/packages/canvas-adapter/drilldown.js');
-const { selectionPopulation } = await import('../dist/packages/canvas-adapter/chartPopulation.js');
+const { selectionPopulation } = await import('./fixtures/populationStated.mjs');
 
 const DEFS = [
   { testNumber: 1050, name: 'Vth', unit: 'V' },
@@ -86,7 +86,7 @@ function mountPlot(extra = {}) {
   host.innerHTML = '';
   const changes = [];
   const store = createPlotStore(extra.plots ?? [], p => changes.push(p), 1);
-  const tab = createInsightsTab({
+  const tab = createInsightsTab({ getRingCount: () => 4,
     getItems: () => items, getLotStats: () => lot,
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView: 'plot', plotStore: store, ...extra.deps,
@@ -420,6 +420,95 @@ test('Delete removes a plot at once and Undo puts it back where it was', async (
   assert.deepEqual(cards(tab).map(c => c.dataset.wmapPlotId), ['p1', 'p2']);
 });
 
+// ── Delete all plots ─────────────────────────────────────────────────────────
+
+const confirmBox = () => document.querySelector('[data-wmap-confirm]');
+const closeConfirm = () => document.querySelectorAll('.wmap-overlay-box button[aria-label^="Close"]').forEach(b => b.click());
+
+test('Delete all plots is offered, and is disabled while there is nothing to delete', async () => {
+  const { tab, store } = mountPlot({ plots: [] });
+  const s = await section(tab);
+  const btn = button(s, 'wmap-plot-delete-all');
+  assert.ok(btn, 'the button is on the toolbar');
+  assert.equal(btn.textContent, 'Delete all plots…', 'the ellipsis says a question follows');
+  assert.equal(btn.disabled, true, 'nothing to delete');
+  store.upsert(SCATTER);
+  assert.equal(btn.disabled, false, 'enabled as soon as there is a plot');
+  store.remove('p1');
+  assert.equal(btn.disabled, true);
+});
+
+test('Delete all plots asks first, says how many, and Cancel, Escape and the close button keep every plot', async () => {
+  const { tab, store, changes } = mountPlot({ plots: [SCATTER, HIST, MISSING] });
+  const s = await section(tab);
+  for (const answer of ['cancel', 'escape', 'close']) {
+    click(button(s, 'wmap-plot-delete-all'));
+    await until(confirmBox, 'the confirmation opened');
+    await tick(60);   // the overlay moves focus a frame after opening: Cancel must still be where it lands
+    const box = confirmBox();
+    assert.equal(box.getAttribute('role'), 'dialog');
+    assert.equal(box.getAttribute('aria-modal'), 'true');
+    assert.match(box.textContent, /Delete all 3 saved plots, sweeps included\? They are kept .* so they will not be there for the next file either\./, 'it says how many, with "they" throughout');
+    assert.ok(!/\bit\b/i.test(box.querySelector('p').textContent.replace(/Export plots…[^.]*/, '')), 'no singular pronoun for several plots');
+    assert.match(box.textContent, /Export plots… first to keep a copy/, 'and how to keep them');
+    assert.equal(box.querySelector('[data-wmap-confirm-cancel]'), document.activeElement, 'focus starts on Cancel, not on the destructive button');
+    assert.match(box.querySelector('[data-wmap-confirm-ok]').textContent, /^Delete 3 plots$/, 'the button names the action');
+    assert.equal(store.get().length, 3, 'still there while the question is open');
+    if (answer === 'cancel') click(box.querySelector('[data-wmap-confirm-cancel]'));
+    else if (answer === 'escape') document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    else closeConfirm();
+    await until(() => !confirmBox(), `${answer} closed it`);
+    assert.deepEqual(store.get().map(p => p.id), ['p1', 'p2', 'p3'], `${answer} deletes nothing`);
+  }
+  await tick(10);
+  assert.equal(changes.length, 0, 'and the host is told nothing');
+  assert.equal(cards(tab).length, 3);
+});
+
+test('the dialog has no Maximize button, and F does not maximize it', async () => {
+  const { tab } = mountPlot({ plots: [SCATTER] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-delete-all'));
+  await until(confirmBox, 'opened');
+  assert.match(confirmBox().textContent, /Delete your 1 saved plot\? It is kept .* so it will not be there for the next file either\./, 'one plot is said as one, with "it" throughout');
+  assert.match(confirmBox().querySelector('[data-wmap-confirm-ok]').textContent, /^Delete 1 plot$/);
+  assert.equal(confirmBox().querySelector('button[aria-label^="Maximize"]'), null);
+  document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+  assert.ok(!/maximized/i.test(confirmBox().className), 'F leaves it alone');
+  closeConfirm();
+});
+
+test('confirming deletes every plot at once, tells the host, and Undo puts the whole list back in order', async () => {
+  const { tab, store, changes } = mountPlot({ plots: [SCATTER, HIST, MISSING] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-delete-all'));
+  await until(confirmBox, 'the confirmation opened');
+  click(confirmBox().querySelector('[data-wmap-confirm-ok]'));
+  await until(() => store.get().length === 0, 'every plot deleted');
+  assert.equal(cards(tab).length, 0, 'the cards are gone');
+  assert.match(s.textContent, /Deleted all 3 plots/);
+  assert.match(s.textContent, /No plots yet/, 'the empty state is back');
+  await tick(10);
+  assert.deepEqual(changes.at(-1), [], 'the host is told the list is empty');
+  click(button(s, 'wmap-plot-notice-action'));
+  assert.deepEqual(store.get().map(p => p.id), ['p1', 'p2', 'p3'], 'Undo restores all of them, in order');
+  assert.deepEqual(cards(tab).map(c => c.dataset.wmapPlotId), ['p1', 'p2', 'p3']);
+  await tick(10);
+  assert.deepEqual(changes.at(-1).map(p => p.id), ['p1', 'p2', 'p3'], 'and tells the host so');
+});
+
+test('plots added while the question was open are deleted too, and Undo brings back exactly what was deleted', async () => {
+  const { tab, store } = mountPlot({ plots: [SCATTER] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-delete-all'));
+  await until(confirmBox, 'opened');
+  store.upsert(HIST);
+  click(confirmBox().querySelector('[data-wmap-confirm-ok]'));
+  await until(() => store.get().length === 0, 'both deleted');
+  click(button(s, 'wmap-plot-notice-action'));
+  assert.deepEqual(store.get().map(p => p.id), ['p1', 'p2']);
+});
+
 test('a plot the lot cannot draw is kept, greyed, and says why', async () => {
   const { tab, store } = mountPlot({ plots: [MISSING, SCATTER] });
   await section(tab);
@@ -648,12 +737,12 @@ test('hovering a line names the x and each series\' value there', async () => {
 });
 
 test('a plot that cannot be drawn still has a name in its heading', async () => {
-  const bad = { id: 'x', chart: 'bar', fields: { x: { builtin: 'hbin' }, y: { builtin: 'yield' }, color: { none: true } } };
+  const bad = { id: 'x', chart: 'box', fields: { x: { builtin: 'hbin' }, y: { builtin: 'yield' }, color: { none: true } } };
   const { tab } = mountPlot({ plots: [bad] });
   await section(tab);
   const card = cards(tab)[0];
   assert.equal(card.dataset.wmapChartTitle, 'Yield by Hard bin');
-  assert.match(card.textContent, /Yield is per wafer, so it cannot be split by Hard bin/);
+  assert.match(card.textContent, /Yield is one figure per wafer, and Hard bin belongs to dies, so a box of it cannot be split by Hard bin/);
 });
 
 test('a scatter coloured by a measured value shows a colourbar instead of a legend', async () => {
@@ -1026,4 +1115,51 @@ test('the sweep editor offers worked pattern examples for a series read from nam
   assert.match(ex[0].textContent, /“1234-5” with -\{x\} reads 5/);
   assert.match(ex[0].textContent, /“Fmax @ 0\.55 V” with @ \{x\} reads 0\.55/);
   assert.match(ex[0].textContent, /cannot take part of a number/, 'what a pattern cannot do is said beside the examples');
+});
+
+// ── a field that would break the plot is greyed, with the reason ───────────────────────────────────────────
+
+const optionRows = () => [...document.querySelectorAll('[role="option"]')];
+
+test('with Yield as Y in a box, the X list greys the fields that belong to dies, with why; a bar leaves them all open', () => {
+  const box = editor({ id: 'b', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
+  click(box.e.el.querySelector('[data-wmap-select="plot-x"]'));
+  const ring = optionRows().find(r => r.textContent.startsWith('Ring'));
+  assert.ok(ring, 'Ring is in the list');
+  assert.equal(ring.getAttribute('aria-disabled'), 'true');
+  assert.match(ring.textContent, /Ring — Yield is per wafer: use a bar or line chart/);
+  const wafer = optionRows().find(r => r.textContent === 'Wafer');
+  assert.ok(wafer && wafer.getAttribute('aria-disabled') !== 'true', 'a wafer-level X is still fine');
+  click(ring);                                                  // a greyed row does nothing
+  assert.equal(box.emitted.length, 0);
+  document.body.click();
+
+  const bar = editor({ id: 'b', chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
+  click(bar.e.el.querySelector('[data-wmap-select="plot-x"]'));
+  assert.ok(!optionRows().some(r => r.getAttribute('aria-disabled') === 'true'), 'a bar of yield can be split by anything');
+  document.body.click();
+});
+
+test('the Y list greys Yield when the X is per die, and the colour list greys a per-die field on a per-wafer plot', () => {
+  const { e } = editor({ id: 'b', chart: 'box', fields: { x: { builtin: 'ring' }, y: { test: 1050, name: 'Vth' }, color: { none: true } } });
+  click(e.el.querySelector('[data-wmap-select="plot-y"]'));
+  const y = optionRows().find(r => r.textContent.startsWith('Yield'));
+  assert.equal(y?.getAttribute('aria-disabled'), 'true');
+  assert.match(y.textContent, /^Yield — Yield is per wafer: use a bar or line chart/);
+  document.body.click();
+});
+
+test('replacing the list tells the host which sweeps it still supplies were dropped, as removing one does', () => {
+  const sweepSpec = (id) => ({ id, title: `Sweep ${id}`, series: [{ label: 'Up', tests: [1000, 1001] }] });
+  const removed = [];
+  const store = createPlotStore([], undefined, 0, { sweeps: [sweepSpec('s1'), sweepSpec('s2')], onRemove: ids => removed.push(...ids) });
+  assert.deepEqual(store.get().map(p => p.id), ['s1', 's2']);
+  // An import that keeps s2 and adds a plot of its own drops s1.
+  store.replaceAll([store.get()[1], SCATTER]);
+  assert.deepEqual(removed, ['s1'], 'only the supplied sweep that is gone');
+  // Replacing again with the same ids reports nothing new.
+  store.replaceAll([SCATTER]);
+  assert.deepEqual(removed, ['s1', 's2']);
+  store.replaceAll([SCATTER]);
+  assert.deepEqual(removed, ['s1', 's2'], 'each reported once');
 });

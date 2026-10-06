@@ -13,7 +13,7 @@ import { generateDies } from '../dist/packages/core/dies.js';
 import { generateReticleGrid } from '../dist/packages/core/reticle.js';
 import { getBinColorScheme, getValueColorScheme } from '../dist/packages/renderer/colorSchemes.js';
 import { resolveBinColors } from '../dist/packages/renderer/binColors.js';
-import { buildView } from '../dist/packages/renderer/buildView.js';
+import { buildView } from './fixtures/buildViewStated.mjs';
 import { fmt, fmtColorbarAxis } from '../dist/packages/renderer/fmt.js';
 import {
   assignGridIndices,
@@ -125,7 +125,7 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   assert.deepEqual(aggregateValues(diesByWafer, 'count').find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 3 });
   assert.deepEqual(aggregateBinCounts(diesByWafer, 2).find((die) => die.x === 0 && die.y === 0)?.testValues, { 0: 2 });
 
-  assert.deepEqual(classifyDie({ id: '1_1', x: 1, y: 1, physX: 9, physY: 9, width: 1, height: 1 }, createWafer({ diameter: 20 })), { ring: 4, quadrant: 'NE' });
+  assert.deepEqual(classifyDie({ id: '1_1', x: 1, y: 1, physX: 9, physY: 9, width: 1, height: 1 }, createWafer({ diameter: 20 }), { ringCount: 4 }), { ring: 4, quadrant: 'NE' });
   assert.equal(getRingLabel(1, 1), 'Full Wafer');
   assert.equal(getRingLabel(1, 2), 'Ring 1 (core)');
   assert.equal(getRingLabel(2, 2), 'Ring 2 (edge)');
@@ -218,7 +218,7 @@ test('aggregation, inference, classification, formatting, and color helpers are 
   assert.equal(fmtColorbarAxis(1e-6, 'Idsat', 'A').tickFmt(2e-6), '2.00');
 
   // Bin colour follows passBins, not the number: bin 1 passes by default.
-  const binColors = resolveBinColors([{ hbin: 1 }, { hbin: 2 }, { hbin: 2 }]);
+  const binColors = resolveBinColors([{ hbin: 1 }, { hbin: 2 }, { hbin: 2 }], { passBins: [1] });
   assert.equal(binColors.hard.get(1), getBinColorScheme('default').pass[0]);
   assert.equal(binColors.hard.get(2), getBinColorScheme('default').fail[0]);
   assert.equal(valueToGreyscale(1), 'rgb(230,230,230)');

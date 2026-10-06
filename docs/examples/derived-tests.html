@@ -363,16 +363,16 @@ renderWaferGallery(container, items, {
       showHelpButton: true,
     });
 
-    // "Show the sweep": scroll to the gallery and press its own Insights button —
+    // "Show the sweep": scroll to the gallery and press the Insights side of its Maps | Insights switch —
     // the same control a reader would use, so the page shows where it is rather
     // than opening the tab by some route the reader cannot repeat. The gallery
     // opens Insights on the Plot tab because of `defaultView` above.
     document.getElementById('show-sweep').addEventListener('click', () => {
       const gallery = document.getElementById('gallery');
       gallery.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      // The button's stable hook; `dataset.active` says whether it is already open.
-      const insights = gallery.querySelector('[data-wmap-insights-btn]');
-      if (insights && !insights.dataset.active) insights.click();
+      // The Maps | Insights switch's Insights tab; `aria-selected` says whether it is already open.
+      const insights = gallery.querySelector('[data-wmap-view="insights"]');
+      if (insights && insights.getAttribute('aria-selected') !== 'true') insights.click();
     });
 
     const derivedCount = items[0].testDefs.filter(d => d.derived).length;

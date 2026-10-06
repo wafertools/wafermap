@@ -143,6 +143,8 @@ test('renderSummaryReportHtml (single-wafer) — gets a Process Capability secti
     passBins: [1],
   });
   const html = renderSummaryReportHtml({
+    ringCount: built.ringCount,
+    passBins: built.passBins,
     wafer: built.wafer,
     dies: built.dies,
     yieldSummary: built.yield,
@@ -170,6 +172,8 @@ test('report includes a Functional Tests section with pass rates; functional tes
     testDefs,
   });
   const html = renderSummaryReportHtml({
+    ringCount: built.ringCount,
+    passBins: built.passBins,
     wafer: built.wafer,
     dies: built.dies,
     yieldSummary: built.yield,
@@ -197,6 +201,7 @@ test('renderSummaryReportHtml — bin table is pass-first then descending by cou
   const hbins = [1, 1, 9, 9, 9, 9, 9, 4, 4, 4];
   const built = waferItem('W1', hbins);
   const html = renderSummaryReportHtml({
+    ringCount: built.ringCount,
     wafer: built.wafer,
     dies: built.dies,
     yieldSummary: built.yield,
@@ -256,6 +261,7 @@ test('the summary report does not print a merged finding and the row it absorbed
   assert.ok(absorbed.size > 0, 'fixture must actually produce merged twins');
 
   const html = renderSummaryReportHtml({
+    ringCount: res.ringCount,
     wafer: res.wafer, dies: res.dies, yieldSummary: res.yield,
     dataCoverage: { filledDies: res.dies.length, totalDies: res.dies.length, edgeExcludedDies: 0, ratio: 1 },
     hbinDefs: res.hbinDefs, sbinDefs: res.sbinDefs, statsSummary, passBins: [1],

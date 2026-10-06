@@ -15,8 +15,10 @@ globalThis.HTMLDivElement = dom.window.HTMLDivElement;
 globalThis.HTMLIFrameElement = dom.window.HTMLIFrameElement;
 globalThis.Node = dom.window.Node;
 globalThis.MessageEvent = dom.window.MessageEvent;
-const { renderWaferSummaryContent, buildSynthesisSection } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
-const { openReportModal } = await import('../dist/packages/canvas-adapter/toolbar.js');
+const { renderWaferSummaryContent: renderWaferSummaryContentRaw, buildSynthesisSection } = await import('../dist/packages/canvas-adapter/summaryPanel.js');
+// These panels are built without a map, so each test states the pass bins it judges by.
+const renderWaferSummaryContent = (panel, params) => renderWaferSummaryContentRaw(panel, { passBins: [1], ringCount: 4, ...params });
+const { openReportModal } = await import('../dist/packages/canvas-adapter/guideWindow.js');
 
 /** The report builders load on demand, so a report opens a tick after its link is clicked. */
 const until = async (find, tries = 100) => {

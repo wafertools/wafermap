@@ -13,8 +13,10 @@ globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.HTMLDivElement = dom.window.HTMLDivElement;
 globalThis.Node = dom.window.Node;
 
-const { buildSynthesisSection, renderWaferSummaryContent } =
+const { buildSynthesisSection, renderWaferSummaryContent: renderWaferSummaryContentRaw } =
   await import('../dist/packages/canvas-adapter/summaryPanel.js');
+// These panels are built without a map, so each test states the pass bins it judges by.
+const renderWaferSummaryContent = (panel, params) => renderWaferSummaryContentRaw(panel, { passBins: [1], ringCount: 4, ...params });
 
 /** A lot of two wafers (5,000 analysed dies each) with region findings of known cost and dies. */
 function lot(regions, extra = {}) {

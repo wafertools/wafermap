@@ -1832,14 +1832,12 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     });
 
     const buttons = [...root.querySelectorAll('button')];
-    const insightsBtn = buttons.find((btn) => btn.ariaLabel === 'Insights');
+    const insightsBtn = root.querySelector('[data-wmap-view="insights"]');
+    const mapsTab = root.querySelector('[data-wmap-view="maps"]');
     const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
-    assert.ok(insightsBtn, 'Insights toolbar button should exist');
+    assert.ok(insightsBtn, 'the Maps | Insights switch has an Insights tab');
+    assert.equal(buttons.find((btn) => btn.ariaLabel === 'Insights'), undefined, 'the toolbar has no Insights button of its own');
     assert.ok(summaryBtn, 'Summary toolbar button should exist alongside Insights');
-    // Stable identity hook — this button's aria-label is toggled by open
-    // state (asserted below), so tooling needs a hook that doesn't change
-    // with it.
-    assert.equal(insightsBtn.dataset.wmapInsightsBtn, '1', 'Insights button carries a stable data-wmap-insights-btn hook');
 
     ctrl.setInsightsOpen(true);
     assert.ok(await waitForInsights(root), 'Insights tab should render once its chunk resolves');
@@ -1852,7 +1850,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     const tabButtons = [...root.querySelectorAll('button[role="tab"]')].filter((b) => b.dataset.wmapInsightsTab);
     const sw = root.querySelector('[data-wmap-view-switch]');
     assert.ok(sw, 'a Map | Insights switch is in the chrome row');
-    const [mapsTab, insTab] = sw.querySelectorAll('[role="tab"]');
+    const [mapsTab2, insTab] = sw.querySelectorAll('[role="tab"]');
     assert.equal(mapsTab.textContent, 'Map');
     assert.equal(insTab.getAttribute('aria-selected'), 'true', 'Insights is selected while it is open');
     mapsTab.click();
@@ -1888,12 +1886,12 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     assert.ok(root.contains(summaryBtn), 'Summary button stays mounted while Insights is open');
     assert.strictEqual(summaryBtn.style.display, 'none', 'Summary button is hidden while Insights is open');
 
-    // The Insights button's own icon flips to signal "click to go back" while open.
-    assert.strictEqual(insightsBtn.ariaLabel, 'Back to wafer view', 'Insights button label flips while open');
+    // The switch shows where you are.
+    assert.strictEqual(insightsBtn.getAttribute('aria-selected'), 'true', 'the Insights tab is selected while open');
 
     ctrl.setInsightsOpen(false);
     assert.notEqual(summaryBtn.style.display, 'none', 'Summary button reappears once Insights closes');
-    assert.strictEqual(insightsBtn.ariaLabel, 'Insights', 'Insights button label reverts once closed');
+    assert.strictEqual(mapsTab.getAttribute('aria-selected'), 'true', 'the Maps tab is selected once closed');
 
     ctrl.destroy();
   } finally {
@@ -1953,14 +1951,14 @@ test('renderWaferMap: metadata badge does not render when the wafer has no metad
   }
 });
 
-test('renderWaferGallery: Insights hides the Summary button and flips its own icon/label to signal the way back', async () => {
+test('renderWaferGallery: Insights hides the Summary button, and the Maps | Insights switch shows and changes the view', async () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
     root.appendChild(container);
 
     const { wafer, statsSummary } = buildWaferWithFinding();
-    const item = { wafer: wafer.wafer, dies: wafer.dies, hbinDefs: wafer.hbinDefs, statsSummary, label: 'W01' };
+    const item = { wafer: wafer.wafer, dies: wafer.dies, passBins: wafer.passBins, ringCount: wafer.ringCount, hbinDefs: wafer.hbinDefs, statsSummary, label: 'W01' };
 
     const ctrl = renderWaferGallery(container, [item], {
       insights: { enabled: true },
@@ -1968,9 +1966,11 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
 
     const buttons = [...root.querySelectorAll('button')];
     const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
-    const insightsBtn = buttons.find((btn) => btn.ariaLabel === 'Insights');
+    const insightsBtn = root.querySelector('[data-wmap-view="insights"]');
+    const mapsTab = root.querySelector('[data-wmap-view="maps"]');
     assert.ok(summaryBtn, 'Summary toolbar button should exist (item carries per-wafer findings)');
-    assert.ok(insightsBtn, 'Insights toolbar button should exist');
+    assert.ok(insightsBtn, 'the Maps | Insights switch has an Insights tab');
+    assert.equal(buttons.find((btn) => btn.ariaLabel === 'Insights'), undefined, 'the toolbar has no Insights button of its own');
 
     click(window, insightsBtn);
     assert.ok(await waitForInsights(root), 'Insights tab should render once its chunk resolves');
@@ -1981,11 +1981,11 @@ test('renderWaferGallery: Insights hides the Summary button and flips its own ic
     // Insights is open — its panel sits behind the Insights grid with no visible effect.
     assert.ok(root.contains(summaryBtn), 'Summary button stays mounted while Insights is open');
     assert.strictEqual(summaryBtn.style.display, 'none', 'Summary button is hidden while Insights is open');
-    assert.strictEqual(insightsBtn.ariaLabel, 'Back to gallery view', 'Insights button label flips while open');
+    assert.strictEqual(insightsBtn.getAttribute('aria-selected'), 'true', 'the Insights tab is selected while open');
 
-    click(window, insightsBtn);
+    click(window, mapsTab);
     assert.notEqual(summaryBtn.style.display, 'none', 'Summary button reappears once Insights closes');
-    assert.strictEqual(insightsBtn.ariaLabel, 'Insights', 'Insights button label reverts once closed');
+    assert.strictEqual(mapsTab.getAttribute('aria-selected'), 'true', 'the Maps tab is selected once closed');
 
     ctrl.destroy();
   } finally {
@@ -2003,7 +2003,7 @@ test('renderWaferGallery: the summary report opens an in-app modal, not window.o
     root.appendChild(container);
 
     const { wafer, statsSummary } = buildWaferWithFinding();
-    const item = { wafer: wafer.wafer, dies: wafer.dies, hbinDefs: wafer.hbinDefs, statsSummary, label: 'W01' };
+    const item = { wafer: wafer.wafer, dies: wafer.dies, passBins: wafer.passBins, ringCount: wafer.ringCount, hbinDefs: wafer.hbinDefs, statsSummary, label: 'W01' };
 
     const ctrl = renderWaferGallery(container, [item], {});
 
@@ -2763,7 +2763,7 @@ test('Insights is on by default with a toolbar, off without one, and a gallery c
       return container.querySelectorAll('[data-wmap-view-switch]').length;
     };
     const { wafer } = buildWaferWithFinding();
-    const item = { wafer: wafer.wafer, dies: wafer.dies, hbinDefs: wafer.hbinDefs, label: 'W01' };
+    const item = { wafer: wafer.wafer, dies: wafer.dies, passBins: wafer.passBins, ringCount: wafer.ringCount, hbinDefs: wafer.hbinDefs, label: 'W01' };
     assert.equal(mount((c, o) => renderWaferMap(c, wafer, o), {}), 1, 'a map with a toolbar offers Insights');
     assert.equal(mount((c, o) => renderWaferMap(c, wafer, o), { insights: { enabled: false } }), 0, 'enabled: false opts out');
     assert.equal(mount((c, o) => renderWaferMap(c, wafer, o), { showToolbar: false }), 0, 'a chromeless map stays a plain map');
@@ -2853,6 +2853,34 @@ test('renderWaferGallery: right-click on a finding that selects no dies opens th
     assert.ok(menu, 'the menu opened');
     assert.match(menu.getAttribute('aria-label'), /on (W04|\d+ wafers)/);
     gallery.destroy();
+  } finally {
+    cleanup();
+  }
+});
+
+test('the Maps | Insights switch is last in the chrome row, after the toolbar, and alone it takes the right edge', () => {
+  const { window, root, cleanup } = setupDom();
+  try {
+    const mk = (opts) => {
+      const container = window.document.createElement('div');
+      Object.assign(container.style, { position: 'relative', width: '600px', height: '400px' });
+      root.appendChild(container);
+      const { wafer } = buildWaferWithFinding();
+      return renderWaferMap(container, wafer, opts);
+    };
+    const withToolbar = mk({});
+    const sw = root.querySelector('[data-wmap-view-switch]');
+    assert.equal(sw.style.order, '1', 'ordered after the toolbar, which has the default order');
+    assert.equal(sw.style.marginLeft, '', 'the toolbar\'s own margin pushes both to the right edge');
+    const toolbar = root.querySelector('[data-wmap-toolbar]');
+    assert.ok(toolbar && toolbar.style.order === '', 'the toolbar is ordered before it');
+    assert.equal(root.querySelector('[data-wmap-insights-btn]'), null, 'the toolbar has no Insights button of its own');
+    withToolbar.destroy();
+    root.innerHTML = '';
+    const bare = mk({ showToolbar: false, insights: { enabled: true } });
+    const alone = root.querySelector('[data-wmap-view-switch]');
+    assert.equal(alone.style.marginLeft, 'auto', 'with no toolbar the switch right-aligns itself');
+    bare.destroy();
   } finally {
     cleanup();
   }

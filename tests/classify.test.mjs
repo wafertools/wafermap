@@ -7,6 +7,7 @@ const wafer = createWafer({ diameter: 300 });
 const cx = wafer.center.x;
 const cy = wafer.center.y;
 const r = wafer.radius;
+// There is no default ring count: a test of the classification states the one it classifies by.
 
 function die(physX, physY) {
   return { id: 't', x: 0, y: 0, physX, physY, width: 5, height: 5 };
@@ -15,12 +16,12 @@ function die(physX, physY) {
 // ── classifyDie — ring ────────────────────────────────────────────────────────
 
 test('classifyDie — center die is ring 1', () => {
-  const { ring } = classifyDie(die(cx, cy), wafer);
+  const { ring } = classifyDie(die(cx, cy), wafer, { ringCount: 4 });
   assert.equal(ring, 1);
 });
 
 test('classifyDie — edge die is outer ring', () => {
-  const { ring } = classifyDie(die(cx + r * 0.99, cy), wafer);
+  const { ring } = classifyDie(die(cx + r * 0.99, cy), wafer, { ringCount: 4 });
   assert.equal(ring, 4);
 });
 
@@ -44,19 +45,19 @@ test('classifyDie — ringCount=1 puts everything in ring 1', () => {
 // ── classifyDie — quadrant ────────────────────────────────────────────────────
 
 test('classifyDie — NE quadrant (+x, +y)', () => {
-  assert.equal(classifyDie(die(cx + 10, cy + 10), wafer).quadrant, 'NE');
+  assert.equal(classifyDie(die(cx + 10, cy + 10), wafer, { ringCount: 4 }).quadrant, 'NE');
 });
 
 test('classifyDie — NW quadrant (-x, +y)', () => {
-  assert.equal(classifyDie(die(cx - 10, cy + 10), wafer).quadrant, 'NW');
+  assert.equal(classifyDie(die(cx - 10, cy + 10), wafer, { ringCount: 4 }).quadrant, 'NW');
 });
 
 test('classifyDie — SW quadrant (-x, -y)', () => {
-  assert.equal(classifyDie(die(cx - 10, cy - 10), wafer).quadrant, 'SW');
+  assert.equal(classifyDie(die(cx - 10, cy - 10), wafer, { ringCount: 4 }).quadrant, 'SW');
 });
 
 test('classifyDie — SE quadrant (+x, -y)', () => {
-  assert.equal(classifyDie(die(cx + 10, cy - 10), wafer).quadrant, 'SE');
+  assert.equal(classifyDie(die(cx + 10, cy - 10), wafer, { ringCount: 4 }).quadrant, 'SE');
 });
 
 // ── getRingLabel ──────────────────────────────────────────────────────────────

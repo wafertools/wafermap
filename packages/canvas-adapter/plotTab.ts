@@ -19,6 +19,7 @@ import { plotToSweep } from '../stats/plotSpec.js';
 import { renderPlotChart } from './charts/plotChart.js';
 import { renderSweepPanel } from './charts/sweep.js';
 import { makeChartGridWrap } from './charts/chartShell.js';
+import { confirmDialog } from './confirmDialog.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { openPlotEditor } from './plotModal.js';
 import { sourceFromDies, sourceFromPoints, toPlotItems } from './plotItems.js';
@@ -51,8 +52,8 @@ const UNDO_MS = 10_000;
 
 export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; destroy: () => void } {
   const { doc, store } = d;
-  const items = toPlotItems(d.items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins })));
-  const ctx: PlotContext = { testDefs: d.testDefs, passBins: [1], groupBy: d.groupBy, ringCount: d.ringCount };
+  const items = toPlotItems(d.items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: d.ringCount })));
+  const ctx: PlotContext = { testDefs: d.testDefs, groupBy: d.groupBy };
   const resolve = (p: PlotSpec) => resolvePlot(p, items, ctx);
   const catalogue = fieldCatalogue(items, ctx);
 
@@ -73,14 +74,16 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     b.addEventListener('click', onClick);
     return b;
   };
+  const deleteAllBtn = button('Delete all plots…', 'wmapPlotDeleteAll', () => { void deleteAll(); });
   bar.append(
     button('+ New plot', 'wmapPlotNew', () => newPlot()),
     button('+ New sweep', 'wmapPlotNewSweep', () => newSweep()),
     button('Add examples', 'wmapPlotExamples', () => addExamples()),
     button('Import plots…', 'wmapPlotImport', () => { void importPlots(); }),
     button('Export plots…', 'wmapPlotExport', () => exportPlots()),
+    deleteAllBtn,
   );
-  markNoPrint(bar);   // New, Import and Export mean nothing on paper
+  markNoPrint(bar);   // New, Import, Export and Delete all mean nothing on paper
   root.appendChild(bar);
 
   // ── notices (undo, import results) ──
@@ -281,9 +284,38 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
       if (grid.children[i] !== e.card) grid.insertBefore(e.card, grid.children[i] ?? null);
     });
     empty.style.display = plots.length === 0 ? '' : 'none';
+    // Nothing to delete is not an action: the button says so rather than opening a dialog about zero plots.
+    deleteAllBtn.disabled = plots.length === 0;
+    deleteAllBtn.style.opacity = plots.length === 0 ? '0.5' : '1';
+    deleteAllBtn.style.cursor = plots.length === 0 ? 'default' : 'pointer';
   }
   const unsubscribe = store.subscribe(sync);
   sync();
+
+  /**
+   * Every saved plot, after a question. The list is the reader's own work kept across lots, so this asks first, says how
+   * many and that they are saved on this computer, and points at Export as the way to keep a copy. After it, Undo puts the
+   * whole list back (as a single delete's Undo does for one plot).
+   */
+  async function deleteAll(): Promise<void> {
+    const had = store.get().slice();
+    if (had.length === 0) return;
+    const n = had.length;
+    const sure = await confirmDialog({
+      doc, anchor: root,
+      title: 'Delete all plots',
+      message: n === 1
+        ? 'Delete your 1 saved plot? It is kept on this computer for the next lot, so it will not be there for the next file either. Export plots… first to keep a copy.'
+        : `Delete all ${n} saved plots, sweeps included? They are kept on this computer for the next lot, so they will not be there for the next file either. Export plots… first to keep a copy.`,
+      confirmLabel: n === 1 ? 'Delete 1 plot' : `Delete ${n} plots`,
+    });
+    if (!sure) return;
+    // The list may have changed while the question was open; delete what is there now, and Undo restores exactly that.
+    const removed = store.get().slice();
+    if (removed.length === 0) return;
+    store.replaceAll([]);
+    say(`Deleted ${removed.length === 1 ? '1 plot' : `all ${removed.length} plots`}.`, { label: 'Undo', run: () => store.replaceAll(removed) });
+  }
 
   // ── files ──
   function exportPlots(): void {

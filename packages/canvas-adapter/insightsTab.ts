@@ -37,7 +37,7 @@ import { waferPopulation } from './chartPopulation.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { plotStoreFor, type PlotStore } from './plotStore.js';
 import type { PlotSpec } from '../stats/plotSpec.js';
-import { INPUT_DEFAULT_PASS_BINS, itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
+import { itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { describeWaferPopulation, populationStat } from '../stats/population.js';
@@ -151,7 +151,7 @@ export interface InsightsTabDeps {
    */
   getBinColors: () => BinColors;
   /** Read fresh each render — used by the Overview tab's ring/quadrant regional yield cards. Default 4. */
-  getRingCount?: () => number;
+  getRingCount: () => number;
   onSaveImage?: SaveImageHandler;
   /** Optional host hook for the Overview tab's test-values "Export CSV" button — see `saveTextFile` (toolbar.ts). */
   onSaveText?: SaveTextHandler;
@@ -505,7 +505,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       e.preventDefault();
       const source = waferPopulation(it.dies, {
         waferLabel: it.identity, testDefs: it.testDefs,
-        activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex, wafer: it.wafer,
+        activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount(),
       });
       openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
     };
@@ -522,7 +522,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
   /** `openDiesMenu` for a gesture that reports where it ended rather than handing over its event (a drag). */
   function openDiesMenuAt(at: { x: number; y: number }, anchor: HTMLElement, items: Item[], what: string, keep: (d: Die) => boolean, activeTest?: number): void {
-    const source = sourceFromDies(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins })),
+    const source = sourceFromDies(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })),
       what, keep, mergeTestDefs(items).defs, activeTest);
     if (!source) return;
     openDrilldownMenu(at, anchor, source, { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
@@ -646,8 +646,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const yieldGroups = groups?.map(g => ({ key: g.key, items: g.items.map(withYieldPercent) }));
 
     const makeYieldData = () => yieldGroups
-      ? buildYieldDataCombined(yieldGroups, INPUT_DEFAULT_PASS_BINS, yieldSortBy)
-      : buildYieldData(yieldItems, INPUT_DEFAULT_PASS_BINS, yieldSortBy);
+      ? buildYieldDataCombined(yieldGroups, yieldSortBy)
+      : buildYieldData(yieldItems, yieldSortBy);
 
     const yieldPanelConfig: ChartPanel = {
       title: groups ? `Yield by ${label} (pass: ${passBinsLabel})` : `Yield by wafer (pass: ${passBinsLabel})`,
@@ -678,7 +678,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       drill: yieldGroups ? {
         onOpenGroup: datum => {
           const detailItems = yieldGroups.find(g => g.key === datum.label)?.items ?? [];
-          return { data: buildYieldData(detailItems, INPUT_DEFAULT_PASS_BINS, yieldSortBy), title: `Yield by wafer — ${label}: ${datum.label} (pass: ${passBinsLabel})` };
+          return { data: buildYieldData(detailItems, yieldSortBy), title: `Yield by wafer — ${label}: ${datum.label} (pass: ${passBinsLabel})` };
         },
         onBack: () => ({ data: makeYieldData(), title: `Yield by ${label} (pass: ${passBinsLabel})` }),
         groupLabelText: label,
@@ -855,7 +855,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     if (!items.length) return { elements: [], destroy: () => {} };
     const allWafers = items.map(it => it.wafer);
     const diesByWafer = items.map(it => it.dies);
-    const ringCount = getRingCount?.() ?? 4;
+    const ringCount = getRingCount();
 
     const elements: HTMLElement[] = [];
     const destroyFns: Array<() => void> = [];
@@ -1054,7 +1054,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
 
     if (single) {
-      const yieldPct = buildYieldData([{ ...item, key: item.waferIndex }], INPUT_DEFAULT_PASS_BINS)[0]?.percent;
+      const yieldPct = buildYieldData([{ ...item, key: item.waferIndex }])[0]?.percent;
       if (yieldPct !== undefined) card.appendChild(tile(`${yieldPct.toFixed(1)}%`, `Yield · pass: ${passBinsLabel}`));
       card.appendChild(tile(String(item.dies.length), 'Total dies'));
       return dropTrailingDivider(card) as HTMLDivElement;
@@ -1062,7 +1062,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     card.appendChild(tile(String(items.length), 'Wafers'));
 
-    const perWafer = buildYieldData(items.map(it => ({ ...it, key: it.waferIndex })), INPUT_DEFAULT_PASS_BINS)
+    const perWafer = buildYieldData(items.map(it => ({ ...it, key: it.waferIndex })))
       .map(d => d.percent)
       .filter(p => Number.isFinite(p));
     if (perWafer.length) {
@@ -1078,7 +1078,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // per wafer" always — a qualifier with nothing on screen to contrast
       // against, which on an even lot is just noise.
       const combined = buildYieldDataCombined(
-        [{ key: 'all', items: items.map(it => ({ ...it, key: it.waferIndex })) }], INPUT_DEFAULT_PASS_BINS,
+        [{ key: 'all', items: items.map(it => ({ ...it, key: it.waferIndex })) }],
       )[0]?.percent;
       const differs = combined !== undefined && combined.toFixed(1) !== mean.toFixed(1);
       card.appendChild(tile(
@@ -1172,7 +1172,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     void import('./plotTab.js').then(({ createPlotSection }) => {
       if (gone) return;
       const section = createPlotSection({
-        doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount?.() ?? 4,
+        doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount(),
         groupBy, groupLabel, onSaveImage, onSaveText,
         openWafer: openWafer ? (wi, label, test) => openWafer(wi, label, test) : undefined,
         focusTest, locateDie, pickPlotsFile: deps.onPickPlotsFile,
@@ -1201,7 +1201,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     };
     return renderDataSection({
       doc, items, testDefs, allTestDefs, groups, groupLabelText,
-      ringCount: getRingCount?.() ?? 4,
+      ringCount: getRingCount(),
       yieldByWaferIndex: new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent])),
       onSaveText, onLocateDie: locateDie,
       onOpenWafer: openWafer ? (wi, label) => openWafer(wi, label) : undefined,
@@ -1412,7 +1412,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         }
         const picked = [...byWafer].flatMap(([waferIndex, dies]) => {
           const it = items.find(i => i.waferIndex === waferIndex);
-          return it ? [{ label: it.identity ?? it.label, dies, waferIndex, wafer: it.wafer, passBins: it.passBins }] : [];
+          return it ? [{ label: it.identity ?? it.label, dies, waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() }] : [];
         });
         if (picked.length === 0) return;
         const population = picked.length === 1

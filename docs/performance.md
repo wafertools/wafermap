@@ -44,9 +44,9 @@ number repeated in six places is a number that will be wrong in five of them.
 
 | Entry point | gzipped | When it is downloaded |
 | --- | --- | --- |
-| `@wafertools/wafermap` — the data and stats layer, no DOM | **~63 KB** | Always, if you import it |
-| `@wafertools/wafermap/render` — the interactive renderer | **~151 KB** | Always, if you render |
-| Insights chart suite | +~55 KB | On first open, only if `insights` is left on (the default) |
+| `@wafertools/wafermap` — the data and stats layer, no DOM | **~64 KB** | Always, if you import it |
+| `@wafertools/wafermap/render` — the interactive renderer | **~155 KB** | Always, if you render |
+| Insights chart suite | +~53 KB | On first open, only if `insights` is left on (the default) |
 | In-app user guide | +~48 KB | On first open of the guide |
 | Summary report builders | +~10 KB | When a report is opened from the Summary panel or the gallery |
 
@@ -83,7 +83,7 @@ scripts/check-bundle-size.mjs` prints the per-chunk breakdown.
 | `analyzeWaferMap()` — no extra flags | Yield %, bin breakdown, ring/quadrant yield (`stats.regionYield`), pass rates by spec, verdict and functional test, basic findings | Summary panel, Insights → Overview |
 | `analyzeWaferMap({ computePerTestStats: true })` | Per-test five-number summaries (min/Q1/median/Q3/max) and Cp/Cpk/Pp/Ppk (`stats.capability`) | Insights → Distributions |
 | `analyzeWaferMap({ enableTestValueAnalysis: true })` | Automatic spatial statistical findings — flags regions where a test's values differ significantly (Welch's t-test per region) | Summary panel's findings list |
-| Insights tab (on by default) | Process capability, distributions, correlation charts | Insights tab (toolbar button and the Maps/Insights switch) |
+| Insights tab (on by default) | Process capability, distributions, correlation charts | Insights tab (the Maps | Insights switch) |
 | `analyzeWaferLot(..., { perWaferSummaries })` | Lot-level findings + reuses per-wafer stats you already computed | Gallery's lot Summary panel |
 
 `computePerTestStats` and `enableTestValueAnalysis` are **alternatives**, not

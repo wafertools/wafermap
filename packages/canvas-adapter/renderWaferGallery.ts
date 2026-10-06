@@ -4,12 +4,14 @@ import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
 import { metadataCategoricalValue } from '../core/metadata.js';
 import { resolveBinColorsForMaps, mergeBinDefs, binColorWarning, mixedPassBinsWarning, binColorsEqual, type BinColors } from '../renderer/binColors.js';
-import { itemPassBins, INPUT_DEFAULT_PASS_BINS } from '../core/passBins.js';
+import { commonPassBins, itemPassBins } from '../core/passBins.js';
+import { requireRingCount } from '../core/ringCount.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, Z_ABOVE, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, openReportModal, copyWmapThemeTokens, syncWmapPopupTheme, openUserGuideWindow, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type UserGuideExtension, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { openReportModal, openUserGuideWindow, type UserGuideExtension } from './guideWindow.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
@@ -19,6 +21,7 @@ import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
 import { waferPopulation, selectionPopulation, LOT_STACK_REASON, type DrilldownSource } from './chartPopulation.js';
+import { sourceFromBins } from './plotItems.js';
 import type { DrilldownContext } from './drilldown.js';
 import { plotStoreFor, type WithPlotStore } from './plotStore.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
@@ -33,7 +36,8 @@ import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions,
 import { asList, compareNatural, arrayEqual, toggleHighlight } from '../core/utils.js';
 import { buildCompactMap, compactLayoutOffered, type CompactMap } from '../core/compact.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
-import { createSummaryPanelEl, buildMetadataStripRow, buildCompactMetadataRows, metadataEntries, renderLotSummaryContentSteps, reportMapsFromItems } from './summaryPanel.js';
+import { attachExpandableMetadata } from './identityHeader.js';
+import { createSummaryPanelEl, buildMetadataStripRow, metadataEntries, renderLotSummaryContentSteps, reportMapsFromItems } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
 import { prettyKey } from '../stats/facets.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
@@ -473,6 +477,8 @@ function renderLegendSwatchRow(
     count?: number;
     /** Share of the legend population, 0–100. Shown beside the count. */
     percent?: number;
+    /** Right-click, or the Menu key / Shift+F10, on the entry: where, and the element to anchor to. */
+    onMenu?: (at: { x: number; y: number }, anchor: HTMLElement) => void;
   },
 ): void {
   const entry = container.ownerDocument.createElement('div');
@@ -532,7 +538,17 @@ function renderLegendSwatchRow(
   entry.addEventListener('click', e => opts.onClick(e.ctrlKey || e.metaKey));
   entry.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); opts.onClick(e.ctrlKey || e.metaKey); }
+    else if (opts.onMenu && (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey))) {
+      e.preventDefault();
+      const r = entry.getBoundingClientRect();
+      opts.onMenu({ x: r.left + r.width / 2, y: r.bottom }, entry);
+    }
   });
+  if (opts.onMenu) {
+    const onMenu = opts.onMenu;
+    entry.addEventListener('contextmenu', e => { e.preventDefault(); onMenu({ x: e.clientX, y: e.clientY }, entry); });
+    wireTooltip(entry, 'Right-click: charts and tables for these dies');
+  }
 
   container.appendChild(entry);
 }
@@ -568,8 +584,8 @@ export function renderWaferGallery(
   // panel, report, Insights) need one, and take the first wafer's; wafers built
   // with different ring counts are named by `ring-count-mixed` rather than pooled
   // silently under one wafer's definition of "Ring 2".
-  const itemRingCounts = (): number[] => originalItems.flatMap(it => it ? [it.ringCount ?? 4] : []);
-  const lotRingCount = (): number => itemRingCounts()[0] ?? 4;
+  const itemRingCounts = (): number[] => originalItems.flatMap(it => it ? [requireRingCount(it, 'renderWaferGallery')] : []);
+  const lotRingCount = (): number | undefined => itemRingCounts()[0];
   function mixedRingCountWarning(counts: number[]): WaferWarning | null {
     const distinct = [...new Set(counts)].sort((a, b) => a - b);
     if (distinct.length < 2) return null;
@@ -890,7 +906,7 @@ export function renderWaferGallery(
       const dies = it.dies.filter(d => acrossKeys.has(getDieKey(d)));
       if (dies.length === 0) return;
       if (it.isLotStack) stacked = true;
-      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
+      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it), ringCount: requireRingCount(it, 'renderWaferGallery') });
     });
     if (picked.length === 0) return undefined;
     const merged = mergedTestDefs();
@@ -919,7 +935,7 @@ export function renderWaferGallery(
       const dies = it ? cardControllers[i]?.getSelectedDies() ?? [] : [];
       if (!it || dies.length === 0) return;
       if (it.isLotStack) stacked = true;
-      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
+      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it), ringCount: requireRingCount(it, 'renderWaferGallery') });
     });
     if (picked.length < 2) return undefined;
     const view = sharedOpts;
@@ -963,6 +979,31 @@ export function renderWaferGallery(
     });
   }
 
+  /**
+   * Right-click on a bin's entry in the lot legend strip: the dies in that bin on every wafer shown, with no selection
+   * made. When several bins are filtered in and this is one of them, all of them, with a row to narrow to this bin.
+   */
+  function openBinLegendMenu(kind: 'hard' | 'soft', bin: number, at: { x: number; y: number }, anchor: HTMLElement): void {
+    const lit = asList(sharedOpts.highlightBin);
+    const bins = lit.length > 1 && lit.includes(bin) ? [...lit] : [bin];
+    const shares: Array<Parameters<typeof sourceFromBins>[0][number]> = [];
+    let stacked = false;
+    currentItems.forEach((it, i) => {
+      if (!it) return;
+      if (it.isLotStack) stacked = true;
+      shares.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies: it.dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it), ringCount: requireRingCount(it, 'renderWaferGallery') });
+    });
+    const defs = mergedTestDefs().defs;
+    const source = sourceFromBins(shares, kind, bins, defs, undefined, stacked);
+    if (!source) return;
+    const base: DrilldownContext = { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) };
+    const own = bins.length > 1 ? sourceFromBins(shares, kind, [bin], defs, undefined, stacked) : null;
+    const ctx: DrilldownContext = own ? { ...base, narrower: { label: `Only ${kind} bin ${bin}`, backLabel: 'All filtered bins', source: own, ctx: base } } : base;
+    void import('./drilldown.js').then(({ openDrilldownMenu }) => {
+      if (anchor.isConnected) openDrilldownMenu(at, anchor, source, ctx);
+    });
+  }
+
   /** Every die of the wafers on cards `indices`, as a source; `undefined` when there are none. */
   function wholeWafersSource(indices: readonly number[] | null, kind = ''): { source: DrilldownSource; ctx: Partial<DrilldownContext> } | undefined {
     const picked: DrilldownSource['items'] = [];
@@ -971,7 +1012,7 @@ export function renderWaferGallery(
       const it = currentItems[i];
       if (!it) continue;
       if (it.isLotStack) stacked = true;
-      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies: it.dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it) });
+      picked.push({ label: waferIdentityLabel(it) ?? it.label ?? `Wafer ${i + 1}`, dies: it.dies, waferIndex: i, wafer: it.wafer, passBins: passBinsOf(it), ringCount: requireRingCount(it, 'renderWaferGallery') });
     }
     if (picked.length === 0) return undefined;
     const view = sharedOpts;
@@ -1002,7 +1043,7 @@ export function renderWaferGallery(
     return {
       source: selectionPopulation(dies, {
         waferLabel: waferIdentityLabel(it), testDefs: it.testDefs, isLotStack: it.isLotStack,
-        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: found, wafer: it.wafer,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: found, wafer: it.wafer, passBins: passBinsOf(it), ringCount: requireRingCount(it, 'renderWaferGallery'),
       }),
       ctx: { onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi ?? found, die) },
     };
@@ -1114,7 +1155,7 @@ export function renderWaferGallery(
   function openLotSummaryReport(): void {
     // Loaded when opened, not with the gallery.
     void import('../stats/renderSummaryReport.js').then(({ renderLotReportHtml }) => {
-      openReportModal(renderLotReportHtml(reportMapsFromItems(originalItems, INPUT_DEFAULT_PASS_BINS, lotRingCount())), { anchor: container });
+      openReportModal(renderLotReportHtml(reportMapsFromItems(originalItems, lotRingCount())), { anchor: container });
     });
   }
 
@@ -2150,28 +2191,6 @@ export function renderWaferGallery(
   }
   refreshGalleryWarnings();
 
-  // Insights tab — toggles between the gallery grid and wmap's own chart
-  // suite. Mutually exclusive with the grid view (not just an overlay),
-  // since the suite wants the full body's room, not a side panel.
-  let btnInsights: HTMLButtonElement | null = null;
-  if (insightsEnabled) {
-    btnInsights = makeBtn('analysis', 'Insights', () => {
-      // `insightsOpen`, NOT insightsEl's display: the element does not exist
-      // until the suite has been loaded once, and `null?.style.display !==
-      // 'none'` evaluates to true — so reading the DOM here would report a
-      // never-opened tab as already open and the first click would do nothing.
-      setInsightsOpen(!insightsOpen);
-    });
-    // Stable identity hook — this button's aria-label is TOGGLED ('Insights'
-    // vs 'Back to gallery view' below), so button[aria-label="Insights"]
-    // only matches while closed and can't be used to close it or assert
-    // open state. dataset.active (set by setActive() below) already carries
-    // open/closed; this just makes the button findable regardless of state.
-    btnInsights.dataset.wmapInsightsBtn = '1';
-    barEl.appendChild(makeSep());
-    barEl.appendChild(btnInsights);
-  }
-
   // Help button — opens the end-user guide in a non-modal window (opt-in).
   // The button's click handler and the controller's own `openUserGuide()`
   // (below) both call this same function — a host can trigger the guide
@@ -2328,7 +2347,7 @@ export function renderWaferGallery(
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
       getBinColors: () => sharedOpts.binColors ?? lotBinColors(),
-      getRingCount: lotRingCount,
+      getRingCount: () => requireRingCount({ ringCount: lotRingCount() }, 'the Insights tab'),
       defaultView: options.insights?.defaultView,
       plotStore, onPickPlotsFile: options.insights?.onPickPlotsFile,
       // Never. The bar stays visible in Insights and carries Help whenever the
@@ -2416,15 +2435,6 @@ export function renderWaferGallery(
     // it to the full gallery width, so closing Insights left a full-width
     // bordered box where a compact toolbar had been.
     barEl.style.display = 'inline-flex';
-    if (btnInsights) {
-      setActive(btnInsights, open);
-      // The icon itself signals the toggle: a bar-chart glyph means "open
-      // Insights", a wafer glyph (while Insights is showing) means "back to
-      // the gallery grid" — clicking Insights again is otherwise not
-      // obvious as the way back, since the button's position never moves.
-      btnInsights.innerHTML = open ? ICONS.wafer : ICONS.analysis;
-      btnInsights.ariaLabel = open ? 'Back to gallery view' : 'Insights';
-    }
     refreshLotSummaryButton();
     rebuildLegend();
     if (!open) return;
@@ -3045,6 +3055,7 @@ export function renderWaferGallery(
         label: binDef?.name ? `${bin} · ${binDef.name}` : `Bin ${bin}`,
         count,
         percent: binTally.total > 0 ? (count / binTally.total) * 100 : undefined,
+        onMenu: (at, anchor) => openBinLegendMenu(mode === 'softBin' ? 'soft' : 'hard', bin, at, anchor),
         onClick: (additive) => {
           const next = toggleHighlight(sharedOpts.highlightBin, bin, additive);
           releaseLotFindingForLegend();
@@ -3085,6 +3096,14 @@ export function renderWaferGallery(
     const allDies   = resolvedItems.map(item => item.dies.filter(hasPosition));
     const baseWafer = resolvedItems[0].wafer;
     const lotSize   = resolvedItems.length;
+    // A stack is judged by the pass bins its wafers share. Wafers built with different pass bins have no one verdict to
+    // stack by (bin 1 can pass on one and fail on another), so nothing is stacked rather than judged by a guess.
+    const stackPassBins = commonPassBins(resolvedItems.map(it => itemPassBins(it)));
+    if (!stackPassBins) return [];
+    // Likewise the ring count: a stack's rings are the wafers' rings, so wafers built with different ring counts are not stacked.
+    const ringCounts = new Set(resolvedItems.map(it => requireRingCount(it, 'renderWaferGallery')));
+    if (ringCounts.size !== 1) return [];
+    const stackRingCount = [...ringCounts][0];
 
     // Wafer object for stacked analysis: strip the per-wafer 'wafer' identity field
     // (e.g. 'W01') so the summary panel doesn't claim this is a single wafer's data.
@@ -3141,13 +3160,15 @@ export function renderWaferGallery(
         return {
           wafer: stackedWafer,
           dies,
+          passBins: [...stackPassBins],
+          ringCount: stackRingCount,
           testDefs: [cardTestDef],
           label: `${markedTestLabel(def, def.testNumber)} · ${method}`,
           isLotStack: true,
           aggrMethod: method,
           lotSize,
           statsSummary: asLotStackSummary(
-            analyzeWaferMap({ wafer: stackedWafer, dies, testDefs: [cardTestDef] }, { testNumbers: [0] }),
+            analyzeWaferMap({ wafer: stackedWafer, dies, passBins: [...stackPassBins], ringCount: stackRingCount, testDefs: [cardTestDef] }, { testNumbers: [0] }),
             method,
           ) };
       });
@@ -3168,13 +3189,15 @@ export function renderWaferGallery(
         return {
           wafer: stackedWafer,
           dies,
+          passBins: [...stackPassBins],
+          ringCount: stackRingCount,
           hbinDefs: itemHbinDefs,
           label: `${def.bin} · ${def.name}`,
           isLotStack: true,
           aggrMethod: 'countBin',
           lotSize,
           statsSummary: asLotStackSummary(
-            analyzeWaferMap({ wafer: stackedWafer, dies, hbinDefs: itemHbinDefs }),
+            analyzeWaferMap({ wafer: stackedWafer, dies, passBins: [...stackPassBins], ringCount: stackRingCount, hbinDefs: itemHbinDefs }),
             'countBin',
           ) };
       });
@@ -3195,13 +3218,15 @@ export function renderWaferGallery(
         return {
           wafer: stackedWafer,
           dies,
+          passBins: [...stackPassBins],
+          ringCount: stackRingCount,
           sbinDefs: itemSbinDefs,
           label: `${def.bin} · ${def.name}`,
           isLotStack: true,
           aggrMethod: 'countBin',
           lotSize,
           statsSummary: asLotStackSummary(
-            analyzeWaferMap({ wafer: stackedWafer, dies, sbinDefs: itemSbinDefs }),
+            analyzeWaferMap({ wafer: stackedWafer, dies, passBins: [...stackPassBins], ringCount: stackRingCount, sbinDefs: itemSbinDefs }),
             'countBin',
           ) };
       });
@@ -3346,42 +3371,7 @@ export function renderWaferGallery(
     Object.assign(labelEl.style, {
       fontWeight: '700', fontSize: FONT.sub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
     wrap.appendChild(labelEl);
-
-    const entries = metadataEntries(metadata ?? {});
-    let metaPanel: HTMLDivElement | null = null;
-    if (entries.length > 0) {
-      const chevron = doc.createElement('span');
-      Object.assign(chevron.style, { fontSize: FONT.body, lineHeight: LEADING.none, color: CLR.label, flexShrink: '0' });
-      chevron.textContent = '▾';
-      wrap.appendChild(chevron);
-      Object.assign(wrap.style, { cursor: 'pointer', borderRadius: RADIUS.control });
-      // A clickable header that never reacts reads as a static caption.
-      wrap.addEventListener('mouseenter', () => { wrap.style.background = CLR.bgHover; });
-      wrap.addEventListener('mouseleave', () => { wrap.style.background = 'none'; });
-
-      metaPanel = doc.createElement('div');
-      metaPanel.dataset.wmapCardMetaPanel = '1';
-      Object.assign(metaPanel.style, {
-        position:     'absolute',
-        top:          '0', left: '0', right: '0',
-        zIndex:       Z_ABOVE,
-        background:   CLR.menuBg,
-        borderBottom: `1px solid ${CLR.menuBorder}`,
-        boxShadow:    SHADOW.menu,
-        padding: `${SPACE.md} ${SPACE.lg}`,
-        fontSize:     FONT.body,
-        display:      'none' } as Partial<CSSStyleDeclaration>);
-      const rows = buildCompactMetadataRows(metadata ?? {});
-      if (rows) metaPanel.appendChild(rows);
-
-      wrap.setAttribute('aria-expanded', 'false');
-      wrap.setAttribute('aria-label', `Wafer info for ${label || 'this card'}. Click to expand.`);
-      wireExpandToggle(wrap, (open) => {
-        chevron.textContent = open ? '▴' : '▾';
-        wrap.setAttribute('aria-expanded', String(open));
-        if (metaPanel) metaPanel.style.display = open ? 'block' : 'none';
-      });
-    }
+    const metaPanel = attachExpandableMetadata(doc, wrap, label, metadata);
     return { wrap, metaPanel };
   }
 
@@ -3404,39 +3394,17 @@ export function renderWaferGallery(
     metadata: import('../core/metadata.js').WaferMetadata | undefined,
   ): void {
     const titleEl = handle.box.querySelector<HTMLElement>('[data-wmap-window-title]');
-    const entries = metadataEntries(metadata ?? {});
-    if (!titleEl || entries.length === 0) return;
+    if (!titleEl || metadataEntries(metadata ?? {}).length === 0) return;
 
     const titleParent = titleEl.parentElement;
     const titleWrap = container.ownerDocument.createElement('div');
-    Object.assign(titleWrap.style, {
-      display: 'flex', alignItems: 'center', gap: SPACE.xs, flex: '1', minWidth: '0', cursor: 'pointer' });
-    wireControlHover(titleWrap, 'bare');
+    Object.assign(titleWrap.style, { display: 'flex', alignItems: 'center', gap: SPACE.xs, flex: '1', minWidth: '0' });
     titleParent?.insertBefore(titleWrap, titleEl);
     titleWrap.appendChild(titleEl);
-    const chevron = container.ownerDocument.createElement('span');
-    Object.assign(chevron.style, { fontSize: FONT.body, lineHeight: LEADING.none, color: CLR.label, flexShrink: '0' });
-    chevron.textContent = '▾';
-    titleWrap.appendChild(chevron);
-
-    const metaPanel = container.ownerDocument.createElement('div');
-    metaPanel.dataset.wmapCardMetaPanel = '1';
-    Object.assign(metaPanel.style, {
-      position: 'absolute', top: '0', left: '0', right: '0', zIndex: Z_ABOVE,
-      background: CLR.menuBg, borderBottom: `1px solid ${CLR.menuBorder}`,
-      boxShadow: SHADOW.menu, padding: `${SPACE.md} ${SPACE.lg}`, fontSize: FONT.body, display: 'none' } as Partial<CSSStyleDeclaration>);
-    const rows = buildCompactMetadataRows(metadata ?? {});
-    if (rows) metaPanel.appendChild(rows);
+    const metaPanel = attachExpandableMetadata(container.ownerDocument, titleWrap, label, metadata);
+    if (!metaPanel) return;
     handle.contentWrap.style.position = 'relative';
     handle.contentWrap.appendChild(metaPanel);
-
-    titleWrap.setAttribute('aria-expanded', 'false');
-    titleWrap.setAttribute('aria-label', `Wafer info for ${label}. Click to expand.`);
-    wireExpandToggle(titleWrap, (open) => {
-      chevron.textContent = open ? '▴' : '▾';
-      titleWrap.setAttribute('aria-expanded', String(open));
-      metaPanel.style.display = open ? 'block' : 'none';
-    });
   }
 
   function buildCard(item: WaferMapDisplayItem, cardIndex: number, _totalItems: number): { card: HTMLDivElement; ctrl: CardController; canvasWrapper: HTMLDivElement; expandBtn: HTMLButtonElement } {
@@ -3541,7 +3509,7 @@ export function renderWaferGallery(
       const across = acrossSelectionSource() ?? pickedWafersSource(cardIndex);
       const source = across?.source ?? waferPopulation(item.dies, {
         waferLabel: waferIdentityLabel(item), testDefs: item.testDefs, isLotStack: item.isLotStack,
-        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: cardIndex, wafer: item.wafer,
+        activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: cardIndex, wafer: item.wafer, passBins: passBinsOf(item), ringCount: requireRingCount(item, 'renderWaferGallery'),
       });
       const at = { x: e.clientX, y: e.clientY };
       void import('./drilldown.js').then(({ openDrilldownMenu }) => {

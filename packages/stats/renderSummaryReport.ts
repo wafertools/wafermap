@@ -3,6 +3,7 @@ import type { Wafer } from '../core/wafer.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
 import { binPassSets, binPassSetsByWafer, mergeBinDefs, resolveBinColors, resolveBinColorsByWafer, type BinColors, type BinPassGroup } from '../renderer/binColors.js';
 import { commonPassBins, itemPassBins, passBinsLabel } from '../core/passBins.js';
+import { itemRingCount } from '../core/ringCount.js';
 import { isParametricTest, isBuiltMap, type BinDef, type TestDef, type YieldSummary, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
@@ -49,8 +50,10 @@ export interface SummaryReportParams {
   sbinDefs?:    BinDef[];
   testDefs?:    TestDef[];
   statsSummary?: StatsSummary;
-  passBins?:    number[];
-  ringCount?:   number;
+  /** The map's own pass bins (`WaferMapResult.passBins`): required, there is no default to judge by instead. */
+  passBins:     number[];
+  /** The map's own ring count (`WaferMapResult.ringCount`): required, there is no default. */
+  ringCount:    number;
   /** @internal The map's own bin colours, so a bar here is the colour of that bin on the map. Resolved with the default palette when omitted. */
   binColors?:   BinColors;
   /** @internal Shown inside the app: a click on a finding's row selects it on the map (see `LIVE_FINDINGS_SCRIPT`). */
@@ -300,8 +303,8 @@ export function renderSummaryReportHtml(
     wafer, dies, yieldSummary, dataCoverage,
     hbinDefs, sbinDefs, testDefs = [],
     statsSummary,
-    passBins  = [1],
-    ringCount = 4 } = params;
+    passBins,
+    ringCount } = params;
   // The map's own colours when the caller has them; the default palette otherwise.
   const binColorsFor = params.binColors ?? resolveBinColors(dies, { passBins, hbinDefs, sbinDefs });
 
@@ -386,6 +389,8 @@ export interface LotSummaryReportParams {
     dies?: Die[];
     /** This wafer's own pass bins (`WaferMapResult.passBins`). Omitted ⇒ the top-level `passBins`. */
     passBins?: number[];
+    /** This wafer's own ring count (`WaferMapResult.ringCount`). Omitted ⇒ the top-level `ringCount`. */
+    ringCount?: number;
     /** Reused directly as `analyzeWaferLot`'s `perWaferSummaries` — the expensive
      *  per-wafer pass (`analyzeWaferMap`) is never re-run here. */
     statsSummary?: StatsSummary;
@@ -401,8 +406,9 @@ export interface LotSummaryReportParams {
   hbinDefs?:  BinDef[];
   sbinDefs?:  BinDef[];
   testDefs?:  TestDef[];
-  /** Fallback for items that carry no `passBins` of their own. Default `[1]`. */
+  /** For items that carry no `passBins` of their own (a hand-built map). No default: an item with neither is refused. */
   passBins?:  number[];
+  /** For items that carry no `ringCount` of their own (a hand-built map); none ⇒ the first item's. No default. */
   ringCount?: number;
   /** Passthrough to the internal per-group `analyzeWaferLot` call, e.g. `{ enableTestValueAnalysis: true }`. */
   analyzeOptions?: AnalyzeWaferMapOptions;
@@ -479,7 +485,7 @@ const MAX_SPLIT_FACETS = 3;
 function splitsSection(
   items: LotSummaryReportParams['items'],
   testDefs: TestDef[],
-  passBins: readonly number[],
+  passBins: readonly number[] | undefined,
 ): string {
   const facetItems = items.map(it => ({ metadata: it.wafer?.metadata }));
   const facets = buildFacetTable(facetItems, { facetableOnly: true }).filter(f => f.splittable);
@@ -506,7 +512,6 @@ function splitsSection(
     // same computation the Insights yield chart uses when grouping is active.
     const yieldRows = buildYieldDataCombined(
       groups.map(g => ({ key: g.key, items: g.items.map(it => ({ label: it.label, dies: it.dies, passBins: itemPassBins(it, passBins) })) })),
-      passBins,
     ).map(d => [escHtml(d.label), String(d.itemCount), `${d.percent.toFixed(1)}%`]);
 
     const tables = [
@@ -711,9 +716,9 @@ function renderLotGroupSections(
   hbinDefs: BinDef[] | undefined,
   sbinDefs: BinDef[] | undefined,
   testDefs: TestDef[],
-  /** Fallback for items that carry no pass bins of their own. */
-  passBins: readonly number[],
-  ringCount: number,
+  /** For items that carry no pass bins of their own; none ⇒ such an item is refused. */
+  passBins: readonly number[] | undefined,
+  ringCount: number | undefined,
   analyzeOptions: AnalyzeWaferMapOptions | undefined,
   /** The map's own bin colours, when the caller has them; resolved over this group's wafers otherwise. */
   binColors: BinColors | undefined,
@@ -813,14 +818,16 @@ function renderLotGroupSections(
   const summarySection = renderSection(population.lotId !== undefined ? 'Lot Summary' : 'Summary', renderMetricGrid(overviewMetrics));
   const metadataSection = renderMetadataSection(items.map((it) => ({ metadata: it.wafer?.metadata })));
   const waferYieldSection = renderSection('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
+  // The lot-level ring tables use one ring count: the caller's own, else the first wafer's (mixed counts are named elsewhere).
+  const lotRing = ringCount ?? itemRingCount(items[0]);
   const splitsSectionHtml = splitsSection(items, testDefs, passBins);
   const perWaferSummaries = lotSummary.perWafer.map((pw) => pw.summary);
   const binSection = hasBins ? lotBinSections(allDies, hbinDefs, sbinDefs, perWaferSummaries, passGroups, binColorsFor) : '';
   const ringSection = hasBins && allWafers.length
-    ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, diesByWafer, allWafers, ringCount, passBinsByWafer)
+    ? lotRegionYieldTable('Ring Yield (All Wafers)', buildRingRegions, diesByWafer, allWafers, lotRing, passBinsByWafer)
     : '';
   const quadSection = hasBins && allWafers.length
-    ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, ringCount, passBinsByWafer)
+    ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, lotRing, passBinsByWafer)
     : '';
   const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries, lotSummary.stats.testSpecYield) : '';
   const functionalSectionHtml = testDefs.length ? lotFunctionalTable(allDies, testDefs, perWaferSummaries) : '';
@@ -876,8 +883,8 @@ export function renderLotSummaryReportHtml(
     hbinDefs,
     sbinDefs,
     testDefs = [],
-    passBins = [1],
-    ringCount = 4,
+    passBins,
+    ringCount,
     analyzeOptions } = params;
 
   const now = new Date().toLocaleString();

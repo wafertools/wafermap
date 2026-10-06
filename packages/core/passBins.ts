@@ -13,18 +13,53 @@
  * Deliberately internal (not re-exported from `core/index.ts`).
  */
 
-/** The industry convention, applied ONLY to input that states no pass bins. */
-export const INPUT_DEFAULT_PASS_BINS: readonly number[] = [1];
+/**
+ * THE ONE PLACE the default pass bins exist, and `normalizePassBins` the one
+ * place it is applied. `tests/passBinsDefault.test.mjs` and
+ * `scripts/check-pass-bin-defaults.mjs` (run by `npm run check`) fail the build
+ * if the literal, this constant or a `[1]` fallback appears anywhere else.
+ *
+ * Why so strict: a user who states pass bins "3, 5" has made bin 1 a FAIL bin.
+ * Any surface that quietly falls back to `[1]` then reports a wrong yield and
+ * says nothing, and a yield is what lots are dispositioned on.
+ */
+const INPUT_DEFAULT_PASS_BINS: readonly number[] = [1];
 
 /**
- * One wafer's pass bins: its own (carried from `buildWaferMap`), else the
- * caller's default for items built without any, else the input convention.
+ * The pass bins of a build: what the input states, or — only when it states
+ * none — the industry convention (bin 1). Called by `buildWaferMap` and nothing
+ * else; from there the value travels on the result.
+ */
+export function normalizePassBins(stated: readonly number[] | undefined): number[] {
+  return [...(stated ?? INPUT_DEFAULT_PASS_BINS)];
+}
+
+/**
+ * The pass bins a source carries, or an error naming where they were missing.
+ * Downstream of the build there is no default to fall back on: a surface that
+ * cannot say which bins pass must not state a yield.
+ */
+export function requirePassBins(
+  source: { passBins?: readonly number[] } | null | undefined,
+  where: string,
+): readonly number[] {
+  const bins = source?.passBins;
+  if (!bins) {
+    throw new Error(`${where}: no pass bins (WaferMapResult.passBins); a map not built by buildWaferMap must state them.`);
+  }
+  return bins;
+}
+
+/**
+ * One wafer's pass bins: its own (carried from `buildWaferMap`), else
+ * `fallback` — a value the CALLER holds for items built without any (a report
+ * given `passBins` for hand-built maps) — else an error. Never a built-in default.
  */
 export function itemPassBins(
   item: { passBins?: readonly number[] } | null | undefined,
-  fallback: readonly number[] = INPUT_DEFAULT_PASS_BINS,
+  fallback?: readonly number[],
 ): readonly number[] {
-  return item?.passBins ?? fallback;
+  return item?.passBins ?? fallback ?? requirePassBins(undefined, 'itemPassBins');
 }
 
 /** Same bins, in any order. */
@@ -59,6 +94,7 @@ export function passBinsLabel(sets: Iterable<readonly number[]>): string {
   for (const s of sets) if (!distinct.some(d => sameBins(d, s))) distinct.push(s);
   const one = (s: readonly number[]) =>
     s.length === 0 ? 'no bins' : s.length === 1 ? `bin ${s[0]}` : `bins ${s.join(', ')}`;
-  if (distinct.length <= 1) return one(distinct[0] ?? INPUT_DEFAULT_PASS_BINS);
+  if (distinct.length === 0) return 'no wafers';
+  if (distinct.length === 1) return one(distinct[0]);
   return `per wafer: ${distinct.map(one).join(' · ')}`;
 }

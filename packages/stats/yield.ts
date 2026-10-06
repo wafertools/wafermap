@@ -15,6 +15,7 @@
 // `isYieldEligibleDie` rule `buildWaferMap`/`analyzeWaferMap` use) only
 // when no precomputed value is supplied.
 
+import { requirePassBins } from '../core/passBins.js';
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie, diePassStatus } from '../core/dies.js';
 import { compareNatural } from '../core/utils.js';
@@ -46,11 +47,11 @@ export interface YieldItem {
   label?: string;
   dies?: Die[];
   /**
-   * This item's own pass bins (`WaferMapResult.passBins`). Wins over the
-   * function's `passBins` argument, which only fills in for items without —
-   * a lot can mix wafers built with different pass bins.
+   * This item's own pass bins (`WaferMapResult.passBins`) — required, because a
+   * lot can mix wafers built with different pass bins and there is no default
+   * to judge a wafer by instead.
    */
-  passBins?: readonly number[];
+  passBins: readonly number[];
   /**
    * Precomputed yield percent for this item (e.g. from `analyzeWaferLot`'s
    * `lotYieldSeries[waferIndex].yieldPercent`) — used directly when present.
@@ -87,9 +88,9 @@ function yieldPercentFromDies(dies: Die[], passBins: readonly number[]): number 
   return total > 0 ? (pass / total) * 100 : 0;
 }
 
-function resolveYieldPercent(item: YieldItem, passBins: readonly number[]): number {
+function resolveYieldPercent(item: YieldItem): number {
   if (item.yieldPercent !== undefined) return item.yieldPercent ?? 0;
-  return yieldPercentFromDies(item.dies ?? [], item.passBins ?? passBins);
+  return yieldPercentFromDies(item.dies ?? [], requirePassBins(item, 'yield'));
 }
 
 /** Count of dies a yield percentage was actually computed over — excludes
@@ -110,9 +111,9 @@ function sortYieldData(data: ChartDatum[], sortBy: YieldSortBy): void {
 }
 
 /** One bar per item. */
-export function buildYieldData(items: YieldItem[], passBins: readonly number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
+export function buildYieldData(items: YieldItem[], sortBy: YieldSortBy = 'label'): ChartDatum[] {
   const data = items.map((it, i) => {
-    const pct = resolveYieldPercent(it, passBins);
+    const pct = resolveYieldPercent(it);
     return { label: it.label ?? `#${i}`, value: pct, percent: pct, itemCount: 1, key: it.key };
   });
   sortYieldData(data, sortBy);
@@ -132,12 +133,12 @@ export function buildYieldData(items: YieldItem[], passBins: readonly number[] =
  * excluded dies (which count toward yield nowhere else) still skew this
  * combined bar.
  */
-export function buildYieldDataCombined(groups: { key: string; items: YieldItem[] }[], passBins: readonly number[] = [1], sortBy: YieldSortBy = 'label'): ChartDatum[] {
+export function buildYieldDataCombined(groups: { key: string; items: YieldItem[] }[], sortBy: YieldSortBy = 'label'): ChartDatum[] {
   const data = groups.map(g => {
     let weighted = 0, dieCount = 0;
     for (const it of g.items) {
       const dies = yieldEligibleDieCount(it.dies ?? []);
-      weighted += resolveYieldPercent(it, passBins) * dies;
+      weighted += resolveYieldPercent(it) * dies;
       dieCount += dies;
     }
     const pct = dieCount > 0 ? weighted / dieCount : 0;

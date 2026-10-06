@@ -215,7 +215,6 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)). This is the mode a map opens in.                                                                                                                                                                             |
 | <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
-| <img src="images/icons/analysis.svg" width="20" height="20">  | Insights           | Swaps the map for this wafer's own chart suite — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Shown unless the application has turned it off.                                                                                                                |
 | <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
 | <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                                                                                           |
@@ -335,7 +334,6 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | **Legend on each map** adds a legend to every card as well as the shared one above the grid (off by default). While it is on, bin modes also let you choose where that legend sits on each card. |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with test limits only. Toggles all cards between the limit range and the data range. Leave it on the test limits when comparing wafers — the data range rescales per view. |
 | <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Opens or closes the Summary panel covering every wafer in the gallery.                                                                                                           |
-| <img src="images/icons/analysis.svg" width="20" height="20"> | Insights      | Swaps the grid for a chart suite covering every wafer — yield, bin breakdown, process capability, and more (see [Section 8](#8-insights-tab)). Shown unless the application has turned it off. |
 | <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the wafers shown. Collected across every wafer and de-duplicated, so a problem affecting all of them is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
 
@@ -427,6 +425,12 @@ What you right-click decides the population:
 - **Dies selected on several wafers of a gallery** — by clicking a finding, or by selecting on more than one card.
   Right-click a selected die on any of those cards and the menu opens on every selected die, with a first row,
   **Only this wafer**, that narrows it to the dies selected on the card you clicked (and **All selected** to go back).
+- **A bin in the legend** — right-click its entry, on a map's legend or the gallery's lot legend. The menu opens on that
+  bin's dies (on this wafer, or on every wafer for the lot legend), and nothing is selected: the legend only filters what
+  is drawn. With several bins filtered in, right-clicking one of them opens on all of them, with an **Only bin N** row to
+  narrow it (and **All filtered bins** to go back). On the lot legend the Menu key or Shift + F10 works on a focused entry.
+- **Plots and sweeps you have saved** — they open in their editor over just those dies, so you can change one there; the
+  change is saved to the plot.
 - **A finding** — right-click it in the Summary panel. If it is not already shown, its dies are selected first, then
   the menu opens on them: on all the wafers of a gallery that the finding selects dies on. A finding that is about
   whole wafers and selects no dies (a wafer's yield) opens the menu on those wafers.
@@ -445,7 +449,8 @@ wafer otherwise.
 The menu offers:
 
 - **Value histogram** — one test's distribution, opening on the test the map
-  is showing.
+  is showing. **Edit as new plot** beside its population line closes it and
+  opens the same test as a draft plot over the same dies, to change its axes, colour or limits and keep it if you want.
 - **Process capability** — every test normalised to its spec limits, or its
   test limits when it has none, with its
   Ppk. Below 30 dies the chart says each Ppk is a rough estimate: a Ppk from a
@@ -694,9 +699,9 @@ bin 1 (Pass) or bin 2 (Fail) at that location.*
 
 ## 8. Insights tab
 
-The **Insights** toolbar button (single map or gallery) swaps the wafer view
-for a chart suite computed from the same die data — without leaving the
-toolbar. Click it again to return to the map. Independent of the Findings
+The **Insights** side of the **Maps | Insights** switch (at the far right of the toolbar row, single map or
+gallery) swaps the wafer view for a chart suite computed from the same die data — without leaving the
+toolbar. Choose **Maps** to return to the map; the switch stays where it is. Independent of the Findings
 sidebar (Section 6) — the two toggle independently, and opening one never
 hides the other's toolbar button, since Findings has nothing to highlight
 against once the map is replaced.
@@ -913,8 +918,13 @@ In **Setup**, choose the **chart type**, then the field for each role:
   labelled so).
 - **One mark per**: Automatic uses the finest level the fields allow. **Wafer** makes
   every mark a wafer, combining its dies' values as chosen above, which is how "mean
-  Idsat per wafer against slot" is drawn. A per-wafer field (yield) cannot be split by
-  a per-die one (hard bin); the plot says so rather than drawing it.
+  Idsat per wafer against slot" is drawn. Yield can be split by a per-die field
+  (ring, quadrant, bin, die position) in a **bar** (pooled yield per ring) or a **line**, which take the pass verdict of each die; a box,
+  scatter or histogram of yield cannot, and says why.
+
+When fields do not go together, the list says so before you choose: a field that would leave a plot that cannot be
+drawn is dimmed in the **X**, **Y** and **Colour** lists with the reason after it, and does nothing when picked. A plot
+that cannot be drawn says in words what is wrong and what to use instead.
 
 In **Customise**, the **title** and each **axis title** are written for you until
 you type your own (the box shows what it would say, and clearing it brings that
@@ -924,6 +934,13 @@ button to go back to the automatic title; a title that names none of the fields 
 check") is yours and is left alone. Each axis can have a **minimum**, a **maximum**, a **log scale** (offered
 whatever the values, but it stays linear, and says so, if any value is zero or
 negative) and **reverse direction**. A histogram also has a number of **bins**. A category axis has a title only.
+
+When a plotted test has limits they are drawn as dashed lines on the axis that measures it (a histogram's values, a scatter's X or
+Y, a box, bar or line's values when they are measured values or their mean, median, minimum or maximum): short dashes for the
+test's own limits, long for its specification limits, each labelled with its value. The axis widens to include them when that
+leaves the data at least a third of it, as in Insights, and a limit off the edge is marked there instead of vanishing. Choose
+which are drawn under **Limits** in Customise. Where the wafers in view disagree about a test's limits none are drawn, as in
+Insights: the reconciled test list drops conflicting limits.
 
 Under every plot is a line stating what it shows: the wafers and dies, how values
 were combined ("median of Vth per wafer"), and how many dies were left out for
@@ -947,7 +964,10 @@ test a plot needs, the plot stays in the list, dimmed, with the reason ("Needs t
 writes them all to a file, and **Import plots…** adds the plots of such a file to
 yours, as copies where a plot with the same identity already exists, never
 replacing one. Each card has **Edit**, **Duplicate** and **Delete**; a deleted plot
-can be restored with **Undo** for ten seconds.
+can be restored with **Undo** for ten seconds. **Delete all plots…** removes every
+plot, sweeps included, after asking you to confirm (the question says how many, and
+that **Export plots…** first keeps a copy); **Undo** restores the whole list for ten
+seconds. It is dimmed while there are no plots.
 
 **Three different ways to divide the data, kept apart.** A plot divides data in
 three places, and they do different jobs, so neighbouring plots can ask different
@@ -1008,6 +1028,8 @@ Two measurements are drawn on the plot and restated underneath:
 Only the **first two** curves are measured. Any further ones are drawn for
 context.
 
+![The sweep editor: the curve beside the series, test list and axis settings](images/guide-sweep-editor.png)
+
 **Editing a sweep.** The editor has a title, one block per series, and the axis
 and measurement settings. For each series, type its **tests in sweep order**:
 test numbers and ranges, such as `1010, 1011, 1020..1030` (a range means the
@@ -1021,6 +1043,12 @@ reads 0.55 from `Fmax @ 0.55 V`, and `-{x}` reads 5 from `1234-5`). Text that is
 naming the word, and is not applied, so the curve beside it never shows
 something you did not mean. **+ Add series** adds a curve and **Remove** drops
 one; the crossing and widths appear once there are two.
+
+**A sweep remembers what its tests were called.** The editor and **+ New sweep** record each test's name
+alongside its number. Open the sweep on a lot where a number now carries a different name (a test program that
+reuses numbers for other measurements) and that test is not drawn: the card names it, and the crossing and widths
+are not measured, rather than presenting another quantity as the original curve. Renaming a test in the selector
+has the same effect. A sweep written by hand, or imported from a file without names, is not checked.
 
 **The x axis is the sweep, not the lot** — that is what distinguishes this card
 from the wafer-to-wafer trend, which walks one test across wafers. If the
@@ -1062,7 +1090,7 @@ its wafers and dies in the same place. The image takes the card's own background
 theme saves a dark chart. The file name identifies the lot, wafers and chart (see below).
 
 **Printing.** The dropdowns, toggles and buttons (camera, expand and, on the Plot tab, New
-plot, Add examples, Import, Export, Edit, Duplicate and Delete) are left off the printed page.
+plot, Add examples, Import, Export, Delete all, Edit, Duplicate and Delete) are left off the printed page.
 In their place each chart prints a small block under its title giving the same settings and
 lines as the saved image, so a printed histogram says which test it is of.
 

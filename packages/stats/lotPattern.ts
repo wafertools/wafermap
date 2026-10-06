@@ -1,3 +1,4 @@
+import { requireRingCount } from '../core/ringCount.js';
 import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import { getDieKey, isPositionedDie, isYieldEligibleDie, positionKey, type PositionedDie } from '../core/dies.js';
 import { itemPassBins } from '../core/passBins.js';
@@ -105,7 +106,7 @@ export function findLotPattern(results: readonly WaferMapResult[], options: Reso
   });
 
   // 2. Its shape.
-  const classification = classifyFailingDies(recurringDies, cells.map(c => c.die), ref.wafer, ref.ringCount ?? options.ringCount);
+  const classification = classifyFailingDies(recurringDies, cells.map(c => c.die), ref.wafer, requireRingCount(ref, 'the lot pattern'));
   if (!classification || classification.pattern === 'random' || classification.pattern === 'none') return null;
 
   // 3. The wafers that show it.
