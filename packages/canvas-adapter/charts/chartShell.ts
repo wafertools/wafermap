@@ -1996,6 +1996,22 @@ export function limitExtent(lines: readonly LimitLine[]): { lo?: number; hi?: nu
  * (0 = the chart's usual label position), in input order. Greedy by position,
  * so it is stable: labels that never collide all stay on row 0.
  */
+export interface LabelBox { x0: number; y0: number; x1: number; y1: number }
+
+/**
+ * Where a label goes so it does not sit on one already drawn: `box` moved down in whole `step`s until it overlaps none of
+ * `taken` (at most `maxSteps`, so a crowded chart gives up rather than pushes a label off the plot). The result is added to
+ * `taken`. The x-axis and y-axis limit labels of one chart are placed independently, so a high limit on Y and a low limit on X
+ * both want the top-left corner; this is what keeps them apart.
+ */
+export function placeClearOf(taken: LabelBox[], box: LabelBox, step: number, maxSteps = 6): LabelBox {
+  const hits = (b: LabelBox) => taken.some(t => b.x0 < t.x1 && b.x1 > t.x0 && b.y0 < t.y1 && b.y1 > t.y0);
+  let b = box;
+  for (let n = 0; n < maxSteps && hits(b); n++) b = { x0: b.x0, x1: b.x1, y0: b.y0 + step, y1: b.y1 + step };
+  taken.push(b);
+  return b;
+}
+
 export function stackLabelRows(spans: ReadonlyArray<{ start: number; end: number }>, gap = 4): number[] {
   const order = spans.map((sp, i) => ({ ...sp, i })).sort((a, b) => a.start - b.start);
   const rowEnds: number[] = [];

@@ -120,17 +120,23 @@ test('a map\'s own canvas legend: right-click on a bin entry opens on that bin\'
   const ctrl = renderWaferMap(host, w, { viewOptions: { showLegend: true, legendPosition: 'floating' }, insights: { enabled: false } });
   await tick(); await tick();
   const canvas = host.querySelector('canvas');
-  // The legend is drawn on the canvas: scan for a point where the right-click lands on one of its entries.
-  let found = null;
+  // The legend is drawn on the canvas, so its position is not in the DOM. Hovering finds it without waiting: a legend row
+  // answers a pointer move at once (a "Bin N · n dies" tooltip), where a right-click opens a menu a moment later. Scanning with
+  // right-clicks and a pause per point took minutes; one hover per point takes milliseconds, and one right-click then
+  // confirms what the hover found.
+  const move = (x, y) => canvas.dispatchEvent(new window.PointerEvent('pointermove', { bubbles: true, clientX: x, clientY: y, pointerId: 1 }));
+  const legendTip = () => [...document.querySelectorAll('div')].find(d => d.style.display === 'block' && /^Bin \d+ · \d+ dies$/.test(d.textContent));
+  let at = null;
   outer: for (let y = 6; y < 590; y += 6) {
     for (let x = 6; x < 590; x += 6) {
-      closeMenu();
-      rightClick(canvas, x, y);
-      await new Promise(r => setTimeout(r, 15));
-      const m = menus()[0];
-      if (m && /in hard bin \d/.test(m.getAttribute('aria-label'))) { found = m.getAttribute('aria-label'); break outer; }
+      move(x, y);
+      if (legendTip()) { at = { x, y }; break outer; }
     }
   }
+  assert.ok(at, 'hovering finds a legend entry');
+  rightClick(canvas, at.x, at.y);
+  await waitFor(() => menus()[0] && /in hard bin \d/.test(menus()[0].getAttribute('aria-label')), 'the legend entry opened its menu');
+  const found = menus()[0].getAttribute('aria-label');
   assert.ok(found, 'a legend entry took the right-click');
   assert.match(found, /dies in hard bin \d on W9/);
   closeMenu();

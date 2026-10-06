@@ -24,7 +24,7 @@ import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR } from '../toolbar.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { wirePointInteractions } from './pointInteractions.js';
-import { cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas, drawOffAxisLimits, limitLines, hasBothLimitKinds, makeLimitsSelect, stackLabelRows, strokeLimitLine, fillTextOnHalo, type AxisPrefs } from './chartShell.js';
+import { placeClearOf, type LabelBox, cardShell, observeResize, makeTooltip, attachChartTip, makeTestSelect, makeWaferSelect, chartFillHeight, applyCanvasFlow, drawAxisUnit, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, type SaveImageHandler, makeSeriesLegendItem, type SeriesLegendItem, prepareCanvas, drawOffAxisLimits, limitLines, hasBothLimitKinds, makeLimitsSelect, stackLabelRows, strokeLimitLine, fillTextOnHalo, type AxisPrefs } from './chartShell.js';
 
 const SCATTER_LEFT = 52;
 const SCATTER_RIGHT = 16;
@@ -432,10 +432,14 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
         return { l, cx, start: cx + 2, end: cx + 2 + ctx.measureText(l.label).width };
       });
       const xRows = stackLabelRows(xPlaced);
-      xPlaced.forEach(({ l, cx }, k) => {
+      // Where each limit label went, so a Y-axis label does not land on an X-axis one (both want the top-left corner).
+      const taken: LabelBox[] = [];
+      xPlaced.forEach(({ l, cx, start, end }, k) => {
         strokeLimitLine(ctx, l, theme.limitLine, cx, SCATTER_TOP, cx, SCATTER_TOP + plotH);
         ctx.textAlign = 'left';
-        fillTextOnHalo(ctx, l.label, cx + 2, SCATTER_TOP + 2 + xRows[k] * rowH, theme.bg);
+        const top = SCATTER_TOP + 2 + xRows[k] * rowH;
+        const box = placeClearOf(taken, { x0: start, x1: end, y0: top, y1: top + rowH }, rowH);
+        fillTextOnHalo(ctx, l.label, cx + 2, box.y0, theme.bg);
       });
 
       // Y limits: horizontal lines, labels at the left end, inside the plot —
@@ -450,7 +454,9 @@ export function renderScatterPanel(options: ScatterPanelOptions): ScatterPanelHa
       yPlaced.forEach(({ l, cy }, k) => {
         strokeLimitLine(ctx, l, theme.limitLine, SCATTER_LEFT, cy, SCATTER_LEFT + plotW, cy);
         ctx.textAlign = 'left';
-        fillTextOnHalo(ctx, l.label, SCATTER_LEFT + 3 + yRows[k] * colW, cy + 2, theme.bg);
+        const tx = SCATTER_LEFT + 3 + yRows[k] * colW;
+        const box = placeClearOf(taken, { x0: tx, x1: tx + ctx.measureText(l.label).width, y0: cy + 2, y1: cy + 2 + rowH }, rowH);
+        fillTextOnHalo(ctx, l.label, tx, box.y0, theme.bg);
       });
 
       // A limit outside the plotted range gets an edge marker, as in the other

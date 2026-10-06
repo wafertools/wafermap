@@ -22,6 +22,14 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Limit labels on a scatter's two axes keep clear of each other.** A high limit on Y and a low limit on X both labelled
+  the top-left corner and drew on top of one another; a label now moves down a row until it overlaps none already drawn, in
+  the Plot tab's scatter and the Insights scatter alike (`placeClearOf` in `charts/chartShell.ts` is the one rule).
+
 ## [0.34.0] — 2026-10-06
 
 ### Added

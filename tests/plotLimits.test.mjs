@@ -20,6 +20,8 @@ dom.window.ResizeObserver = FakeResizeObserver; globalThis.ResizeObserver = Fake
 const noop = () => {};
 let dashes = [];
 let texts = [];
+let placed = [];   // where each text was drawn: { t, x, y, align, base }
+const ctxState = {};
 const proto = dom.window.HTMLCanvasElement.prototype;
 proto.getContext = () => new Proxy({}, { get: (_, p) => {
   if (p === 'measureText') return (t) => ({ width: String(t).length * 6 });
@@ -27,9 +29,10 @@ proto.getContext = () => new Proxy({}, { get: (_, p) => {
   if (p === 'getImageData') return () => ({ data: [] });
   if (p === 'canvas') return { width: 600, height: 400 };
   if (p === 'setLineDash') return (d) => { dashes.push(JSON.stringify(d)); };
-  if (p === 'fillText') return (t) => { texts.push(String(t)); };
+  if (p === 'fillText') return (t, x, y) => { texts.push(String(t)); placed.push({ t: String(t), x, y, align: ctxState.textAlign ?? 'start', base: ctxState.textBaseline ?? 'alphabetic' }); };
+  if (p in ctxState) return ctxState[p];
   return noop;
-}, set: () => true });
+}, set: (_, p, v) => { ctxState[p] = v; return true; } });
 proto.focus = noop; proto.setPointerCapture = noop; proto.releasePointerCapture = noop;
 Object.defineProperty(proto, 'clientWidth', { configurable: true, get() { return 600; } });
 Object.defineProperty(proto, 'clientHeight', { configurable: true, get() { return 400; } });
@@ -49,14 +52,14 @@ const wafer = buildWaferMap({
 const items = [{ label: 'W1', dies: wafer.dies, wafer: wafer.wafer, waferIndex: 0, metadata: wafer.wafer.metadata, passBins: [1], ringCount: 4 }];
 
 function draw(spec) {
-  dashes = []; texts = [];
+  dashes = []; texts = []; placed = [];
   const host = document.getElementById('root');
   host.innerHTML = '';
   const chart = renderPlotChart({ waferLabel: () => 'W1' });
   host.appendChild(chart.card);
   chart.setPlot(resolvePlot(spec, items, { testDefs: DEFS, passBins: [1] }));
   chart.destroy();
-  return { dashes: new Set(dashes), texts };
+  return { dashes: new Set(dashes), texts, placed: [...placed] };
 }
 
 test('a histogram of a limited test draws its test limits (short dashes) and spec limits (long), labelled with their values', () => {
@@ -86,4 +89,39 @@ test('a box and a bar of a mean draw them on the value axis; a bar of yield draw
   assert.ok(draw({ id: 'b', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050, name: 'Vth' }, color: { none: true } } }).dashes.size > 0);
   assert.ok(draw({ id: 'b', chart: 'bar', fields: { x: { builtin: 'quadrant' }, y: { test: 1050, name: 'Vth' }, color: { none: true } } }).dashes.size > 0);
   assert.equal(draw({ id: 'b', chart: 'bar', fields: { x: { builtin: 'quadrant' }, y: { builtin: 'yield' }, color: { none: true } } }).dashes.size, 0);
+});
+
+// ── limit labels on the two axes do not land on each other ───────────────────
+
+/** The box a drawn label covers, from how it was drawn (the fake canvas measures 6px a character, labels are ~11px tall). */
+function boxOf({ t, x, y, align, base }) {
+  const w = t.length * 6, h = 11;
+  const x0 = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
+  const y0 = base === 'top' ? y : base === 'middle' ? y - h / 2 : y - h + 2;
+  return { t, x0, x1: x0 + w, y0, y1: y0 + h };
+}
+const overlaps = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+
+test('a scatter with a high limit on Y and a low limit on X does not draw their labels on top of each other', () => {
+  // Y's high limit is the top line of the plot and X's low limit is its left line: both labels want the top-left corner.
+  const defs = [
+    { testNumber: 2001, name: 'A', unit: 'V', limitLow: 0.0, limitHigh: 10 },
+    { testNumber: 2002, name: 'B', unit: 'V', limitLow: 0, limitHigh: 0.29 },
+  ];
+  const built = buildWaferMap({
+    results: Array.from({ length: 30 }, (_, k) => ({ x: k % 6, y: Math.floor(k / 6), hbin: 1, testValues: { 2001: k / 3, 2002: k / 100 } })),
+    testDefs: defs, waferConfig: { diameter: 80 }, dieConfig: { width: 10, height: 10 }, passBins: [1],
+  });
+  const own = [{ label: 'W1', dies: built.dies, wafer: built.wafer, waferIndex: 0, metadata: built.wafer.metadata, passBins: [1], ringCount: 4 }];
+  dashes = []; texts = []; placed = [];
+  const host = document.getElementById('root'); host.innerHTML = '';
+  const chart = renderPlotChart({ waferLabel: () => 'W1' });
+  host.appendChild(chart.card);
+  chart.setPlot(resolvePlot({ id: 's', chart: 'scatter', fields: { x: { test: 2001, name: 'A' }, y: { test: 2002, name: 'B' }, color: { none: true } } }, own, { testDefs: defs }));
+  chart.destroy();
+  const labels = placed.filter(p => /limit/i.test(p.t)).map(boxOf);
+  assert.ok(labels.length >= 3, `the limit labels were drawn: ${labels.map(l => l.t).join(' | ')}`);
+  for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) {
+    assert.ok(!overlaps(labels[i], labels[j]), `"${labels[i].t}" and "${labels[j].t}" overlap`);
+  }
 });

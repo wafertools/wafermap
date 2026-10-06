@@ -18,7 +18,7 @@ import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
   cardShell, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
-  renderEmptyState, limitLines, limitExtent, stackLabelRows, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
+  renderEmptyState, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
   type LimitLine, type SaveImageHandler, type SeriesLegendItem,
 } from './chartShell.js';
 import { categorical } from './palette.js';
@@ -133,6 +133,8 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   let lineX: number[] = [];
   let hoveredLine = -1;
 
+  /** Where this draw's limit labels are, so a label on one axis does not land on one on the other. Reset by `drawFrame`. */
+  let limitLabelBoxes: LabelBox[] = [];
   let bottomMargin = BOTTOM;
   const colorOf = (g: number): string => categorical(g);
   const groupLabel = (g: number): string => resolved?.groups[g] || '';
@@ -178,7 +180,10 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         strokeLimitLine(ctx, l, color, LEFT, y, LEFT + plotW, y);
         ctx.globalAlpha = 1;
         ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText(text(l), LEFT + 3 + rows[k] * colW, y - 4);
+        const tx = LEFT + 3 + rows[k] * colW;
+        // The label sits above its line; if that is where an X-axis limit label already is, it goes below the line's top.
+        const box = placeClearOf(limitLabelBoxes, { x0: tx, x1: tx + ctx.measureText(text(l)).width, y0: y - 4 - rowH + 2, y1: y - 4 + 2 }, rowH);
+        ctx.fillText(text(l), tx, box.y1 - 2);
       });
     } else {
       const placed = inside.map(l => {
@@ -188,12 +193,14 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         return { l, x, side, start: side < 0 ? x - 3 - w : x + 3, end: side < 0 ? x - 3 : x + 3 + w };
       });
       const rows = stackLabelRows(placed, 4);
-      placed.forEach(({ l, x, side }, k) => {
+      placed.forEach(({ l, x, side, start, end }, k) => {
         ctx.globalAlpha = 0.7;
         strokeLimitLine(ctx, l, color, x, TOP, x, TOP + plotH);
         ctx.globalAlpha = 1;
         ctx.fillStyle = color; ctx.textAlign = side < 0 ? 'right' : 'left'; ctx.textBaseline = 'top';
-        ctx.fillText(text(l), x + side * 3, TOP + 2 + rows[k] * rowH);
+        const top = TOP + 2 + rows[k] * rowH;
+        const box = placeClearOf(limitLabelBoxes, { x0: start, x1: end, y0: top, y1: top + rowH }, rowH);
+        ctx.fillText(text(l), x + side * 3, box.y0);
       });
     }
     ctx.restore();
@@ -213,6 +220,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
 
   function drawFrame(ctx: CanvasRenderingContext2D, theme: ReturnType<typeof resolveChartCanvasColors>, w: number, h: number,
     plotW: number, plotH: number, x: Scale | CategoryAxis, y: Scale, xAxis: ResolvedAxis, yAxis: ResolvedAxis): void {
+    limitLabelBoxes = [];   // each draw starts with no limit labels placed
     ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
     const ySpacing = () => VERTICAL_TICK_SPACING_PX;
     const yTicksFit = y.log ? logTicks(y.lo, y.hi, plotH, ySpacing) : fitTicks(y.lo, y.hi, plotH, ySpacing);
