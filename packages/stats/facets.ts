@@ -42,6 +42,9 @@ export interface FacetField {
   splittable: boolean;
 }
 
+/** What a host says about one wafer attribute (`attributes` on the render options): its label, whether it is a Group by and Compare by choice, and whether it is a date. The same shape as a curation entry. */
+export type WaferAttributeDef = FacetCuration;
+
 /** Curation for one metadata key: label + whether it's offered as a facet by default + date handling. */
 export interface FacetCuration {
   label: string;
@@ -58,17 +61,26 @@ export const DEFAULT_FACET_CURATION: Record<string, FacetCuration> = {
   split:       { label: 'Split' },
   lot:         { label: 'Lot' },
   product:     { label: 'Product' },
-  testProgram: { label: 'Program' },
+  testProgram: { label: 'Test Program' },
   temperature: { label: 'Temperature' },
-  testDate:    { label: 'Test date', date: true },
+  testDate:    { label: 'Test Date', date: true },
   operator:    { label: 'Operator' },
   // Identity fields, not grouping axes: unique per wafer by definition, so
   // "splitting" on them just recreates one group per wafer — never useful.
   // Present (not hidden entirely) so an explicit `facetableOnly: false` call
   // can still see them, matching tsmap's own "known but not offered by
   // default" pattern for low-value fields.
-  waferId:     { label: 'Wafer', facet: false },
+  waferId:     { label: 'Wafer Id', facet: false },
 };
+
+/**
+ * A wafer attribute's name wherever it is listed or headed: the curated label when the key has one, else the key spelled out
+ * (`prettyKey`). The ONE label for an attribute, so Group by, the plot fields, the Wafers table, the header strip and the
+ * reports cannot name it differently. `curation` is the host's own on top of the defaults (`insights.attributes`).
+ */
+export function attributeLabel(key: string, curation?: Record<string, FacetCuration>): string {
+  return curation?.[key]?.label ?? DEFAULT_FACET_CURATION[key]?.label ?? prettyKey(key);
+}
 
 function dateOnly(value: string): string {
   const t = value.indexOf('T');

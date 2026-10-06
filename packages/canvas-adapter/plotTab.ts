@@ -22,12 +22,15 @@ import { makeChartGridWrap } from './charts/chartShell.js';
 import { confirmDialog } from './confirmDialog.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { openPlotEditor } from './plotModal.js';
+import type { FacetCuration } from '../stats/facets.js';
 import { sourceFromDies, sourceFromPoints, toPlotItems } from './plotItems.js';
 import type { PlotStore } from './plotStore.js';
 import type { InsightsItem } from './insightsTab.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, markNoPrint, saveTextFile, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
 
 export interface PlotSectionDeps {
+  /** The host's own wafer attributes: which are offered as fields, and what they are called. Over the defaults. */
+  attributes?: Record<string, FacetCuration>;
   doc: Document;
   store: PlotStore;
   items: InsightsItem[];
@@ -53,7 +56,7 @@ const UNDO_MS = 10_000;
 export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; destroy: () => void } {
   const { doc, store } = d;
   const items = toPlotItems(d.items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: d.ringCount })));
-  const ctx: PlotContext = { testDefs: d.testDefs, groupBy: d.groupBy };
+  const ctx: PlotContext = { testDefs: d.testDefs, groupBy: d.groupBy, curation: d.attributes };
   const resolve = (p: PlotSpec) => resolvePlot(p, items, ctx);
   const catalogue = fieldCatalogue(items, ctx);
 

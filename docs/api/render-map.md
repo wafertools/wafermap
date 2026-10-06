@@ -12,7 +12,7 @@ hover — wafermap-specific controls always in the same place.
 renderWaferMap(container: HTMLElement, result: RenderableWaferMap, options?: RenderOptions): WaferMapController
 ```
 
-> **`options` is optional, and mostly stays that way.** `RenderOptions` has 22
+> **`options` is optional, and mostly stays that way.** `RenderOptions` has 23
 > top-level fields and this section documents all of them, but the call above
 > works with none: you get the toolbar, plot modes, colour schemes, zoom and pan,
 > tooltips, die selection and PNG export by default.
@@ -219,6 +219,7 @@ Plus:
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state
   insights?:               InsightsOptions  // adds a Map | Insights switch that swaps the map for this wafer's own
                                             // chart suite (Overview, Distributions, Correlation) — default disabled. See §5.9.
+  attributes?:             Record<string, WaferAttributeDef>  // your names for wafer attributes: label, facet?, date?: what Group by offers and the strip, Wafers table and reports call each
   warnings?:               WarningsOptions  // built-in surfacing of the library's own advisories — ON by default.
                                             // { display?: boolean; onWarning?: (w: WaferWarning[]) => void }
                                             // See §4.2.2 and the note below.

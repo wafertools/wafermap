@@ -9,7 +9,7 @@
 
 import type { WaferMetadata } from '../core/metadata.js';
 import { metadataEntries, buildCompactMetadataRows } from './summaryPanel.js';
-import { prettyKey } from '../stats/facets.js';
+import { attributeLabel, type FacetCuration } from '../stats/facets.js';
 import { SHADOW, LEADING, SPACE, FONT, CLR, RADIUS, Z_ABOVE, wireExpandToggle, wireControlHover, type ExpandToggleHandle } from './toolbar.js';
 
 export interface IdentityHeaderLotStack {
@@ -18,6 +18,8 @@ export interface IdentityHeaderLotStack {
 }
 
 export interface IdentityHeaderOptions {
+  /** The host's own wafer attributes (`attributes` on the render options): what each field is called. */
+  attributes?: Record<string, FacetCuration>;
   /** Present when the host result is a lot-stack aggregation rather than a
    *  single wafer — the metadata panel then leads with wafer count + method
    *  instead of a (nonexistent) single waferId. */
@@ -92,6 +94,7 @@ export function attachExpandableMetadata(
   toggleEl: HTMLElement,
   label: string,
   metadata: WaferMetadata | null | undefined,
+  attributes?: Record<string, FacetCuration>,
 ): HTMLDivElement | null {
   const meta = metadata ?? {};
   if (metadataEntries(meta).length === 0) return null;
@@ -106,7 +109,7 @@ export function attachExpandableMetadata(
 
   const panel = createMetaPanelEl(doc);
   panel.dataset.wmapCardMetaPanel = '1';
-  const rows = buildCompactMetadataRows(meta);
+  const rows = buildCompactMetadataRows(meta, attributes);
   if (rows) panel.appendChild(rows);
 
   toggleEl.setAttribute('aria-expanded', 'false');
@@ -262,7 +265,7 @@ export function createIdentityHeader(
     // from character counts is how a "fits" rule ends up wrong on the first
     // font it did not expect.
     const candidates = inlineEntries();
-    inlineEl.textContent = candidates.map(([k, v]) => `${prettyKey(k)}: ${v}`).join(' · ');
+    inlineEl.textContent = candidates.map(([k, v]) => `${attributeLabel(k, opts.attributes)}: ${v}`).join(' · ');
     inlineEl.style.display = candidates.length > 0 ? '' : 'none';
     // Rendered visible for the measurement, then hidden again if it did not
     // fit. Both happen inside this call with no paint between, so the reader
@@ -300,7 +303,7 @@ export function createIdentityHeader(
           : `${lotStack.lotSize} wafers stacked`;
         metaPanel.appendChild(stackLine);
       }
-      const rows = buildCompactMetadataRows(meta);
+      const rows = buildCompactMetadataRows(meta, opts.attributes);
       if (rows) metaPanel.appendChild(rows);
     }
   }

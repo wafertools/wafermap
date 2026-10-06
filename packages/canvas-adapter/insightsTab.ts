@@ -25,7 +25,7 @@ import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { LotStatsSummary, StatsSummary } from '../stats/types.js';
 import { MEAN_WAFER_YIELD_LABEL } from '../stats/presentation.js';
-import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, type FacetItem } from '../stats/facets.js';
+import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, DEFAULT_FACET_CURATION, type FacetCuration, type FacetItem } from '../stats/facets.js';
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { dieFailsTest } from '../stats/testPassRate.js';
@@ -140,6 +140,8 @@ export interface InsightsOptions {
 }
 
 export interface InsightsTabDeps {
+  /** The host's own wafer attributes (`attributes` on the render options): what Group by offers and calls each, the plot fields, the Wafers table's columns and the strip. Over the defaults. */
+  attributes?: Record<string, FacetCuration>;
   /** Current gallery/single-wafer items — read fresh each render (a gallery's list can still be building). `null` entries (not-yet-built cards) are skipped. */
   getItems: () => Array<WaferMapDisplayItem | null>;
   /** Precomputed lot-level yield, when the host has one — reused directly instead of recomputing (see stats/yield.ts). Omit when there is no lot (e.g. a single wafer). */
@@ -273,6 +275,8 @@ const PLOT_VIEW: { key: InsightsView; label: string } = { key: 'plot', label: 'P
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest, locateDie } = deps;
+  // Every wafer attribute this tab lists, labels or reads is judged by the host's curation over the defaults.
+  const curation: Record<string, FacetCuration> = { ...DEFAULT_FACET_CURATION, ...deps.attributes };
   const showMetadataStrip = deps.showMetadataStrip ?? true;
   const contentInset = deps.contentInset ?? EDGE_GUTTER;
   const doc = deps.ownerDocument ?? document;
@@ -1188,7 +1192,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     void import('./plotTab.js').then(({ createPlotSection }) => {
       if (gone) return;
       const section = createPlotSection({
-        doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount(),
+        doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount(), attributes: deps.attributes,
         groupBy, groupLabel, onSaveImage, onSaveText,
         openWafer: openWafer ? (wi, label, test) => openWafer(wi, label, test) : undefined,
         focusTest, locateDie, pickPlotsFile: deps.onPickPlotsFile,
@@ -1217,7 +1221,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     };
     return renderDataSection({
       doc, items, testDefs, allTestDefs, groups, groupLabelText,
-      ringCount: getRingCount(),
+      ringCount: getRingCount(), attributes: deps.attributes,
       yieldByWaferIndex: new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent])),
       onSaveText, onLocateDie: locateDie,
       onOpenWafer: openWafer ? (wi, label) => openWafer(wi, label) : undefined,
@@ -1467,7 +1471,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     const allItems = facetItems();
     renderMetadataStrip(allItems);
-    const facetTable = buildFacetTable(allItems, { facetableOnly: true }).filter(f => f.splittable);
+    const facetTable = buildFacetTable(allItems, { facetableOnly: true, curation }).filter(f => f.splittable);
 
     const controlsRow = doc.createElement('div');
     // Rides on the tab bar's row, right-aligned: it is the only control here and
@@ -1496,7 +1500,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const byKey = new Map<string, Item[]>();
       const order: string[] = [];
       for (const it of allItems) {
-        const key = facetValueOf(it.metadata, analysisGroupKey) ?? FACET_NONE_VALUE;
+        const key = facetValueOf(it.metadata, analysisGroupKey, curation) ?? FACET_NONE_VALUE;
         if (!byKey.has(key)) { byKey.set(key, []); order.push(key); }
         byKey.get(key)!.push(it);
       }

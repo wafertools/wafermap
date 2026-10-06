@@ -39,7 +39,7 @@ import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import { attachExpandableMetadata } from './identityHeader.js';
 import { createSummaryPanelEl, buildMetadataStripRow, metadataEntries, renderLotSummaryContentSteps, reportMapsFromItems } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
-import { prettyKey } from '../stats/facets.js';
+import { prettyKey, type WaferAttributeDef } from '../stats/facets.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
 import { testLabel, markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
@@ -269,6 +269,13 @@ export interface GalleryOptions {
    * recomputing it — no other host wiring beyond this option.
    */
   insights?:               InsightsOptions;
+  /**
+   * What the host calls its wafer attributes (lot, product, temperature, your own columns), over the defaults: a label, whether it
+   * is a Group by and Compare by choice (`facet: false` keeps a low-value field like a program revision out of those lists, while
+   * it still shows on the header strip, in the Wafers table and in reports), and whether it is a date (grouped by day). One entry
+   * per metadata key, so the strip, Group by, the plot fields, the Wafers table and the reports all name an attribute the same way.
+   */
+  attributes?: Record<string, WaferAttributeDef>;
   /**
    * Built-in surfacing of the library's own data warnings (see `WarningsOptions`).
    * Defaults on. The gallery collects across every item and de-duplicates, so a
@@ -919,7 +926,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -947,7 +954,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -975,7 +982,7 @@ export function renderWaferGallery(
       ?? (finding ? wholeWafersSource(findingWaferIndices(finding)) : undefined);
     if (!sel) return;
     void import('./drilldown.js').then(({ openDrilldownMenu }) => {
-      if (anchor.isConnected) openDrilldownMenu(at, anchor, sel.source, { plots: plotStore, ...sel.ctx });
+      if (anchor.isConnected) openDrilldownMenu(at, anchor, sel.source, { plots: plotStore, attributes: options.attributes, ...sel.ctx });
     });
   }
 
@@ -996,7 +1003,7 @@ export function renderWaferGallery(
     const defs = mergedTestDefs().defs;
     const source = sourceFromBins(shares, kind, bins, defs, undefined, stacked);
     if (!source) return;
-    const base: DrilldownContext = { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) };
+    const base: DrilldownContext = { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) };
     const own = bins.length > 1 ? sourceFromBins(shares, kind, [bin], defs, undefined, stacked) : null;
     const ctx: DrilldownContext = own ? { ...base, narrower: { label: `Only ${kind} bin ${bin}`, backLabel: 'All filtered bins', source: own, ctx: base } } : base;
     void import('./drilldown.js').then(({ openDrilldownMenu }) => {
@@ -1024,7 +1031,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -2344,6 +2351,7 @@ export function renderWaferGallery(
     if (insightsTab) return Promise.resolve(insightsTab);
     insightsLoad ??= import('./insightsTab.js').then(({ createInsightsTab }) => {
       insightsTab = createInsightsTab({
+      attributes: options.attributes,
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
       getBinColors: () => sharedOpts.binColors ?? lotBinColors(),
@@ -2876,6 +2884,7 @@ export function renderWaferGallery(
       stackedItem
         ? { lotSize: stackedItem.lotSize ?? resolvedItems.length, aggrMethod: stackedItem.aggrMethod }
         : undefined,
+      { curation: options.attributes },
     );
 
     const isMetadataMode = mode === 'metadata';
@@ -3371,7 +3380,7 @@ export function renderWaferGallery(
     Object.assign(labelEl.style, {
       fontWeight: '700', fontSize: FONT.sub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
     wrap.appendChild(labelEl);
-    const metaPanel = attachExpandableMetadata(doc, wrap, label, metadata);
+    const metaPanel = attachExpandableMetadata(doc, wrap, label, metadata, options.attributes);
     return { wrap, metaPanel };
   }
 
@@ -3401,7 +3410,7 @@ export function renderWaferGallery(
     Object.assign(titleWrap.style, { display: 'flex', alignItems: 'center', gap: SPACE.xs, flex: '1', minWidth: '0' });
     titleParent?.insertBefore(titleWrap, titleEl);
     titleWrap.appendChild(titleEl);
-    const metaPanel = attachExpandableMetadata(container.ownerDocument, titleWrap, label, metadata);
+    const metaPanel = attachExpandableMetadata(container.ownerDocument, titleWrap, label, metadata, options.attributes);
     if (!metaPanel) return;
     handle.contentWrap.style.position = 'relative';
     handle.contentWrap.appendChild(metaPanel);
@@ -3516,8 +3525,8 @@ export function renderWaferGallery(
         // The card's own hook, so the charts are named for its wafer, as on a single map.
         if (card.isConnected) {
           openDrilldownMenu(at, card, source, across
-            ? { plots: plotStore, ...across.ctx }
-            : { plots: plotStore, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
+            ? { plots: plotStore, attributes: options.attributes, ...across.ctx }
+            : { plots: plotStore, attributes: options.attributes, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
         }
       });
     });

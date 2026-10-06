@@ -17,7 +17,7 @@ const SNAPSHOTS = {
     // Added in 0.30.3 so a host marks derived tests in its own UI exactly as the
     // library does (tsmap's test selector).
     'DERIVED_KEY', 'DERIVED_MARK',
-    'analyzeWaferLot', 'analyzeWaferMap', 'buildFacetTable', 'buildWaferMap',
+    'analyzeWaferLot', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'buildWaferMap',
     'diePassStatus', 'facetValueOf', 'FACET_NONE_VALUE', 'filterFindings',
     'getDieKey', 'getReticleCell', 'getReticleShot', 'getTestPassStatus', 'hasPosition', 'isYieldEligibleDie',
     'listBinColorSchemes', 'listValueColorSchemes', 'mergeTestDefs', 'metadataDisplayValue',
@@ -45,7 +45,7 @@ const SNAPSHOTS = {
   './stats': [
     // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
     'renderLotReportHtml', 'renderWaferReportHtml',
-    'analyzeWaferLot', 'analyzeWaferMap', 'buildFacetTable', 'facetValueOf', 'FACET_NONE_VALUE',
+    'analyzeWaferLot', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'facetValueOf', 'FACET_NONE_VALUE',
     'filterFindings', 'mergeTestDefs', 'setReportOpener', 'visibleFindings',
     'readPlotsFile', 'writePlotsFile',
   ],

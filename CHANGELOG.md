@@ -39,8 +39,18 @@ under `### Breaking`.
   click it to chart or tabulate them. `renderRegionYieldDiagram` takes `mode: 'reticleCell'` and `grid`, and `parseReticleCellKey`
   reads a cell's column and row from its key.
 
+- **`attributes` on `renderWaferMap` and `renderWaferGallery`: your own names for wafer attributes.** One entry per metadata key
+  (`{ label, facet?, date? }`, over the defaults) says what an attribute is called, whether it is a Group by and Compare by choice
+  (`facet: false` keeps a low-value field such as a program revision out of those lists while it still shows on the header strip,
+  in the Wafers table and in reports), and whether it is a date, grouped by day. The header strip and its popover, Group by, the
+  plot fields (also in the right-click plot menu), the Wafers table and the reports name an attribute through one function,
+  `attributeLabel(key, curation?)`, so they cannot disagree. `WaferAttributeDef` is the entry's type.
+
 ### Changed
 
+- **A wafer attribute has one name everywhere.** Group by and the plot fields call the test program **Test Program** and the date
+  **Test Date**, as the header strip, the Wafers table and the reports already did (they were "Program" and "Test date" there). The
+  plot fields no longer list an attribute that is unique to each wafer (`waferId`): the Wafer field is that.
 - **The plot editor's Categories and Colour hints say what they compare.** A hint now reads "Compare by this field" and names the two kinds
   of field it takes, a wafer attribute or a die region, and the guide explains how that differs from Group by.
 - **Ring, quadrant and the reticle regions are defined once.** The plot fields and the Dies table read one definition

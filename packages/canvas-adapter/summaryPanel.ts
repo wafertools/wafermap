@@ -31,7 +31,7 @@ import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWo
 import { regionYieldRows, waferYieldRows } from '../stats/yieldRows.js';
 import { formatFindingTooltip } from '../stats/findingText.js';
 import { arrangeFindings, filterFindings, type FindingsFilter } from '../stats/filterFindings.js';
-import { buildFacetTable, prettyKey, type FacetItem } from '../stats/facets.js';
+import { buildFacetTable, attributeLabel, type FacetCuration, type FacetItem } from '../stats/facets.js';
 import { commonMetadata } from '../stats/facets.js';
 import { resolveMetadataColumns, type MetadataColumn } from '../stats/metadataColumns.js';
 import { resolveBinColors, resolveBinColorsByWafer, type BinColors } from '../renderer/binColors.js';
@@ -518,11 +518,10 @@ export function metadataEntries(meta: Record<string, unknown>): Array<[string, s
  *  across the population — so a mixed-lot gallery still surfaces "Lot:
  *  LOT123, LOT456" instead of silently dropping a field the moment it
  *  varies. `field.values` is already sorted by coverage (`buildFacetTable`),
- *  so the values shown inline are the most common ones. Labels use
- *  `prettyKey(field.key)`, not `field.label` — `DEFAULT_FACET_CURATION`'s own
- *  labels (e.g. "Program") differ from the `prettyKey` convention every other
- *  metadata surface in this library uses ("Test Program"), and this strip
- *  must read as the same field as those surfaces, not a differently-named one.
+ *  so the values shown inline are the most common ones. A field is named by
+ *  `attributeLabel`, the one name every surface gives a wafer attribute (Group
+ *  by, the plot fields, the Wafers table, the reports), so this strip reads as
+ *  the same field as those, not a differently-named one.
  *  Returns `null` for an empty table. */
 /**
  * Fields worth reading at a glance, in the order an engineer scans them:
@@ -552,6 +551,8 @@ export function buildFacetSummaryChips(
   table: Array<{ key: string; values: Array<{ value: string }> }>,
   /** How many values a field lists before it has been laid out (no width yet: first paint, a hidden parent). */
   maxValuesPerField = 3,
+  /** The host's wafer attributes, over the defaults: what each field is called. */
+  curation?: Record<string, FacetCuration>,
 ): HTMLDivElement | null {
   if (!table.length) return null;
 
@@ -578,7 +579,7 @@ export function buildFacetSummaryChips(
    *  in a trailing "+N more": the strip's one real disclosure button reads "N more fields", and two
    *  adjacent "more" phrases read as one control. */
   const labelFor = (f: { key: string; values: unknown[] }, k: number): string =>
-    `${prettyKey(f.key)}${k < f.values.length ? ` (${f.values.length})` : ''}: `;
+    `${attributeLabel(f.key, curation)}${k < f.values.length ? ` (${f.values.length})` : ''}: `;
   const valuesFor = (f: { values: Array<{ value: string }> }, k: number): string =>
     f.values.slice(0, k).map(v => v.value).join(', ') + (k < f.values.length ? ', \u2026' : '');
 
@@ -702,10 +703,10 @@ export function buildMetadataStripRow(
   // already shows as its own title. A single-item caller (a lone wafer's own
   // Insights strip) has no such clutter risk and no other on-screen identity
   // once Insights covers the badge, so it passes `false` to keep `waferId` visible.
-  options?: { facetableOnly?: boolean },
+  options?: { facetableOnly?: boolean; curation?: Record<string, FacetCuration> },
 ): HTMLDivElement | null {
   const facetTable = buildFacetTable(items as FacetItem[], options);
-  const chips = buildFacetSummaryChips(facetTable);
+  const chips = buildFacetSummaryChips(facetTable, undefined, options?.curation);
   if (!chips && !stacked) return null;
 
   // `width: 100%`, not shrink-to-fit: the fields strip inside fills this row and measures itself against it.
@@ -744,7 +745,7 @@ const STRIP_BOX_STYLE: Partial<CSSStyleDeclaration> = {
 export function buildMetadataStripBox(
   items: Array<{ metadata?: Record<string, unknown> }>,
   stacked?: MetadataStripStacked,
-  options?: { facetableOnly?: boolean },
+  options?: { facetableOnly?: boolean; curation?: Record<string, FacetCuration> },
 ): HTMLDivElement | null {
   const row = buildMetadataStripRow(items, stacked, options);
   if (!row) return null;
@@ -753,18 +754,18 @@ export function buildMetadataStripBox(
   return box;
 }
 
-/** Same row visual language as `metaRow`/`prettyKey`, one field per line —
+/** Same row visual language as `metaRow`, one field per line —
  *  for the metadata badge's expand-on-click popover, where each field
  *  reading on its own line is more legible than wrapped inline chips and the
  *  cost is only paid while the popover is open, not by default.
  *  Returns `null` for empty input. */
-export function buildCompactMetadataRows(meta: Record<string, unknown>): HTMLDivElement | null {
+export function buildCompactMetadataRows(meta: Record<string, unknown>, curation?: Record<string, FacetCuration>): HTMLDivElement | null {
   const entries = metadataEntries(meta);
   if (!entries.length) return null;
 
   const wrap = el('div');
   for (const [k, v] of entries) {
-    wrap.appendChild(metaRow(prettyKey(k), v));
+    wrap.appendChild(metaRow(attributeLabel(k, curation), v));
   }
   return wrap;
 }

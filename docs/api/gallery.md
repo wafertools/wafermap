@@ -12,7 +12,7 @@ colour, rotate, or flip in the gallery bar applies to every card instantly.
 renderWaferGallery(container: HTMLElement, items: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>, options?: GalleryOptions): GalleryController
 ```
 
-> **As with `renderWaferMap`, `options` is optional.** `GalleryOptions` has 18
+> **As with `renderWaferMap`, `options` is optional.** `GalleryOptions` has 19
 > top-level fields; tsmap passes the same six it passes to `renderWaferMap`. The
 > two option types deliberately overlap, so what you learned there mostly carries
 > over — this section documents the gallery-only additions (`columns`,
@@ -160,6 +160,7 @@ to be pre-built.
   insights?:               InsightsOptions   // adds a Maps | Insights switch that swaps the grid for a lot-wide chart
                                             // suite (Overview, Distributions, Correlation, with a "Group by" control)
                                             // — default disabled. See §6.10.
+  attributes?:             Record<string, WaferAttributeDef>  // your names for wafer attributes: label, facet?, date?: what Group by offers and the strip, Wafers table and reports call each
   warnings?:               WarningsOptions   // built-in surfacing of the library's own advisories — ON by default.
                                             // Collected across every card and de-duplicated, so a problem affecting
                                             // the whole lot is stated once, not per wafer.

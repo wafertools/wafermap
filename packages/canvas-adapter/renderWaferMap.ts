@@ -27,6 +27,7 @@ import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions,
 // default. It is loaded on first open instead, the same way userGuideHtml is,
 // and tests/bundle-size.test.mjs pins both.
 import type { InsightsOptions, InsightsTabHandle } from './insightsTab.js';
+import type { WaferAttributeDef } from '../stats/facets.js';
 // TYPE-ONLY, for the same reason: drilldown opens chart panels, loaded on first use.
 import type { DrilldownContext } from './drilldown.js';
 import { plotStoreFor, type WithPlotStore } from './plotStore.js';
@@ -371,6 +372,13 @@ export interface RenderOptions extends ForwardedDrawOptions {
    * group by).
    */
   insights?: InsightsOptions;
+  /**
+   * What the host calls its wafer attributes (lot, product, temperature, your own columns), over the defaults: a label, whether it
+   * is a Group by and Compare by choice (`facet: false` keeps a low-value field like a program revision out of those lists, while
+   * it still shows on the header strip, in the Wafers table and in reports), and whether it is a date (grouped by day). One entry
+   * per metadata key, so the strip, Group by, the plot fields, the Wafers table and the reports all name an attribute the same way.
+   */
+  attributes?: Record<string, WaferAttributeDef>;
   /**
    * Built-in surfacing of the library's own data warnings (see `WarningsOptions`).
    *
@@ -1048,7 +1056,7 @@ export function renderWaferMapCard(
   // none, right-click stays the browser's (or host's).
   // The reader's saved plots, one list for the Plot tab and for the drilldown menu.
   const plotStore = (insightsOpts as WithPlotStore | undefined)?.plotStore ?? plotStoreFor(insightsOpts);
-  const drilldownCtx: DrilldownContext = { plots: plotStore, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
+  const drilldownCtx: DrilldownContext = { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
   /** Read live: `testDefs` changes with `setData`. */
   const drilldownOffered = (): boolean => !isMapless;
   let closeDrilldownMenu: (() => void) | null = null;
@@ -1101,7 +1109,7 @@ export function renderWaferMapCard(
     metadataBadge = createIdentityHeader(
       collapsedLabel(wafer.metadata ?? {}, lotStackBadgeContext()) ?? '',
       wafer.metadata,
-      { lotStack: lotStackBadgeContext(), ownerDocument },
+      { lotStack: lotStackBadgeContext(), ownerDocument, attributes: options.attributes },
     );
     // metaPanel overlays the top of the canvas area (not headerBar, which
     // stays fixed height) — same contract renderWaferGallery's card headers
@@ -1202,6 +1210,7 @@ export function renderWaferMapCard(
     if (insightsTab) return Promise.resolve(insightsTab);
     insightsLoad ??= import('./insightsTab.js').then(({ createInsightsTab }) => {
       insightsTab = createInsightsTab({
+      attributes: options.attributes,
       getItems: () => [{
         wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
         // The host's own label, raw — Insights derives its display label and

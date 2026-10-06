@@ -59,6 +59,7 @@
       "TestVerdictYield",
       "ValueColorScheme",
       "Wafer",
+      "WaferAttributeDef",
       "WaferConfig",
       "WaferMapInput",
       "WaferMapInputBase",
@@ -145,6 +146,7 @@
       "TestDefConflict",
       "TestDefConflictKind",
       "TestVerdictYield",
+      "WaferAttributeDef",
       "WaferWarning"
     ],
     "./render": [
@@ -327,6 +329,7 @@
       "testNumbers"
     ],
     "RenderOptions": [
+      "attributes",
       "background",
       "colorbarWidth",
       "dieList",
@@ -360,6 +363,7 @@
       "zIndex"
     ],
     "GalleryOptions": [
+      "attributes",
       "columns",
       "dieList",
       "downloadFilename",

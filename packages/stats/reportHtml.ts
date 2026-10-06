@@ -6,7 +6,7 @@ import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, impactShortWord, sho
 
 export type { MeterTier };
 import { fmt, plainBinTerms } from '../renderer/fmt.js';
-import { buildFacetTable, prettyKey, type FacetItem } from './facets.js';
+import { buildFacetTable, attributeLabel, type FacetItem } from './facets.js';
 import { escHtml } from '../core/utils.js';
 import { derivedKeyText, derivedFields } from '../renderer/testLabel.js';
 
@@ -55,7 +55,7 @@ ${items}
 export function buildMetadataRows(items: FacetItem[]): Array<{ label: string; value: string }> {
   const table = buildFacetTable(items, { facetableOnly: items.length > 1 });
   return table.map((field) => ({
-    label: prettyKey(field.key),
+    label: attributeLabel(field.key),
     value: field.values.map((v) => v.value).join(', '),
   }));
 }

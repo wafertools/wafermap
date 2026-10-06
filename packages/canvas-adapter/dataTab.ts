@@ -17,7 +17,7 @@ import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
 import { metadataDisplayValue } from '../core/metadata.js';
-import { prettyKey } from '../core/utils.js';
+import { attributeLabel, type FacetCuration } from '../stats/facets.js';
 import { tableToTsv, type CsvCell, type CsvColumn } from '../core/tableCsv.js';
 import { commonMetadata } from '../stats/facets.js';
 import { buildYieldData } from '../stats/yield.js';
@@ -82,6 +82,8 @@ export interface DataSectionDeps {
   dieListOptions?: DieListDisplayOptions;
   /** Label/order hints for die metadata columns, e.g. `WaferMapResult.metadataFields`. */
   metadataFields?: MetadataFieldDef[];
+  /** The host's own wafer attributes (`attributes` on the render options): the Wafers table names its columns by them. */
+  attributes?: Record<string, FacetCuration>;
   /** A die row was clicked: show that die on its map. When set, Dies rows are clickable and say so. */
   onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
   /** A wafer row was clicked: open that wafer. When set, Wafers rows are clickable and say so. */
@@ -372,7 +374,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
   const cols: WaferColumn[] = [
     { header: 'Wafer', cell: r => r.item.label },
     ...keys.map((k): WaferColumn => ({
-      header: prettyKey(k),
+      header: attributeLabel(k, deps.attributes),
       cell: r => metadataDisplayValue((r.item.wafer?.metadata as Record<string, unknown> | undefined)?.[k]) ?? '',
     })),
     { header: 'Dies', cell: r => r.item.dies.length, numeric: true },
@@ -508,6 +510,8 @@ export interface DataTablesInput {
   /** The wafers' ring count (`WaferMapResult.ringCount`): ring and quadrant columns use it. Required, never defaulted. */
   ringCount: number;
   metadataFields?: MetadataFieldDef[];
+  /** The host's own wafer attributes, for the Wafers table's column names. */
+  attributes?: Record<string, FacetCuration>;
   /** A die row clicked: show that die on its map. The caller closes the table around it. */
   onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
   dieListOptions?: DieListDisplayOptions;
@@ -547,7 +551,7 @@ export function renderDataTables(input: DataTablesInput): { el: HTMLElement; des
     current = renderDataSection({
       doc, items, testDefs: parametric, allTestDefs: allDefs, ringCount: input.ringCount,
       yieldByWaferIndex: new Map(), onSaveText: input.onSaveText,
-      views, view, dieListOptions: input.dieListOptions, metadataFields: input.metadataFields, onLocateDie: input.onLocateDie,
+      views, view, dieListOptions: input.dieListOptions, metadataFields: input.metadataFields, attributes: input.attributes, onLocateDie: input.onLocateDie,
       population: input.population ? { phrase: input.population, fileTag: 'selection' } : undefined,
       buildStatistics: its => {
         const dies = its.flatMap(it => it.dies);

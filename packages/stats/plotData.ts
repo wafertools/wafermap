@@ -742,7 +742,7 @@ export function fieldCatalogue(items: readonly PlotItem[], ctx: PlotContext = {}
   wafer('yield', 'numeric', false);
   wafer('dieCount', 'numeric', false);
   const r: Resolver = { items, rows: { dies: [], item: new Uint32Array(0) }, ctx };
-  for (const f of buildFacetTable(items.map(it => ({ metadata: it.metadata, dieCount: it.dies.length })), { facetableOnly: false, curation: ctx.curation })) {
+  for (const f of buildFacetTable(items.map(it => ({ metadata: it.metadata, dieCount: it.dies.length })), { facetableOnly: true, curation: ctx.curation })) {
     if (f.values.length === 0) continue;
     const col = resolveField({ meta: f.key }, r);
     out.push({

@@ -15,6 +15,7 @@ import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
 import { isParametricTest } from '../renderer/buildWaferMap.js';
 import { buildSweepData, type SweepSpec } from '../stats/sweep.js';
+import type { FacetCuration } from '../stats/facets.js';
 import { plotToSweep } from '../stats/plotSpec.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCapabilityPanel } from './charts/capability.js';
@@ -34,6 +35,8 @@ export type { DrilldownSource, DrilldownItem };
 
 /** What the targets can draw on — the host's chart definitions and hooks. */
 export interface DrilldownContext {
+  /** The host's own wafer attributes, so a plot opened on a selection offers and names them as Insights does. */
+  attributes?: Record<string, FacetCuration>;
   /** The reader's saved plots: each is a row in the menu, opened on the selection. */
   plots?: PlotStore;
   onSaveImage?: SaveImageHandler;
@@ -196,7 +199,7 @@ function plotOpener(source: DrilldownSource, ctx: DrilldownContext, anchor: Elem
   if (!store) return null;
   const doc = anchor.ownerDocument;
   const items = toPlotItems(source.items);
-  const plotCtx: PlotContext = { testDefs: source.testDefs };
+  const plotCtx: PlotContext = { testDefs: source.testDefs, curation: ctx.attributes };
   const dies = allDies(source);
   const phrase = populationPhrase(dies.length, dies.length, source.population);
   // A sweep plots the yield-eligible dies, so it says "3 of 4" where the others count what was picked.
@@ -225,7 +228,7 @@ function plotTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: Ele
   const open = plotOpener(source, ctx, anchor);
   if (!store || !open) return [];
   const items = toPlotItems(source.items);
-  const plotCtx: PlotContext = { testDefs: source.testDefs };
+  const plotCtx: PlotContext = { testDefs: source.testDefs, curation: ctx.attributes };
   const dies = allDies(source);
   const none = source.notMeasuredReason ?? (dies.length === 0 ? 'Nothing is selected' : null);
 

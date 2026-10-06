@@ -42,7 +42,7 @@ throughout; shared types live in §11.
 > for most integrations.
 >
 > For scale: **tsmap**, a complete cross-platform desktop application built on
-> this library, imports **18** of its ~100 exports. `RenderOptions` has 22
+> this library, imports **18** of its ~100 exports. `RenderOptions` has 23
 > fields; a typical integration sets a handful. Everything else here is depth
 > that stays out of your way until you go looking for it.
 >
