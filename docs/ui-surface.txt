@@ -428,6 +428,7 @@ Menu — Colour:
     · Idsat · 1050
     · Vth · 1060
     · Ioff · 1070
+    · Continuity · 1080 (pass/fail)
     · Die X
     · Die Y
     · Ring

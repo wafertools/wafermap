@@ -390,6 +390,12 @@ export function applyDerivedTests(
       // THE per-die pass rule, not a copy of it: `diePass()` in an expression
       // must agree with yield and the failing-die hatch on every die.
       diePass: () => diePassStatus(records[i], passBins),
+      // A die's own recorded field. An absent one is absent, not zero: die (0, 0) and "no position" must stay different.
+      field: name => {
+        const rec = records[i];
+        const v = name === 'x' ? rec.x : name === 'y' ? rec.y : name === 'hbin' ? rec.hbin : name === 'sbin' ? rec.sbin : rec.siteNum;
+        return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+      },
     };
 
     for (const c of compiled) {

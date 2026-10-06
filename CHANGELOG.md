@@ -33,6 +33,13 @@ under `### Breaking`.
   They are offered only when a reticle is set. The wafer carries it as `wafer.reticle`. A cell repeats in every shot, so it shows a
   problem with the mask; a shot is one place on the wafer, so it shows one that varies across it. `getReticleShot` is exported
   beside `getReticleCell`.
+- **Pass/fail tests are plot fields, under Verdicts.** A functional test, or a derived test that gives a verdict, is offered as a
+  category (`Scan Chain (pass/fail)`: Pass or Fail per die) to colour a plot by, to compare on a bar or box's axis, and to split
+  yield by, so "Vth for dies that pass the scan chain and dies that fail it" is a box with two boxes. It is never an axis value, and a
+  die with no recorded outcome is in neither group.
+- **A derived-test expression can read a die's own fields.** `dieX()`, `dieY()`, `hbin()`, `sbin()` and `site()` give a die's position,
+  bins and probe site, so a derived test can be cut by bin (`hbin() == 5`) or position (`if(dieX() < 5, t[1010], 0 - 1)`). A field
+  the die lacks is no value, not zero. Written without its parentheses it is refused with the call to use.
 - **Reticle cell yield, a card on the Overview.** With a `reticleConfig` the Overview gains a grid of the stepper field, one cell per
   position in it (row 0 at the bottom), filled from the same yield ramp as the ring and quadrant cards and labelled with its yield.
   A cell pools every field on every wafer, so a low one points at the mask, not the wafer. Hover a cell for which it is and its dies;

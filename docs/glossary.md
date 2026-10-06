@@ -78,6 +78,14 @@ A statistical measure of how well a parametric test's values fit within its spec
 
 The rectangular exposure field used in photolithography, typically containing a fixed grid of die sites. One reticle field is stepped across the wafer repeatedly to pattern the full surface. The library can overlay the reticle grid and attribute findings to specific reticle positions, which is useful for identifying systematic defects tied to a particular mask location. *Library mapping: `WaferMapInput.reticleConfig`, `ReticleConfig`.*
 
+### Reticle cell
+
+A die's position *inside* the reticle: which of the field's dies it is, such as column 1, row 3 of a 4 × 3 field. The same cell recurs in every shot across the wafer, so a cell that is bad everywhere points at the mask or lens rather than at the wafer. Shown as `Reticle cell (1, 3)` and available once a reticle is set. *Library mapping: `getReticleCell`, `DIE_REGIONS.reticleCell`.*
+
+### Reticle shot
+
+*Where on the wafer* the reticle was placed for a die: one exposure of the mask, numbered by its column and row among the exposures (the one containing the anchor die is `(0, 0)`). Each shot is a different place on the wafer, so a shot that is bad points at something that varies across the wafer, such as focus, tilt or the edge. Not to be confused with the reticle cell, which is a position inside the mask. Shown as `Reticle shot (-1, 2)`. *Library mapping: `getReticleShot`, `DIE_REGIONS.reticleShot`.*
+
 ### Lot
 
 A batch of wafers processed together through the fabrication line, typically 25 wafers. All wafers in a lot share the same process conditions and are usually tested together. The library's lot stack feature lets you combine multiple wafers from a lot into a single aggregated map. *Library mapping: `WaferMapInput.lotStack`, `LotStackConfig`.*
@@ -87,6 +95,26 @@ In API names — `analyzeWaferLot`, `LotStatsSummary`, `lotStack`, `level: 'lot'
 What the user sees is stricter: a panel, report or finding says "lot" only when every wafer
 records the same lot ID ("Lot LOT123 · 13 wafers", "lot median"); otherwise it names the wafers
 ("26 wafers from 2 lots", "median of all wafers").
+
+### Wafer attribute
+
+A fact about a whole wafer that came with the data or was assigned afterwards: its lot, product, test program, temperature, operator, test date, slot, or a label such as a process **split**. A wafer attribute separates *wafers*; it is what **Group by** pools them on. A split (TT, FF, SS…) is one wafer attribute, not a separate mechanism. *Library mapping: `WaferMetadata`, the `attributes` render option, `attributeLabel`.*
+
+### Die region
+
+A category a die falls into from where it sits, calculated rather than recorded: its ring, quadrant, reticle cell or reticle shot. A die belongs to every one of them at once, which is why a region separates the *dies* of a chart (**Compare by**) and is never a **Group by** choice. *Library mapping: `DIE_REGIONS`, `availableRegions`.*
+
+### Verdict
+
+The outcome of a go/no-go: a functional test's pass or fail, or a derived test that gives a yes/no. A verdict has no value to plot, so the plot builder offers it as a category (**Verdicts**, shown as `Scan Chain (pass/fail)`) to colour or compare by. *Library mapping: `getTestPassStatus`, `DieResult.testPass`.*
+
+### Group by
+
+Pools whole *wafers* by a wafer attribute (lot, split, temperature) for every chart on the Insights tab, so each chart draws one group per value. It takes wafer attributes only. To separate the dies within each wafer, use **Compare by**.
+
+### Compare by
+
+What a single plot separates its marks by: its **Colour**, and on a bar or box its **Categories**. It takes a wafer attribute or a die region, a bin, a site or a verdict. Where **Group by** pools wafers for the whole tab, Compare by acts on one plot.
 
 ### Lot stack
 

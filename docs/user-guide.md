@@ -780,9 +780,12 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   selection stays ringed until you change the X or Y test or click empty space.
 
 In a gallery with more than one wafer, a **Group by** control appears whenever
-wafer metadata (lot, product, test program, temperature, split, or a custom
+a *wafer attribute* (lot, product, test program, temperature, split, or a custom
 field) actually varies across the loaded wafers — grouping pools or restricts
-each panel differently depending on what makes sense for that chart type.
+each panel differently depending on what makes sense for that chart type. Group by
+separates whole wafers; to separate the dies within each wafer, a plot's own
+**Compare by** choices (see [Plots](#plots)) take die regions, bins, sites and
+pass/fail tests as well.
 Histogram, correlation, and scatter also offer a **Wafer** picker to narrow
 from "all wafers pooled" down to one wafer at a time. Clicking a yield bar or
 box-plot row for one wafer opens that wafer's own map — a box-plot click opens
@@ -914,6 +917,9 @@ In **Setup**, choose the **chart type**, then the field for each role:
   cell, reticle shot, bin, site: it separates the dies within each wafer). **Group by**, above the charts, is the other way to
   separate wafers: it pools whole wafers by a wafer attribute for every chart on the tab, and a plot's Colour can follow it. A
   die region is never a Group by choice, because a wafer is in one lot but a die is in a ring and a reticle cell at once.
+  A **pass/fail test** (a functional test, or a derived one that gives a verdict) is a category too, listed under **Verdicts** as
+  `Scan Chain (pass/fail)`: it separates the dies that passed from those that failed, for Colour and Categories and for splitting
+  yield. It has no value, so it is never an axis. A die with no recorded outcome is in neither group.
 - **Colour**: a category such as wafer, split, hard bin, site, ring or, with a reticle set, reticle cell or reticle shot, or, on a
   scatter, a measured value or wafer figure drawn on a gradient (a colour bar under
   the title states its range). **Follow Group by** (the default) takes the colours from

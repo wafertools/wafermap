@@ -497,3 +497,61 @@ test('an over-long expression is refused', () => {
   );
   assert.match(derivedWarnings(r)[0].message, /limit/);
 });
+
+// ── A die's own fields: position, bins, site ─────────────────────────────────
+
+test('dieX(), dieY(), hbin(), sbin() and site() read the die\'s own recorded fields', () => {
+  const r = build(
+    [{ x: 2, y: 3, hbin: 5, sbin: 51, siteNum: 4, testValues: { 1010: 1 } }],
+    [
+      { testNumber: 900020, name: 'Sum',  expression: 'dieX() + dieY()' },
+      { testNumber: 900021, name: 'Hbin', expression: 'hbin()' },
+      { testNumber: 900022, name: 'Sbin', expression: 'sbin()' },
+      { testNumber: 900023, name: 'Site', expression: 'site()' },
+    ],
+  );
+  const d = dieAt(r, 2, 3);
+  assert.equal(d.testValues[900020], 5);
+  assert.equal(d.testValues[900021], 5);
+  assert.equal(d.testValues[900022], 51);
+  assert.equal(d.testValues[900023], 4);
+});
+
+test('a die field a die lacks is absent, never zero: no bin and no site stay different from bin 0 and site 0', () => {
+  const r = build(
+    [
+      { x: 0, y: 0, hbin: 0, siteNum: 0, testValues: { 1010: 1 } },
+      { x: 1, y: 0, testValues: { 1010: 1 } },
+    ],
+    [{ testNumber: 900024, name: 'Hbin', expression: 'hbin()' }, { testNumber: 900025, name: 'Site', expression: 'site()' }],
+  );
+  assert.equal(dieAt(r, 0, 0).testValues[900024], 0, 'bin 0 is a real bin');
+  assert.equal(dieAt(r, 0, 0).testValues[900025], 0, 'site 0 is a real site');
+  assert.equal(900024 in (dieAt(r, 1, 0).testValues ?? {}), false, 'no bin is no value');
+  assert.equal(900025 in (dieAt(r, 1, 0).testValues ?? {}), false, 'no site is no value');
+});
+
+test('a die field mixes with test values and with verdicts: yield of one bin, and a position cut', () => {
+  const r = build(
+    [{ x: 1, y: 0, hbin: 5, testValues: { 1010: 4 } }, { x: 6, y: 0, hbin: 1, testValues: { 1010: 4 } }],
+    [
+      { testNumber: 900026, name: 'Left only', unit: 'uA', expression: 'if(dieX() < 5, t[1010], 0 - 1)' },
+      { testNumber: 900027, name: 'In bin 5', testType: 'F', expression: 'hbin() == 5' },
+    ],
+  );
+  assert.equal(dieAt(r, 1, 0).testValues[900026], 4);
+  assert.equal(dieAt(r, 6, 0).testValues[900026], -1);
+  assert.equal(dieAt(r, 1, 0).testPass[900027], true);
+  assert.equal(dieAt(r, 6, 0).testPass[900027], false);
+});
+
+test('a die field written without its call is refused with the names that exist', () => {
+  const r = build(
+    [{ x: 0, y: 0, hbin: 1, testValues: { 1010: 1 } }],
+    [{ testNumber: 900028, name: 'Bad', expression: 'hbin + 1' }],
+  );
+  const w = r.warnings.find(x => x.code === 'derived-test-invalid');
+  assert.ok(w, 'a warning is raised');
+  assert.match(w.message, /hbin\(\)|dieX\(\)/, `names the call syntax: ${w.message}`);
+  assert.equal(900028 in (dieAt(r, 0, 0).testValues ?? {}), false, 'a rejected derived test is dropped, not half-applied');
+});

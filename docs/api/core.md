@@ -390,7 +390,7 @@ buildWaferMap({
 });
 ```
 
-**Reading die data.** Three accessors, each with one meaning and one read-path:
+**Reading die data.** Three accessors, each with one meaning and one read-path, and five calls for the die's own fields:
 
 | | Reads | Type | Valid on |
 |---|---|---|---|
@@ -398,6 +398,11 @@ buildWaferMap({
 | `testPass[1020]` | the tester's recorded verdict (`die.testPass`, via `getTestPassStatus`) | boolean | any test |
 | `specPass[1020]` | the spec-limit judgement | boolean | parametric tests declaring a limit |
 | `diePass()` | the die's bin verdict under the map's `passBins` | boolean | any die |
+| `dieX()`, `dieY()` | the die's position on the grid | number | a positioned die |
+| `hbin()`, `sbin()` | the die's hard or soft bin number | number | a die with that bin |
+| `site()` | the probe site that tested the die | number | a die with a site |
+
+A die field the die lacks is absent, never zero: bin 0 and site 0 are real, and "no bin" or "no position" gives the expression no value, so the die reads as no-data. They are written with parentheses, like `diePass()`, so a name is never mistaken for a constant. Position, bin and site are what a die was recorded with; a ring, quadrant or reticle cell is calculated from wafer geometry the expression has no view of, so those are not available here.
 
 `testPass` and `specPass` are the same distinction `passFailDisplay: 'test' \| 'spec'` draws, and they are genuinely different questions — a value can be outside its limits while the tester recorded a pass. They are separate accessors rather than one because most CSV-sourced parametric data has measurements and no recorded verdict at all, so a single conflated accessor would silently return "unknown" for every die.
 

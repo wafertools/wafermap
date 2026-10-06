@@ -107,7 +107,10 @@ const THRESHOLDS = {
   // expression parser + evaluator (~5 KB gz). That cost buys the absence of a
   // third-party expression engine on the one security boundary between a shared
   // JSON template and the host app.
-  'wafermap (root)':            66_000,   // gzipped bytes — baseline ~62.0 KB
+  // Raised deliberately from 66_000 in 0.35.0: the die regions (one definition shared by plots, tables and findings), the wafer
+  // attribute label and curation, and a die's own fields in a derived-test expression took the data layer to ~66.1 KB locally
+  // (~66.4 KB on CI's zlib), and the budget keeps ~1.5% over the CI figure.
+  'wafermap (root)':            67_500,   // gzipped bytes — measured ~66.1 KB
   // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
   // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
   // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.

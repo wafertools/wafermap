@@ -22,7 +22,7 @@
  * drags a mean toward zero or classifies as in-spec.
  */
 
-import type { ExprNode } from './parser.js';
+import type { DieField, ExprNode } from './parser.js';
 // minOf/maxOf iterate. `Math.min(...arr)` passes one argument per element and
 // throws RangeError past ~131k of them — reachable from a wide test range.
 import { minOf, maxOf } from '../../core/utils.js';
@@ -39,6 +39,8 @@ export interface EvalContext {
   specPass(test: number): boolean | undefined;
   /** The die's bin-based pass verdict, via `diePassStatus`. */
   diePass(): boolean | undefined;
+  /** One of the die's own recorded fields, or `undefined` when it has none (a die with no position, no bin, no site). */
+  field(name: DieField): number | undefined;
 }
 
 type Scalar = number | boolean | undefined;
@@ -110,6 +112,8 @@ export function evaluate(node: ExprNode, ctx: EvalContext): Scalar {
           : ctx.specPass(node.test);
 
     case 'diePass': return ctx.diePass();
+
+    case 'dieField': return ctx.field(node.field);
 
     case 'vec':
       // Unreachable: the parser rejects a vector-typed expression at the root

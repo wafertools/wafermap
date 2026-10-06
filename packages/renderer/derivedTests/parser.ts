@@ -49,11 +49,18 @@ export type ExprType = 'number' | 'boolean' | 'numberVec' | 'boolVec';
  *  spec-limit judgement. `t` is the measured value itself. */
 export type AccessorKind = 't' | 'testPass' | 'specPass';
 
+/** A die's own recorded fields an expression may read: where it is, which bins it landed in, which probe site. */
+export type DieField = 'x' | 'y' | 'hbin' | 'sbin' | 'site';
+
+/** The call each die field is read with. Call syntax, like `diePass()`, so a name here is never mistaken for a constant. */
+export const DIE_FIELD_CALLS: Readonly<Record<string, DieField>> = { dieX: 'x', dieY: 'y', hbin: 'hbin', sbin: 'sbin', site: 'site' };
+
 export type ExprNode =
   | { k: 'num';     value: number }
   | { k: 'acc';     kind: AccessorKind; test: number }
   | { k: 'vec';     kind: AccessorKind; tests: number[] }
   | { k: 'diePass' }
+  | { k: 'dieField'; field: DieField }
   | { k: 'unary';   op: '-' | 'not'; arg: ExprNode }
   | { k: 'binary';  op: BinaryOp; left: ExprNode; right: ExprNode }
   | { k: 'call';    name: string; args: ExprNode[] };
@@ -402,6 +409,13 @@ class Parser {
         this.usesDiePass = true;
         return { node: { k: 'diePass' }, type: 'boolean' };
       }
+      if (Object.prototype.hasOwnProperty.call(DIE_FIELD_CALLS, t.text)) {
+        if (!this.at('(')) {
+          throw new ParseError(`${JSON.stringify(t.text)} at position ${t.pos} reads a die's own field and is written with parentheses: ${t.text}().`, t.pos);
+        }
+        this.expect('('); this.expect(')');
+        return { node: { k: 'dieField', field: DIE_FIELD_CALLS[t.text]! }, type: 'number' };
+      }
       if (this.at('(')) return this.parseCall(t.text, t.pos);
       if (Object.prototype.hasOwnProperty.call(this.ctx.constants, t.text)) {
         const v = this.ctx.constants[t.text]!;
@@ -411,7 +425,7 @@ class Parser {
         return { node: { k: 'num', value: v }, type: 'number' };
       }
       throw new ParseError(
-        `Unknown name ${JSON.stringify(t.text)} at position ${t.pos}. Test values are read as t[1020], verdicts as testPass[1020] or specPass[1020]; other names must be declared in \`constants\`.`,
+        `Unknown name ${JSON.stringify(t.text)} at position ${t.pos}. Test values are read as t[1020], verdicts as testPass[1020] or specPass[1020], a die's own fields as dieX(), dieY(), hbin(), sbin() or site(); other names must be declared in \`constants\`.`,
         t.pos);
     }
 

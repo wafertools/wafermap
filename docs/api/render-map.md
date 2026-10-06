@@ -18,7 +18,7 @@ renderWaferMap(container: HTMLElement, result: RenderableWaferMap, options?: Ren
 > tooltips, die selection and PNG export by default.
 >
 > For calibration, **tsmap** — a full desktop application on this library — passes
-> **6**: `viewOptions` (initial plot mode and colour scheme), `summaryPanel`,
+> **7**: `viewOptions` (initial plot mode and colour scheme), `summaryPanel`,
 > `insights`, `downloadFilename`, `userGuideExtension` and `showHelpButton`. Those
 > six, plus `onSaveImage`/`onSaveText` if you want exports routed through your own
 > save dialog, cover the overwhelming majority of integrations.

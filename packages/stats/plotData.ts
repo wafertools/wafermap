@@ -20,7 +20,7 @@ import type { Wafer } from '../core/wafer.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { testValue, testsPresent } from '../core/dieTable.js';
 import { compareNatural, minOf, maxOf } from '../core/utils.js';
-import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
+import { isParametricTest, getTestPassStatus, type TestDef } from '../renderer/buildWaferMap.js';
 import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
@@ -153,7 +153,12 @@ const BUILTIN_LABEL: Record<PlotBuiltin, string> = {
 
 /** The reader's name for a field, whether or not the population has it. */
 export function fieldLabel(field: PlotField, testDefs?: readonly TestDef[]): string {
-  if ('test' in field) return testDefs?.find(d => d.testNumber === field.test)?.name || field.name || `Test ${field.test}`;
+  if ('test' in field) {
+    const def = testDefs?.find(d => d.testNumber === field.test);
+    const name = def?.name || field.name || `Test ${field.test}`;
+    // A functional test has no value to plot, only an outcome: the field is its verdict, and says so.
+    return def !== undefined && !isParametricTest(def) ? `${name} (pass/fail)` : name;
+  }
   if ('builtin' in field) return BUILTIN_LABEL[field.builtin] ?? String(field.builtin);
   return prettyMetaKey(field.meta);
 }
@@ -194,6 +199,11 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
       }
     } else if (field.name && def.name && !sameTestName(field.name, def.name)) {
       return { ...base, level: 'die', kind: 'numeric', unit: def.unit, issue: `Test ${field.test} is "${field.name}" in this plot and "${def.name}" here` };
+    }
+    if (def !== undefined && !isParametricTest(def)) {
+      // A functional (or derived pass/fail) test: the die's recorded verdict, as a category to colour, compare or split yield by.
+      const cat = rows.dies.map(d => { const v = getTestPassStatus(d, field.test, def); return v === undefined ? undefined : v ? 'Pass' : 'Fail'; });
+      return { ...base, level: 'die', kind: 'categorical', cat };
     }
     const num = new Float64Array(nDie);
     for (let i = 0; i < nDie; i++) num[i] = testValue(rows.dies[i], field.test) ?? NaN;
@@ -676,7 +686,7 @@ export function plotFootnote(resolved: ResolvedPlot): string {
 
 // ── what can be chosen ────────────────────────────────────────────────────────────────────────────────────
 
-export type FieldGroup = 'Tests' | 'Die' | 'Wafer';
+export type FieldGroup = 'Tests' | 'Verdicts' | 'Die' | 'Wafer';
 
 /** One entry of the editor's field list. */
 export interface FieldOption {
@@ -720,6 +730,18 @@ export function fieldCatalogue(items: readonly PlotItem[], ctx: PlotContext = {}
       field: { test: n, ...(name ? { name } : {}) },
       label: name ? `${name} · ${n}` : `Test ${n}`, name: name || `Test ${n}`,
       group: 'Tests', kind: 'numeric', level: 'die', categorical: false,
+    });
+  }
+  // Pass/fail tests (functional, or derived to a verdict) have an outcome per die and no value: they are categories, offered
+  // under Verdicts when this population has an outcome for them.
+  const outcomes = new Set(dies.length ? testsPresent(dies, 'all') : []);
+  for (const d of defs) {
+    if (isParametricTest(d) || !(outcomes.has(d.testNumber) || !dies.length)) continue;
+    const name = d.name || `Test ${d.testNumber}`;
+    out.push({
+      field: { test: d.testNumber, ...(d.name ? { name: d.name } : {}) },
+      label: `${name} · ${d.testNumber} (pass/fail)`, name,
+      group: 'Verdicts', kind: 'categorical', level: 'die', categorical: true,
     });
   }
   const has = (f: (d: Die) => boolean) => dies.some(f);
