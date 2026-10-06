@@ -24,6 +24,8 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-10-06
+
 ### Added
 
 - **Reticle cell and Reticle shot, as die fields.** With a `reticleConfig`, a die's position within the mask (**Reticle cell**,
