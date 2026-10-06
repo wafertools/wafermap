@@ -939,7 +939,7 @@ export function buildBinBreakdownSection(params: {
       },
       control: (hasHard && hasSoft && panel)
         ? () => makeSegmented(
-            [['hard', 'Hard'], ['soft', 'Soft']],
+            [['hard', 'Hard', 'The physical sort result: where the part goes on the handler'], ['soft', 'Soft', 'The test program’s failure category: many soft bins can map to one hard bin']],
             mode,
             v => {
               ui.binMode = v as 'hard' | 'soft';
@@ -1031,7 +1031,8 @@ export function buildRegionYieldPanelSection(params: {
       },
       control: panel
         ? () => makeSegmented(
-            [['ring', 'Ring'], ['quadrant', 'Quadrant'], ...(hasReticle ? [['reticleCell', 'Reticle cell']] as Array<[string, string]> : [])],
+            [['ring', 'Ring', 'Concentric bands from the centre to the edge'], ['quadrant', 'Quadrant', 'The four quarters of the wafer'],
+             ...(hasReticle ? [['reticleCell', 'Reticle cell', 'Each position within the stepper field, pooled over every field']] as Array<[string, string, string]> : [])],
             family,
             v => {
               ui.regionMode = v as 'ring' | 'quadrant' | 'reticleCell';

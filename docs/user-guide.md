@@ -728,7 +728,9 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   and for a lot the mean wafer yield — an *unweighted* mean of each wafer's own
   yield, not the die-weighted figure), a yield bar labelled with the pass bins
   actually in use and marked with the median, a hard/soft bin pareto, and
-  ring/quadrant regional yield.
+  ring/quadrant regional yield, and with a reticle set a **Reticle cell yield** grid: the stepper field drawn as its cells (row 0 at
+  the bottom), each filled by the yield of that position pooled over every field on every wafer and labelled with it. Hover a cell
+  for its dies, click it to chart or tabulate them. A cell that is low in all of them points at the mask rather than the wafer.
 - **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
   lower and upper limit — spec limits where given, otherwise test limits; tests
   without both still appear, normalized

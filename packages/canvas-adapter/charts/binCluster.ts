@@ -44,7 +44,7 @@ export function renderBinClusterPanel(options: BinClusterPanelOptions): BinClust
   const { card, heading, body, controlsRow } = cardShell(titleText, onSaveImage, options.ownerDocument);
 
   controlsRow.appendChild(makeSegmented(
-    [['hbin', 'Hard bins'], ['sbin', 'Soft bins']],
+    [['hbin', 'Hard bins', 'The physical sort result: where the part goes on the handler'], ['sbin', 'Soft bins', 'The test program’s failure category: many soft bins can map to one hard bin']],
     binType,
     v => { binType = v as BinType; titleText = `${binType === 'hbin' ? 'Hard' : 'Soft'} bin pareto`; heading.textContent = titleText; rebuildBody(); },
     card.ownerDocument,

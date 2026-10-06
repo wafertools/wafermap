@@ -56,6 +56,13 @@ const KIND_LABEL: Record<TestPassKind, string> = {
   functional: 'Functional',
 };
 
+/** What each judgement means, for the hover hint on the selector. */
+const KIND_HINT: Record<TestPassKind, string> = {
+  spec:       "Judged from each die's measured value against the test's limits",
+  testFlag:   "The pass or fail the tester recorded for each die",
+  functional: 'Tests that only pass or fail and have no measured value',
+};
+
 /** Card title per mode — names the population AND how it was judged, so a
  *  screenshot of the card is never ambiguous about which of the two parametric
  *  questions it answers. */
@@ -86,7 +93,7 @@ export function renderTestPassRatePanel(options: TestPassRatePanelOptions): Test
   // a mode this dataset cannot answer just leads to an empty card.
   if (available.length > 1) {
     controlsRow.appendChild(makeSegmented(
-      available.map(k => [k, KIND_LABEL[k]] as [string, string]),
+      available.map(k => [k, KIND_LABEL[k], KIND_HINT[k]] as [string, string, string]),
       kind,
       v => { kind = v as TestPassKind; heading.textContent = titleOf(kind); rebuildBody(); },
       doc,

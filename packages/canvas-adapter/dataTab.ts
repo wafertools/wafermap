@@ -46,10 +46,10 @@ export interface DataItem {
   statsSummary?: InsightsItem['statsSummary'];
 }
 
-export const DATA_VIEWS: ReadonlyArray<{ key: DataView; label: string }> = [
-  { key: 'statistics', label: 'Statistics' },
-  { key: 'dies', label: 'Dies' },
-  { key: 'wafers', label: 'Wafers' },
+export const DATA_VIEWS: ReadonlyArray<{ key: DataView; label: string; hint: string }> = [
+  { key: 'statistics', label: 'Statistics', hint: 'One row per test: count, spread, limits and limit yield' },
+  { key: 'dies', label: 'Dies', hint: 'One row per die, with its position, bins and every test' },
+  { key: 'wafers', label: 'Wafers', hint: 'One row per wafer: its attributes, die counts, yield and test means' },
 ];
 
 /** Rows Excel can open. A file with more is still valid; the reader is told. */
@@ -141,7 +141,7 @@ export function renderDataSection(deps: DataSectionDeps): { card: HTMLElement; d
   let refreshNote: () => void = () => {};
   if (deps.view === 'dies') {
     const layout = segmented(doc, 'Export format', [
-      { key: 'wide', label: 'Wide' }, { key: 'long', label: 'Long' },
+      { key: 'wide', label: 'Wide', hint: 'A column for each test' }, { key: 'long', label: 'Long', hint: 'A row for each die and test, the shape statistics tools prefer' },
     ], deps.diesLayout, 'wmapDataLayout', l => {
       layout.set(l);
       deps.onDiesLayoutChange(l as 'wide' | 'long');
@@ -439,7 +439,7 @@ function actionButton(doc: Document, text: string): HTMLButtonElement {
 function segmented(
   doc: Document,
   label: string,
-  options: ReadonlyArray<{ key: string; label: string }>,
+  options: ReadonlyArray<{ key: string; label: string; hint?: string }>,
   current: string,
   dataAttr: string,
   onChange: (key: string) => void,
@@ -465,6 +465,7 @@ function segmented(
   };
   for (const o of options) {
     const b = doc.createElement('button');
+    if (o.hint) wireTooltip(b, o.hint);
     b.type = 'button';
     b.textContent = o.label;
     b.dataset[dataAttr] = o.key;

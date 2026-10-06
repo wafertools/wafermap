@@ -21,7 +21,7 @@
 // three can no longer be describing different populations at once, which they
 // were by default, from the first render, whenever "Group by" was set.
 
-import type { Die } from '../core/dies.js';
+import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { LotStatsSummary, StatsSummary } from '../stats/types.js';
 import { MEAN_WAFER_YIELD_LABEL } from '../stats/presentation.js';
@@ -59,7 +59,7 @@ import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../sta
 import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
 import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
 import { runChunked } from './chunked.js';
-import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions, diesInRegion, type RegionYieldDatum } from '../stats/regions.js';
+import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions, buildReticlePositionRegions, diesInRegion, type RegionYieldDatum } from '../stats/regions.js';
 import { renderDataSection, type DataView } from './dataTab.js';
 import { sourceFromDies } from './plotItems.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
@@ -747,7 +747,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       data: makeBinData(),
       selfControl: {
         current: binType,
-        options: [['hbin', 'Hard bins'], ['sbin', 'Soft bins']],
+        options: [['hbin', 'Hard bins', 'The physical sort result: where the part goes on the handler'], ['sbin', 'Soft bins', 'The test program’s failure category: many soft bins can map to one hard bin']],
         onChange: v => { binType = v as BinType; return { data: makeBinData(), title: `${binType === 'hbin' ? 'Hard' : 'Soft'} bin pareto` }; },
       },
       // Bin identity keeps the map's colours so a bar matches the dies it
@@ -911,6 +911,22 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, onSelectRegion: regionClick(buildQuadrantRegions), onSaveImage, ownerDocument: doc });
       elements.push(quadrant.card);
       destroyFns.push(quadrant.destroy);
+    }
+
+    // Reticle cell yield: the field as a grid, one cell per position in it, pooled over every field on every wafer. Only when
+    // the wafers carry a stepper field; a cell that is bad in all of them points at the mask, not at the wafer.
+    const reticle = allWafers.find(w => w.reticle !== undefined)?.reticle;
+    if (reticle) {
+      const cellBuilder = (dies: PositionedDie[], wafer: Wafer) => buildReticlePositionRegions(dies, wafer.reticle);
+      const cellRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, cellBuilder);
+      if (cellRows.length) {
+        const cells = renderRegionYieldDiagram({
+          title: 'Reticle cell yield', mode: 'reticleCell', rows: cellRows, grid: { width: reticle.width, height: reticle.height },
+          onSelectRegion: regionClick(cellBuilder), onSaveImage, ownerDocument: doc,
+        });
+        elements.push(cells.card);
+        destroyFns.push(cells.destroy);
+      }
     }
 
     return { elements, destroy: () => { for (const d of destroyFns) d(); } };

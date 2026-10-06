@@ -17,18 +17,21 @@
 //   [0, 90°) = SE, [90°, 180°) = SW, [180°, 270°) = NW, [270°, 360°) = NE.
 
 import type { RegionYieldDatum } from '../../stats/regions.js';
-import { parseRegionKey } from '../../stats/regions.js';
+import { parseRegionKey, parseReticleCellKey } from '../../stats/regions.js';
 import { yieldFill } from './palette.js';
 import { fontPx } from '../toolbar.js';
-import { cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent, setChartGrow, isExpandedCard, bodyRoom, renderEmptyState, type SaveImageHandler, type ChartCanvasColors, prepareCanvas } from './chartShell.js';
+import { escHtml } from '../../core/utils.js';
+import { makeTooltip, positionChartTooltip, cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent, setChartGrow, isExpandedCard, bodyRoom, renderEmptyState, type SaveImageHandler, type ChartCanvasColors, prepareCanvas } from './chartShell.js';
 
-export type RegionYieldMode = 'ring' | 'quadrant';
+export type RegionYieldMode = 'ring' | 'quadrant' | 'reticleCell';
 
 export interface RegionYieldDiagramOptions {
   title?: string;
   mode: RegionYieldMode;
   /** Ring mode: ordered ring 1 (core) → ring N (edge), matching `buildRegionYieldData`'s output for `buildRingRegions`. Quadrant mode: any order — each row's quadrant is read from its `key` (`quadrant:NE` etc.), not position. */
   rows: RegionYieldDatum[];
+  /** Reticle-cell mode: the field's size in dies, so cells with no data still take their place. Without it the grid is as large as the cells given. */
+  grid?: { width: number; height: number };
   /** Click a region: called with it and the click, so the host can pick out the dies it counts and open a menu there. */
   onSelectRegion?: (row: RegionYieldDatum, e: MouseEvent) => void;
   onSaveImage?: SaveImageHandler;
@@ -98,9 +101,22 @@ function drawLabelChip(
   ctx.fillText(line2, x, y + 7);
 }
 
+/** A small opaque chip with one figure, for a cell too small for the two-line chip. */
+function drawPercentChip(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, theme: ChartCanvasColors): void {
+  ctx.font = '700 11px system-ui, sans-serif';
+  const w = ctx.measureText(text).width + 8;
+  ctx.fillStyle = theme.bg;
+  roundRectPath(ctx, x - w / 2, y - 8, w, 16, 3);
+  ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = theme.text;
+  ctx.fillText(text, x, y + 0.5);
+}
+
 export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): RegionYieldDiagramHandle {
   const { mode, rows, onSaveImage } = options;
-  const title = options.title ?? (mode === 'ring' ? 'Ring yield' : 'Quadrant yield');
+  const title = options.title ?? (mode === 'ring' ? 'Ring yield' : mode === 'quadrant' ? 'Quadrant yield' : 'Reticle cell yield');
   const { card, body } = cardShell(title, onSaveImage, options.ownerDocument);
   setChartGrow(card, 'square');
 
@@ -125,6 +141,53 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
   // Where the circle was last drawn, for hit-testing a click.
   let geo = { cx: 0, cy: 0, R: 0 };
 
+  // Reticle-cell mode: the field is a grid of cells, row 0 at the bottom (+Y is up, the reticle's own convention),
+  // each placed by the cell the row's key names.
+  const cellOf = new Map<string, RegionYieldDatum>();
+  let gridCols = 0, gridRows = 0;
+  if (mode === 'reticleCell') {
+    for (const row of rows) {
+      const cell = parseReticleCellKey(row.key);
+      if (!cell) continue;
+      cellOf.set(`${cell.column},${cell.row}`, row);
+      gridCols = Math.max(gridCols, cell.column + 1);
+      gridRows = Math.max(gridRows, cell.row + 1);
+    }
+    gridCols = Math.max(gridCols, options.grid?.width ?? 0);
+    gridRows = Math.max(gridRows, options.grid?.height ?? 0);
+  }
+  // Where the grid was last drawn: its top-left corner and a cell's side.
+  let cells = { x0: 0, y0: 0, side: 0 };
+  const tooltip = makeTooltip(card);
+
+  /** One cell per position in the field, filled from the fixed yield ramp and labelled when it is large enough to read. */
+  function drawCells(ctx: CanvasRenderingContext2D, size: number, theme: ChartCanvasColors, fillFor: (y: number) => string): void {
+    const margin = 20;
+    const side = Math.max(4, Math.floor(Math.min((size - 2 * margin) / gridCols, (size - 2 * margin) / gridRows)));
+    const x0 = Math.round((size - side * gridCols) / 2);
+    const y0 = Math.round((size - side * gridRows) / 2);
+    cells = { x0, y0, side };
+    for (let r = 0; r < gridRows; r++) {
+      for (let c = 0; c < gridCols; c++) {
+        const x = x0 + c * side;
+        const y = y0 + (gridRows - 1 - r) * side;   // row 0 is the bottom row
+        const datum = cellOf.get(`${c},${r}`);
+        ctx.fillStyle = datum ? fillFor(datum.yieldPercent) : theme.bg;
+        ctx.fillRect(x, y, side, side);
+        ctx.strokeStyle = theme.border;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, side - 1, side - 1);
+        if (!datum || side < 30) continue;
+        // An opaque chip keeps the figure readable on any yield colour; a big cell also says which cell it is.
+        if (side >= 54) drawLabelChip(ctx, x + side / 2, y + side / 2, `(${c}, ${r})`, `${datum.yieldPercent.toFixed(1)}%`, theme);
+        else drawPercentChip(ctx, x + side / 2, y + side / 2, `${datum.yieldPercent.toFixed(0)}%`, theme);
+      }
+    }
+    ctx.strokeStyle = theme.text;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x0 + 0.5, y0 + 0.5, side * gridCols - 1, side * gridRows - 1);
+  }
+
   function draw(): void {
     // The grid size is what the card asks for; expanded, the circle grows to
     // the shorter side of the space it is given.
@@ -143,6 +206,8 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
     // whose data-range normalization let a better region render more alarming
     // than a worse one. Same yield ⇒ same colour, everywhere, always.
     const fillFor = yieldFill;
+
+    if (mode === 'reticleCell') { drawCells(ctx, size, theme, fillFor); return; }
 
     const cx = size / 2, cy = size / 2;
     const margin = 34; // room for label chips near the outer edge
@@ -213,8 +278,14 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
     }
   }
 
-  /** The region under a point of the canvas: a ring by its distance from the centre, a quadrant by its angle. */
+  /** The region under a point of the canvas: a ring by its distance from the centre, a quadrant by its angle, a cell by its place in the grid. */
   function regionAt(x: number, y: number): RegionYieldDatum | null {
+    if (mode === 'reticleCell') {
+      const c = Math.floor((x - cells.x0) / cells.side);
+      const rowFromTop = Math.floor((y - cells.y0) / cells.side);
+      if (cells.side <= 0 || c < 0 || c >= gridCols || rowFromTop < 0 || rowFromTop >= gridRows) return null;
+      return cellOf.get(`${c},${gridRows - 1 - rowFromTop}`) ?? null;
+    }
     const dx = x - geo.cx, dy = y - geo.cy;
     const d = Math.hypot(dx, dy);
     if (!(d <= geo.R)) return null;
@@ -225,6 +296,17 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
       return !!a && angle >= a[0] && angle < a[1];
     }) ?? null;
   }
+  // Hover: a cell says which it is, its yield and how many dies it counts, since a small cell has no room for any of it.
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const row = regionAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (!row) { tooltip.style.display = 'none'; return; }
+    tooltip.innerHTML = `<strong>${escHtml(row.label)}</strong><br>${row.yieldPercent.toFixed(1)}% yield (${row.passDies} of ${row.n} dies)`
+      + (options.onSelectRegion ? '<br><em>click to chart or tabulate these dies</em>' : '');
+    tooltip.style.display = 'block';
+    positionChartTooltip(tooltip, card, e.clientX, e.clientY);
+  });
+  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
   if (options.onSelectRegion) {
     canvas.style.cursor = 'pointer';
     canvas.addEventListener('click', e => {

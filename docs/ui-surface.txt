@@ -303,8 +303,11 @@ Controls:
   · Plot
   · None▾  [aria="Group by", opens menu]
   · Statistics  [checked]
+      hint: One row per test: count, spread, limits and limit yield
   · Dies  [unchecked]
+      hint: One row per die, with its position, bins and every test
   · Wafers  [unchecked]
+      hint: One row per wafer: its attributes, die counts, yield and test means
   · Test values CSV
       hint: Save the test-values table as a CSV file
   · Functional CSV
@@ -382,7 +385,9 @@ Controls:
   · Maximize (F)
   · Close (Esc)
   · Setup
+      hint: Which fields to plot and how they are combined
   · Customise
+      hint: Titles, axis limits, scale and direction
   · Scatter  [radio, checked]
   · Histogram  [radio, unchecked]
   · Box  [radio, unchecked]
@@ -481,7 +486,9 @@ Controls:
   · Maximize (F)
   · Close (Esc)
   · Setup
+      hint: Which fields to plot and how they are combined
   · Customise
+      hint: Titles, axis limits, scale and direction
   · Linear  [radio, checked]   (×2)
   · Log  [radio, unchecked]   (×2)
   · Reverse direction  [checkbox, unchecked]   (×2)

@@ -12,7 +12,7 @@
 
 import { combinationIssue, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
 import { sameField, type PlotAxis, type PlotField, type PlotLimits, type PlotSpec } from '../stats/plotSpec.js';
-import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover } from './toolbar.js';
+import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip } from './toolbar.js';
 import { makeListSelect, makeSegmented, makeToggle, type ListSelectOption } from './charts/chartShell.js';
 
 export interface PlotEditorOptions {
@@ -38,7 +38,13 @@ export interface PlotEditorHandle {
 const FOLLOW = '\0follow';
 const NONE = '\0none';
 
-const CHART_OPTIONS: Array<[string, string]> = [['scatter', 'Scatter'], ['histogram', 'Histogram'], ['box', 'Box'], ['bar', 'Bar'], ['line', 'Line']];
+const CHART_OPTIONS: Array<[string, string, string]> = [
+  ['scatter', 'Scatter', 'One point per die or wafer, one value against another'],
+  ['histogram', 'Histogram', 'How often each value occurs'],
+  ['box', 'Box', 'Quartiles, with whiskers to the minimum and maximum, for each category'],
+  ['bar', 'Bar', 'One combined value for each category, or a count'],
+  ['line', 'Line', 'One combined value at each X, joined'],
+];
 const AUTO = '\0auto';
 const COUNT = '\0count';
 
@@ -291,10 +297,11 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     const tabs = doc.createElement('div');
     tabs.setAttribute('role', 'tablist');
     Object.assign(tabs.style, { display: 'flex', gap: SPACE.sm, borderBottom: `1px solid ${CLR.menuBorder}` } as Partial<CSSStyleDeclaration>);
-    for (const [key, label] of [['setup', 'Setup'], ['customise', 'Customise']] as const) {
+    for (const [key, label, hint] of [['setup', 'Setup', 'Which fields to plot and how they are combined'], ['customise', 'Customise', 'Titles, axis limits, scale and direction']] as const) {
       const b = doc.createElement('button');
       b.type = 'button';
       b.textContent = label;
+      wireTooltip(b, hint);
       b.setAttribute('role', 'tab');
       b.dataset.tab = key;
       b.setAttribute('aria-selected', String(tab === key));

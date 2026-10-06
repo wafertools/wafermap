@@ -170,7 +170,7 @@ export function createSweepEditor(o: SweepEditorOptions): SweepEditorHandle {
 
     const source = xSourceOf(s);
     box.appendChild(fieldRow(doc, 'X value of each test', makeSegmented(
-      [['order', 'Test order'], ['values', 'Values'], ['name', 'From test name']], source, v => {
+      [['order', 'Test order', 'The position of each test in the run is its X'], ['values', 'Values', 'Type the swept value for each test'], ['name', 'From test name', "Read the swept value from each test's name"]], source, v => {
         edit(d => {
           const sr = d.sweep!.series[i];
           delete sr.xValues; delete sr.xFromName;

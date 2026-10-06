@@ -1131,7 +1131,8 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
 // ported from tsmap's charts/chartShell.ts.
 
 export function makeSegmented(
-  options: Array<[value: string, label: string]>,
+  /** An option's optional third element is its hover hint, for a label that does not explain itself. */
+  options: Array<[value: string, label: string, hint?: string]>,
   current: string,
   onChange: (value: string) => void,
   ownerDocument: Document = document,
@@ -1145,8 +1146,9 @@ export function makeSegmented(
   const name = `seg-${Math.random().toString(36).slice(2, 9)}`;
   const paints: Array<() => void> = [];
 
-  options.forEach(([value, text], i) => {
+  options.forEach(([value, text, hint], i) => {
     const label = ownerDocument.createElement('label');
+    if (hint) wireTooltip(label, hint);
     Object.assign(label.style, {
       display: 'inline-flex', alignItems: 'center',
       fontSize: FONT.body,

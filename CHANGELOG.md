@@ -33,6 +33,11 @@ under `### Breaking`.
   They are offered only when a reticle is set. The wafer carries it as `wafer.reticle`. A cell repeats in every shot, so it shows a
   problem with the mask; a shot is one place on the wafer, so it shows one that varies across it. `getReticleShot` is exported
   beside `getReticleCell`.
+- **Reticle cell yield, a card on the Overview.** With a `reticleConfig` the Overview gains a grid of the stepper field, one cell per
+  position in it (row 0 at the bottom), filled from the same yield ramp as the ring and quadrant cards and labelled with its yield.
+  A cell pools every field on every wafer, so a low one points at the mask, not the wafer. Hover a cell for which it is and its dies;
+  click it to chart or tabulate them. `renderRegionYieldDiagram` takes `mode: 'reticleCell'` and `grid`, and `parseReticleCellKey`
+  reads a cell's column and row from its key.
 
 ### Changed
 
@@ -45,6 +50,10 @@ under `### Breaking`.
 - **Escape in a menu closes the menu and leaves its window open.** A menu opened from a plot or sweep editor, or any other
   window, closes on Escape; a second Escape closes the window. Keys that something inside a window has already handled no
   longer also close it.
+- **The segmented toggles say what each choice means.** Hard bins and Soft bins, Ring, Quadrant and Reticle cell, the pass-rate
+  judgements (Test limits, Tester flag, Functional), the plot editor's chart types and its Setup and Customise tabs, a sweep's X
+  value source, and the Data tab's Statistics, Dies, Wafers and Wide, Long switches carry a hover hint. A segmented control's option
+  takes an optional third element, its hint.
 - **The Plot tab's buttons, the chart axis toggles and the CSV buttons carry a hover hint.** New plot, New sweep, Add
   examples, Import, Export, Delete all and each card's Edit, Duplicate and Delete say what they do; so do Axis includes
   limits, Clip outliers, Log scale, Max tests, and the Test values, Functional and Correlation CSV buttons. A hint's text is

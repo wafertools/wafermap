@@ -642,3 +642,43 @@ test('every button on the Plot tab has a hover hint', async () => {
   }
   for (const b of buttons) assert.ok((b.dataset.wmapTip ?? '').length > 10, `${b.textContent.trim()} has a hint`);
 });
+
+// A segmented control's option can carry a hint; the ones whose labels do not explain themselves do.
+test('the Data tab\'s table switcher and the Plot editor\'s tabs explain themselves on hover', async () => {
+  const { items, lot } = lotItems(2);
+  const tab = mountWithSweeps(items, lot, 'data', undefined);
+  const labels = [...tab.el.querySelectorAll('[role=radiogroup][aria-label=Table] button')];
+  assert.deepEqual(labels.map(b => b.textContent), ['Statistics', 'Dies', 'Wafers']);
+  for (const b of labels) assert.ok((b.dataset.wmapTip ?? '').length > 10, `${b.textContent} has a hint`);
+});
+
+// With a stepper field the Overview gains a Reticle cell yield card: the field as a grid, one cell per position in it.
+test('the Overview has a Reticle cell yield card when the wafers carry a reticle, and not otherwise', () => {
+  const build = (reticleConfig) => {
+    const items = Array.from({ length: 2 }, (_, i) => ({
+      ...buildWaferMap({
+        results: Array.from({ length: 36 }, (_, k) => ({ x: k % 6, y: Math.floor(k / 6), hbin: k % 5 === 0 ? 2 : 1 })),
+        waferConfig: { diameter: 80, metadata: { lot: 'LOT1', wafer: `W${i + 1}` } },
+        dieConfig: { width: 10, height: 10 }, passBins: [1], reticleConfig,
+      }),
+      label: `W${i + 1}`,
+    }));
+    const lot = analyzeWaferLot(items, {});
+    items.forEach((it, i) => { it.statsSummary = lot.perWafer[i].summary; });
+    return { items, lot };
+  };
+  const withReticle = build({ width: 3, height: 2 });
+  const tab = mountInsights(withReticle.items, withReticle.lot);
+  assert.ok(cardTitles(tab).includes('Reticle cell yield'), `got ${cardTitles(tab)}`);
+  assert.ok(cardTitles(tab).includes('Ring yield') && cardTitles(tab).includes('Quadrant yield'), 'beside the ring and quadrant cards');
+  const without = build(undefined);
+  assert.ok(!cardTitles(mountInsights(without.items, without.lot)).includes('Reticle cell yield'));
+});
+
+test('a reticle cell key names its column and row, and the general key parser still leaves it alone', async () => {
+  const { parseRegionKey, parseReticleCellKey } = await import('../dist/packages/stats/regions.js');
+  assert.deepEqual(parseReticleCellKey('reticle-position:cell:2,1'), { column: 2, row: 1 });
+  assert.deepEqual(parseReticleCellKey('reticle-position:cell:10,0'), { column: 10, row: 0 });
+  assert.equal(parseReticleCellKey('ring:2'), undefined);
+  assert.equal(parseRegionKey('reticle-position:cell:1,0').family, 'unknown');
+});

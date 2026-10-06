@@ -27,7 +27,7 @@ export interface ChartPanel {
    */
   selfControl?: {
     current: string;
-    options: Array<[value: string, label: string]>;
+    options: Array<[value: string, label: string, hint?: string]>;
     onChange: (value: string) => { data: ChartDatum[]; title?: string };
   };
   /**

@@ -173,6 +173,16 @@ export interface ParsedRegionKey {
  * Parse a region key (e.g. `ring:2`, `quadrant:NE`, `sector:NNE`) into its
  * structured parts. Always parse identity from the key, never from the label.
  */
+/**
+ * A reticle cell's position within its field, from its region key: `reticle-position:cell:2,1` is column 2, row 1.
+ * Separate from `parseRegionKey`, which leaves a reticle key `unknown` on purpose: only ring, quadrant and sector findings
+ * merge, and the merge logic reads `unknown` as "leave alone".
+ */
+export function parseReticleCellKey(key: string): { column: number; row: number } | undefined {
+  const m = /^reticle-position:cell:(-?\d+),(-?\d+)$/.exec(key);
+  return m ? { column: Number(m[1]), row: Number(m[2]) } : undefined;
+}
+
 export function parseRegionKey(key: string): ParsedRegionKey {
   if (key.startsWith('ring:')) {
     return { family: 'ring', ring: Number(key.slice('ring:'.length)) };
@@ -183,6 +193,7 @@ export function parseRegionKey(key: string): ParsedRegionKey {
   if (key.startsWith('sector:')) {
     return { family: 'sector', sector: key.slice('sector:'.length) };
   }
+
   return { family: 'unknown' };
 }
 
