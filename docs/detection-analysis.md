@@ -54,6 +54,11 @@ Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 > build and reproduced exactly: classifier recall and exact match, the 86.2% detection rate,
 > the combined 99.3% / 99.1% rates and per-label rescue, and both false-positive tables.
 >
+> **Re-run 2026-10-09, regions against each other.** Each regional finding is re-tested against the rest of the wafer
+> without the other findings of its variable and family, losses first, so a failing quadrant no longer brings "better"
+> findings from the sectors opposite it (none on 200 synthetic wafers, against 78 before). Every figure on this page is
+> unchanged by it except the WM-811K combined false-positive rate (89.4% → 89.3%).
+>
 > **Re-run 2026-10-09.** Clusters and edge arcs are tested by a permutation null of the largest group (see
 > [False positives](#synthetic-random-wafers-iid-bernoulli-n-500cell)), and p-values come from an erfc accurate to double
 > precision. The classifier figures are unchanged. On synthetic random wafers the regional false-positive rate at a 10%
@@ -137,7 +142,7 @@ Per-label rescue breakdown (classifier misses only):
 |---|---|
 | Classifier only | 41.2% |
 | Regional analysis only | 85.4% |
-| Combined | 89.4% |
+| Combined | 89.3% |
 
 **Important caveat:** WM-811K "Random" is a catch-all label — ambiguous,
 multi-modal, or low-confidence wafers all end up there. Some fraction genuinely

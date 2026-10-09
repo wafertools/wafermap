@@ -12,7 +12,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeWaferMap, analyzeWaferLot } from '../dist/index.js';
+import { analyzeWaferMap, analyzeWaferLot, buildWaferMap } from '../dist/index.js';
 import { buildLot, logicalWafers, placeDie } from './fixtures/synthLots.mjs';
 
 const strong = (f) => f.severity !== 'info';
@@ -316,4 +316,49 @@ test('outlier wafers are the ones outside Tukey\'s fences, at least three points
   const got = lot.findings.filter(f => f.id.startsWith('inter-wafer:yield:')).map(f => f.highlight.waferIndices[0]).sort((a, b) => a - b);
   assert.deepEqual(got, expected);
   assert.ok(expected.includes(3), 'the planted outlier is one');
+});
+
+// ── 6. A region and its complement ───────────────────────────────────────────
+// Compared with "the rest", the complement of a failing block looks as significant in the other direction. Each
+// region must hold against the rest without the others, and when the evidence is symmetric the loss is the finding.
+
+/** One wafer (radius 8 dies) whose dies fail functional test 2000 where `failsAt(rad)` holds. Seeded. */
+function functionalWafer(failsAt) {
+  let seed = 3;
+  const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const results = [];
+  for (let x = -8; x <= 8; x++) for (let y = -8; y <= 8; y++) {
+    const rad = Math.hypot(x, y);
+    if (rad > 8) continue;
+    const fails = failsAt(rad);
+    results.push({ x, y, hbin: 1, testPass: { 2000: fails ? r() < 0.2 : r() < 0.97 } });
+  }
+  return buildWaferMap({
+    results, testDefs: [{ testNumber: 2000, name: 'Func A', testType: 'F' }],
+    dieConfig: { width: 10, height: 10 }, waferConfig: { diameter: 180 } });
+}
+const ringFindings = (s) => s.findings.filter(f => f.variable.index === 2000 && f.comparison.family === 'ring')
+  .map(f => `${f.comparison.left} ${f.effect.direction}`);
+
+test('a failing block of rings is reported as the block, not as the rings either side of it', () => {
+  const analyse = (failsAt) => analyzeWaferMap(functionalWafer(failsAt), { enableTestValueAnalysis: true });
+  assert.deepEqual(ringFindings(analyse(rad => rad > 2.25 && rad <= 6.75)), ['Rings 2–3 lower']);
+  assert.deepEqual(ringFindings(analyse(rad => rad > 4)), ['Rings 3–4 lower']);
+});
+
+test('a failing quadrant brings no opposite finding from the regions that merely look good beside it', () => {
+  const quiet = console.warn;
+  console.warn = () => {};
+  const maps = buildLot({ name: 'opposite:quadrant', wafers: 5, tests: 'parametric', testFailures: [{ test: 103, region: 'quadrant-NE', p: 0.3, binning: 6 }] });
+  console.warn = quiet;
+  const per = maps.map(m => analyzeWaferMap(m));
+  const lot = analyzeWaferLot(maps, { perWaferSummaries: per });
+  const regional = (f) => ['quadrant', 'sector', 'ring'].includes(f.comparison.family) && (f.variable.kind === 'yield' || f.variable.bin === 6);
+  // Bin 6 is the loss: higher in its region; yield lower. Nothing the other way.
+  const opposite = (f) => (f.variable.kind === 'yield') === (f.effect.direction === 'higher');
+  for (const [name, s] of [...per.map((s, i) => [`W${i}`, s]), ['lot', lot]]) {
+    const found = s.findings.filter(regional);
+    assert.ok(found.some(f => f.comparison.left === 'NE' && f.variable.bin === 6), `${name}: the NE quadrant is found`);
+    assert.deepEqual(found.filter(opposite).map(f => `${f.variable.label} @ ${f.comparison.left} ${f.effect.direction}`), [], name);
+  }
 });

@@ -17,7 +17,7 @@ import { median } from '../core/utils.js';
 import { robustFence, zPValue } from './math.js';
 import { findLotPattern, type LotPattern } from './lotPattern.js';
 import { buildDriftFindings } from './lotDrift.js';
-import { claimForPattern, weakestMultiplier } from './analyzeWaferMap.js';
+import { claimForPattern, confirmRegionalFindings, weakestMultiplier, type RegionRetest } from './analyzeWaferMap.js';
 import { PATTERN_LABELS } from './patternClassification.js';
 import { describeWaferPopulation, populationStat, type WaferPopulation } from './population.js';
 import type {
@@ -198,8 +198,9 @@ function passesCombinedGate(c: RegionCandidate, adjustedP: number, combined: Com
  * Lot findings for regional comparisons, tested on every wafer's data together
  * rather than by counting the wafers whose own analysis reported one: a pattern
  * present on every wafer but too faint on some to pass alone is still the
- * lot's pattern. Gates, Benjamini–Hochberg adjustment and the re-test against
- * stronger opposite regions are the wafer analysis's own. "N/M wafers" counts
+ * lot's pattern. Gates, Benjamini–Hochberg adjustment and the re-test of each
+ * region against the rest without the others ({@link confirmRegionalFindings}) are
+ * the wafer analysis's own. "N/M wafers" counts
  * the wafers whose region differs in the finding's direction.
  */
 function buildPooledRegionFindings(
@@ -239,38 +240,41 @@ function buildPooledRegionFindings(
   adjustPValues(all.map(a => a.finding as Parameters<typeof adjustPValues>[0][number]));
 
   const significant = all.filter(a => passesCombinedGate(a.entries[0].c, a.finding.stats.adjustedPValue ?? 1, a.combined, options));
-  const sameComparison = (a: Candidate, b: Candidate) => {
-    const x = a.entries[0].c, y = b.entries[0].c;
-    return x.source === y.source && x.variable.kind === y.variable.kind && x.variable.bin === y.variable.bin &&
-      x.variable.index === y.variable.index && x.region.family === y.region.family;
+  const comparisonKey = (a: Candidate) => {
+    const x = a.entries[0].c;
+    return [x.source, x.variable.kind, x.variable.bin ?? '', x.variable.index ?? '', x.region.family].join('\u0000');
   };
+  // Each wafer's rest without the regions of `without` on that wafer, re-combined: the wafer analysis's own re-test.
+  const retest = (a: Candidate, without: readonly Candidate[]): RegionRetest => {
+    const rest = (w: number, c: RegionCandidate) => {
+      const r = ownRest(w, c);
+      for (const b of without) {
+        const o = perWafer.get(w)?.get(b.key);
+        if (!o) continue;
+        if (o.rate) { r.hits -= o.rate.hits; r.n -= o.rate.n; }
+        else { r.n -= o.mean!.n; r.sum -= o.mean!.sum; r.sq -= o.mean!.sq; }
+      }
+      return r;
+    };
+    const entries = a.entries.filter(e => rest(e.waferIndex, e.c).n >= options.minimumSampleSize);
+    if (!entries.length) return 'baseline-too-small';
+    const re = combine(entries, rest);
+    const rawP = a.finding.stats.pValue ?? 1;
+    const multiplier = rawP > 0 ? (a.finding.stats.adjustedPValue ?? rawP) / rawP : 1;
+    const pValue = Math.min(1, zPValue(re.z) * multiplier);
+    return { pValue, passes: Math.sign(re.z) === Math.sign(a.combined.z) && passesCombinedGate(a.entries[0].c, pValue, re, options) };
+  };
+  // A loss is judged by the combined direction: the lot's region worse than its rest.
+  const kept = confirmRegionalFindings(significant, comparisonKey, retest, a => {
+    const r = a.entries[0].c.rate;
+    return r !== undefined && (r.passRate ? a.combined.z < 0 : a.combined.z > 0);
+  }, all);
 
   const out: StatsFinding[] = [];
   const reported = new Map<StatsFinding, Candidate>();
   for (const a of significant) {
+    if (!kept.has(a)) continue;
     const rawP = a.finding.stats.pValue ?? 1;
-    const opposites = significant.filter(b => b !== a && sameComparison(a, b) &&
-      b.finding.effect.direction !== a.finding.effect.direction && (b.finding.stats.pValue ?? 1) < rawP);
-    if (opposites.length) {
-      // Each wafer's rest without the stronger opposite regions of that wafer.
-      const rest = (w: number, c: RegionCandidate) => {
-        const r = ownRest(w, c);
-        for (const b of opposites) {
-          const o = perWafer.get(w)?.get(b.key);
-          if (!o) continue;
-          if (o.rate) { r.hits -= o.rate.hits; r.n -= o.rate.n; }
-          else { r.n -= o.mean!.n; r.sum -= o.mean!.sum; r.sq -= o.mean!.sq; }
-        }
-        return r;
-      };
-      const entries = a.entries.filter(e => rest(e.waferIndex, e.c).n >= options.minimumSampleSize);
-      if (!entries.length) continue;
-      const retest = combine(entries, rest);
-      const multiplier = rawP > 0 ? (a.finding.stats.adjustedPValue ?? rawP) / rawP : 1;
-      if (Math.sign(retest.z) !== Math.sign(a.combined.z) ||
-          !passesCombinedGate(a.entries[0].c, Math.min(1, zPValue(retest.z) * multiplier), retest, options)) continue;
-    }
-
     const sign = Math.sign(a.combined.z);
     const shown = a.entries.filter(e => Math.sign(e.c.delta) === sign);
     const m = wafers.length;

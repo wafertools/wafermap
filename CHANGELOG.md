@@ -69,6 +69,12 @@ under `### Breaking`.
 - **Bins are said to "account for" a region's shortfall only when together they fit within it.** When other fail bins fell in the
   region, the named bins are given as points higher instead. A test is said as part of a region's item only when it fails on at
   least 1% of the dies, the floor for listing it on its own; the dies counted "in" the region are the named region's own.
+- **A region holds only against the regions that are not themselves deviant.** The significant findings for one variable and region
+  family are re-tested against each other: a loss is taken before a gain, each must hold against the rest without the regions that
+  stand, and a gain is compared only with the regions that do not lean towards a loss. A failing block of rings is reported as the
+  block ("Rings 2–3 lower pass rate"), not as the rings either side of it being better, and a failing quadrant brings no "lower"
+  finding from the sectors opposite it: on synthetic lots with a failing quadrant, no wafer or lot reports one. Findings on the
+  opposite side of a strong pattern are no longer reported, and "What stands out" and its "also seen as" lists change accordingly.
 - **An item is costed by its largest loss.** Findings on the same dies are one item, led by the finding that loses the most dies, or
   by its own region's pass rate when there is one. A small edge arc or cluster on an edge ring's dies is "also seen as" under the
   ring's item, which costs the ring's loss.

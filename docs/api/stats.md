@@ -186,7 +186,12 @@ The relative criterion catches meaningful signals on low-failure-rate wafers whe
 
 The gate's relative effect is always measured on the adverse outcome. For a pass rate — yield, a functional test's pass rate — that is the failure rate: a yield of 98% against 94% is failures of 2% against 6%, a tripling, and reaches the same verdict as the bin rate of the same dies. (`relativeDelta` on the finding itself stays the relative change in the pass rate.)
 
-A region compared with the rest of the wafer looks deviant in the opposite direction whenever the rest contains a stronger deviation — an edge rich in a bin makes the inner rings look poor in it. So a finding opposite in direction to a stronger finding for the same variable and region family is re-tested against the rest of the wafer without that region (same test, same Benjamini–Hochberg multiplier, same gates) and dropped unless it still holds. This applies to rate findings and to test-value findings alike.
+A region compared with the rest of the wafer looks deviant in the opposite direction whenever the rest contains a stronger deviation: an edge rich in a bin makes the inner rings look poor in it, a failing block of rings makes the rings either side of it look good, and a failing quadrant makes the other sectors look good. So the significant findings for one variable and one region family are re-tested against each other (same test, same Benjamini–Hochberg multiplier, same gates, same direction):
+
+1. The first finding stands, then each further one is re-tested against the rest of the wafer without the regions that stand so far, and the first that still passes stands next. "First" means a loss before a gain (a lower pass rate, or more of a fail bin or a limit failure, before the reverse), then the smallest p-value. So when a failing block and its complement are equally significant, the block is reported ("Rings 2–3 lower pass rate"), not its complement. Test values have no direction of loss and are taken strongest first.
+2. Each finding that stands is re-tested against the rest without every other one that stands, and the weakest that no longer passes is dropped, until all pass.
+
+A gain (a region better than its rest) is always compared with the regions that are not worse: the rest without every region of its family that leans towards a loss, significant or not. A region partly inside a failing quadrant is raised without being significant on its own, and against it a clean region would look good. The same rule applies to rate findings, test-value findings and a lot's pooled findings.
 
 **Effect size gate for test-value findings:**
 

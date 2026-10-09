@@ -702,8 +702,12 @@ function finalizeProportionFindings(findings: RawFinding[], options: ResolvedOpt
     finding.effect.absoluteDelta ?? 0,
     rateRelativeEffect(rateCounts.get(finding)!),
     options));
+  const kept = confirmRegionalFindings(significant, regionalComparisonKey,
+    (finding, without) => retestRateWithout(finding, without, options),
+    (finding) => isRateLoss(rateCounts.get(finding)!),
+    findings);
   return significant
-    .filter((finding) => !explainedByOppositeRegions(finding, significant, options))
+    .filter((finding) => kept.has(finding))
     .map((finding) => ({
       ...finding,
       severity: severityForFinding(
@@ -747,43 +751,115 @@ export function claimForPattern<F extends StatsFinding>(
   return ids;
 }
 
+/** A re-test of a regional finding against a reduced rest: its p-value (BH multiplier applied) and whether it still passes. */
+export type RegionRetest = { pValue: number; passes: boolean } | 'baseline-too-small';
+
 /**
- * A region compared with "the rest of the wafer" looks deviant in the opposite
- * direction whenever the rest contains a stronger deviation: an edge ring rich
- * in bin 2 makes ring 3 look poor in bin 2, though ring 3 matches the core. So a
- * finding opposite to a stronger finding of the same variable and family must
- * still hold when compared with the rest WITHOUT those regions — same test, same
- * Benjamini–Hochberg multiplier, same gates, same direction — or it is dropped.
+ * Which of the significant regional findings stand when each is compared with the rest of the wafer WITHOUT the
+ * others. A region compared with "the rest" looks deviant whenever the rest holds a stronger deviation: with four
+ * rings, a large failing area makes its complement look as significant in the other direction, and one failing
+ * quadrant makes every other sector look good. Findings are grouped by `groupKey` (same variable, same region
+ * family); within a group:
+ *
+ * 1. Forward: the first finding stands; each further one is re-tested against the rest without those that stand so
+ *    far, and the first that still passes stands next, until none does. "First" is a loss before a gain where
+ *    `isLoss` says which direction is a loss (a lower pass rate, more of a fail bin or of a limit failure), then the
+ *    smallest re-tested p-value: when a failing block and its complement are equally significant, the block is the
+ *    finding ("Rings 2–3 lower pass rate"), never the complement ("Rings 1 and 4 higher"). A test value has no such
+ *    direction and is taken strongest first.
+ * 2. Backward: each finding that stands is re-tested against the rest without every other one that stands, whatever
+ *    its direction; the weakest that no longer passes is dropped, until all pass. A finding whose reduced rest is too
+ *    small to test keeps its place.
+ *
+ * The baseline is never "the regions that were not significant": a region half inside a failing quadrant is raised
+ * but not significant, and against it the clean regions look good. For the same reason a gain (a region better than
+ * its rest) is re-tested without every region of its group that leans towards a loss, significant or not (`all`
+ * holds the group's comparisons before the gate): a region is better only than the regions that are not worse.
+ *
+ * `retest` uses the finding's own test, Benjamini–Hochberg multiplier, gates and direction. Shared by the wafer's rate
+ * and test-value findings and the lot's pooled findings.
  */
-function explainedByOppositeRegions(finding: RawFinding, significant: RawFinding[], options: ResolvedOptions): boolean {
-  const own = rateCounts.get(finding);
-  if (!own) return false;
-  const rawP = finding.stats.pValue ?? 1;
+export function confirmRegionalFindings<T>(
+  findings: readonly T[],
+  groupKey: (t: T) => string,
+  retest: (t: T, without: readonly T[]) => RegionRetest,
+  isLoss?: (t: T) => boolean,
+  all: readonly T[] = findings,
+): Set<T> {
+  const groups = new Map<string, T[]>();
+  for (const t of findings) (groups.get(groupKey(t)) ?? groups.set(groupKey(t), []).get(groupKey(t))!).push(t);
+  const losses = new Map<string, T[]>();
+  if (isLoss) for (const t of all) if (isLoss(t)) (losses.get(groupKey(t)) ?? losses.set(groupKey(t), []).get(groupKey(t))!).push(t);
+  const kept = new Set<T>();
+  for (const [key, group] of groups) {
+    const leaning = losses.get(key) ?? [];
+    /** A gain is compared with the regions that are not worse; a loss with the rest without those that stand. */
+    const test = (t: T, without: readonly T[]): RegionRetest => isLoss && !isLoss(t)
+      ? retest(t, [...new Set([...without, ...leaning])].filter(o => o !== t))
+      : retest(t, without);
+    if (group.length === 1) { kept.add(group[0]); continue; }
+    const stands: T[] = [];
+    let remaining = [...group];
+    for (;;) {
+      let best: { t: T; p: number; loss: boolean } | undefined;
+      for (const t of remaining) {
+        const r = test(t, stands);
+        if (r === 'baseline-too-small' || !r.passes) continue;
+        const loss = isLoss?.(t) ?? false;
+        if (!best || (loss && !best.loss) || (loss === best.loss && r.pValue < best.p)) best = { t, p: r.pValue, loss };
+      }
+      if (!best) break;
+      stands.push(best.t);
+      remaining = remaining.filter(t => t !== best!.t);
+    }
+    for (;;) {
+      let worst: { t: T; p: number } | undefined;
+      for (const t of stands) {
+        const r = test(t, stands.filter(o => o !== t));
+        if (r === 'baseline-too-small' || r.passes) continue;
+        if (!worst || r.pValue > worst.p) worst = { t, p: r.pValue };
+      }
+      if (!worst) break;
+      stands.splice(stands.indexOf(worst.t), 1);
+    }
+    for (const t of stands) kept.add(t);
+  }
+  return kept;
+}
+
+/** Findings compared with each other by {@link confirmRegionalFindings}: one variable, one region family. */
+function regionalComparisonKey(f: RawFinding): string {
+  return [f.variable.kind, f.variable.bin ?? '', f.variable.index ?? '', f.comparison.family].join('\u0000');
+}
+
+/** The BH multiplier a finding was adjusted by, carried to its re-tests. */
+function bhMultiplier(f: RawFinding): number {
+  const rawP = f.stats.pValue ?? 1;
+  return rawP > 0 ? (f.stats.adjustedPValue ?? rawP) / rawP : 1;
+}
+
+/** Whether a rate's region is worse than its rest: a lower pass rate, or a higher fail rate (a fail bin, a limit failure). */
+export function isRateLoss(c: RateCounts): boolean {
+  const delta = c.hits / c.n - c.restHits / c.restN;
+  return c.passRate ? delta < 0 : delta > 0;
+}
+
+/** A rate finding re-tested against its rest without the regions of `without`. */
+function retestRateWithout(finding: RawFinding, without: readonly RawFinding[], options: ResolvedOptions): RegionRetest {
+  const own = rateCounts.get(finding)!;
   let { restHits, restN } = own;
-  for (const other of strongerOpposites(finding, significant)) {
+  for (const other of without) {
     const c = rateCounts.get(other);
     if (!c) continue;
     restHits -= c.hits;
     restN -= c.n;
   }
-  if (restN === own.restN) return false;
-  if (restN < options.minimumSampleSize) return true;
+  if (restN < options.minimumSampleSize) return 'baseline-too-small';
   const delta = own.hits / own.n - restHits / restN;
-  if (Math.sign(delta) !== Math.sign(finding.effect.absoluteDelta ?? 0)) return true;
-  const multiplier = rawP > 0 ? (finding.stats.adjustedPValue ?? rawP) / rawP : 1;
-  const adjusted = Math.min(1, twoProportionPValue(own.hits, own.n, restHits, restN) * multiplier);
-  return !passesRateGate(adjusted, delta, rateRelativeEffect({ ...own, restHits, restN }), options);
-}
-
-/** The findings a finding must be re-tested without: significant, same variable
- *  and region family, opposite direction, and stronger (smaller raw p). */
-function strongerOpposites(finding: RawFinding, significant: RawFinding[]): RawFinding[] {
-  const rawP = finding.stats.pValue ?? 1;
-  return significant.filter(other =>
-    other !== finding && other.effect.direction !== finding.effect.direction &&
-    other.variable.kind === finding.variable.kind && other.variable.bin === finding.variable.bin &&
-    other.variable.index === finding.variable.index && other.comparison.family === finding.comparison.family &&
-    (other.stats.pValue ?? 1) < rawP);
+  const pValue = Math.min(1, twoProportionPValue(own.hits, own.n, restHits, restN) * bhMultiplier(finding));
+  const passes = Math.sign(delta) === Math.sign(finding.effect.absoluteDelta ?? 0) &&
+    passesRateGate(pValue, delta, rateRelativeEffect({ ...own, restHits, restN }), options);
+  return { pValue, passes };
 }
 
 /** A test-value finding's per-region sums, in the builder's shifted space. */
@@ -799,24 +875,21 @@ export function welchOfSums(own: MeanStats, restN: number, restSum: number, rest
     restN, restSum / restN, variance(restSq, restSum, restN));
 }
 
-/** {@link explainedByOppositeRegions} for a test-value (Welch) finding. */
-function meanExplainedByOppositeRegions(finding: RawFinding, significant: RawFinding[], options: ResolvedOptions): boolean {
-  const own = meanStats.get(finding);
-  if (!own) return false;
+/** A test-value (Welch) finding re-tested against its rest without the regions of `without`. */
+function retestMeanWithout(finding: RawFinding, without: readonly RawFinding[], options: ResolvedOptions): RegionRetest {
+  const own = meanStats.get(finding)!;
   let { restN, restSum, restSq } = own;
-  for (const other of strongerOpposites(finding, significant)) {
+  for (const other of without) {
     const m = meanStats.get(other);
     if (!m) continue;
     restN -= m.n; restSum -= m.sum; restSq -= m.sq;
   }
-  if (restN === own.restN) return false;
-  if (restN < options.minimumSampleSize) return true;
-  const { pValue, effectSize, delta } = welchOfSums(own, restN, restSum, restSq);
-  if (Math.sign(delta) !== Math.sign(finding.effect.absoluteDelta ?? 0)) return true;
-  const rawP = finding.stats.pValue ?? 1;
-  const multiplier = rawP > 0 ? (finding.stats.adjustedPValue ?? rawP) / rawP : 1;
-  return !(Math.min(1, pValue * multiplier) <= options.significanceLevel &&
-    Math.abs(effectSize) >= options.minimumEffectSize);
+  if (restN < options.minimumSampleSize) return 'baseline-too-small';
+  const { pValue: raw, effectSize, delta } = welchOfSums(own, restN, restSum, restSq);
+  const pValue = Math.min(1, raw * bhMultiplier(finding));
+  const passes = Math.sign(delta) === Math.sign(finding.effect.absoluteDelta ?? 0) &&
+    pValue <= options.significanceLevel && Math.abs(effectSize) >= options.minimumEffectSize;
+  return { pValue, passes };
 }
 
 function buildYieldFindings(
@@ -1317,10 +1390,12 @@ function buildTestValueFindings(
     return adjusted <= options.significanceLevel && effectSize >= options.minimumEffectSize;
   });
 
+  const kept = confirmRegionalFindings(significant, regionalComparisonKey, (finding, without) =>
+    retestMeanWithout(finding, without, options));
   return {
     activeTestNumbers,
     findings: significant
-      .filter((finding) => !meanExplainedByOppositeRegions(finding, significant, options))
+      .filter((finding) => kept.has(finding))
       .map((finding) => ({
         ...finding,
         severity: severityForScore(
