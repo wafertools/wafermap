@@ -34,7 +34,12 @@ export function makeCanvasContext() {
   };
 }
 
-export function setupDom() {
+/**
+ * Mount a JSDOM window as the global one. `context` replaces the canvas context (a test that records
+ * what is drawn passes its own). Without `canvasSize` a canvas measures its own CSS size (400 when it
+ * has none); with it, every canvas measures `canvasSize` whatever its style, unless the test sets one.
+ */
+export function setupDom({ context = makeCanvasContext, canvasSize } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
     pretendToBeVisual: true,
     url: 'http://localhost/',
@@ -130,7 +135,7 @@ export function setupDom() {
 
   const canvasProto = window.HTMLCanvasElement.prototype;
   canvasProto.getContext = function getContext() {
-    if (!this.__ctx) this.__ctx = makeCanvasContext();
+    if (!this.__ctx) this.__ctx = context();
     return this.__ctx;
   };
   canvasProto.toBlob = function toBlob(callback) {
@@ -148,13 +153,13 @@ export function setupDom() {
   Object.defineProperty(window.HTMLCanvasElement.prototype, 'clientWidth', {
     configurable: true,
     get() {
-      return this.__clientWidth ?? (Number.parseInt(this.style.width, 10) || 400);
+      return this.__clientWidth ?? canvasSize ?? (Number.parseInt(this.style.width, 10) || 400);
     },
   });
   Object.defineProperty(window.HTMLCanvasElement.prototype, 'clientHeight', {
     configurable: true,
     get() {
-      return this.__clientHeight ?? (Number.parseInt(this.style.height, 10) || 400);
+      return this.__clientHeight ?? canvasSize ?? (Number.parseInt(this.style.height, 10) || 400);
     },
   });
 

@@ -668,6 +668,12 @@ interface PatternFeatures {
   salienceFraction:  number  // salienceSize / total failing dies
   edgeAngularSpread: number  // fraction of 16 circumference sectors covered by edge-zone fails
   innerOuterRatio:   number  // fail rate inner half / fail rate outer half
+  lineWidth:         number  // spread of the salient line across its own axis (any angle), in die pitches
+  lineLength:        number  // its length along that axis, in die pitches
+  lineSize:          number  // failing dies on that line: the salient region and the fragments continuing it
+  lineMinDistNorm:   number  // nearest distance of the line's dies from the centre, / radius
+  lineMaxDistNorm:   number  // farthest distance of the line's dies from the centre, / radius
+  radialFailRates:   number[] // fail rate in five rings of equal width, centre outwards
 }
 ```
 

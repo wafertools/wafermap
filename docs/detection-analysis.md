@@ -54,6 +54,12 @@ Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 > build and reproduced exactly: classifier recall and exact match, the 86.2% detection rate,
 > the combined 99.3% / 99.1% rates and per-label rescue, and both false-positive tables.
 >
+> **Re-run 2026-10-09, classifier.** A scratch is a thin line along its own axis at any angle (with the fragments that
+> continue it), a donut a mid-radius band read from the fail rate in five rings, and any other symmetric centre pattern a
+> centre cluster. Exact match 64.1% → 71.1%; scratch recall 24% → 41% (precision 36% → 87%), donut 15% → 78% (precision
+> 7% → 69%), centre 60% → 85%; detection 86.3% → 88.0%, combined 98.7% → 98.8%. The classifier's false-positive rate on
+> WM-811K Random/none falls from 41.2% to 39.6% (combined 89.3% → 89.5%); the synthetic sweep is unchanged.
+>
 > **Re-run 2026-10-09, regions against each other.** Each regional finding is re-tested against the rest of the wafer
 > without the other findings of its variable and family, losses first, so a failing quadrant no longer brings "better"
 > findings from the sectors opposite it (none on 200 synthetic wafers, against 78 before). Every figure on this page is
@@ -84,25 +90,25 @@ Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 | Pattern | Recall | Notes |
 |---|---|---|
 | Near-full | 100% | |
+| Center | 85% | |
+| Donut | 78% | Radial profile: a mid-radius band over centre and rim |
 | Edge-ring | 75% | |
-| Edge-local | 65% | |
-| Center | 60% | |
-| Random | 59% | |
-| Scratch | 24% | Fragmented patterns miss |
-| Donut | 15% | Geometric overlap with center |
+| Edge-local | 68% | |
+| Random | 60% | |
+| Scratch | 41% | A thin line at any angle; faint ones miss |
 
-**Overall exact-match: 64% · Detection rate (any pattern flagged): 86.4%**
+**Overall exact-match: 71% · Detection rate (any pattern flagged): 88.0%**
 
 ### Combined (classifier + regional analysis)
 
-Of the 2,881 wafers the classifier missed, the regional analysis recovered:
+Of the 2,528 wafers the classifier missed, the regional analysis recovered:
 
 | Measure | Rate |
 |---|---|
-| Any regional finding fired | 90.3% of misses |
-| Semantically matched finding | 89.0% of misses |
+| Any regional finding fired | 89.8% of misses |
+| Semantically matched finding | 88.4% of misses |
 
-**Combined detection rate: 98.7%** (any) / **98.5%** (semantically matched)
+**Combined detection rate: 98.8%** (any) / **98.6%** (semantically matched)
 
 The any/match gap is small — regional findings on classifier misses are almost
 always semantically correct, not noise.
@@ -111,11 +117,11 @@ Per-label rescue breakdown (classifier misses only):
 
 | Label | Misses | Any rescue | Match rescue |
 |---|---|---|---|
-| center | 695 | 92.1% | 91.4% |
-| donut | 238 | 97.5% | 95.0% |
-| edge-local | 933 | 88.0% | 88.0% |
-| edge-ring | 456 | 91.7% | 90.1% |
-| scratch | 559 | 87.8% | 84.4% |
+| center | 598 | 91.3% | 90.5% |
+| donut | 52 | 94.2% | 88.5% |
+| edge-local | 1,009 | 89.0% | 89.0% |
+| edge-ring | 453 | 91.6% | 90.1% |
+| scratch | 416 | 87.0% | 82.5% |
 
 > **Re-run 2026-07-28 (v0.20.9).** Numbers above were re-measured after the fix
 > that stopped `buildWaferMap` from mislabelling real probed edge dies as
@@ -140,9 +146,9 @@ Per-label rescue breakdown (classifier misses only):
 
 | Method | FP rate |
 |---|---|
-| Classifier only | 41.2% |
+| Classifier only | 39.6% |
 | Regional analysis only | 85.4% |
-| Combined | 89.3% |
+| Combined | 89.5% |
 
 **Important caveat:** WM-811K "Random" is a catch-all label — ambiguous,
 multi-modal, or low-confidence wafers all end up there. Some fraction genuinely

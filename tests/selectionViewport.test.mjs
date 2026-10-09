@@ -11,7 +11,7 @@
 // summary panel highlighted a ring offset from the wafer).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { setupDom as mountDom } from './fixtures/domHarness.mjs';
 
 import { buildWaferMap } from '../dist/index.js';
 import { clipDiesToWafer } from '../dist/packages/core/transforms.js';
@@ -41,73 +41,6 @@ function makeRecordingContext(log) {
   };
 }
 
-function setupDom(log) {
-  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-    pretendToBeVisual: true, url: 'http://localhost/' });
-  const { window } = dom;
-  const keys = ['window', 'document', 'HTMLElement', 'HTMLCanvasElement', 'HTMLDivElement',
-    'HTMLButtonElement', 'Node', 'Event', 'MouseEvent', 'KeyboardEvent', 'CustomEvent',
-    'Blob', 'DOMRect', 'URL', 'getComputedStyle', 'matchMedia', 'ResizeObserver'];
-  const previous = new Map(keys.map(k => [k, globalThis[k]]));
-
-  for (const k of keys) if (window[k]) globalThis[k] = window[k];
-  globalThis.window = window;
-  globalThis.document = window.document;
-  const previousNavigator = globalThis.navigator;
-  Object.defineProperty(globalThis, 'navigator',
-    { value: window.navigator, configurable: true, writable: true });
-  globalThis.getComputedStyle = window.getComputedStyle.bind(window);
-
-  const matchMediaShim = () => ({
-    matches: false, media: '', addEventListener() {}, removeEventListener() {},
-    addListener() {}, removeListener() {}, dispatchEvent() { return false; } });
-  window.matchMedia = matchMediaShim;
-  globalThis.matchMedia = matchMediaShim;
-
-  class FakeResizeObserver {
-    constructor(cb) { this.cb = cb; }
-    observe(target) { this.cb([{ target }], this); }
-    disconnect() {} unobserve() {}
-  }
-  window.ResizeObserver = FakeResizeObserver;
-  globalThis.ResizeObserver = FakeResizeObserver;
-  window.devicePixelRatio = 1;
-
-  const proto = window.HTMLCanvasElement.prototype;
-  proto.getContext = function getContext() {
-    if (!this.__ctx) this.__ctx = makeRecordingContext(log);
-    return this.__ctx;
-  };
-  proto.toBlob = function toBlob(cb) { cb(new window.Blob(['fake'])); };
-  proto.focus = function focus() {};
-  proto.setPointerCapture = function setPointerCapture() {};
-  proto.releasePointerCapture = function releasePointerCapture() {};
-  proto.getBoundingClientRect = function getBoundingClientRect() {
-    const width = this.clientWidth, height = this.clientHeight;
-    return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON() {} };
-  };
-  Object.defineProperty(proto, 'clientWidth',
-    { configurable: true, get() { return this.__clientWidth ?? 600; } });
-  Object.defineProperty(proto, 'clientHeight',
-    { configurable: true, get() { return this.__clientHeight ?? 600; } });
-
-  return {
-    window,
-    root: window.document.getElementById('root'),
-    cleanup() {
-      for (const [k, v] of previous) {
-        if (v === undefined) delete globalThis[k];
-        else globalThis[k] = v;
-      }
-      // navigator is a getter-only global on Node >= 21 — restore it the same
-      // way it was installed.
-      Object.defineProperty(globalThis, 'navigator',
-        { value: previousNavigator, configurable: true, writable: true });
-      dom.window.close();
-    },
-  };
-}
-
 function buildTestWafer() {
   const base = createWafer({ diameter: 100 });
   const dies = clipDiesToWafer(
@@ -119,7 +52,7 @@ function buildTestWafer() {
 
 test('the selection highlight tracks the map when the auto-fit geometry shifts', () => {
   const log = { strokes: [], transforms: [] };
-  const dom = setupDom(log);
+  const dom = mountDom({ context: () => makeRecordingContext(log), canvasSize: 600 });
   try {
     const wafer = buildTestWafer();
     const ctrl = renderWaferMap(dom.root, wafer, {

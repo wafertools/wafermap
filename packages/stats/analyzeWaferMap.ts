@@ -2364,10 +2364,12 @@ function analyzeWaferMapUncollected(
       const detail =
         patternResult.pattern === 'edge-ring' || patternResult.pattern === 'edge-local'
           ? `${pct(f.edgeRdd)} of edge dies failing`
-          : patternResult.pattern === 'center' || patternResult.pattern === 'donut'
+          : patternResult.pattern === 'center'
           ? `centroid at ${pct(f.centroidDistNorm)} of wafer radius from centre`
+          : patternResult.pattern === 'donut'
+          ? `${pct(Math.max(f.radialFailRates[1], f.radialFailRates[2]))} of dies failing at mid-radius, ${pct(f.radialFailRates[0])} at the centre`
           : patternResult.pattern === 'scratch'
-          ? `linear score ${f.linearScore.toFixed(2)}, eccentricity ${f.eccentricity.toFixed(2)}`
+          ? `a line ${Math.round(f.lineLength)} dies long and about ${Math.max(1, Math.round(f.lineWidth * 2))} wide`
           : `${pct(f.globalRdd)} of dies failing`;
       const passSet = new Set(resolved.passBins);
       const failingDies = eligibleDies.filter(d => patternFailVerdict(d, passSet) === true);

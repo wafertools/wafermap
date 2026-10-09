@@ -115,7 +115,9 @@ const THRESHOLDS = {
   // Raised deliberately from 69_500: the clusters' permutation null (a seeded generator and a typed-array component
   // sizer) and W. J. Cody's erfc, which keeps small p-values accurate, took the data layer to ~70.6 KB locally; the
   // budget keeps ~2% over that for CI's zlib.
-  'wafermap (root)':            72_000,   // gzipped bytes — measured ~70.6 KB
+  // Raised deliberately from 72_000: the classifier's line and radial-profile features (a scratch at any angle, a
+  // donut by its radial fail rates) took the data layer to ~72.1 KB locally; the budget keeps ~1.5% over that.
+  'wafermap (root)':            73_200,   // gzipped bytes — measured ~72.1 KB
   // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
   // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
   // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.

@@ -52,8 +52,10 @@ The classifier uses pure geometry — no trained model, no external dependencies
 no network calls. For each wafer it:
 
 1. Finds the largest connected cluster of failing dies (the "salient region")
-2. Computes geometric features: radial distance distribution, centroid position,
-   eccentricity, edge-zone coverage, and linear/diagonal collinearity
+2. Computes geometric features: radial distance distribution, the fail rate in
+   five rings of equal width, centroid position, edge-zone coverage, and the
+   width and length of the salient region along its own principal axis (with the
+   fragments that continue it along the same line)
 3. Applies a rule-based classifier calibrated against real wafer data
 
 Because it works directly from die coordinates and bin data, it functions on
@@ -68,19 +70,19 @@ wafers from real-world production, collected across 46,393 lots
 | Pattern | Recall | Precision |
 |---|---|---|
 | Near-full | 100% | 40% |
+| Center | 85% | 88% |
+| Donut | 78% | 69% |
 | Edge-ring | 75% | 92% |
-| Edge-local | 65% | 51% |
-| Center | 60% | 85% |
-| Random | 59% | 47% |
-| Scratch | 24% | 33% |
-| Donut | 15% | 7% |
+| Edge-local | 68% | 52% |
+| Random | 60% | 52% |
+| Scratch | 41% | 87% |
 
-**Overall exact-match accuracy: 64%**
+**Overall exact-match accuracy: 71%**
 
-**Detection rate: 86.4%** — the more operationally useful number. This means
-that for 86 out of 100 wafers with a genuine spatial pattern, the library
+**Detection rate: 88.0%** — the more operationally useful number. This means
+that for 88 out of 100 wafers with a genuine spatial pattern, the library
 correctly flags *some* pattern (even if the specific label is occasionally
-wrong). Only 14% of patterned wafers are missed entirely (returned as random).
+wrong). 12% of patterned wafers are missed entirely (returned as random).
 
 The distinction matters: an engineer reviewing a panel where a center-cluster
 wafer is labelled as "donut" still gets a useful signal pointing to a
@@ -91,26 +93,25 @@ true misses.
 **Combined detection rate: 99%** — when the spatial pattern classifier and the
 statistical regional analysis (rings, sectors, clusters, edge arcs) are
 considered together, 99 out of 100 patterned wafers produce at least one
-relevant finding. The 14% of wafers the classifier misses are largely recovered
+relevant finding. The 12% of wafers the classifier misses are largely recovered
 by the regional analysis firing on the same underlying signal through a
 different mechanism. See the [detection analysis notes](detection-analysis.md)
 for the full investigation.
 
 ## Known limitations
 
-**Center and donut are easily confused.** Both patterns have their failing dies
-near the wafer centre with low edge loading. At real wafer noise levels their
-geometric signatures overlap heavily — the classifier achieves only 60%/15%
-recall respectively and will sometimes call one the other. If center vs donut
-discrimination matters for your analysis, treat these two labels together as
-"symmetric centre/annular pattern" and use the wafer map visually to distinguish
-them.
+**A donut is read from its radial profile.** A band of failures at mid-radius,
+at least 15 points above both the centre and the rim, is a donut whatever its
+connected groups look like; a symmetric pattern on the centre that is not one is
+a centre cluster. A faint or partial donut can still read as a centre cluster or
+as random.
 
-**Scratch recall is limited (~24%).** Real scratch patterns often fragment into
-many disconnected die-sized pieces along the scratch path, particularly at
-typical semiconductor die pitches (5–15mm). The geometry features work best
-on clean, contiguous scratches — fragmented or faint scratches tend to fall
-through to "random".
+**Scratch recall is 41%, precision 87%.** A scratch is a thin line at any angle:
+at most 0.8 die pitches across its own axis, at least 8 pitches and 0.3 of the
+radius long, reaching in from the rim, with the fragments that continue it
+along the same line counted together. A faint scratch whose pieces are more
+than three pitches apart, or a short one, falls through to "random"; a thin
+line along the rim is edge-local, not a scratch.
 
 **Calibrated on WM-811K.** The thresholds were derived from one fab's
 production data. Wafers from significantly different die pitches,

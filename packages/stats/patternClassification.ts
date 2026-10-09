@@ -56,6 +56,23 @@ export interface PatternFeatures {
    * low value = concentrated arc (edge-local).
    */
   edgeAngularSpread: number;
+  /**
+   * Spread of the salient region across its principal axis (root mean square), in die pitches. A scratch is
+   * about one die wide at any angle (under 1); a blob is wider.
+   */
+  lineWidth: number;
+  /** Extent of the salient region along its principal axis, in die pitches. */
+  lineLength: number;
+  /** Failing dies on that line: the salient region and the fragments that continue it along its axis. */
+  lineSize: number;
+  /** Nearest and farthest distance of that line's dies from the wafer centre, normalised by radius. */
+  lineMinDistNorm: number;
+  lineMaxDistNorm: number;
+  /**
+   * Fail rate in five rings of equal width, centre outwards (0–0.2 of the radius, 0.2–0.4, …). A donut is a
+   * raised band at mid-radius over a cleaner centre and rim; a centre cluster falls away from the first.
+   */
+  radialFailRates: number[];
 }
 
 export interface PatternClassification {
@@ -76,19 +93,27 @@ export interface PatternThresholds {
   edgeLocalEdgeRdd: number;
   /** p25DistNorm separator: ≥ this → edge-ring; [0.55, this) → edge-local. */
   edgeLocalCentroidDist: number;
-  /** p25DistNorm separator: &lt; this → center; [this, 0.55) → donut. */
-  donutP25Dist: number;
   centerCentroidDist: number;
   centerCentroidDistHigh: number;
   centerEdgeRdd: number;
-  donutEdgeRdd: number;
-  scratchLinearScore: number;
-  scratchLinearScoreHigh: number;
-  scratchEccentricity: number;
-  /** A scratch's salient region must reach at least this far out (maxDistNorm): a
+  /** A scratch's salient region is at most this wide across its axis (lineWidth, die pitches). */
+  scratchMaxLineWidth: number;
+  /** …and at least this long along it (lineLength, die pitches): random fails at 15% make thin groups 6–7
+   *  dies long by chance, whatever the wafer's size. */
+  scratchMinLineLength: number;
+  /** …and at least this long against the wafer's radius in pitches, so a scratch is long for its wafer. */
+  scratchMinLineLengthRadius: number;
+  /** A scratch's line must reach at least this far out (lineMaxDistNorm): a
    *  scratch is long, so an elongated blob wholly inside the central zone is a
    *  centre cluster, not a scratch. */
   scratchMinReach: number;
+  /** …and come at least this far in (lineMinDistNorm below it): a thin line along the rim is edge-local. */
+  scratchMaxInnerDist: number;
+  /** A donut's mid-radius band (the higher of rings 2 and 3 of `radialFailRates`) fails at least this much more
+   *  often than the centre band, at least `donutRim` more than the outermost, and at least `donutPeak` in all. */
+  donutHole: number;
+  donutRim: number;
+  donutPeak: number;
   minimumFailingDies: number;
 }
 
@@ -96,19 +121,20 @@ export interface PatternThresholds {
  * Default thresholds for the spatial pattern classifier.
  *
  * Calibrated against WM-811K — 25,519 labelled real-world wafers from TSMC
- * 300mm fabrication (Wu et al. 2015). Benchmark results on that dataset:
+ * 300mm fabrication (Wu et al. 2015). Benchmark results on that dataset
+ * (`scripts/run-benchmark-npz.mjs`, 2026-10-09):
  *
- * | Pattern    | Recall | Notes                                      |
- * |------------|--------|--------------------------------------------|
- * | Near-full  | 100%   |                                            |
- * | Edge-ring  |  75%   |                                            |
- * | Edge-local |  65%   |                                            |
- * | Center     |  60%   |                                            |
- * | Random     |  59%   |                                            |
- * | Scratch    |  24%   | Fragmented patterns harder to detect       |
- * | Donut      |  15%   | Geometrically similar to center with noise |
+ * | Pattern    | Recall | Precision |
+ * |------------|--------|-----------|
+ * | Near-full  | 100%   | 40%       |
+ * | Center     |  85%   | 88%       |
+ * | Donut      |  78%   | 69%       |
+ * | Edge-ring  |  75%   | 92%       |
+ * | Edge-local |  68%   | 52%       |
+ * | Random     |  60%   | 52%       |
+ * | Scratch    |  41%   | 87%       |
  *
- * Overall accuracy: 64% exact match, 86.4% detection rate (any pattern flagged).
+ * Overall: 71% exact match.
  */
 export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
   // Calibrated against WM-811K (25,519 labelled wafers)
@@ -121,19 +147,28 @@ export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
   // Edge-local: p25D mean=0.69, centroid mean=0.23
   edgeLocalEdgeRdd:        0.10,
   edgeLocalCentroidDist:   0.76,  // p25D > 0.76 → edge-ring; 0.55–0.76 → edge-local
-  donutP25Dist:            0.40,  // donut p25D mean=0.43, center=0.38 → split at 0.40
   // Center: cDist mean=0.07, p25D mean=0.38
   centerCentroidDist:      0.22,
   centerCentroidDistHigh:  0.10,
   centerEdgeRdd:           0.35,
-  donutEdgeRdd:            0.22,  // donut eRdd mean=0.17, center=0.22 → split at 0.22
-  // Scratch: gRdd mean=0.10, eRdd mean=0.12, p25D mean=0.60
-  scratchLinearScore:      0.25,
-  scratchLinearScoreHigh:  0.45,
-  scratchEccentricity:     0.75,
-  // Elongated centre clusters (maxD 0.21–0.29) passed the linear/eccentricity
-  // gates and were called scratches.
+  // Scratch: the salient region is a thin line at any angle. WM-811K medians: lineWidth 0.68 for
+  // scratches, 1.24 edge-local, 1.65 random, 1.86 centre. 0.75–0.9 wide and 0.7–0.8 inner reach score
+  // within 0.2 points of each other (2026-10-09); the middle is taken. 8 dies long rather than 6 keeps
+  // chance lines on random wafers out (5 of 160 clean synthetic wafers at 3–25% fails → 1) for 6 points
+  // of scratch recall on WM-811K (precision 84% → 91%).
+  scratchMaxLineWidth:     0.8,
+  scratchMinLineLength:    8,
+  scratchMinLineLengthRadius: 0.3,
+  // Elongated centre clusters (maxD 0.21–0.29) are not scratches.
   scratchMinReach:         0.35,
+  // A thin line along the rim (minD at or above 0.7) is edge-local.
+  scratchMaxInnerDist:     0.7,
+  // Donut: mid-radius band over centre and rim. WM-811K 10th percentiles for donuts: 0.13 over the
+  // centre, 0.15 over the rim; 75th percentiles for centre −0.26 and random 0.05 over the centre.
+  // 0.12–0.20 for both score within 0.1 point of each other; 0.15 is the middle.
+  donutHole:               0.15,
+  donutRim:                0.15,
+  donutPeak:               0.15,
   minimumFailingDies:      5,
 };
 
@@ -189,6 +224,80 @@ function computeLinearScore(dies: PositionedDie[], total: number): number {
   return maxRun / total;
 }
 
+/** Spread across (root mean square) and extent along the principal axis of `dies` about (cx, cy), in `pitch` units. */
+function principalAxisExtent(dies: PositionedDie[], cx: number, cy: number, pitch: number): { width: number; length: number } {
+  if (dies.length < 2) return { width: 0, length: 0 };
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const d of dies) {
+    const dx = d.physX - cx, dy = d.physY - cy;
+    sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+  }
+  const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  const ux = Math.cos(theta), uy = Math.sin(theta);
+  let lo = Infinity, hi = -Infinity, across = 0;
+  for (const d of dies) {
+    const dx = d.physX - cx, dy = d.physY - cy;
+    const along = dx * ux + dy * uy;
+    const off = dy * ux - dx * uy;
+    across += off * off;
+    if (along < lo) lo = along;
+    if (along > hi) hi = along;
+  }
+  return { width: Math.sqrt(across / dies.length) / pitch, length: (hi - lo) / pitch };
+}
+
+function centroidOf(dies: PositionedDie[]): [number, number] {
+  let x = 0, y = 0;
+  for (const d of dies) { x += d.physX; y += d.physY; }
+  return [x / dies.length, y / dies.length];
+}
+
+/** Fragments within this many pitches of the line, across it, and of its current end, along it, continue it. */
+const LINE_ACROSS = 1.5;
+const LINE_GAP = 3;
+
+/**
+ * `salient` with the `fragments` that continue its principal axis: a fragment every die of which lies within
+ * {@link LINE_ACROSS} pitches of the line, and within {@link LINE_GAP} pitches of the line's current end. Taken
+ * one at a time, the nearest first, with the axis re-fitted to the line after each, so a line grows only
+ * through its own gaps (never out to scattered fails far along it) and a short first piece's direction is
+ * corrected as the line lengthens.
+ */
+function extendAlongAxis(salient: PositionedDie[], fragments: PositionedDie[][], pitch: number): PositionedDie[] {
+  const line = [...salient];
+  if (salient.length < 2) return line;
+  const rest = fragments.filter(f => f.length > 0);
+  for (;;) {
+    const [cx, cy] = centroidOf(line);
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const d of line) {
+      const dx = d.physX - cx, dy = d.physY - cy;
+      sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+    }
+    const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    const ux = Math.cos(theta), uy = Math.sin(theta);
+    const along = (d: PositionedDie) => (d.physX - cx) * ux + (d.physY - cy) * uy;
+    let lo = Infinity, hi = -Infinity;
+    for (const d of line) { const t = along(d); if (t < lo) lo = t; if (t > hi) hi = t; }
+    let best = -1, bestGap = Infinity;
+    for (let i = 0; i < rest.length; i++) {
+      let a = Infinity, b = -Infinity, offLine = false;
+      for (const d of rest[i]) {
+        if (Math.abs((d.physY - cy) * ux - (d.physX - cx) * uy) > LINE_ACROSS * pitch) { offLine = true; break; }
+        const t = along(d);
+        if (t < a) a = t;
+        if (t > b) b = t;
+      }
+      if (offLine) continue;
+      const gap = Math.max(a - hi, lo - b, 0);
+      if (gap <= LINE_GAP * pitch && gap < bestGap) { best = i; bestGap = gap; }
+    }
+    if (best < 0) return line;
+    line.push(...rest[best]);
+    rest.splice(best, 1);
+  }
+}
+
 function computeFeatures(
   failing: PositionedDie[],
   all: PositionedDie[],
@@ -208,8 +317,22 @@ function computeFeatures(
   // For linear score and eccentricity, union the top-5 components so fragmented
   // scratches (which break into many small diagonal runs) are captured.
   const components = findConnectedComponents(failing);
+  // Largest first; equal sizes nearest the centre first, then by their first die in grid order: neither the
+  // order the dies arrive in nor a turn of the wafer decides which group is salient or which fragments extend
+  // a line.
+  const tieKey = (c: PositionedDie[]): [number, number, number] => {
+    let y = Infinity, x = Infinity, mx = 0, my = 0;
+    for (const d of c) {
+      mx += d.physX; my += d.physY;
+      if (d.y < y || (d.y === y && d.x < x)) { y = d.y; x = d.x; }
+    }
+    const radius = Math.hypot(mx / c.length - wafer.center.x, my / c.length - wafer.center.y);
+    return [Math.round(radius * 1e6), y, x];
+  };
   const sorted = components.length > 0
-    ? [...components].sort((a, b) => b.length - a.length)
+    ? components.map(c => ({ c, k: tieKey(c) }))
+        .sort((a, b) => b.c.length - a.c.length || a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.k[2] - b.k[2])
+        .map(({ c }) => c)
     : [failing];
   const salient      = sorted[0];
   const top5         = sorted.slice(0, 5).flat();
@@ -268,12 +391,39 @@ function computeFeatures(
   }
   const edgeAngularSpread = edgeFailing.length > 0 ? edgeOccupied.size / SECTORS : 0;
 
+  // The salient region against its own principal axis (any angle), in die pitches, extended by the
+  // fragments that continue it: a scratch at a sparse density breaks into pieces along one line.
+  // `lineWidth`, `lineLength` and `lineSize` describe that line.
+  const pitch = Math.max(salient[0]?.width ?? 1, salient[0]?.height ?? 1);
+  const line = extendAlongAxis(salient, sorted.slice(1, 12), pitch);
+  const { width: lineWidth, length: lineLength } = principalAxisExtent(line, ...centroidOf(line), pitch);
+  let lineMin = Infinity, lineMax = 0;
+  for (const d of line) {
+    const dist = Math.sqrt((d.physX - cx) ** 2 + (d.physY - cy) ** 2) / r;
+    if (dist < lineMin) lineMin = dist;
+    if (dist > lineMax) lineMax = dist;
+  }
+  const lineMinDistNorm = lineMin === Infinity ? 0 : lineMin;
+  const lineMaxDistNorm = Math.min(lineMax, 1);
+
+  // Fail rate in five rings of equal width.
+  const BANDS = 5;
+  const bandN = new Array<number>(BANDS).fill(0), bandK = new Array<number>(BANDS).fill(0);
+  const failingSet = new Set(failing);
+  for (const d of all) {
+    const b = Math.min(BANDS - 1, Math.floor(Math.sqrt((d.physX - cx) ** 2 + (d.physY - cy) ** 2) / r * BANDS));
+    bandN[b]++;
+    if (failingSet.has(d)) bandK[b]++;
+  }
+  const radialFailRates = bandN.map((n, i) => n > 0 ? bandK[i] / n : 0);
+
   return {
     globalRdd, edgeRdd,
     centroidDistNorm, minDistNorm, maxDistNorm, p25DistNorm,
     eccentricity, linearScore,
     salienceSize, salienceFraction,
     edgeAngularSpread, innerOuterRatio,
+    lineWidth, lineLength, lineSize: line.length, lineMinDistNorm, lineMaxDistNorm, radialFailRates,
   };
 }
 
@@ -304,6 +454,28 @@ function classify(
     return { pattern: 'edge-ring', confidence: f.edgeRdd >= t.edgeRingEdgeRddHigh ? 'high' : 'medium' };
   }
 
+  // donut: a band of fails at mid-radius over a cleaner centre and rim, read from the fail rate by
+  // radius rather than from one connected group, which a donut's ring rarely forms.
+  const [band0, band1, band2, , band4] = f.radialFailRates;
+  const midBand = Math.max(band1, band2);
+  if (
+    f.globalRdd < t.nearFullGlobalRdd &&
+    midBand >= t.donutPeak && midBand - band0 >= t.donutHole && midBand - band4 >= t.donutRim
+  ) {
+    return { pattern: 'donut', confidence: midBand - band0 >= 2 * t.donutHole ? 'high' : 'medium' };
+  }
+
+  // scratch: the salient region is a long, thin line at any angle, reaching in from the edge. Tested before
+  // the no-dominant-cluster exit: a scratch on a noisy wafer holds few of its failing dies.
+  if (
+    f.globalRdd < t.nearFullGlobalRdd && f.lineSize >= minSalience &&
+    f.lineWidth <= t.scratchMaxLineWidth && f.lineLength >= t.scratchMinLineLength &&
+    f.lineLength >= t.scratchMinLineLengthRadius * Math.sqrt(dieCount / Math.PI) &&
+    f.lineMaxDistNorm >= t.scratchMinReach && f.lineMinDistNorm < t.scratchMaxInnerDist
+  ) {
+    return { pattern: 'scratch', confidence: f.lineWidth <= t.scratchMaxLineWidth / 2 ? 'high' : 'medium' };
+  }
+
   // If the salient region covers less than 10% of failing dies there is no
   // dominant spatial cluster — treat as random.
   // (near-full exempt: when whole wafer fails, no single cluster exists)
@@ -314,16 +486,6 @@ function classify(
   // near-full: almost the whole wafer is failing
   if (f.globalRdd >= t.nearFullGlobalRdd) {
     return { pattern: 'near-full', confidence: f.globalRdd >= 0.80 ? 'high' : 'medium' };
-  }
-
-  // scratch: elongated linear pattern — includes diagonal runs
-  if (salienceOk && f.linearScore >= t.scratchLinearScore && f.eccentricity >= t.scratchEccentricity &&
-      f.maxDistNorm >= t.scratchMinReach) {
-    const confidence = f.linearScore >= t.scratchLinearScoreHigh ? 'high' : 'medium';
-    const note = confidence === 'medium'
-      ? 'Scratch detection is less reliable for fragmented or diagonal patterns'
-      : undefined;
-    return { pattern: 'scratch', confidence, note };
   }
 
   // Edge patterns: use p25DistNorm as primary separator (calibrated on WM-811K).
@@ -351,24 +513,11 @@ function classify(
     return { pattern: 'edge-local', confidence: f.edgeRdd >= t.edgeRingEdgeRdd ? 'medium' : 'low' };
   }
 
-  // center vs donut: both have centroid near wafer centre and low eRdd.
-  // Use p25DistNorm as primary separator (center mean=0.38, donut mean=0.43).
-  // These classes overlap heavily at real-wafer noise levels; misclassifications are common.
-  // WM-811K center wafers have background scatter so maxDistNorm is ~1.0 — no gate.
-  // Note: innerOuterRatio is not a useful discriminator here — WM-811K donuts have
-  // high inner/outer failure rates due to the hole geometry reducing outer fail rate.
+  // center: the salient region sits on the centre and the edge is not failing. (A donut was taken above,
+  // by its radial profile.)
   const isSymmetric = salienceOk && f.centroidDistNorm <= t.centerCentroidDist && f.edgeRdd <= t.centerEdgeRdd;
-
-  const CENTER_DONUT_NOTE = 'Center and donut patterns have similar geometry; classification may be imprecise';
-
-  if (isSymmetric && f.p25DistNorm < t.donutP25Dist) {
-    const confidence = f.centroidDistNorm <= t.centerCentroidDistHigh ? 'high' : 'medium';
-    const note = confidence !== 'high' ? CENTER_DONUT_NOTE : undefined;
-    return { pattern: 'center', confidence, note };
-  }
-
-  if (isSymmetric && f.p25DistNorm >= t.donutP25Dist && f.p25DistNorm < 0.55) {
-    return { pattern: 'donut', confidence: 'medium', note: CENTER_DONUT_NOTE };
+  if (isSymmetric) {
+    return { pattern: 'center', confidence: f.centroidDistNorm <= t.centerCentroidDistHigh ? 'high' : 'medium' };
   }
 
   return { pattern: 'random', confidence: 'low' };

@@ -69,6 +69,15 @@ under `### Breaking`.
 - **Bins are said to "account for" a region's shortfall only when together they fit within it.** When other fail bins fell in the
   region, the named bins are given as points higher instead. A test is said as part of a region's item only when it fails on at
   least 1% of the dies, the floor for listing it on its own; the dies counted "in" the region are the named region's own.
+- **The spatial pattern classifier finds scratches at any angle and donuts by their radial profile.** A scratch is a thin line
+  of failing dies along its own principal axis, whatever its angle: at most 0.8 die pitches across, at least 8 pitches and 0.3 of
+  the radius long, reaching in from the rim, with the fragments that continue it along the same line counted as one line. A donut
+  is a band of failures at mid-radius, at least 15 points above both the centre and the rim, read from the fail rate in five rings
+  of equal width. A symmetric pattern on the centre that is not a donut is a centre cluster. On WM-811K, recall and precision are
+  now: scratch 40.7% / 87.4%, donut 77.5% / 68.6%, centre 84.5% / 88.1%, edge-local 68.2% / 52.2%, random 60.4% / 51.6%; edge-ring
+  and near-full are unchanged; exact match 71.1%. `PatternFeatures` gains `lineWidth`, `lineLength`, `lineSize`,
+  `lineMinDistNorm`, `lineMaxDistNorm` and `radialFailRates`. Pattern labels, the spatial-pattern finding and "What stands out"
+  change accordingly.
 - **A region holds only against the regions that are not themselves deviant.** The significant findings for one variable and region
   family are re-tested against each other: a loss is taken before a gain, each must hold against the rest without the regions that
   stand, and a gain is compared only with the regions that do not lean towards a loss. A failing block of rings is reported as the

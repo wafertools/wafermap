@@ -111,7 +111,7 @@ test('near-full pattern', () => {
   assert.ok(c.features.globalRdd >= 0.60, `globalRdd should be high, got ${c.features.globalRdd}`);
 });
 
-test('scratch pattern — high linear score', () => {
+test('scratch pattern — a row across the wafer', () => {
   const result = makeScratch();
   const c = classify(result);
   assert.ok(c !== null);
@@ -120,9 +120,34 @@ test('scratch pattern — high linear score', () => {
   assert.ok(c.features.eccentricity >= 0.70, `eccentricity should be high, got ${c.features.eccentricity}`);
 });
 
+test('a scratch at any angle is a scratch: thin and long along its own axis', () => {
+  // A line at 30° through the centre, one die wide in physical units: neither a row, a column nor a diagonal.
+  const slope = Math.tan(Math.PI / 6);
+  const line = (i, j) => Math.abs(j * pitchY - slope * i * pitchX) < pitchY / 2 && Math.hypot(i * pitchX, j * pitchY) <= 120;
+  const c = classify(buildResult(line));
+  assert.equal(c.pattern, 'scratch');
+  assert.ok(c.features.lineWidth < 0.8, `lineWidth ${c.features.lineWidth}`);
+  assert.ok(c.features.lineLength >= 8, `lineLength ${c.features.lineLength}`);
+  // Broken into pieces with gaps of one die, it is still one scratch.
+  const broken = classify(buildResult((i, j) => line(i, j) && ((i % 4) + 4) % 4 !== 0));
+  assert.equal(broken.pattern, 'scratch');
+});
+
+test('a thin arc along the rim is not a scratch', () => {
+  const arc = (i, j) => {
+    const r = Math.hypot(i * pitchX, j * pitchY) / waferRadius;
+    const a = Math.atan2(j * pitchY, i * pitchX);
+    return r >= 0.85 && a > 0.3 && a < 1.3;
+  };
+  assert.notEqual(classify(buildResult(arc)).pattern, 'scratch');
+});
+
 test('donut pattern', () => {
   const result = makeDonut();
   const c = classify(result);
+  const [centre, ring2, ring3, , rim] = c.features.radialFailRates;
+  assert.ok(Math.max(ring2, ring3) - centre >= 0.15 && Math.max(ring2, ring3) - rim >= 0.15,
+    `a raised band at mid-radius: ${c.features.radialFailRates}`);
   assert.ok(c !== null);
   assert.equal(c.pattern, 'donut');
   assert.ok(c.features.minDistNorm >= 0.20, `minDistNorm should be non-zero, got ${c.features.minDistNorm}`);
