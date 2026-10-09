@@ -169,6 +169,36 @@ function fakeLot(regions) {
   };
 }
 
+test('a small edge arc on a ring\'s dies does not stand in for the ring\'s loss', () => {
+  // Ring 4: hard bin 5 is 25 points higher over 1,000 dies (250 dies lost, 2.5%). An edge arc of 20 of
+  // those dies, 60 points below the rest (12 dies), shares them, so the two are one item. The arc is a
+  // pass-rate finding, but the ring's loss is what the item costs.
+  const ringDies = Array.from({ length: 1000 }, (_, k) => `${k},0`);
+  const findings = [
+    { id: 'hardBin:5:ring:4', level: 'wafer', severity: 'unusual',
+      variable: { kind: 'hardBin', label: 'HBin 5 (Leakage)', bin: 5 },
+      comparison: { family: 'ring', left: 'Ring 4 (edge)', right: 'Rest of map' },
+      effect: { direction: 'higher', absoluteDelta: 0.25 },
+      stats: { method: 'two-proportion-z', pValue: 1e-9, sampleSizeLeft: 1000, sampleSizeRight: 9000 },
+      summary: '', highlight: { kind: 'dies', dieKeys: ringDies } },
+    { id: 'edge-arc:5,0', level: 'wafer', severity: 'notable',
+      variable: { kind: 'yield', label: 'Yield' },
+      comparison: { family: 'edge-arc', left: 'Edge arc ~E', right: 'Rest of wafer' },
+      effect: { direction: 'lower', absoluteDelta: -0.6 },
+      stats: { method: 'permutation', pValue: 0.01, sampleSizeLeft: 20, sampleSizeRight: 9980 },
+      summary: '', highlight: { kind: 'dies', dieKeys: ringDies.slice(0, 20) } },
+  ];
+  const summary = {
+    level: 'wafer', hasNotableFindings: true, findings,
+    stats: { totalDies: 10000, analyzedDies: 10000, yieldPercent: 90, testsConsidered: [], hardBinsConsidered: [1, 5] },
+  };
+  const s = buildSynthesis(summary, { passBins: [1] });
+  assert.equal(s.items.length, 1, synthesisText(s));
+  assert.equal(s.items[0].target.id, 'hardBin:5:ring:4');
+  assert.match(s.items[0].text, /^Ring 4 \(edge\): hard bin 5 \(Leakage\) 25\.0 points higher/);
+  assert.match(s.items[0].text, /about 250 dies lost/);
+});
+
 test('items over the cap go on one "also" line, so nothing material is dropped', () => {
   // 10,000 analysed dies: each region costs drop × dies.  A 400 (4.0%), B 300 (3.0%), C 250 (2.5%), D 150 (1.5%), E 110 (1.1%), F 50 (0.5%, below the floor)
   const s = buildSynthesis(fakeLot([

@@ -3,7 +3,7 @@ import type { WaferMetadata } from '../core/metadata.js';
 import { requireRingCount } from '../core/ringCount.js';
 import {
   analyzeWaferMap, candidatesOf, describeRegional, resolveOptions, adjustPValues,
-  twoProportionZ, zPValue, welchOfSums, rateRelativeEffect, passesRateGate,
+  twoProportionZ, welchOfSums, rateRelativeEffect, passesRateGate,
   severityForFinding, severityForScore, collapseRedundantFindings,
   findContiguousRuns, mergedRegionLabel, type MeanStats,
   type RegionCandidate, type ResolvedOptions, type RedundancyFacts, type WaferComparisons,
@@ -14,7 +14,7 @@ import { mergeTestDefs } from './mergeTestDefs.js';
 import { findingPatternKey } from './filterFindings.js';
 import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import { median } from '../core/utils.js';
-import { robustFence } from './math.js';
+import { robustFence, zPValue } from './math.js';
 import { findLotPattern, type LotPattern } from './lotPattern.js';
 import { buildDriftFindings } from './lotDrift.js';
 import { claimForPattern, weakestMultiplier } from './analyzeWaferMap.js';

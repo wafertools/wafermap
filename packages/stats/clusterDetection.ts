@@ -1,11 +1,11 @@
 import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
-import { benjaminiHochberg, binomialUpperTail } from './math.js';
+import { seededRandom } from './math.js';
 import { ringOf } from '../core/classify.js';
 import { compassBucket, sectorCompassNames } from './regions.js';
 import { getDieKey, gridKey } from '../core/dies.js';
-import { findConnectedComponents } from './connectedComponents.js';
+import { findConnectedComponents, LargestComponentSizer } from './connectedComponents.js';
 
 /** An edge arc's bearing, on the 16-point compass the sectors use. */
 function compassBearing(dx: number, dy: number): string {
@@ -38,6 +38,121 @@ function severityForCluster(
   if (pValue <= 0.01 && (delta >= 0.25 || absRel >= 2.0 || clusterFraction >= 0.10)) return 'unusual';
   if (pValue <= 0.05 && (delta >= 0.15 || absRel >= 1.0 || clusterFraction >= 0.03)) return 'notable';
   return 'info';
+}
+
+/** Shuffles of the fail labels in a cluster's null distribution, and the exceedances that end it early. */
+const PERMUTATIONS = 99;
+const EXCEEDANCES_TO_STOP = 10;
+
+/**
+ * The null distribution of the largest failing group: the largest group on each of a series of shuffles
+ * that scatter `failCount` fails over a die layout. A series is a fixed, seeded stream, extended only as
+ * far as a p-value needs it, so the same layout and fail count always give the same p-values.
+ */
+class LargestGroupNull {
+  readonly maxima: number[] = [];
+  private readonly random: () => number;
+  private readonly order: Int32Array;
+  private readonly failing: Uint8Array;
+
+  constructor(private readonly sizer: LargestComponentSizer, n: number, private readonly failCount: number, seed: number) {
+    this.random = seededRandom(seed);
+    this.order = new Int32Array(n);
+    for (let i = 0; i < n; i++) this.order[i] = i;
+    this.failing = new Uint8Array(n);
+  }
+
+  /** The largest group of shuffle `i`, drawing the shuffles up to it if they are not drawn yet. */
+  at(i: number): number {
+    const { order, failing, failCount, random } = this;
+    const n = order.length;
+    while (this.maxima.length <= i) {
+      // A partial Fisher–Yates shuffle draws which dies fail.
+      for (let d = 0; d < failCount; d++) {
+        const j = d + Math.floor(random() * (n - d));
+        const t = order[d]; order[d] = order[j]; order[j] = t;
+        failing[order[d]] = 1;
+      }
+      this.maxima.push(this.sizer.largest(failing));
+      for (let d = 0; d < failCount; d++) failing[order[d]] = 0;
+    }
+    return this.maxima[i];
+  }
+
+  /**
+   * How often random placement makes a group of at least `size` (Besag and Clifford, 1991): the count stops
+   * at {@link EXCEEDANCES_TO_STOP}, with p = exceedances / shuffles so far, so a group no larger than random
+   * placement makes is settled in a few dozen shuffles; otherwise all {@link PERMUTATIONS} are drawn and
+   * p = (1 + exceedances) / (1 + shuffles).
+   */
+  pValue(size: number): number {
+    let exceed = 0;
+    for (let i = 0; i < PERMUTATIONS; i++) {
+      if (this.at(i) >= size && ++exceed === EXCEEDANCES_TO_STOP) return EXCEEDANCES_TO_STOP / (i + 1);
+    }
+    return (1 + exceed) / (1 + PERMUTATIONS);
+  }
+}
+
+/**
+ * A die layout's identity, independent of the order its dies arrive in: two 32-bit sums of a hash of
+ * each die's grid position, with the count. Wafers of one lot share it.
+ */
+function layoutKey(dies: readonly PositionedDie[]): string {
+  let a = 0, b = 0;
+  for (let i = 0; i < dies.length; i++) {
+    let h = Math.imul(dies[i].x | 0, 0x9e3779b1) ^ Math.imul(dies[i].y | 0, 0x85ebca6b);
+    h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+    h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+    a = (a + (h ^ (h >>> 16))) | 0;
+    b = (b + Math.imul(h, 0x27d4eb2f) + 0x165667b1) | 0;
+  }
+  return `${dies.length}:${a >>> 0}:${b >>> 0}`;
+}
+
+/**
+ * Fail counts are taken up to the top of a band 5% wide, so the wafers of a lot share a few null
+ * distributions instead of drawing one each. Rounding up only makes the test stricter: more fails
+ * scattered make larger groups by chance.
+ */
+function failBand(failCount: number, n: number): number {
+  if (failCount <= 20) return failCount;
+  return Math.min(n, Math.ceil(20 * 1.05 ** Math.ceil(Math.log(failCount / 20) / Math.log(1.05))));
+}
+
+/** Recently used layouts and null distributions, so a lot's wafers draw each once. Bounded: oldest out. */
+const SIZERS = new Map<string, LargestComponentSizer>();
+const NULLS = new Map<string, LargestGroupNull>();
+function remember<T>(cache: Map<string, T>, key: string, limit: number, make: () => T): T {
+  let v = cache.get(key);
+  if (v === undefined) {
+    v = make();
+    cache.set(key, v);
+    if (cache.size > limit) cache.delete(cache.keys().next().value!);
+  }
+  return v;
+}
+
+/**
+ * Permutation p-values for failing groups of the given sizes: how often the LARGEST group on the wafer is at
+ * least that size when the same number of fails is scattered at random over the same dies.
+ *
+ * A group is found because its dies fail, so testing its fail rate against the wafer's counts that selection
+ * as evidence: random failures at a few percent always form some group that a rate test calls significant.
+ * The largest group under random placement is the null that selection implies. Comparing every group with
+ * the largest also makes the wafer's groups one family (family-wise), so no further correction applies.
+ */
+function clusterPermutationPValues(dies: readonly PositionedDie[], failCount: number, sizes: readonly number[]): number[] {
+  const n = dies.length;
+  const layout = layoutKey(dies);
+  const fails = failBand(failCount, n);
+  const nul = remember(NULLS, `${layout}:${fails}`, 16, () => {
+    // In grid order, so the order the dies arrive in does not change which dies a draw picks.
+    const sizer = remember(SIZERS, layout, 4, () => new LargestComponentSizer([...dies].sort((a, b) => a.y - b.y || a.x - b.x)));
+    const [, a, b] = layout.split(':').map(Number);
+    return new LargestGroupNull(sizer, n, fails, (a ^ Math.imul(b, 0x2c1b3c6d) ^ Math.imul(fails + 1, 0x85ebca6b)) >>> 0);
+  });
+  return sizes.map(size => nul.pValue(size));
 }
 
 interface ClusterOptions {
@@ -94,7 +209,7 @@ export function buildClusterFindings(
   const components = findConnectedComponents(failing);
 
   const findings: StatsFinding[] = [];
-  const tested: { component: PositionedDie[]; k: number; clusterRate: number; delta: number; pValue: number }[] = [];
+  const tested: { component: PositionedDie[]; k: number; clusterRate: number; delta: number; relativeDelta: number | undefined }[] = [];
   const cx = wafer.center.x;
   const cy = wafer.center.y;
   const r  = wafer.radius;
@@ -127,20 +242,22 @@ export function buildClusterFindings(
 
     const clusterRate = k / n;
     const delta = clusterRate - pBg;
-    // Exact: a cluster's counts are small, where a normal approximation overstates significance.
-    const pValue = binomialUpperTail(k, n, pBg);
-    tested.push({ component, k, clusterRate, delta, pValue });
-  }
-
-  // Every cluster tested on the wafer is one family for the false-discovery rate, as the regions are.
-  const adjusted = benjaminiHochberg(tested.map(t => t.pValue));
-  for (let i = 0; i < tested.length; i++) {
-    const { component, k, clusterRate, delta, pValue } = tested[i];
-    const adjustedPValue = adjusted[i];
     const relativeDelta = pBg > 0 ? delta / pBg : undefined;
     const passesEffect = delta >= minimumEffectSize ||
       (relativeDelta !== undefined && relativeDelta >= minimumRelativeEffect);
-    if (adjustedPValue > significanceLevel || !passesEffect) continue;
+    // The effect gate first: only a group that could be reported costs a permutation test.
+    if (passesEffect) tested.push({ component, k, clusterRate, delta, relativeDelta });
+  }
+  if (!tested.length) return [];
+
+  // The largest group is the statistic, so its p-value is already family-wise over the wafer's groups:
+  // it is both the p-value and the adjusted one.
+  const pValues = clusterPermutationPValues(dies, failing.length, tested.map(t => t.k));
+  for (let i = 0; i < tested.length; i++) {
+    const { component, k, clusterRate, delta, relativeDelta } = tested[i];
+    const pValue = pValues[i];
+    const adjustedPValue = pValue;
+    if (adjustedPValue > significanceLevel) continue;
 
     // Centroid in physical coords.
     const centPhysX = component.reduce((s, d) => s + d.physX, 0) / k;
@@ -187,7 +304,7 @@ export function buildClusterFindings(
         effectSize: delta,
       },
       stats: {
-        method: 'binomial',
+        method: 'permutation',
         pValue,
         adjustedPValue,
         sampleSizeLeft: k,

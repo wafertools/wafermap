@@ -69,15 +69,29 @@ under `### Breaking`.
 - **Bins are said to "account for" a region's shortfall only when together they fit within it.** When other fail bins fell in the
   region, the named bins are given as points higher instead. A test is said as part of a region's item only when it fails on at
   least 1% of the dies, the floor for listing it on its own; the dies counted "in" the region are the named region's own.
+- **An item is costed by its largest loss.** Findings on the same dies are one item, led by the finding that loses the most dies, or
+  by its own region's pass rate when there is one. A small edge arc or cluster on an edge ring's dies is "also seen as" under the
+  ring's item, which costs the ring's loss.
 - **One false-discovery family per analysis.** Benjamini–Hochberg now adjusts every rate comparison on a wafer together (yield,
-  hard and soft bins, functional tests and limit fail rates, in every region family), every regional comparison of a lot together,
-  and every cluster tested on a wafer together. On synthetic wafers of random failures, the share reporting a regional finding is
-  2.7% at a 2% fail rate, 8.7% at 5% and 1–2% from 20% up (see Detection analysis); on WM-811K, the regional analysis still
-  rescues 94.1% of the patterns the classifier misses (combined detection 99.2%). Findings that rested on weak evidence are no
-  longer reported, and severities, `adjustedPValue`, `hasNotableFindings` and "What stands out" change accordingly.
+  hard and soft bins, functional tests and limit fail rates, in every region family) and every regional comparison of a lot
+  together. Findings that rested on weak evidence are no longer reported, and severities, `adjustedPValue`,
+  `hasNotableFindings` and "What stands out" change accordingly.
 - **Rates with small expected counts are tested exactly.** A region's rate is compared with Fisher's exact test when any expected
   count of its 2×2 table is under 5, and with the two-proportion z-test otherwise; `stats.method` is `'fisher-exact'` or
-  `'two-proportion-z'`. A cluster's rate uses the exact binomial tail.
+  `'two-proportion-z'`.
+- **A cluster or edge arc is tested by its size against random placement.** A group of failing dies is found because it fails,
+  so its fail rate is no evidence of a cluster. The wafer's fails are scattered at random over the same dies (up to 99 times, seeded
+  from the layout and fail count so a wafer always gets the same answer) and a group is reported when random placement rarely
+  makes one that large: `stats.method` is `'permutation'`, the smallest p-value is 0.01, and `adjustedPValue` equals `pValue`
+  (the comparison with the largest group is already family-wise). Random failures no longer read as clusters: on synthetic
+  wafers of random failures, the share reporting any regional finding is 2.7% at a 2% fail rate, 5.5% at 5%, 5.3% at 10% and 1–2%
+  from 20% up (see Detection analysis). Faint patterns that show only as a contiguous group are found less often: on WM-811K the
+  regional analysis rescues 90.3% of the patterns the classifier misses, and combined detection is 98.7%. Cluster p-values,
+  severities and the edge arcs listed under an edge ring change accordingly.
+- **Small p-values are exact to double precision.** Every z-based p-value reads the normal tail from W. J. Cody's erfc (about
+  1e-15 relative), so a p-value below 1e-7 is a number rather than rounding noise or 0. The gates are unchanged, but where two
+  very strong findings are weighed against each other (a sector run against the quadrant over the same angle, the smaller p-value
+  kept), the stronger one is now the one kept: on the bin-rich sample a Vmin pattern reads as the NE quadrant, not Sectors E–N.
 - **An edge arc across due east is an edge arc.** Its angular span is measured round the circle, so an arc from 355° to 5° spans
   10°, as an arc anywhere else does.
 - **Quadrants are quarter turns of equal share.** A die is in the quadrant whose quarter turn, counted counter-clockwise from

@@ -3,8 +3,8 @@ import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import { getDieKey, isPositionedDie, isYieldEligibleDie, positionKey, type PositionedDie } from '../core/dies.js';
 import { itemPassBins } from '../core/passBins.js';
 import { classifyFailingDies, patternFailVerdict, type PatternClassification } from './patternClassification.js';
-import { benjaminiHochberg, binomialUpperTail } from './math.js';
-import { passesRateGate, rateRelativeEffect, twoProportionZ, zPValue, type ResolvedOptions } from './analyzeWaferMap.js';
+import { benjaminiHochberg, binomialUpperTail, zPValue } from './math.js';
+import { passesRateGate, rateRelativeEffect, twoProportionZ, type ResolvedOptions } from './analyzeWaferMap.js';
 
 /** A lot's spatial pattern: where its failures recur, what shape that is, and which wafers show it. */
 export interface LotPattern {

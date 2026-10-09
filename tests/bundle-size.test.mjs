@@ -112,7 +112,10 @@ const THRESHOLDS = {
   // (~66.4 KB on CI's zlib), and the budget keeps ~1.5% over the CI figure.
   // Raised deliberately from 67_500: the unreleased work since 0.35.0 took the data layer to ~68.3 KB locally, and each
   // test's failing dies (`stats.testFailures`, read by the synthesis and the Summary panel's test rows) to ~68.4 KB.
-  'wafermap (root)':            69_500,   // gzipped bytes — measured ~68.4 KB
+  // Raised deliberately from 69_500: the clusters' permutation null (a seeded generator and a typed-array component
+  // sizer) and W. J. Cody's erfc, which keeps small p-values accurate, took the data layer to ~70.6 KB locally; the
+  // budget keeps ~2% over that for CI's zlib.
+  'wafermap (root)':            72_000,   // gzipped bytes — measured ~70.6 KB
   // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
   // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
   // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.

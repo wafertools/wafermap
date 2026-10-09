@@ -69,7 +69,8 @@ The findings list is ranked and filtered by statistical strength and effect size
 
 These thresholds are **internal constants, not options** — see [§7.3 of the API reference](../api/stats.md#73-analyzewafermapoptions) for why. They are documented here so you can tell why a pattern did or did not produce a finding.
 
-- **p-value correction:** adjusted p-values are used (threshold 0.05), corrected with a Benjamini–Hochberg FDR procedure over every comparison of one kind on the wafer at once: all its yield, bin, functional and limit-fail rates in every region family are one family, its clusters another. Rates whose expected counts are small (a rare bin, a small region, a nearly clean wafer) are tested exactly (Fisher's test) rather than by the normal approximation.
+- **p-value correction:** adjusted p-values are used (threshold 0.05), corrected with a Benjamini–Hochberg FDR procedure over every comparison of one kind on the wafer at once: all its yield, bin, functional and limit-fail rates in every region family are one family. Rates whose expected counts are small (a rare bin, a small region, a nearly clean wafer) are tested exactly (Fisher's test) rather than by the normal approximation.
+- **Clusters and edge arcs are tested by their size:** a group of failing dies is found because it fails, so its own fail rate proves nothing. Instead the wafer's fails are scattered at random over the same dies (up to 99 times) and a group is reported only when random placement rarely makes a group that large (p ≤ 0.05; the smallest p-value is 0.01). Random failures at a few percent always clump somewhere, and those clumps are no longer reported as clusters.
 - **Effect size gate for yield/bin/cluster findings:** a finding passes if it satisfies at least one of:
   - absolute `|delta| ≥ 0.20`, i.e. a 20 percentage-point difference, **or**
   - relative `|delta / background| ≥ 1.0`, i.e. at least a doubling of the wafer-wide background rate

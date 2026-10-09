@@ -120,7 +120,9 @@ test('a lot of clean wafers has no lot finding', () => {
   assert.ok(flagged.length <= 1, flagged.join('\n'));
 });
 
-test('random failures do not read as a cluster', { todo: 'a cluster is tested against a neighbourhood chosen because it fails, so a random clump at a moderate fail rate reads as a cluster' }, () => {
+// A group is found because it fails, so its own fail rate is no evidence; the test asks how often random
+// placement of the same fails makes a group that large (a permutation null of the largest group).
+test('random failures do not read as a cluster', () => {
   let n = 0;
   for (let seed = 0; seed < CLEAN; seed++) {
     if (wafer({ name: `clean:0.08:${seed}`, baseRate: 0.08 }).s.findings.some(f => strong(f) && (f.comparison.family === 'cluster' || f.comparison.family === 'edge-arc'))) n++;
@@ -257,7 +259,7 @@ test('a ring or quadrant rate finding has the p-value its counts give, by the te
       const { p, method } = rateP(L.filter(hit).length, L.length, R.filter(hit).length, R.length);
       assert.equal(f.stats.method, method, `${spec.name} ${f.variable.label} @ ${f.comparison.left}`);
       // The library's normal tail is good to ~1.5e-7 absolute; Fisher it computes exactly.
-      assert.ok(Math.abs(f.stats.pValue - p) <= 2e-7 + 1e-9 * p, `${spec.name} ${f.variable.label} @ ${f.comparison.left}: p ${f.stats.pValue} vs ${p}`);
+      assert.ok(Math.abs(f.stats.pValue - p) <= 1e-9 * p + 1e-300, `${spec.name} ${f.variable.label} @ ${f.comparison.left}: p ${f.stats.pValue} vs ${p}`);
       checked++;
     }
   }
@@ -297,7 +299,7 @@ test('a lot finding combines its wafers\' z by Stouffer, weighted by each wafer\
       zw += Math.sqrt(pool.length) * z; ww += pool.length;
     }
     const p = Math.min(1, 2 * normalUpper(Math.abs(zw / Math.sqrt(ww))));
-    assert.ok(Math.abs(f.stats.pValue - p) <= 2e-7 + 1e-9 * p, `${f.comparison.left}: ${f.stats.pValue} vs ${p}`);
+    assert.ok(Math.abs(f.stats.pValue - p) <= 1e-9 * p + 1e-300, `${f.comparison.left}: ${f.stats.pValue} vs ${p}`);
     checked++;
   }
   assert.ok(checked >= 1, 'no lot region finding to check');

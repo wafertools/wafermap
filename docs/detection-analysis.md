@@ -54,6 +54,13 @@ Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 > build and reproduced exactly: classifier recall and exact match, the 86.2% detection rate,
 > the combined 99.3% / 99.1% rates and per-label rescue, and both false-positive tables.
 >
+> **Re-run 2026-10-09.** Clusters and edge arcs are tested by a permutation null of the largest group (see
+> [False positives](#synthetic-random-wafers-iid-bernoulli-n-500cell)), and p-values come from an erfc accurate to double
+> precision. The classifier figures are unchanged. On synthetic random wafers the regional false-positive rate at a 10%
+> fail rate falls from 34.1% to 5.3%; the regional analysis rescues 2,602 of the 2,881 classifier misses (was 2,711), most
+> of the difference edge-local and centre wafers that only a cluster finding caught, and combined detection is 98.7%
+> (was 99.2%).
+>
 > **Re-run 2026-10-08.** Benjamini–Hochberg now adjusts every rate comparison on a wafer as one family, rates with
 > small expected counts are tested exactly (Fisher), and clusters use the exact binomial tail with their own one-family
 > adjustment. The classifier figures are unchanged. The combined rates and the false-positive tables below are this
@@ -87,10 +94,10 @@ Of the 2,881 wafers the classifier missed, the regional analysis recovered:
 
 | Measure | Rate |
 |---|---|
-| Any regional finding fired | 94.1% of misses |
-| Semantically matched finding | 93.0% of misses |
+| Any regional finding fired | 90.3% of misses |
+| Semantically matched finding | 89.0% of misses |
 
-**Combined detection rate: 99.2%** (any) / **99.0%** (semantically matched)
+**Combined detection rate: 98.7%** (any) / **98.5%** (semantically matched)
 
 The any/match gap is small — regional findings on classifier misses are almost
 always semantically correct, not noise.
@@ -99,11 +106,11 @@ Per-label rescue breakdown (classifier misses only):
 
 | Label | Misses | Any rescue | Match rescue |
 |---|---|---|---|
-| center | 695 | 97.0% | 96.8% |
+| center | 695 | 92.1% | 91.4% |
 | donut | 238 | 97.5% | 95.0% |
-| edge-local | 933 | 94.0% | 94.0% |
-| edge-ring | 456 | 93.9% | 92.3% |
-| scratch | 559 | 89.4% | 86.4% |
+| edge-local | 933 | 88.0% | 88.0% |
+| edge-ring | 456 | 91.7% | 90.1% |
+| scratch | 559 | 87.8% | 84.4% |
 
 > **Re-run 2026-07-28 (v0.20.9).** Numbers above were re-measured after the fix
 > that stopped `buildWaferMap` from mislabelling real probed edge dies as
@@ -129,8 +136,8 @@ Per-label rescue breakdown (classifier misses only):
 | Method | FP rate |
 |---|---|
 | Classifier only | 41.2% |
-| Regional analysis only | 87.1% |
-| Combined | 90.5% |
+| Regional analysis only | 85.4% |
+| Combined | 89.4% |
 
 **Important caveat:** WM-811K "Random" is a catch-all label — ambiguous,
 multi-modal, or low-confidence wafers all end up there. Some fraction genuinely
@@ -145,9 +152,9 @@ WM-811K's range):
 | Fail rate | Regional FP rate |
 |---|---|
 | 2% | 2.7% |
-| 5% | 8.7% |
-| 10% | 34.1% ← clusters, see below |
-| 20% | 1.1% |
+| 5% | 5.5% |
+| 10% | 5.3% |
+| 20% | 0.9% |
 | 40% | 1.2% |
 | 60% | 1.6% |
 
@@ -156,11 +163,12 @@ family) is one family for the Benjamini–Hochberg adjustment, so a wafer of pur
 as often as the 5% significance level allows. Until 2026-10-08 the adjustment was per variable and region family, some
 twenty families a wafer, and the rates were 14.2%, 15.1%, 49.5%, 2.4%, 2.1% and 2.9%.
 
-What remains at 5–10% is almost all **clusters and edge arcs**: at a 10% fail rate, 18 of every 20 wafers flagged have
-only those. A cluster is a connected group of failing dies, tested against its neighbourhood; the group is chosen
-because it fails, so at a moderate fail rate a random clump reads as a cluster. The fix is a permutation null for the
-largest group on each wafer (reshuffle the failures over the dies and ask how often a group this large appears by
-chance); it is not yet implemented because of its cost on large wafers.
+**Clusters and edge arcs** are tested by their size against random placement. A cluster is a connected group of failing
+dies, and the group is chosen because it fails, so its own fail rate is no evidence: at a moderate fail rate random
+failures always form some clump that a rate test calls significant. (Before 2026-10-09 a cluster was tested by its fail
+rate against its neighbourhood, and the 10% cell was 34.1%.) The wafer's fails are now scattered at random
+over the same dies up to 99 times, and a group is reported only when the largest group random placement makes is rarely
+as large. The shuffles are seeded from the layout and the fail count, and the wafers of a lot share them.
 
 ---
 

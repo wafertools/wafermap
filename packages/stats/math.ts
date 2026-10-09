@@ -1,27 +1,74 @@
 // Shared statistical math primitives. Single home for functions that were
 // previously duplicated across analyzeWaferMap.ts and clusterDetection.ts.
 
-/**
- * Abramowitz & Stegun 7.1.26 rational approximation of the error function.
- * Max absolute error ~1.5e-7 — ample for p-value gating.
- */
+/** The error function erf(x), from {@link complementaryErrorFunction}. */
 export function errorFunction(value: number): number {
-  const sign = value < 0 ? -1 : 1;
-  const x = Math.abs(value);
-  const a1 = 0.254829592;
-  const a2 = -0.284496736;
-  const a3 = 1.421413741;
-  const a4 = -1.453152027;
-  const a5 = 1.061405429;
-  const p = 0.3275911;
-  const t = 1 / (1 + p * x);
-  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-  return sign * y;
+  return value < 0 ? -1 + complementaryErrorFunction(-value) : 1 - complementaryErrorFunction(value);
 }
+
+/**
+ * The complementary error function erfc(x) = 1 − erf(x), accurate to about 1e-15 relative across the whole
+ * range, the far tail included: W. J. Cody's rational approximations (Math. Comp. 23, 1969; the CALERF
+ * routine). A small p-value is read from the tail, where 1 − erf(x) computed by subtraction is noise below
+ * about 1e-7 and becomes 0.
+ */
+export function complementaryErrorFunction(value: number): number {
+  const y = Math.abs(value);
+  let result: number;
+  if (y <= 0.46875) {
+    // erf(x) = x·P(x²)/Q(x²)
+    const ysq = y > 1.11e-16 ? y * y : 0;
+    let num = ERF_A[4] * ysq, den = ysq;
+    for (let i = 0; i < 3; i++) { num = (num + ERF_A[i]) * ysq; den = (den + ERF_B[i]) * ysq; }
+    const erf = value * (num + ERF_A[3]) / (den + ERF_B[3]);
+    return 1 - erf;
+  }
+  if (y <= 4) {
+    // erfc(x) = exp(−x²)·P(x)/Q(x)
+    let num = ERFC_C[8] * y, den = y;
+    for (let i = 0; i < 7; i++) { num = (num + ERFC_C[i]) * y; den = (den + ERFC_D[i]) * y; }
+    result = (num + ERFC_C[7]) / (den + ERFC_D[7]);
+  } else {
+    // erfc(x) = exp(−x²)/x·(1/√π + 1/x²·P(1/x²)/Q(1/x²))
+    if (y >= 26.543) return value > 0 ? 0 : 2;   // below the smallest normal double (Cody's XBIG)
+    const ysq = 1 / (y * y);
+    let num = ERFC_P[5] * ysq, den = ysq;
+    for (let i = 0; i < 4; i++) { num = (num + ERFC_P[i]) * ysq; den = (den + ERFC_Q[i]) * ysq; }
+    result = (1 / Math.sqrt(Math.PI) - ysq * (num + ERFC_P[4]) / (den + ERFC_Q[4])) / y;
+  }
+  // exp(−y²) split into two factors, so the rounding of y² does not cost the tail its precision.
+  const ysqHi = Math.trunc(y * 16) / 16;
+  const del = (y - ysqHi) * (y + ysqHi);
+  result *= Math.exp(-ysqHi * ysqHi) * Math.exp(-del);
+  return value < 0 ? 2 - result : result;
+}
+
+const ERF_A = [3.16112374387056560e00, 1.13864154151050156e02, 3.77485237685302021e02, 3.20937758913846947e03, 1.85777706184603153e-1];
+const ERF_B = [2.36012909523441209e01, 2.44024637934444173e02, 1.28261652607737228e03, 2.84423683343917062e03];
+const ERFC_C = [
+  5.64188496988670089e-1, 8.88314979438837594e00, 6.61191906371416295e01, 2.98635138197400131e02,
+  8.81952221241769090e02, 1.71204761263407058e03, 2.05107837782607147e03, 1.23033935479799725e03, 2.15311535474403846e-8,
+];
+const ERFC_D = [
+  1.57449261107098347e01, 1.17693950891312499e02, 5.37181101862009858e02, 1.62138957456669019e03,
+  3.29079923573345963e03, 4.36261909014324716e03, 3.43936767414372164e03, 1.23033935480374942e03,
+];
+const ERFC_P = [3.05326634961232344e-1, 3.60344899949804439e-1, 1.25781726111229246e-1, 1.60837851487422766e-2, 6.58749161529837803e-4, 1.63153871373020978e-2];
+const ERFC_Q = [2.56852019228982242e00, 1.87295284992346725e00, 5.27905102951428412e-1, 6.05183413124413191e-2, 2.33520497626869185e-3];
 
 /** Standard normal cumulative distribution function Φ(value). */
 export function normalCdf(value: number): number {
-  return 0.5 * (1 + errorFunction(value / Math.sqrt(2)));
+  return 0.5 * complementaryErrorFunction(-value / Math.SQRT2);
+}
+
+/** The standard normal upper tail 1 − Φ(value), accurate where it is small. */
+export function normalUpperTail(value: number): number {
+  return 0.5 * complementaryErrorFunction(value / Math.SQRT2);
+}
+
+/** Two-sided p-value of a z statistic: the one rule every z-based test in the library reads its p from. */
+export function zPValue(z: number): number {
+  return Math.min(1, 2 * normalUpperTail(Math.abs(z)));
 }
 
 /**
@@ -81,6 +128,21 @@ export function fisherExact(a: number, b: number, c: number, d: number): number 
     p *= ((row1 - x) * (col1 - x)) / ((x + 1) * (row2 - col1 + x + 1));
   }
   return Math.min(1, total);
+}
+
+/**
+ * A seeded uniform generator on [0, 1) (mulberry32). For resampling that must give the same answer on
+ * every run (a permutation test's p-value), never for anything that should look random to a user.
+ */
+export function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /**
@@ -310,7 +372,7 @@ export function mannKendall(values: readonly number[]): MannKendall | null {
   for (const t of ties.values()) if (t > 1) variance -= (t * (t - 1) * (2 * t + 5)) / 18;
   if (variance <= 0) return null;
   const z = s === 0 ? 0 : (s - Math.sign(s)) / Math.sqrt(variance);
-  const pValue = Math.min(1, 2 * (1 - normalCdf(Math.abs(z))));
+  const pValue = zPValue(z);
   slopes.sort((a, b) => a - b);
   const mid = slopes.length >> 1;
   const slope = slopes.length % 2 ? slopes[mid] : (slopes[mid - 1] + slopes[mid]) / 2;

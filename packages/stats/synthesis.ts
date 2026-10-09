@@ -254,11 +254,12 @@ function lossItem(
   waferCount: number | undefined,
   judge: BinJudgement,
 ): SynthesisItem {
-  // A pass-rate finding (yield, or a pass bin that fell) is the whole shortfall in its region and the fail
-  // bins are its parts, so it leads; with none, the bin that costs the most dies does. Either way the rest
-  // stand on the same dies.
-  const yields = group.filter(judge.isPassRate);
-  const lead = [...(yields.length > 0 ? yields : group)].sort((a, b) => diesLostBy(b) - diesLostBy(a))[0];
+  // The finding that costs the most dies leads, and the rest stand on the same dies. A pass-rate finding
+  // (yield, or a pass bin that fell) in that finding's own region leads instead: it is the whole shortfall
+  // there, and the fail bins are its parts. A pass rate elsewhere in the group never outranks a larger
+  // loss: an edge arc is a pass-rate finding on a few dies, and leading with it costed a ring by the arc.
+  const costliest = [...group].sort((a, b) => diesLostBy(b) - diesLostBy(a))[0];
+  const lead = group.find(f => judge.isPassRate(f) && sameRegion(f, costliest)) ?? costliest;
   const others = group.filter(f => f !== lead);
 
   const wafers = lead.level === 'lot' && 'waferIndices' in lead.highlight ? lead.highlight.waferIndices?.length : undefined;

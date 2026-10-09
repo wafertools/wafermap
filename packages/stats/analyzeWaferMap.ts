@@ -24,8 +24,8 @@ import {
   type PatternClassification, type PatternLabel } from './patternClassification.js';
 import { requirePassBins } from '../core/passBins.js';
 import { requireRingCount } from '../core/ringCount.js';
-import { benjaminiHochberg, fisherExact, fiveNumberSummary, normalCdf, sampleVariance } from './math.js';
-import { mean, clamp01, maxOf } from '../core/utils.js';
+import { benjaminiHochberg, fisherExact, fiveNumberSummary, sampleVariance, zPValue } from './math.js';
+import { mean, maxOf } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 
 interface EligibleDie extends Die {
@@ -375,10 +375,6 @@ export function twoProportionZ(leftPass: number, leftTotal: number, rightPass: n
   return ((leftPass / leftTotal) - (rightPass / rightTotal)) / Math.sqrt(variance);
 }
 
-/** Two-sided p-value of a z statistic. */
-export function zPValue(z: number): number {
-  return clamp01(2 * (1 - normalCdf(Math.abs(z))));
-}
 
 /** Below this expected count in any cell of the 2×2 table the normal approximation is not trusted (Cochran's rule). */
 const MIN_EXPECTED_FOR_Z = 5;
@@ -1117,7 +1113,7 @@ export function welchFromStats(
   const pooledSd = Math.sqrt(Math.max(0, ((leftVar + rightVar) / 2)));
   const effectSize = pooledSd === 0 ? delta : delta / pooledSd;
   return {
-    pValue: clamp01(2 * (1 - normalCdf(Math.abs(z)))),
+    pValue: zPValue(z),
     effectSize,
     delta,
     z };

@@ -42,38 +42,38 @@
   "lot": [
    "Yield 87.3% (mean of 6 wafers, 7,878 dies; pass bin 1), range 86.4–87.8%.",
    "1. (high, 10.6%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 6/6 wafers. Ring 4 (edge): pass rate 25.9 points below the rest of the wafer on 6/6 wafers; hard bin 5 (Leakage) is 26.6 points higher — about 833 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 3 smaller findings not listed above."
+   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). Nothing else was found."
   ],
   "wafers": {
    "W01": [
     "Yield 87.7% (1,313 dies; pass bin 1).",
-    "1. (high, 10.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.7 points below the rest of the wafer; hard bin 5 (Leakage) is 25.7 points higher — about 132 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.7 points below the rest of the wafer; hard bin 5 (Leakage) is 25.7 points higher — about 132 dies lost (also seen as Edge arc ~WSW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W02": [
     "Yield 87.8% (1,313 dies; pass bin 1).",
-    "1. (high, 10.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.1 points below the rest of the wafer; hard bin 5 (Leakage) is 26.1 points higher — about 140 dies lost (also seen as 9 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+    "1. (high, 10.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.1 points below the rest of the wafer; hard bin 5 (Leakage) is 26.1 points higher — about 140 dies lost (also seen as Edge arc ~WNW, Edge arc ~SSW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W03": [
     "Yield 87.2% (1,313 dies; pass bin 1).",
-    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 5 (Leakage) is 26.1 points higher — about 138 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 5 (Leakage) is 26.1 points higher — about 138 dies lost (also seen as Edge arc ~NW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W04": [
     "Yield 86.4% (1,313 dies; pass bin 1).",
-    "1. (high, 10.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.3 points below the rest of the wafer; hard bin 5 (Leakage) is 27.2 points higher — about 141 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+    "1. (high, 10.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.3 points below the rest of the wafer; hard bin 5 (Leakage) is 27.2 points higher — about 141 dies lost (also seen as Edge arc ~WNW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W05": [
     "Yield 86.9% (1,313 dies; pass bin 1).",
-    "1. (high, 10.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.7 points below the rest of the wafer; hard bin 5 (Leakage) is 27.4 points higher — about 143 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.7 points below the rest of the wafer; hard bin 5 (Leakage) is 27.4 points higher — about 143 dies lost (also seen as 5 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W06": [
     "Yield 87.7% (1,313 dies; pass bin 1).",
-    "1. (high, 10.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.9 points below the rest of the wafer; hard bin 5 (Leakage) is 26.7 points higher — about 139 dies lost (also seen as 11 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.9 points below the rest of the wafer; hard bin 5 (Leakage) is 26.7 points higher — about 139 dies lost (also seen as Edge arc ~SW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -81,28 +81,28 @@
   "lot": [
    "Yield 87.1% (mean of 4 wafers, 5,252 dies; pass bin 1), range 86.4–88.0%.",
    "1. (high, 10.9%) → softBin @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 26.6 points below the rest of the wafer on 4/4 wafers; soft bin 5 (Leakage) is 27.5 points higher — about 570 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
-   "Compared: the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 1 smaller finding not listed above."
+   "Compared: the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). Nothing else was found."
   ],
   "wafers": {
    "W01": [
     "Yield 86.4% (1,313 dies; pass bin 1).",
-    "1. (high, 11.4%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 28.0 points below the rest of the wafer; soft bin 5 (Leakage) is 28.9 points higher — about 150 dies lost (also seen as 6 edge arcs, Sector NE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
-    "Compared: the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 11.4%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 28.0 points below the rest of the wafer; soft bin 5 (Leakage) is 28.9 points higher — about 150 dies lost (also seen as Sector NE, Edge arc ~NE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
+    "Compared: the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W02": [
     "Yield 88.0% (1,313 dies; pass bin 1).",
-    "1. (high, 10.5%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; soft bin 5 (Leakage) is 26.5 points higher — about 138 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
-    "Compared: the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.5%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; soft bin 5 (Leakage) is 26.5 points higher — about 138 dies lost (also seen as 3 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
+    "Compared: the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W03": [
     "Yield 86.7% (1,313 dies; pass bin 1).",
-    "1. (high, 11.2%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.4 points below the rest of the wafer; soft bin 5 (Leakage) is 28.4 points higher — about 147 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
-    "Compared: the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 11.2%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.4 points below the rest of the wafer; soft bin 5 (Leakage) is 28.4 points higher — about 147 dies lost (also seen as 5 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
+    "Compared: the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W04": [
     "Yield 87.1% (1,313 dies; pass bin 1).",
-    "1. (high, 10.3%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.2 points below the rest of the wafer; soft bin 5 (Leakage) is 26.3 points higher — about 135 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
-    "Compared: the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.3%) → softBin @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.2 points below the rest of the wafer; soft bin 5 (Leakage) is 26.3 points higher — about 135 dies lost (also seen as Edge arc ~NE, Edge arc ~ESE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Soft bin 5 (Leakage) → softBin @ Ring 4 (edge)]",
+    "Compared: the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -110,28 +110,28 @@
   "lot": [
    "Yield 88.3% (mean of 4 wafers, 5,252 dies; pass bin 1), range 87.6–89.6%.",
    "1. (high, 10.0%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 24.6 points below the rest of the wafer on 4/4 wafers; hard bin 5 (Leakage) is 25.1 points higher — about 528 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 2 smaller findings not listed above."
+   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 1 smaller finding not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 88.2% (1,313 dies; pass bin 1).",
-    "1. (high, 9.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.2 points below the rest of the wafer; hard bin 5 (Leakage) is 25.6 points higher — about 130 dies lost (also seen as 10 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+    "1. (high, 9.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.2 points below the rest of the wafer; hard bin 5 (Leakage) is 25.6 points higher — about 130 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W02": [
     "Yield 89.6% (1,313 dies; pass bin 1).",
-    "1. (high, 8.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 21.8 points below the rest of the wafer; hard bin 5 (Leakage) is 22.2 points higher — about 117 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 8.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 21.8 points below the rest of the wafer; hard bin 5 (Leakage) is 22.2 points higher — about 117 dies lost (also seen as 3 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W03": [
     "Yield 88.0% (1,313 dies; pass bin 1).",
-    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.8 points below the rest of the wafer; mostly hard bin 5 (Leakage) accounts for 25.6 of those points — about 138 dies lost (also seen as 9 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.8 points below the rest of the wafer; mostly hard bin 5 (Leakage) accounts for 25.6 of those points — about 138 dies lost (also seen as Edge arc ~NW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W04": [
     "Yield 87.6% (1,313 dies; pass bin 1).",
-    "1. (high, 10.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.6 points below the rest of the wafer; hard bin 5 (Leakage) is 27.1 points higher — about 143 dies lost (also seen as 10 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 26.6 points below the rest of the wafer; hard bin 5 (Leakage) is 27.1 points higher — about 143 dies lost (also seen as Edge arc ~W)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -139,27 +139,27 @@
   "lot": [
    "Yield 86.9% (mean of 4 wafers, 5,252 dies; pass bin 1), range 86.7–87.0%.",
    "1. (high, 11.3%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 27.8 points below the rest of the wafer on 4/4 wafers; hard bin 6 (Speed) is 15.4 points higher, hard bin 5 (Leakage) 12.7 points higher — about 595 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 7 smaller findings not listed above."
+   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 2 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 87.0% (1,313 dies; pass bin 1).",
-    "1. (high, 11.2%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.5 points below the rest of the wafer; hard bin 6 (Speed) is 14.9 points higher, hard bin 5 (Leakage) 13.4 points higher — about 147 dies lost (also seen as 9 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 11.2%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.5 points below the rest of the wafer; hard bin 6 (Speed) is 14.9 points higher, hard bin 5 (Leakage) 13.4 points higher — about 147 dies lost (also seen as Edge arc ~NNE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W02": [
     "Yield 86.7% (1,313 dies; pass bin 1).",
-    "1. (high, 11.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 28.2 points below the rest of the wafer; hard bin 6 (Speed) is 16.0 points higher, hard bin 5 (Leakage) 12.9 points higher — about 151 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 11.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 28.2 points below the rest of the wafer; hard bin 6 (Speed) is 16.0 points higher, hard bin 5 (Leakage) 12.9 points higher — about 151 dies lost (also seen as Edge arc ~W, Edge arc ~SW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W03": [
     "Yield 86.9% (1,313 dies; pass bin 1).",
-    "1. (high, 11.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.7 points below the rest of the wafer; mostly hard bin 6 (Speed) accounts for 15.1 of those points, hard bin 5 (Leakage) for 12.3 — about 148 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 11.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.7 points below the rest of the wafer; mostly hard bin 6 (Speed) accounts for 15.1 of those points, hard bin 5 (Leakage) for 12.3 — about 148 dies lost (also seen as Edge arc ~NNW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W04": [
     "Yield 86.9% (1,313 dies; pass bin 1).",
-    "1. (high, 11.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.7 points below the rest of the wafer; hard bin 6 (Speed) is 15.5 points higher, hard bin 5 (Leakage) 12.3 points higher — about 148 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 11.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.7 points below the rest of the wafer; hard bin 6 (Speed) is 15.5 points higher, hard bin 5 (Leakage) 12.3 points higher — about 148 dies lost (also seen as Edge arc ~SW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
@@ -168,27 +168,27 @@
   "lot": [
    "Yield 93.5% (mean of 6 wafers, 7,878 dies; pass bin 1), range 90.4–98.2%.",
    "1. (high, 3.9%) → yield @ NE | NE quadrant: pass rate 18.7 points below the rest of the wafer on 5/6 wafers; hard bin 6 (Speed) is 28.4 points higher — about 307 dies lost (also seen as Sector NE)  [Hard bin 6 (Speed) → hardBin @ NE]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 16 smaller findings not listed above."
+   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 10 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 90.4% (1,313 dies; pass bin 1).",
-    "1. (high, 7.9%) → yield @ NE | NE quadrant: pass rate 31.4 points below the rest of the wafer; hard bin 6 (Speed) is 32.2 points higher — about 103 dies lost (also seen as Sectors E–NE, Cluster at (11, 4), Cluster at (6, 10), 4 edge arcs)  [Hard bin 6 (Speed) → hardBin @ NE]",
+    "1. (high, 7.9%) → yield @ NE | NE quadrant: pass rate 31.4 points below the rest of the wafer; hard bin 6 (Speed) is 32.2 points higher — about 103 dies lost (also seen as Sectors E–NE, Cluster at (11, 4), Edge arc ~NE)  [Hard bin 6 (Speed) → hardBin @ NE]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
    ],
    "W02": [
     "Yield 91.3% (1,313 dies; pass bin 1).",
-    "1. (high, 7.2%) → yield @ NE | NE quadrant: pass rate 28.6 points below the rest of the wafer; hard bin 6 (Speed) is 29.5 points higher — about 94 dies lost (also seen as Sector NE, Sectors NE–N, Edge arc ~ENE, Edge arc ~N, 3 clusters)  [Hard bin 6 (Speed) → hardBin @ NE]",
+    "1. (high, 7.2%) → yield @ NE | NE quadrant: pass rate 28.6 points below the rest of the wafer; hard bin 6 (Speed) is 29.5 points higher — about 94 dies lost (also seen as Sectors NE–N, Sector NE, Edge arc ~ENE, 3 clusters)  [Hard bin 6 (Speed) → hardBin @ NE]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
    ],
    "W03": [
     "Yield 92.3% (1,313 dies; pass bin 1).",
-    "1. (high, 6.6%) → yield @ NE | NE quadrant: pass rate 26.2 points below the rest of the wafer; mostly hard bin 6 (Speed) accounts for 26.1 of those points — about 86 dies lost (also seen as Sector NE, Sectors NE–N, Cluster at (7, 9), Cluster at (11, 3), Edge arc ~NNE, Edge arc ~E)  [Hard bin 6 (Speed) → hardBin @ NE]",
+    "1. (high, 6.6%) → yield @ NE | NE quadrant: pass rate 26.2 points below the rest of the wafer; mostly hard bin 6 (Speed) accounts for 26.1 of those points — about 86 dies lost (also seen as Sector NE, Sectors NE–N, Cluster at (7, 9), Edge arc ~NNE)  [Hard bin 6 (Speed) → hardBin @ NE]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 10 smaller findings not listed above."
    ],
    "W04": [
     "Yield 91.2% (1,313 dies; pass bin 1).",
-    "1. (high, 6.3%) → yield @ NE | NE quadrant: pass rate 25.1 points below the rest of the wafer; hard bin 6 (Speed) is 25.8 points higher — about 83 dies lost (also seen as Sectors E–NE, Cluster at (10, 10), 3 edge arcs)  [Hard bin 6 (Speed) → hardBin @ NE]",
+    "1. (high, 6.3%) → yield @ NE | NE quadrant: pass rate 25.1 points below the rest of the wafer; hard bin 6 (Speed) is 25.8 points higher — about 83 dies lost (also seen as Sectors E–NE, Edge arc ~ENE, Cluster at (10, 10))  [Hard bin 6 (Speed) → hardBin @ NE]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 6 smaller findings not listed above."
    ],
    "W05": [
@@ -227,7 +227,7 @@
    ],
    "W04": [
     "Yield 93.8% (1,313 dies; pass bin 1).",
-    "1. (high, 3.1%) → yield @ Ring 1 (core) | Center cluster pattern. Ring 1 (core): pass rate 46.3 points below the rest of the wafer; hard bin 4 (Short) is 47.1 points higher — about 41 dies lost (also seen as Cluster at (-1, -1), Cluster at (2, 3))  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 4 (Short) → hardBin @ Ring 1 (core)]",
+    "1. (high, 3.1%) → yield @ Ring 1 (core) | Center cluster pattern. Ring 1 (core): pass rate 46.3 points below the rest of the wafer; hard bin 4 (Short) is 47.1 points higher — about 41 dies lost (also seen as Cluster at (2, 3), Cluster at (-1, -1))  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 4 (Short) → hardBin @ Ring 1 (core)]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
    ],
    "W05": [
@@ -241,23 +241,23 @@
   "lot": [
    "Yield 92.8% (mean of 3 wafers, 3,939 dies; pass bin 1), range 92.2–93.1%.",
    "1. (medium, 2.9%) → hardBin @ Ring 2 | Ring 2: pass rate 14.5 points below the rest of the wafer on 3/3 wafers; hard bin 6 (Speed) is 15.6 points higher — about 113 dies lost  [Hard bin 6 (Speed) → hardBin @ Ring 2]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 10 smaller findings not listed above."
+   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 9 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 93.1% (1,313 dies; pass bin 1).",
-    "1. (high, 2.8%) → yield @ Ring 2 | Ring 2: pass rate 14.0 points below the rest of the wafer; hard bin 6 (Speed) is 14.8 points higher — about 36 dies lost (also seen as 3 clusters)  [Hard bin 6 (Speed) → hardBin @ Ring 2]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 6 smaller findings not listed above."
+    "1. (high, 2.8%) → yield @ Ring 2 | Ring 2: pass rate 14.0 points below the rest of the wafer; hard bin 6 (Speed) is 14.8 points higher — about 36 dies lost (also seen as Cluster at (6, -8))  [Hard bin 6 (Speed) → hardBin @ Ring 2]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
    ],
    "W02": [
     "Yield 92.2% (1,313 dies; pass bin 1).",
-    "1. (medium, 2.8%) → yield @ Ring 2 | Ring 2: pass rate 14.3 points below the rest of the wafer; hard bin 6 (Speed) is 15.6 points higher — about 37 dies lost (also seen as 4 clusters)  [Hard bin 6 (Speed) → hardBin @ Ring 2]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
+    "1. (medium, 2.8%) → yield @ Ring 2 | Ring 2: pass rate 14.3 points below the rest of the wafer; hard bin 6 (Speed) is 15.6 points higher — about 37 dies lost (also seen as Cluster at (0, -10))  [Hard bin 6 (Speed) → hardBin @ Ring 2]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 8 smaller findings not listed above."
    ],
    "W03": [
     "Yield 92.9% (1,313 dies; pass bin 1).",
-    "1. (high, 3.0%) → yield @ Ring 2 | Ring 2: pass rate 15.1 points below the rest of the wafer; hard bin 6 (Speed) is 16.4 points higher — about 39 dies lost (also seen as 5 clusters)  [Hard bin 6 (Speed) → hardBin @ Ring 2]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 6 smaller findings not listed above."
+    "1. (high, 3.0%) → yield @ Ring 2 | Ring 2: pass rate 15.1 points below the rest of the wafer; hard bin 6 (Speed) is 16.4 points higher — about 39 dies lost (also seen as 3 clusters)  [Hard bin 6 (Speed) → hardBin @ Ring 2]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
    ]
   }
  },
@@ -270,27 +270,27 @@
   "wafers": {
    "W01": [
     "Yield 94.8% (1,313 dies; pass bin 1).",
-    "1. (medium, 1.4%) → yield @ Sector NE | Sector NE: pass rate 12.2 points below the other sectors; hard bin 3 (Open) is 12.3 points higher — about 19 dies lost (also seen as Cluster at (11, 8), Cluster at (4, 5), NE quadrant)  [Hard bin 3 (Open) → hardBin @ Sector NE]",
+    "1. (medium, 1.4%) → yield @ Sector NE | Sector NE: pass rate 12.2 points below the other sectors; hard bin 3 (Open) is 12.3 points higher — about 19 dies lost (also seen as NE quadrant, Cluster at (11, 8), Cluster at (4, 5))  [Hard bin 3 (Open) → hardBin @ Sector NE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 11 smaller findings not listed above."
    ],
    "W02": [
     "Yield 95.7% (1,313 dies; pass bin 1).",
-    "1. (medium, 1.1%) → yield @ Sector NE | Sector NE: pass rate 9.6 points below the other sectors; mostly hard bin 3 (Open) accounts for 8.2 of those points — about 15 dies lost (also seen as Cluster at (10, 8), Cluster at (3, 4), Ring 1 (core))  [Hard bin 3 (Open) → hardBin @ Sector NE]",
+    "1. (medium, 1.1%) → yield @ Sector NE | Sector NE: pass rate 9.6 points below the other sectors; mostly hard bin 3 (Open) accounts for 8.2 of those points — about 15 dies lost (also seen as Ring 1 (core), Cluster at (10, 8), Cluster at (3, 4))  [Hard bin 3 (Open) → hardBin @ Sector NE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 8 smaller findings not listed above."
    ],
    "W03": [
     "Yield 95.0% (1,313 dies; pass bin 1).",
-    "1. (high, 2.2%) → yield @ Rings 1–2 | Rings 1–2: pass rate 8.4 points below the rest of the wafer; mostly hard bin 3 (Open) accounts for 6.9 of those points — about 29 dies lost (also seen as 3 clusters, Sector NE, NE quadrant)  [Hard bin 3 (Open) → hardBin @ Rings 1–2]",
+    "1. (high, 2.2%) → yield @ Rings 1–2 | Rings 1–2: pass rate 8.4 points below the rest of the wafer; mostly hard bin 3 (Open) accounts for 6.9 of those points — about 29 dies lost (also seen as Sector NE, NE quadrant, Cluster at (6, 6), Cluster at (-8, -3))  [Hard bin 3 (Open) → hardBin @ Rings 1–2]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 8 smaller findings not listed above."
    ],
    "W04": [
     "Yield 95.4% (1,313 dies; pass bin 1).",
-    "1. (medium, 1.0%) → yield @ Sector NE | Center cluster pattern. Sector NE: pass rate 8.6 points below the other sectors; hard bin 3 (Open) is 9.8 points higher — about 13 dies lost (also seen as Cluster at (3, 4), Cluster at (12, 9), Ring 1 (core), NE quadrant)  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 3 (Open) → hardBin @ Sector NE]",
+    "1. (medium, 1.0%) → yield @ Sector NE | Center cluster pattern. Sector NE: pass rate 8.6 points below the other sectors; hard bin 3 (Open) is 9.8 points higher — about 13 dies lost (also seen as Ring 1 (core), NE quadrant, Cluster at (3, 4))  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 3 (Open) → hardBin @ Sector NE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
    ],
    "W05": [
     "Yield 95.2% (1,313 dies; pass bin 1).",
-    "1. (medium, 1.1%) → yield @ Sector NE | Sector NE: pass rate 9.0 points below the other sectors; hard bin 3 (Open) is 9.2 points higher — about 14 dies lost (also seen as 3 clusters, Ring 1 (core))  [Hard bin 3 (Open) → hardBin @ Sector NE]",
+    "1. (medium, 1.1%) → yield @ Sector NE | Sector NE: pass rate 9.0 points below the other sectors; hard bin 3 (Open) is 9.2 points higher — about 14 dies lost (also seen as Ring 1 (core), 3 clusters)  [Hard bin 3 (Open) → hardBin @ Sector NE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 10 smaller findings not listed above."
    ],
    "W06": [
@@ -300,13 +300,13 @@
    ],
    "W07": [
     "Yield 95.0% (1,313 dies; pass bin 1).",
-    "1. (medium, 1.4%) → yield @ Sector NE | Center cluster pattern. Sector NE: pass rate 11.8 points below the other sectors; hard bin 3 (Open) is 12.0 points higher — about 18 dies lost (also seen as Cluster at (1, 3), NE quadrant)  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 3 (Open) → hardBin @ Sector NE]",
+    "1. (medium, 1.4%) → yield @ Sector NE | Center cluster pattern. Sector NE: pass rate 11.8 points below the other sectors; hard bin 3 (Open) is 12.0 points higher — about 18 dies lost (also seen as NE quadrant, Cluster at (1, 3))  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 3 (Open) → hardBin @ Sector NE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
    ],
    "W08": [
     "Yield 95.3% (1,313 dies; pass bin 1).",
-    "1. (medium, 1.3%) → yield @ Sector NE | Sector NE: pass rate 10.8 points below the other sectors; hard bin 3 (Open) is 10.9 points higher — about 17 dies lost (also seen as Cluster at (9, 7), NE quadrant)  [Hard bin 3 (Open) → hardBin @ Sector NE]",
-    "Compared: 3 hard bins, the ring, quadrant and sector regions. 13 smaller findings not listed above."
+    "1. (medium, 1.3%) → yield @ Sector NE | Center cluster pattern. Sector NE: pass rate 10.8 points below the other sectors; hard bin 3 (Open) is 10.9 points higher — about 17 dies lost (also seen as NE quadrant, Cluster at (9, 7))  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 3 (Open) → hardBin @ Sector NE]",
+    "Compared: 3 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
    ]
   }
  },
@@ -329,7 +329,7 @@
    ],
    "W03": [
     "Yield 95.4% (1,313 dies; pass bin 1).",
-    "1. (high, 2.3%) → yield @ SE | SE quadrant: pass rate 9.3 points below the rest of the wafer; hard bin 5 (Leakage) is 9.8 points higher — about 30 dies lost (also seen as Sector SE, Cluster at (9, -6), Ring 2)  [Hard bin 5 (Leakage) → hardBin @ SE]",
+    "1. (high, 2.3%) → yield @ SE | SE quadrant: pass rate 9.3 points below the rest of the wafer; hard bin 5 (Leakage) is 9.8 points higher — about 30 dies lost (also seen as Sector SE, Ring 2, Cluster at (9, -6))  [Hard bin 5 (Leakage) → hardBin @ SE]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 10 smaller findings not listed above."
    ],
    "W04": [
@@ -352,33 +352,33 @@
  "edge-arc": {
   "lot": [
    "Yield 93.9% (mean of 5 wafers, 6,565 dies; pass bin 1), range 93.1–94.7%.",
-   "1. (high, 4.0%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 5/5 wafers. Ring 4 (edge): pass rate 9.8 points below the rest of the wafer on 5/5 wafers; hard bin 5 (Leakage) is 10.0 points higher — about 263 dies lost (also seen as Quadrants NE & NW, Sector N)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 11 smaller findings not listed above."
+   "1. (high, 4.0%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 5/5 wafers. Ring 4 (edge): pass rate 9.8 points below the rest of the wafer on 5/5 wafers; hard bin 5 (Leakage) is 10.0 points higher — about 263 dies lost (also seen as NW quadrant, Quadrants NE & NW, Sector N)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 10 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 93.7% (1,313 dies; pass bin 1).",
-    "1. (high, 4.0%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 9.8 points below the rest of the wafer; mostly hard bin 5 (Leakage) accounts for 9.3 of those points — about 53 dies lost (also seen as Sector N, Edge arc ~N, NW quadrant)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 4.0%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 9.8 points below the rest of the wafer; mostly hard bin 5 (Leakage) accounts for 9.3 of those points — about 53 dies lost (also seen as Sector N, NW quadrant, Edge arc ~N)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 8 smaller findings not listed above."
    ],
    "W02": [
     "Yield 93.2% (1,313 dies; pass bin 1).",
-    "1. (high, 4.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 10.6 points below the rest of the wafer; mostly hard bin 5 (Leakage) accounts for 10.3 of those points — about 57 dies lost (also seen as Sector N, Sector NE, Edge arc ~NNW, Edge arc ~NNE, NE quadrant)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 4.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 10.6 points below the rest of the wafer; mostly hard bin 5 (Leakage) accounts for 10.3 of those points — about 57 dies lost (also seen as Sector N, Sector NE, NE quadrant, Edge arc ~NNW, Edge arc ~NNE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 13 smaller findings not listed above."
    ],
    "W03": [
     "Yield 93.1% (1,313 dies; pass bin 1).",
-    "1. (high, 4.8%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 11.7 points below the rest of the wafer; hard bin 5 (Leakage) is 11.9 points higher — about 63 dies lost (also seen as Sector N, Edge arc ~N, Quadrants NE & NW, NE quadrant)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 4.8%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 11.7 points below the rest of the wafer; hard bin 5 (Leakage) is 11.9 points higher — about 63 dies lost (also seen as Sector N, Quadrants NE & NW, NE quadrant, Edge arc ~N)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
    ],
    "W04": [
     "Yield 94.6% (1,313 dies; pass bin 1).",
-    "1. (high, 3.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 9.1 points below the rest of the wafer; hard bin 5 (Leakage) is 9.5 points higher — about 49 dies lost (also seen as Sector N, Edge arc ~N, Quadrants NE & NW, NW quadrant)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 3.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 9.1 points below the rest of the wafer; hard bin 5 (Leakage) is 9.5 points higher — about 49 dies lost (also seen as Sector N, Quadrants NE & NW, NW quadrant, Edge arc ~N)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
    ],
    "W05": [
     "Yield 94.7% (1,313 dies; pass bin 1).",
-    "1. (high, 3.1%) → yield @ Ring 4 (edge) | Scratch pattern. Ring 4 (edge): pass rate 7.7 points below the rest of the wafer; hard bin 5 (Leakage) is 8.8 points higher — about 41 dies lost (also seen as Sector N, Edge arc ~N, Edge arc ~NNE, NW quadrant)  [Scratch pattern → spatialPattern @ Scratch; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 3.1%) → yield @ Ring 4 (edge) | Scratch pattern. Ring 4 (edge): pass rate 7.7 points below the rest of the wafer; hard bin 5 (Leakage) is 8.8 points higher — about 41 dies lost (also seen as Sector N, NW quadrant, Edge arc ~N, Edge arc ~NNE)  [Scratch pattern → spatialPattern @ Scratch; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
    ]
   }
@@ -473,7 +473,7 @@
    "W08": [
     "Yield 90.6% (1,313 dies; pass bin 1).",
     "nothing: Nothing stands out: no region or fail bin costs as much as 1.0 yield points.",
-    "Compared: 3 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "Compared: 3 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -481,33 +481,33 @@
   "lot": [
    "Yield 87.3% (mean of 5 wafers, 6,565 dies; pass bins 1, 2), range 86.6–88.0%.",
    "1. (high, 10.4%) → yield @ Ring 4 (edge) | Edge-ring pattern on 5/5 wafers. Ring 4 (edge): pass rate 25.5 points below the rest of the wafer on 5/5 wafers; hard bin 5 (Leakage) is 26.3 points higher — about 683 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 3 smaller findings not listed above."
+   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). Nothing else was found."
   ],
   "wafers": {
    "W01": [
     "Yield 86.6% (1,313 dies; pass bins 1, 2).",
-    "1. (high, 11.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 28.7 points below the rest of the wafer; hard bin 5 (Leakage) is 29.1 points higher — about 154 dies lost (also seen as 8 edge arcs, Sector S, SW quadrant)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+    "1. (high, 11.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 28.7 points below the rest of the wafer; hard bin 5 (Leakage) is 29.1 points higher — about 154 dies lost (also seen as 3 edge arcs, Sector S, SW quadrant)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W02": [
     "Yield 87.6% (1,313 dies; pass bins 1, 2).",
-    "1. (high, 9.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 23.8 points below the rest of the wafer; hard bin 5 (Leakage) is 25.0 points higher — about 128 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+    "1. (high, 9.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 23.8 points below the rest of the wafer; hard bin 5 (Leakage) is 25.0 points higher — about 128 dies lost (also seen as Edge arc ~NNW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W03": [
     "Yield 87.8% (1,313 dies; pass bins 1, 2).",
-    "1. (high, 9.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.2 points below the rest of the wafer; hard bin 5 (Leakage) is 24.6 points higher — about 130 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 9.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.2 points below the rest of the wafer; hard bin 5 (Leakage) is 24.6 points higher — about 130 dies lost (also seen as Edge arc ~N, Edge arc ~ESE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W04": [
     "Yield 86.6% (1,313 dies; pass bins 1, 2).",
-    "1. (high, 11.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.2 points below the rest of the wafer; hard bin 5 (Leakage) is 27.8 points higher — about 146 dies lost (also seen as 6 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 11.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.2 points below the rest of the wafer; hard bin 5 (Leakage) is 27.8 points higher — about 146 dies lost (also seen as 4 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W05": [
     "Yield 88.0% (1,313 dies; pass bins 1, 2).",
-    "1. (high, 9.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 23.5 points below the rest of the wafer; hard bin 5 (Leakage) is 25.2 points higher — about 126 dies lost (also seen as 9 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 9.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 23.5 points below the rest of the wafer; hard bin 5 (Leakage) is 25.2 points higher — about 126 dies lost (also seen as Edge arc ~SSW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -515,33 +515,33 @@
   "lot": [
    "Yield 69.5% (mean of 5 wafers, 6,565 dies; pass bin 1), range 67.3–71.1%.",
    "1. (high, 9.0%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 5/5 wafers. Ring 4 (edge): pass rate 22.1 points below the rest of the wafer on 5/5 wafers; hard bin 5 (Leakage) is 27.2 points higher — about 593 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 4 smaller findings not listed above."
+   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 1 smaller finding not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 70.9% (1,313 dies; pass bin 1).",
     "1. (high, 10.1%) → hardBin @ Ring 4 (edge) | Ring 4 (edge): hard bin 5 (Leakage) 24.8 points higher than the rest of the wafer — about 133 dies lost  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
    ],
    "W02": [
     "Yield 69.0% (1,313 dies; pass bin 1).",
     "1. (high, 9.8%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 23.9 points below the rest of the wafer; hard bin 5 (Leakage) is 27.4 points higher — about 128 dies lost  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
    ],
    "W03": [
     "Yield 71.1% (1,313 dies; pass bin 1).",
     "1. (high, 9.7%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 23.7 points below the rest of the wafer; hard bin 5 (Leakage) is 26.3 points higher — about 127 dies lost  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
    ],
    "W04": [
     "Yield 67.3% (1,313 dies; pass bin 1).",
     "1. (high, 9.6%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 23.6 points below the rest of the wafer; hard bin 5 (Leakage) is 28.2 points higher — about 127 dies lost  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
    ],
    "W05": [
     "Yield 69.2% (1,313 dies; pass bin 1).",
     "1. (high, 8.4%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 20.5 points below the rest of the wafer; hard bin 5 (Leakage) is 29.3 points higher — about 110 dies lost  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
    ]
   }
  },
@@ -549,28 +549,28 @@
   "lot": [
    "Yield 87.4% (mean of 4 wafers, 5,252 dies; pass bins 3, 5), range 86.8–88.1%.",
    "1. (high, 10.3%) → yield @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 25.1 points below the rest of the wafer on 4/4 wafers; hard bin 7 (Leakage) is 26.3 points higher — about 539 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 3 smaller findings not listed above."
+   "Compared: 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). Nothing else was found."
   ],
   "wafers": {
    "W01": [
     "Yield 88.1% (1,313 dies; pass bins 3, 5).",
-    "1. (high, 10.0%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.4 points below the rest of the wafer; hard bin 7 (Leakage) is 24.6 points higher — about 131 dies lost (also seen as 6 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.0%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 24.4 points below the rest of the wafer; hard bin 7 (Leakage) is 24.6 points higher — about 131 dies lost (also seen as Edge arc ~S, Edge arc ~ENE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W02": [
     "Yield 86.9% (1,313 dies; pass bins 3, 5).",
-    "1. (high, 10.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.5 points below the rest of the wafer; hard bin 7 (Leakage) is 27.2 points higher — about 137 dies lost (also seen as 5 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.5 points below the rest of the wafer; hard bin 7 (Leakage) is 27.2 points higher — about 137 dies lost (also seen as 3 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W03": [
     "Yield 86.8% (1,313 dies; pass bins 3, 5).",
-    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 7 (Leakage) is 27.2 points higher — about 138 dies lost (also seen as 6 edge arcs, NW quadrant)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 7 (Leakage) is 27.2 points higher — about 138 dies lost (also seen as 3 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
     "Compared: 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
    ],
    "W04": [
     "Yield 87.6% (1,313 dies; pass bins 3, 5).",
-    "1. (high, 10.2%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.1 points below the rest of the wafer; hard bin 7 (Leakage) is 25.9 points higher — about 134 dies lost (also seen as 11 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.2%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.1 points below the rest of the wafer; hard bin 7 (Leakage) is 25.9 points higher — about 134 dies lost (also seen as Edge arc ~W)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -578,28 +578,28 @@
   "lot": [
    "Yield 81.4% (mean of 4 wafers, 5,252 dies; pass bin 1), range 79.6–82.9%.",
    "1. (high, 16.7%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 41.0 points below the rest of the wafer on 4/4 wafers; hard bin 6 (Speed) is 22.6 points higher, hard bin 5 (Leakage) 18.8 points higher — about 880 dies lost. VT is outside its limits (487 low, 1 high) on 488 dies, 485 of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); VT → test 101]",
-   "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 11 smaller findings not listed above."
+   "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 2 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 82.0% (1,313 dies; pass bin 1).",
-    "1. (high, 16.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 40.2 points below the rest of the wafer; hard bin 6 (Speed) is 22.9 points higher, hard bin 5 (Leakage) 18.1 points higher — about 216 dies lost (also seen as Cluster at (-11, -13), 4 edge arcs). VT is below its low limit on 124 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); VT → test 101]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
+    "1. (high, 16.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 40.2 points below the rest of the wafer; hard bin 6 (Speed) is 22.9 points higher, hard bin 5 (Leakage) 18.1 points higher — about 216 dies lost (also seen as Edge arc ~ESE, Edge arc ~NNE, Cluster at (-11, -13)). VT is below its low limit on 124 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); VT → test 101]",
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W02": [
     "Yield 82.9% (1,313 dies; pass bin 1).",
-    "1. (high, 14.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 36.6 points below the rest of the wafer; hard bin 6 (Speed) is 20.7 points higher, hard bin 5 (Leakage) 16.8 points higher — about 196 dies lost (also seen as 7 edge arcs). VT is outside its limits (112 low, 1 high) on 113 dies, 111 of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); VT → test 101]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
+    "1. (high, 14.9%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 36.6 points below the rest of the wafer; hard bin 6 (Speed) is 20.7 points higher, hard bin 5 (Leakage) 16.8 points higher — about 196 dies lost (also seen as Edge arc ~WSW, Edge arc ~SE). VT is outside its limits (112 low, 1 high) on 113 dies, 111 of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); VT → test 101]",
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W03": [
     "Yield 81.2% (1,313 dies; pass bin 1).",
-    "1. (high, 17.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 42.9 points below the rest of the wafer; hard bin 5 (Leakage) accounts for 20.9 of those points, hard bin 6 (Speed) for 20.9 — about 230 dies lost (also seen as 7 edge arcs). VT is below its low limit on 112 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); VT → test 101]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
+    "1. (high, 17.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 42.9 points below the rest of the wafer; hard bin 5 (Leakage) accounts for 20.9 of those points, hard bin 6 (Speed) for 20.9 — about 230 dies lost (also seen as 4 edge arcs). VT is below its low limit on 112 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); VT → test 101]",
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W04": [
     "Yield 79.6% (1,313 dies; pass bin 1).",
     "1. (high, 18.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 44.3 points below the rest of the wafer; hard bin 6 (Speed) is 25.7 points higher, hard bin 5 (Leakage) 19.6 points higher — about 238 dies lost (also seen as Cluster at (-13, 11), Edge arc ~SE). VT is below its low limit on 139 dies, 138 of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge); VT → test 101]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
    ]
   }
  },
@@ -659,7 +659,7 @@
    "W01": [
     "Yield 93.1% (1,313 dies; pass bin 1).",
     "1. (high, 5.1%) → test 102 | IDSAT is outside its limits (67 low, 1 high) on 68 of 1,313 dies (5.2%); 1 of them are binned as passing, so about 67 dies lost",
-    "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W02": [
     "Yield 93.1% (1,313 dies; pass bin 1).",
@@ -669,7 +669,7 @@
    "W03": [
     "Yield 92.5% (1,313 dies; pass bin 1).",
     "1. (high, 5.1%) → test 102 | IDSAT is outside its limits (67 low, 3 high) on 70 of 1,313 dies (5.3%); 3 of them are binned as passing, so about 67 dies lost",
-    "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+    "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W04": [
     "Yield 92.5% (1,313 dies; pass bin 1).",
@@ -691,33 +691,33 @@
  "test-fails-in-quadrant": {
   "lot": [
    "Yield 90.7% (mean of 5 wafers, 6,565 dies; pass bin 1), range 90.2–91.1%.",
-   "1. (high, 7.1%) → hardBin @ SW | SW quadrant: pass rate 28.5 points below the rest of the wafer on 5/5 wafers; hard bin 6 (Speed) is 29.8 points higher — about 468 dies lost (also seen as Sectors SW–S). RING_OSC is below its low limit on 489 dies, 488 of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
-   "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 21 smaller findings not listed above."
+   "1. (high, 7.1%) → hardBin @ SW | SW quadrant: pass rate 28.5 points below the rest of the wafer on 5/5 wafers; hard bin 6 (Speed) is 29.8 points higher — about 468 dies lost (also seen as Sector SW, Sectors SW–S). RING_OSC is below its low limit on 489 dies, 488 of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
+   "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 16 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 90.8% (1,313 dies; pass bin 1).",
-    "1. (high, 6.4%) → yield @ SW | SW quadrant: pass rate 25.5 points below the rest of the wafer; hard bin 6 (Speed) is 27.4 points higher — about 84 dies lost (also seen as Sector SW, 3 edge arcs, 3 clusters). RING_OSC is below its low limit on 90 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
+    "1. (high, 6.4%) → yield @ SW | SW quadrant: pass rate 25.5 points below the rest of the wafer; hard bin 6 (Speed) is 27.4 points higher — about 84 dies lost (also seen as Sector SW, Edge arc ~SW). RING_OSC is below its low limit on 90 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
     "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
    ],
    "W02": [
     "Yield 90.4% (1,313 dies; pass bin 1).",
-    "1. (high, 7.2%) → yield @ SW | SW quadrant: pass rate 28.7 points below the rest of the wafer; hard bin 6 (Speed) is 30.8 points higher — about 94 dies lost (also seen as Sectors W–S, 6 clusters, Edge arc ~WSW). RING_OSC is below its low limit on 101 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
+    "1. (high, 7.2%) → yield @ SW | SW quadrant: pass rate 28.7 points below the rest of the wafer; hard bin 6 (Speed) is 30.8 points higher — about 94 dies lost (also seen as Sectors W–S, 4 clusters, Edge arc ~WSW). RING_OSC is below its low limit on 101 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
     "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
    ],
    "W03": [
     "Yield 90.9% (1,313 dies; pass bin 1).",
-    "1. (high, 7.2%) → yield @ SW | SW quadrant: pass rate 28.9 points below the rest of the wafer; hard bin 6 (Speed) is 29.6 points higher — about 95 dies lost (also seen as Sector SW, Cluster at (-11, -5), Cluster at (-2, -6), Edge arc ~SSW, Edge arc ~SW). RING_OSC is below its low limit on 98 dies, 97 of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
+    "1. (high, 7.2%) → yield @ SW | SW quadrant: pass rate 28.9 points below the rest of the wafer; hard bin 6 (Speed) is 29.6 points higher — about 95 dies lost (also seen as Sector SW, Edge arc ~SSW, Cluster at (-11, -5)). RING_OSC is below its low limit on 98 dies, 97 of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
     "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. 10 smaller findings not listed above."
    ],
    "W04": [
     "Yield 90.2% (1,313 dies; pass bin 1).",
-    "1. (high, 7.9%) → yield @ SW | SW quadrant: pass rate 31.6 points below the rest of the wafer; hard bin 6 (Speed) is 32.0 points higher — about 104 dies lost (also seen as Sector SW, Cluster at (-8, -9), Cluster at (-15, -5), 3 edge arcs). RING_OSC is below its low limit on 105 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
+    "1. (high, 7.9%) → yield @ SW | SW quadrant: pass rate 31.6 points below the rest of the wafer; hard bin 6 (Speed) is 32.0 points higher — about 104 dies lost (also seen as Sector SW, Cluster at (-8, -9), Edge arc ~SSW). RING_OSC is below its low limit on 105 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
     "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
    ],
    "W05": [
     "Yield 91.1% (1,313 dies; pass bin 1).",
-    "1. (high, 7.0%) → yield @ SW | SW quadrant: pass rate 27.9 points below the rest of the wafer; hard bin 6 (Speed) is 29.0 points higher — about 92 dies lost (also seen as Sectors SW–S, 4 edge arcs, Cluster at (-3, -8), Cluster at (-7, -3)). RING_OSC is below its low limit on 95 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
+    "1. (high, 7.0%) → yield @ SW | SW quadrant: pass rate 27.9 points below the rest of the wafer; hard bin 6 (Speed) is 29.0 points higher — about 92 dies lost (also seen as Sectors SW–S, 3 edge arcs, Cluster at (-3, -8)). RING_OSC is below its low limit on 95 dies, all of them in SW quadrant  [Hard bin 6 (Speed) → hardBin @ SW; RING_OSC → test 103]",
     "Compared: 3 tests, 4 hard bins, the ring, quadrant and sector regions. 6 smaller findings not listed above."
    ]
   }
@@ -726,28 +726,28 @@
   "lot": [
    "Yield 85.7% (mean of 4 wafers, 5,252 dies; pass bin 1), range 84.5–86.7%.",
    "1. (high, 12.1%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 29.7 points below the rest of the wafer on 4/4 wafers; hard bin 7 (Functional) is 30.0 points higher — about 636 dies lost. SCAN fails on 644 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
-   "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 3 smaller findings not listed above."
+   "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). Nothing else was found."
   ],
   "wafers": {
    "W01": [
     "Yield 85.5% (1,313 dies; pass bin 1).",
-    "1. (high, 12.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 30.3 points below the rest of the wafer; hard bin 7 (Functional) is 30.4 points higher — about 162 dies lost (also seen as 8 edge arcs). SCAN fails on 163 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
-    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 12.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 30.3 points below the rest of the wafer; hard bin 7 (Functional) is 30.4 points higher — about 162 dies lost (also seen as Edge arc ~W, Edge arc ~NNW). SCAN fails on 163 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
+    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W02": [
     "Yield 86.7% (1,313 dies; pass bin 1).",
-    "1. (high, 11.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.6 points below the rest of the wafer; hard bin 7 (Functional) is 28.0 points higher — about 148 dies lost (also seen as 5 edge arcs). SCAN fails on 150 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
-    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 11.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 27.6 points below the rest of the wafer; hard bin 7 (Functional) is 28.0 points higher — about 148 dies lost (also seen as Edge arc ~NNE, Edge arc ~WSW). SCAN fails on 150 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
+    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W03": [
     "Yield 86.4% (1,313 dies; pass bin 1).",
-    "1. (high, 12.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 30.2 points below the rest of the wafer; mostly hard bin 7 (Functional) accounts for 29.9 of those points — about 162 dies lost (also seen as 9 edge arcs). SCAN fails on 160 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
-    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 12.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 30.2 points below the rest of the wafer; mostly hard bin 7 (Functional) accounts for 29.9 of those points — about 162 dies lost (also seen as 5 edge arcs). SCAN fails on 160 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
+    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W04": [
     "Yield 84.5% (1,313 dies; pass bin 1).",
-    "1. (high, 12.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 30.5 points below the rest of the wafer; hard bin 7 (Functional) is 31.9 points higher — about 163 dies lost (also seen as 8 edge arcs). SCAN fails on 171 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
-    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 12.4%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 30.5 points below the rest of the wafer; hard bin 7 (Functional) is 31.9 points higher — about 163 dies lost (also seen as 3 edge arcs). SCAN fails on 171 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 7 (Functional) → hardBin @ Ring 4 (edge); SCAN → test 201]",
+    "Compared: 4 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -755,28 +755,28 @@
   "lot": [
    "Yield 81.0% (mean of 4 wafers, 5,252 dies; pass bin 1), range 80.1–81.9%.",
    "1. (high, 17.2%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 42.1 points below the rest of the wafer on 4/4 wafers; hard bin 6 (Speed) is 24.0 points higher, hard bin 5 (Leakage) 19.0 points higher — about 903 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 11 smaller findings not listed above."
+   "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 2 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
     "Yield 80.1% (1,313 dies; pass bin 1).",
     "1. (high, 18.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 44.9 points below the rest of the wafer; hard bin 6 (Speed) is 26.1 points higher, hard bin 5 (Leakage) 19.4 points higher — about 241 dies lost (also seen as Cluster at (1, 17), Edge arc ~SSE, Edge arc ~SW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 5 smaller findings not listed above."
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W02": [
     "Yield 80.1% (1,313 dies; pass bin 1).",
-    "1. (high, 17.2%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 42.1 points below the rest of the wafer; hard bin 6 (Speed) is 22.4 points higher, hard bin 5 (Leakage) 21.6 points higher — about 226 dies lost (also seen as 5 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
+    "1. (high, 17.2%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 42.1 points below the rest of the wafer; hard bin 6 (Speed) is 22.4 points higher, hard bin 5 (Leakage) 21.6 points higher — about 226 dies lost (also seen as Edge arc ~E, Edge arc ~WSW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
    ],
    "W03": [
     "Yield 81.9% (1,313 dies; pass bin 1).",
-    "1. (high, 16.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 40.6 points below the rest of the wafer; hard bin 6 (Speed) is 22.8 points higher, hard bin 5 (Leakage) 18.1 points higher — about 218 dies lost (also seen as 6 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
+    "1. (high, 16.6%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 40.6 points below the rest of the wafer; hard bin 6 (Speed) is 22.8 points higher, hard bin 5 (Leakage) 18.1 points higher — about 218 dies lost (also seen as 5 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W04": [
     "Yield 81.9% (1,313 dies; pass bin 1).",
-    "1. (high, 16.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 40.9 points below the rest of the wafer; hard bin 6 (Speed) is 24.6 points higher, hard bin 5 (Leakage) 16.8 points higher — about 219 dies lost (also seen as 8 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
+    "1. (high, 16.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 40.9 points below the rest of the wafer; hard bin 6 (Speed) is 24.6 points higher, hard bin 5 (Leakage) 16.8 points higher — about 219 dies lost (also seen as 4 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -807,14 +807,14 @@
  "one-wafer": {
   "lot": [
    "Yield 87.6% (1,313 dies; pass bin 1).",
-   "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 5 (Leakage) is 25.9 points higher — about 138 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+   "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 5 (Leakage) is 25.9 points higher — about 138 dies lost (also seen as Edge arc ~SSE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+   "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
   ],
   "wafers": {
    "W01": [
     "Yield 87.6% (1,313 dies; pass bin 1).",
-    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 5 (Leakage) is 25.9 points higher — about 138 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 1 smaller finding not listed above."
+    "1. (high, 10.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 25.7 points below the rest of the wafer; hard bin 5 (Leakage) is 25.9 points higher — about 138 dies lost (also seen as Edge arc ~SSE)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ]
   }
  },
@@ -822,7 +822,7 @@
   "lot": [
    "Yield 88.3% (mean of 2 wafers, 2,626 dies; pass bin 1), range 87.8–88.8%.",
    "1. (high, 9.8%) → hardBin @ SW | SW quadrant: pass rate 39.3 points below the rest of the wafer on 2/2 wafers; hard bin 6 (Speed) is 39.6 points higher — about 258 dies lost (also seen as Sectors W–SW)  [Hard bin 6 (Speed) → hardBin @ SW]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions. 14 smaller findings not listed above."
+   "Compared: 4 hard bins, the ring, quadrant and sector regions. 13 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
@@ -832,7 +832,7 @@
    ],
    "W02": [
     "Yield 88.8% (1,313 dies; pass bin 1).",
-    "1. (high, 9.7%) → yield @ SW | SW quadrant: pass rate 38.7 points below the rest of the wafer; hard bin 6 (Speed) is 39.0 points higher — about 127 dies lost (also seen as Sector SW, Sectors W–S, Cluster at (-8, -9), Edge arc ~SW, Edge arc ~W)  [Hard bin 6 (Speed) → hardBin @ SW]",
+    "1. (high, 9.7%) → yield @ SW | SW quadrant: pass rate 38.7 points below the rest of the wafer; hard bin 6 (Speed) is 39.0 points higher — about 127 dies lost (also seen as Sectors W–S, Sector SW, Cluster at (-8, -9), Edge arc ~SW)  [Hard bin 6 (Speed) → hardBin @ SW]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
    ]
   }
@@ -844,7 +844,7 @@
    "2. (medium, 2.6%) → hardBin @ NE | NE quadrant: hard bin 6 (Speed), 273 dies",
    "3. (medium, 2.5%) → hardBin @ Ring 1 (core) | Ring 1 (core): pass rate, 267 dies",
    "watch → test 102 | IDSAT is outside its limits on 362 dies binned as passing",
-   "Compared: 4 tests, 6 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (1 outlier wafer), the yield trend across the wafers (input order). 21 smaller findings not listed above."
+   "Compared: 4 tests, 6 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (1 outlier wafer), the yield trend across the wafers (input order). 18 smaller findings not listed above."
   ],
   "wafers": {
    "W01": [
@@ -869,7 +869,7 @@
     "2. (high, 4.2%) → yield @ NE | NE quadrant: pass rate, 55 dies",
     "3. (medium, 2.7%) → yield @ Ring 1 (core) | Ring 1 (core): pass rate, 35 dies",
     "watch → test 102 | IDSAT is outside its limits on 56 dies binned as passing",
-    "Compared: 4 tests, 6 hard bins, the ring, quadrant and sector regions. 11 smaller findings not listed above."
+    "Compared: 4 tests, 6 hard bins, the ring, quadrant and sector regions. 8 smaller findings not listed above."
    ],
    "W04": [
     "Yield 80.2% (1,313 dies; pass bin 1).",
@@ -881,16 +881,17 @@
    ],
    "W05": [
     "Yield 83.8% (1,313 dies; pass bin 1).",
-    "1. (medium, 3.3%) → yield @ Ring 1 (core) | Center cluster pattern. Ring 1 (core): pass rate 48.9 points below the rest of the wafer; hard bin 7 (Functional) is 61.2 points higher — about 44 dies lost (also seen as Cluster at (0, 0)). SCAN fails on 62 dies, 55 of them in Ring 1 (core)  [Center cluster pattern → spatialPattern @ Center cluster; Hard bin 7 (Functional) → hardBin @ Ring 1 (core); SCAN → test 201]",
+    "1. (high, 9.4%) → hardBin @ Ring 4 (edge) | Ring 4 (edge): hard bin 5 (Leakage) 22.9 points higher than the rest of the wafer — about 123 dies lost  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "2. (medium, 3.3%) → yield @ Ring 1 (core) | Ring 1 (core): pass rate, 44 dies",
     "watch → test 102 | IDSAT is outside its limits on 56 dies binned as passing",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
    ],
    "W06": [
     "Yield 83.0% (1,313 dies; pass bin 1).",
-    "1. (high, 5.3%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 12.9 points below the rest of the wafer; hard bin 5 (Leakage) is 23.3 points higher — about 69 dies lost (also seen as Sector NE, Sector W, 4 edge arcs)  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
+    "1. (high, 5.3%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 12.9 points below the rest of the wafer; hard bin 5 (Leakage) is 23.3 points higher — about 69 dies lost (also seen as Sector NE, Edge arc ~NE)  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
     "2. (medium, 2.7%) → yield @ Ring 1 (core) | Ring 1 (core): pass rate, 35 dies",
     "watch → test 102 | IDSAT is outside its limits on 49 dies binned as passing",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 6 smaller findings not listed above."
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
    ],
    "W07": [
     "Yield 74.3% (1,313 dies; pass bin 1).",
@@ -898,7 +899,7 @@
     "2. (low, 2.0%) → yield @ Ring 1 (core) | Ring 1 (core): pass rate, 26 dies",
     "3. (low, 1.1%) → test 102 | IDSAT: outside limits, 14 dies lost",
     "watch → test 102 | IDSAT is outside its limits on 33 dies binned as passing",
-    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
+    "Compared: 4 tests, 5 hard bins, the ring, quadrant and sector regions. 6 smaller findings not listed above."
    ],
    "W08": [
     "Yield 82.3% (1,313 dies; pass bin 1).",
@@ -920,32 +921,32 @@
   "wafers": {
    "W01": [
     "Yield 97.1% (1,313 dies; pass bin 1).",
-    "1. (high, 2.6%) → yield @ SE | SE quadrant: pass rate 10.4 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.3 of those points — about 34 dies lost (also seen as Cluster at (8, -6), Sector SE, Ring 2)  [Hard bin 4 (Short) → hardBin @ SE]",
+    "1. (high, 2.6%) → yield @ SE | SE quadrant: pass rate 10.4 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.3 of those points — about 34 dies lost (also seen as Sector SE, Ring 2, Cluster at (8, -6))  [Hard bin 4 (Short) → hardBin @ SE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
    ],
    "W02": [
     "Yield 97.5% (1,313 dies; pass bin 1).",
-    "1. (high, 2.1%) → yield @ SE | SE quadrant: pass rate 8.4 points below the rest of the wafer; hard bin 4 (Short) is 8.5 points higher — about 28 dies lost (also seen as Cluster at (8, -6), Sector SE, Ring 2)  [Hard bin 4 (Short) → hardBin @ SE]",
+    "1. (high, 2.1%) → yield @ SE | SE quadrant: pass rate 8.4 points below the rest of the wafer; hard bin 4 (Short) is 8.5 points higher — about 28 dies lost (also seen as Sector SE, Ring 2, Cluster at (8, -6))  [Hard bin 4 (Short) → hardBin @ SE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 11 smaller findings not listed above."
    ],
    "W03": [
     "Yield 97.0% (1,313 dies; pass bin 1).",
-    "1. (high, 2.4%) → yield @ SE | SE quadrant: pass rate 9.8 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 9.7 of those points — about 32 dies lost (also seen as Cluster at (8, -6), Sector SE, Ring 2)  [Hard bin 4 (Short) → hardBin @ SE]",
+    "1. (high, 2.4%) → yield @ SE | SE quadrant: pass rate 9.8 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 9.7 of those points — about 32 dies lost (also seen as Sector SE, Ring 2, Cluster at (8, -6))  [Hard bin 4 (Short) → hardBin @ SE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
    ],
    "W04": [
     "Yield 97.0% (1,313 dies; pass bin 1).",
-    "1. (high, 2.8%) → yield @ SE | SE quadrant: pass rate 11.4 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.9 of those points — about 37 dies lost (also seen as Cluster at (8, -6), Sector SE, Ring 2)  [Hard bin 4 (Short) → hardBin @ SE]",
+    "1. (high, 2.8%) → yield @ SE | SE quadrant: pass rate 11.4 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.9 of those points — about 37 dies lost (also seen as Sector SE, Ring 2, Cluster at (8, -6))  [Hard bin 4 (Short) → hardBin @ SE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 12 smaller findings not listed above."
    ],
    "W05": [
     "Yield 97.3% (1,313 dies; pass bin 1).",
-    "1. (high, 2.6%) → yield @ SE | SE quadrant: pass rate 10.6 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.6 of those points — about 35 dies lost (also seen as Cluster at (8, -6), Sector SE, Ring 2)  [Hard bin 4 (Short) → hardBin @ SE]",
+    "1. (high, 2.6%) → yield @ SE | SE quadrant: pass rate 10.6 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.6 of those points — about 35 dies lost (also seen as Sector SE, Ring 2, Cluster at (8, -6))  [Hard bin 4 (Short) → hardBin @ SE]",
     "Compared: 2 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
    ],
    "W06": [
     "Yield 97.0% (1,313 dies; pass bin 1).",
-    "1. (high, 2.6%) → yield @ SE | SE quadrant: pass rate 10.3 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.2 of those points — about 34 dies lost (also seen as Cluster at (8, -6), Sector SE, Ring 2)  [Hard bin 4 (Short) → hardBin @ SE]",
+    "1. (high, 2.6%) → yield @ SE | SE quadrant: pass rate 10.3 points below the rest of the wafer; mostly hard bin 4 (Short) accounts for 10.2 of those points — about 34 dies lost (also seen as Sector SE, Ring 2, Cluster at (8, -6))  [Hard bin 4 (Short) → hardBin @ SE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. 9 smaller findings not listed above."
    ]
   }
@@ -954,7 +955,7 @@
   "lot": [
    "Yield 72.8% (mean of 6 wafers, 7,878 dies; pass bin 1), range 71.1–74.4%.",
    "1. (high, 9.3%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 6/6 wafers. Ring 4 (edge): hard bin 5 (Leakage) 22.7 points higher than the rest of the wafer on 6/6 wafers — about 731 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 3 smaller findings not listed above."
+   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). Nothing else was found."
   ],
   "wafers": {
    "W01": [
@@ -985,7 +986,7 @@
    "W06": [
     "Yield 71.7% (1,313 dies; pass bin 1).",
     "1. (high, 10.2%) → hardBin @ Ring 4 (edge) | Ring 4 (edge): hard bin 5 (Leakage) 25.0 points higher than the rest of the wafer — about 134 dies lost  [Hard bin 5 (Leakage) → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 4 smaller findings not listed above."
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
    ]
   }
  },
@@ -996,14 +997,15 @@
    "2. (medium, 2.8%) → hardBin @ NE | NE quadrant: hard bin 9 (Vmin), 205 dies",
    "3. (medium, 2.7%) → hardBin @ SW | SW quadrant: hard bin 10 (Fmax), 202 dies",
    "also (low, 1.1%) → hardBin @ Ring 1 (core) | Ring 1 (core): hard bin 5 (IDDQ), 83 dies",
-   "Compared: 15 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 52 smaller findings not listed above."
+   "Compared: 15 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 51 smaller findings not listed above."
   ],
   "wafers": {
    "S01": [
     "Yield 80.4% (1,861 dies; pass bins 1, 2).",
-    "1. (high, 6.1%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 14.9 points below the rest of the wafer; hard bin 3 (Open / contact) is 11.7 points higher, hard bin 10 (Fmax) 4.3 points higher — about 113 dies lost (also seen as SW quadrant, Sectors W–SW, Sector SW, Edge arc ~SW)  [Hard bin 3 (Open / contact) → hardBin @ Ring 4 (edge); Hard bin 10 (Fmax) → hardBin @ Ring 4 (edge)]",
-    "2. (medium, 2.3%) → hardBin @ Sectors NE–N | Sectors NE–N: hard bin 9 (Vmin), 43 dies",
-    "3. (low, 1.1%) → hardBin @ Ring 1 (core) | Ring 1 (core): hard bin 5 (IDDQ), 21 dies",
+    "1. (high, 6.1%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 14.9 points below the rest of the wafer; hard bin 3 (Open / contact) is 11.7 points higher, hard bin 10 (Fmax) 4.3 points higher — about 113 dies lost  [Hard bin 3 (Open / contact) → hardBin @ Ring 4 (edge); Hard bin 10 (Fmax) → hardBin @ Ring 4 (edge)]",
+    "2. (medium, 3.0%) → hardBin @ SW | SW quadrant: hard bin 10 (Fmax), 56 dies",
+    "3. (medium, 2.3%) → hardBin @ Sectors NE–N | Sectors NE–N: hard bin 9 (Vmin), 43 dies",
+    "also (low, 1.1%) → hardBin @ Ring 1 (core) | Ring 1 (core): hard bin 5 (IDDQ), 21 dies",
     "Compared: 13 hard bins, the ring, quadrant and sector regions. 40 smaller findings not listed above."
    ],
    "S02": [
@@ -1017,7 +1019,7 @@
    "S03": [
     "Yield 78.2% (1,861 dies; pass bins 1, 2).",
     "1. (high, 4.5%) → hardBin @ Ring 4 (edge) | Ring 4 (edge): hard bin 3 (Open / contact) 11.1 points higher than the rest of the wafer, hard bin 9 (Vmin) 4.3 points higher, hard bin 12 (IO leakage) 3.8 points higher — about 84 dies lost  [Hard bin 3 (Open / contact) → hardBin @ Ring 4 (edge); Hard bin 9 (Vmin) → hardBin @ Ring 4 (edge); Hard bin 12 (IO leakage) → hardBin @ Ring 4 (edge)]",
-    "2. (medium, 3.7%) → hardBin @ Sectors E–N | Sectors E–N: hard bin 9 (Vmin), 68 dies",
+    "2. (medium, 3.2%) → hardBin @ NE | NE quadrant: hard bin 9 (Vmin), 59 dies",
     "3. (medium, 3.0%) → hardBin @ SW | SW quadrant: hard bin 10 (Fmax), 56 dies",
     "also (low, 1.3%) → hardBin @ Ring 1 (core) | Ring 1 (core): hard bin 5 (IDDQ), 24 dies",
     "also (low, 1.1%) → hardBin @ Ring 2 | Ring 2: hard bin 4 (Short), 20 dies",
@@ -1027,7 +1029,8 @@
     "Yield 79.0% (1,861 dies; pass bins 1, 2).",
     "1. (high, 4.2%) → hardBin @ Ring 4 (edge) | Ring 4 (edge): hard bin 3 (Open / contact) 10.3 points higher than the rest of the wafer, hard bin 9 (Vmin) 4.3 points higher, hard bin 12 (IO leakage) 4.2 points higher — about 78 dies lost  [Hard bin 3 (Open / contact) → hardBin @ Ring 4 (edge); Hard bin 9 (Vmin) → hardBin @ Ring 4 (edge); Hard bin 12 (IO leakage) → hardBin @ Ring 4 (edge)]",
     "2. (medium, 2.9%) → hardBin @ NE | NE quadrant: hard bin 9 (Vmin), 55 dies",
-    "Compared: 13 hard bins, the ring, quadrant and sector regions. 51 smaller findings not listed above."
+    "3. (medium, 2.5%) → hardBin @ Sectors W–SW | Sectors W–SW: hard bin 10 (Fmax), 46 dies",
+    "Compared: 13 hard bins, the ring, quadrant and sector regions. 45 smaller findings not listed above."
    ]
   }
  },
@@ -1064,38 +1067,38 @@
    "Yield 79.7% (mean of 6 wafers, 29,598 dies; pass bin 1), range 74.0–84.6%.",
    "1. (high, 14.5%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 6/6 wafers. Ring 4 (edge): pass rate 35.8 points below the rest of the wafer on 6/6 wafers; mostly hard bin 2 (Retention) accounts for 19.9 of those points, hard bin 4 for 8.0 — about 4,291 dies lost  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 4 → hardBin @ Ring 4 (edge)]",
    "watch → yield @ Wafers in input order | Yield falls on successive wafers: 84.6% → 74.0% over 6 wafers (input order)",
-   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). 3 smaller findings not listed above."
+   "Compared: 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers), the yield trend across the wafers (input order). Nothing else was found."
   ],
   "wafers": {
    "M01": [
     "Yield 84.6% (4,933 dies; pass bin 1).",
-    "1. (high, 12.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 29.8 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 17.3 of those points, hard bin 3 for 6.8 — about 596 dies lost (also seen as 10 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 3 → hardBin @ Ring 4 (edge)]",
+    "1. (high, 12.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 29.8 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 17.3 of those points, hard bin 3 for 6.8 — about 596 dies lost (also seen as 9 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 3 → hardBin @ Ring 4 (edge)]",
     "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "M02": [
     "Yield 82.7% (4,933 dies; pass bin 1).",
     "1. (high, 14.2%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 35.0 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 19.8 of those points, hard bin 4 for 8.9 — about 700 dies lost (also seen as 7 edge arcs)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 4 → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "M03": [
     "Yield 80.5% (4,933 dies; pass bin 1).",
-    "1. (high, 16.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 39.8 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 21.8 of those points, hard bin 3 for 9.6 — about 795 dies lost (also seen as Edge arc ~WNW, Edge arc ~SW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 3 → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
+    "1. (high, 16.1%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 39.8 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 21.8 of those points, hard bin 3 for 9.6 — about 795 dies lost (also seen as Edge arc ~SW, Edge arc ~WNW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 3 → hardBin @ Ring 4 (edge)]",
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "M04": [
     "Yield 78.8% (4,933 dies; pass bin 1).",
     "1. (high, 16.3%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 40.2 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 23.6 of those points, hard bin 3 for 9.1 — about 803 dies lost (also seen as Edge arc ~NW)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 3 → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 3 smaller findings not listed above."
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "M05": [
     "Yield 77.7% (4,933 dies; pass bin 1).",
     "1. (high, 14.1%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 34.8 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 19.3 of those points, hard bin 4 for 7.9 — about 696 dies lost  [Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 4 → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 10 smaller findings not listed above."
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 7 smaller findings not listed above."
    ],
    "M06": [
     "Yield 74.0% (4,933 dies; pass bin 1).",
     "1. (high, 14.2%) → yield @ Ring 4 (edge) | Ring 4 (edge): pass rate 35.1 points below the rest of the wafer; mostly hard bin 2 (Retention) accounts for 17.8 of those points, hard bin 4 for 9.6 — about 702 dies lost  [Hard bin 2 (Retention) → hardBin @ Ring 4 (edge); Hard bin 4 → hardBin @ Ring 4 (edge)]",
-    "Compared: 4 hard bins, the ring, quadrant and sector regions. 11 smaller findings not listed above."
+    "Compared: 4 hard bins, the ring, quadrant and sector regions. 8 smaller findings not listed above."
    ]
   }
  },
@@ -1103,12 +1106,12 @@
   "lot": [
    "Yield 88.2% (mean of 5 wafers, 3,165 dies; pass bin 1), range 84.8–89.4%.",
    "1. (high, 7.9%) → yield @ NE | NE quadrant: pass rate 31.6 points below the rest of the wafer on 5/5 wafers; mostly hard bin 2 (BVdss Fail) accounts for 21.4 of those points, hard bin 3 for 10.2 — about 251 dies lost (also seen as Sector NE, Sectors NE–N)  [Hard bin 2 (BVdss Fail) → hardBin @ NE; Hard bin 3 → hardBin @ NE]",
-   "Compared: 3 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (1 outlier wafer), the yield trend across the wafers (input order). 3 smaller findings not listed above."
+   "Compared: 3 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (1 outlier wafer), the yield trend across the wafers (input order). 2 smaller findings not listed above."
   ],
   "wafers": {
    "W01@25": [
     "Yield 89.1% (633 dies; pass bin 1).",
-    "1. (high, 6.7%) → yield @ NE | NE quadrant: pass rate 26.6 points below the rest of the wafer; mostly hard bin 2 (BVdss Fail) accounts for 13.4 of those points, hard bin 3 for 13.2 — about 42 dies lost (also seen as Sectors E–NE, Sector NE, Cluster at (6, 5), Edge arc ~NE)  [Hard bin 2 (BVdss Fail) → hardBin @ NE; Hard bin 3 → hardBin @ NE]",
+    "1. (high, 6.7%) → yield @ NE | NE quadrant: pass rate 26.6 points below the rest of the wafer; mostly hard bin 2 (BVdss Fail) accounts for 13.4 of those points, hard bin 3 for 13.2 — about 42 dies lost (also seen as Sectors E–NE, Sector NE, Cluster at (6, 5))  [Hard bin 2 (BVdss Fail) → hardBin @ NE; Hard bin 3 → hardBin @ NE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W02@25": [
@@ -1123,7 +1126,7 @@
    ],
    "W04@25": [
     "Yield 88.5% (633 dies; pass bin 1).",
-    "1. (high, 8.2%) → yield @ NE | NE quadrant: pass rate 32.5 points below the rest of the wafer; mostly hard bin 2 (BVdss Fail) accounts for 23.0 of those points, hard bin 3 for 9.4 — about 52 dies lost (also seen as Sector NE, Sectors NE–N, Cluster at (5, 4), 4 edge arcs)  [Hard bin 2 (BVdss Fail) → hardBin @ NE; Hard bin 3 → hardBin @ NE]",
+    "1. (high, 8.2%) → yield @ NE | NE quadrant: pass rate 32.5 points below the rest of the wafer; mostly hard bin 2 (BVdss Fail) accounts for 23.0 of those points, hard bin 3 for 9.4 — about 52 dies lost (also seen as Sector NE, Sectors NE–N, Cluster at (5, 4), Edge arc ~ENE)  [Hard bin 2 (BVdss Fail) → hardBin @ NE; Hard bin 3 → hardBin @ NE]",
     "Compared: 3 hard bins, the ring, quadrant and sector regions. Nothing else was found."
    ],
    "W05@25": [
