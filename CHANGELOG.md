@@ -131,7 +131,9 @@ under `### Breaking`.
   while the panel is closed and a finding is notable. It replaces the toolbar's Summary icon and the "◂ Summary" tab on the edge of the
   map area, so a closed panel leaves no column behind. The panel's title ends with a close button pointing to the edge it folds into (▸
   for a panel on the right), and the title stays at the top while the panel scrolls. A map without a toolbar, which has no Summary
-  button, shows no close button.
+  button, shows no close button. For half a second after the panel closes, a click where its close button was goes nowhere:
+  closing widens the map or the gallery, which moves an Expand button under the pointer, and a quick second click would
+  otherwise open it.
 - **The Findings section's controls are its severity chips.** The header says how many findings are unusual or notable ("1 unusual,
   2 notable"), also while the section is collapsed. Every finding row ends with the wafer icon of the rows that show their dies on the
   map, and a spatial pattern has a "Show 3 supporting findings" line under it that opens the regional findings it explains (open from

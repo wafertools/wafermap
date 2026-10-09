@@ -125,7 +125,9 @@ const THRESHOLDS = {
   // the Summary panel and the chart captions) took the initial chunk to ~138.3 KB locally; the budget keeps ~1.5% over that.
   // Raised deliberately from 140_000: the Summary panel's "What stands out" rows, part chips and test actions took the
   // initial chunk to ~140.3 KB locally; the budget keeps ~1.5% over that.
-  'wafermap/render (initial)':  142_500,  // gzipped bytes — measured ~140.3 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
+  // Raised deliberately from 142_500: the labelled Summary button, the panel's own close button with its click shield and
+  // the Findings section's labelled expander took the initial chunk to ~142.5 KB locally; the budget keeps ~1% over that.
+  'wafermap/render (initial)':  144_000,  // gzipped bytes — measured ~142.5 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

@@ -50,7 +50,7 @@ import { pooledTestStatsSteps, type CapabilityItem } from '../stats/capability.j
 import { binBreakdownRows, binBreakdownTitle, binCountsFrom, totalOf } from '../stats/binRows.js';
 import { poolFunctionalYield } from '../stats/testPassRate.js';
 import { makeSegmented } from './charts/chartShell.js';
-import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, wireTooltip, type SaveTextHandler } from './toolbar.js';
+import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, wireTooltip, Z_ABOVE2, type SaveTextHandler } from './toolbar.js';
 import { openReportModal } from './guideWindow.js';
 import type { DieListDisplayOptions } from './dieList.js';
 import type { DataTablesInput } from './dataTab.js';
@@ -2879,6 +2879,31 @@ function showFindingFromReport(
   onFindingClick(finding, row);
 }
 
+/** How long {@link shieldClicks} holds: a common double-click interval. */
+const CLICK_SHIELD_MS = 500;
+
+/**
+ * Closing the panel widens what is beside it, and moves another control (a gallery card's or the map's
+ * Expand button) under the pointer, where a second click or a double-click would open it. For a moment
+ * after the panel closes, an invisible shield over the spot the close button held takes those clicks.
+ */
+function shieldClicks(doc: Document, where: DOMRect): void {
+  if (!doc.body || !(where.width > 0 && where.height > 0)) return;
+  const shield = doc.createElement('div');
+  shield.dataset.wmapClickShield = '1';
+  shield.setAttribute('aria-hidden', 'true');
+  Object.assign(shield.style, {
+    position: 'fixed', left: `${where.left - 8}px`, top: `${where.top - 8}px`,
+    width: `${where.width + 16}px`, height: `${where.height + 16}px`,
+    zIndex: Z_ABOVE2, background: 'transparent',
+  });
+  for (const type of ['pointerdown', 'mousedown', 'click', 'dblclick']) {
+    shield.addEventListener(type, e => { e.preventDefault(); e.stopPropagation(); });
+  }
+  doc.body.appendChild(shield);
+  (doc.defaultView ?? window).setTimeout(() => shield.remove(), CLICK_SHIELD_MS);
+}
+
 /** The edge a panel docks against, read by {@link panelHeader} for its close glyph. */
 type PanelPlacement = 'right' | 'left' | 'top' | 'bottom';
 
@@ -2930,7 +2955,11 @@ function panelHeader(panel: HTMLElement, text: string, onClose?: () => void): HT
     });
     wireControlHover(close, 'bare');
     wireTooltip(close);
-    close.addEventListener('click', onClose);
+    close.addEventListener('click', () => {
+      const where = close.getBoundingClientRect();
+      onClose();
+      shieldClicks(panel.ownerDocument, where);
+    });
     header.appendChild(close);
   }
   return header;

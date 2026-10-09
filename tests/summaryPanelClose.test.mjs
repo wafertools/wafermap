@@ -91,3 +91,32 @@ test('a map without a toolbar has no way back in, so its panel has no close butt
     cleanup();
   }
 });
+
+test('a click just after closing lands on nothing, not on the control that moved under it', async () => {
+  const { renderWaferMap } = await import('../dist/packages/canvas-adapter/index.js');
+  const { window, root, cleanup } = setupDom();
+  try {
+    const container = window.document.createElement('div');
+    root.appendChild(container);
+    const ctrl = renderWaferMap(container, maps[0], { statsSummary: per[0], summaryPanel: { defaultOpen: true } });
+    const close = await until(() => container.querySelector('[data-wmap-summary-close]'), 'the close button');
+    // JSDOM lays nothing out: give the button the place it would have.
+    close.getBoundingClientRect = () => ({ left: 500, top: 40, width: 22, height: 22, right: 522, bottom: 62, x: 500, y: 40, toJSON() {} });
+
+    let reachedPage = 0;
+    window.document.addEventListener('click', () => { reachedPage++; });
+    click(window, close);
+    const shield = window.document.querySelector('[data-wmap-click-shield]');
+    assert.ok(shield, 'a shield covers where the close button was');
+    assert.equal(shield.style.position, 'fixed');
+    reachedPage = 0;
+    click(window, shield);
+    assert.equal(reachedPage, 0, 'the second click goes no further');
+
+    await new Promise(r => setTimeout(r, 600));
+    assert.equal(window.document.querySelector('[data-wmap-click-shield]'), null, 'and it is gone after a moment');
+    ctrl.destroy();
+  } finally {
+    cleanup();
+  }
+});
