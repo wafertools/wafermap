@@ -24,6 +24,8 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.35.1] — 2026-10-09
+
 ### Added
 
 - **Validity limits, and a value filter that excludes values outside a limit set.** A test can carry `validLow`/`validHigh`: the
