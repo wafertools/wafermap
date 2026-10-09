@@ -69,6 +69,15 @@ export function sameBins(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
+ * Whether a hard or soft bin number is a pass bin. Pass bins are hard-bin numbers; they judge a soft bin only
+ * when the dies carry no hard bin, when a die's verdict is its soft bin's (`diePassStatus`). Otherwise a soft
+ * bin's verdict is not known from the pass bins, and it is not called a pass bin.
+ */
+export function isPassBin(kind: 'hardBin' | 'softBin', bin: number, passBins: readonly number[], hasHardBins: boolean): boolean {
+  return (kind === 'hardBin' || !hasHardBins) && passBins.includes(bin);
+}
+
+/**
  * The pass bins every wafer is judged by, or `undefined` when they differ (or there are none to
  * ask). For a surface that must name one set — a headline, or which bins count as failures — and
  * so says nothing rather than naming one wafer's set for a population judged several ways.

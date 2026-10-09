@@ -1,16 +1,28 @@
 import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { StatsFinding, StatsSeverity } from './types.js';
-import { normalCdf } from './math.js';
+import { benjaminiHochberg, binomialUpperTail } from './math.js';
+import { ringOf } from '../core/classify.js';
+import { compassBucket, sectorCompassNames } from './regions.js';
 import { getDieKey, gridKey } from '../core/dies.js';
 import { findConnectedComponents } from './connectedComponents.js';
 
-// 16-point compass for edge-arc bearing labels.
-const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW', 'SW', 'SSW', 'S', 'SSE', 'SE', 'ESE'];
-
+/** An edge arc's bearing, on the 16-point compass the sectors use. */
 function compassBearing(dx: number, dy: number): string {
-  const angle = (Math.atan2(dy, dx) + 2 * Math.PI) % (2 * Math.PI);
-  return COMPASS_16[Math.round((angle / (2 * Math.PI)) * 16) % 16];
+  return sectorCompassNames(16)[compassBucket(dx, dy, 16)];
+}
+
+/**
+ * The angle (radians) a set of directions covers round the circle: the full turn less the widest gap between
+ * neighbours. Not max − min of angles in [0, 2π), which reads an arc across due east (from 355° to 5°) as a
+ * near-full circle.
+ */
+function circularSpan(angles: number[]): number {
+  if (angles.length < 2) return 0;
+  const sorted = [...angles].sort((a, b) => a - b);
+  let widestGap = sorted[0] + 2 * Math.PI - sorted[sorted.length - 1];
+  for (let i = 1; i < sorted.length; i++) widestGap = Math.max(widestGap, sorted[i] - sorted[i - 1]);
+  return 2 * Math.PI - widestGap;
 }
 
 function severityForCluster(
@@ -26,18 +38,6 @@ function severityForCluster(
   if (pValue <= 0.01 && (delta >= 0.25 || absRel >= 2.0 || clusterFraction >= 0.10)) return 'unusual';
   if (pValue <= 0.05 && (delta >= 0.15 || absRel >= 1.0 || clusterFraction >= 0.03)) return 'notable';
   return 'info';
-}
-
-// One-sided binomial p-value P(X >= k | n, p) using normal approximation.
-function binomialPValue(k: number, n: number, p: number): number {
-  if (n === 0 || p <= 0) return k > 0 ? 0 : 1;
-  if (p >= 1) return k <= n ? 0 : 1;
-  const mean = n * p;
-  const sd = Math.sqrt(n * p * (1 - p));
-  if (sd === 0) return k > mean ? 0 : 1;
-  // Continuity correction: P(X >= k) ~ P(Z >= (k - 0.5 - mean) / sd)
-  const z = (k - 0.5 - mean) / sd;
-  return 1 - normalCdf(z);
 }
 
 interface ClusterOptions {
@@ -94,6 +94,7 @@ export function buildClusterFindings(
   const components = findConnectedComponents(failing);
 
   const findings: StatsFinding[] = [];
+  const tested: { component: PositionedDie[]; k: number; clusterRate: number; delta: number; pValue: number }[] = [];
   const cx = wafer.center.x;
   const cy = wafer.center.y;
   const r  = wafer.radius;
@@ -126,12 +127,20 @@ export function buildClusterFindings(
 
     const clusterRate = k / n;
     const delta = clusterRate - pBg;
-    const pValue = binomialPValue(k, n, pBg);
+    // Exact: a cluster's counts are small, where a normal approximation overstates significance.
+    const pValue = binomialUpperTail(k, n, pBg);
+    tested.push({ component, k, clusterRate, delta, pValue });
+  }
 
+  // Every cluster tested on the wafer is one family for the false-discovery rate, as the regions are.
+  const adjusted = benjaminiHochberg(tested.map(t => t.pValue));
+  for (let i = 0; i < tested.length; i++) {
+    const { component, k, clusterRate, delta, pValue } = tested[i];
+    const adjustedPValue = adjusted[i];
     const relativeDelta = pBg > 0 ? delta / pBg : undefined;
     const passesEffect = delta >= minimumEffectSize ||
       (relativeDelta !== undefined && relativeDelta >= minimumRelativeEffect);
-    if (pValue > significanceLevel || !passesEffect) continue;
+    if (adjustedPValue > significanceLevel || !passesEffect) continue;
 
     // Centroid in physical coords.
     const centPhysX = component.reduce((s, d) => s + d.physX, 0) / k;
@@ -146,19 +155,13 @@ export function buildClusterFindings(
     }
 
     // Angular span of cluster members relative to wafer centre.
-    const angles = component.map(d => (Math.atan2(d.physY - cy, d.physX - cx) + 2 * Math.PI) % (2 * Math.PI));
-    let minA = angles[0], maxA = angles[0];
-    for (const a of angles) { minA = Math.min(minA, a); maxA = Math.max(maxA, a); }
-    const spanDeg = ((maxA - minA) * 180) / Math.PI;
+    const spanDeg = (circularSpan(component.map(d => Math.atan2(d.physY - cy, d.physX - cx))) * 180) / Math.PI;
 
     // Classify as edge-arc if the majority of the cluster dies are in the outer
     // ring and the angular span is narrow. Using a majority vote rather than
     // centroid radius makes the test robust when a few background dies chain
     // the arc cluster inward, pulling the centroid below the ring boundary.
-    const edgeThreshold = 1 - 1 / ringCount;
-    const outerCount = component.filter(
-      d => Math.hypot(d.physX - cx, d.physY - cy) / r > edgeThreshold,
-    ).length;
+    const outerCount = component.filter(d => ringOf(d.physX - cx, d.physY - cy, r, ringCount) === ringCount).length;
     const isEdgeArc = outerCount > k / 2 && spanDeg < 120;
 
     const family = isEdgeArc ? 'edge-arc' as const : 'cluster' as const;
@@ -168,7 +171,7 @@ export function buildClusterFindings(
       : `Cluster at (${closestDie.x}, ${closestDie.y})`;
 
     const clusterFraction = k / dies.length;
-    const severity = severityForCluster(pValue, delta, clusterFraction, relativeDelta);
+    const severity = severityForCluster(adjustedPValue, delta, clusterFraction, relativeDelta);
     const dieKeys = component.map(d => getDieKey(d));
 
     findings.push({
@@ -186,7 +189,7 @@ export function buildClusterFindings(
       stats: {
         method: 'binomial',
         pValue,
-        adjustedPValue: pValue,
+        adjustedPValue,
         sampleSizeLeft: k,
         sampleSizeRight: dies.length - k,
       },
@@ -197,7 +200,7 @@ export function buildClusterFindings(
     });
   }
 
-  // Sort by severity then effect size.
+  // Strongest first: smallest p, then largest effect.
   return findings.sort((a, b) => {
     const pA = a.stats.pValue ?? 1, pB = b.stats.pValue ?? 1;
     if (pA !== pB) return pA - pB;

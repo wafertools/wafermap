@@ -48,13 +48,13 @@ function rng(seed) {
  * functional one — a signal strong enough that analysis reports it, so the
  * derived tests derived from those inputs produce findings of their own.
  */
-function build() {
+function build(failsAt = (rad) => rad > 6) {
   const r = rng(3);
   const results = [];
   for (let x = -8; x <= 8; x++) for (let y = -8; y <= 8; y++) {
     const rad = Math.hypot(x, y);
     if (rad > 8) continue;
-    const edge = rad > 6;
+    const edge = failsAt(rad, x, y);
     results.push({
       x, y, hbin: 1,
       testValues: { 1010: (edge ? 6 : 1) + 0.1 * r() },
@@ -180,20 +180,24 @@ test('the report key appears under a findings table only when a finding is about
 
 // ── Merged functional findings (a pre-existing bug, fixed alongside) ─────────
 
-test('a functional finding merged across adjacent rings is recomputed as a pass rate', () => {
+test('a functional finding merged across adjacent regions is recomputed as a pass rate', () => {
   // Until 0.30.3 the adjacent-region merge had no functional branch and fell
   // through to the bin one: it counted dies whose hard bin equalled
   // `variable.bin` (undefined), reported a 0.0 pp difference as "HBin undefined
-  // occurrence", and REPLACED the correct per-ring findings it merged.
-  const merged = SUMMARY.findings.filter(f =>
-    f.variable.kind === 'functionalTest' && f.variable.index === 2000 && f.comparison.left.startsWith('Rings '));
-  assert.ok(merged.length > 0, 'the inner rings merge into one finding');
+  // occurrence", and REPLACED the correct per-region findings it merged.
+  // Failures planted in two adjacent sectors (east and north-east, away from the centre): one signal over two
+  // regions, small enough that the rest of the wafer is a clean baseline.
+  const angle = (x, y) => (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  const twoSectors = analyzeWaferMap(build((rad, x, y) => rad > 2.5 && (angle(x, y) < 67.5 || angle(x, y) >= 337.5)), { enableTestValueAnalysis: true });
+  const merged = twoSectors.findings.filter(f =>
+    f.variable.kind === 'functionalTest' && f.variable.index === 2000 && f.comparison.left.startsWith('Sectors '));
+  assert.ok(merged.length > 0, twoSectors.findings.filter(f => f.variable.kind === 'functionalTest').map(f => f.comparison.left).join(' | '));
   for (const f of merged) {
     assert.ok(!f.summary.includes('undefined'), f.summary);
     assert.match(f.summary, /Func A pass rate/);
-    assert.match(f.summary, /^Rings \S+ have /, 'a merged region is plural');
+    assert.match(f.summary, /^Sectors \S+ have /, 'a merged region is plural');
     assert.ok(Math.abs(f.effect.absoluteDelta) > 0.2, `a real pass-rate gap, got ${f.effect.absoluteDelta}`);
-    assert.equal(f.stats.method, 'two-proportion-z');
+    assert.ok(['two-proportion-z', 'fisher-exact'].includes(f.stats.method), f.stats.method);
   }
 });
 

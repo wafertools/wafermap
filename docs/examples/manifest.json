@@ -127,6 +127,18 @@
     },
     {
       "section": "Getting started",
+      "id": "validity-limits",
+      "file": "validity-limits.html",
+      "title": "Validity limits",
+      "blurb": "tester clamps and open-circuit readings kept out of the map and statistics with `validLow`/`validHigh` and `valueFilter`, with the excluded values counted",
+      "guide": {
+        "label": "Guide: Validity limits",
+        "href": "../guide/data.md#validity-limits-values-that-are-not-measurements"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Getting started",
       "id": "bin-colours",
       "file": "bin-colours.html",
       "title": "Bin colours across a full program",
@@ -319,6 +331,18 @@
       "guide": {
         "label": "Guide: The Insights tab",
         "href": "../guide/galleries.md#the-insights-tab"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Galleries and analysis",
+      "id": "insights-plots",
+      "file": "insights-plots.html",
+      "title": "Plots, tables and attributes",
+      "blurb": "the Plot tab kept by the host with `insights.plots` and `onPlotsChange`, the Data tab, drilldown, and your own names for wafer attributes with `attributes`",
+      "guide": {
+        "label": "Guide: Saved plots, the Data tab and attribute names",
+        "href": "../guide/galleries.md#saved-plots-the-plot-tab-kept-by-the-host"
       },
       "dataFiles": []
     },

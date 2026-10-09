@@ -189,7 +189,7 @@ Plus:
                                             // wrapper, so the map renders with no container CSS. Number = px, or any CSS
                                             // length ('600px', '70vh'). Omit when the container already has a height.
   showAxes?:               boolean            // draw axis tick marks and die grid index labels (default false)
-  viewOptions?:           WaferViewOptions  // initial display state; plotMode, testDefs, and reticles are pre-seeded from the result automatically
+  viewOptions?:           WaferViewOptions  // initial display state; testDefs and reticles are pre-seeded from the result. Without a plotMode the map opens on hard bins, or soft bins when the dies carry only soft bins
   onHover?:                (die: Die | null, event: MouseEvent) => void
   onClick?:                (die: Die, event: MouseEvent) => void
   onSelect?:               (dies: Die[]) => void     // fires after box-select drag or click-select
@@ -217,6 +217,10 @@ Plus:
                                             // expand modal would be redundant
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a Summary toggle button to the toolbar
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state
+  findingsNotice?:         FindingsNotice  // a row at the top of the Summary panel's Findings saying a category of finding is not present, and
+                                            // optionally offering to compute it: { message, detail?, actionLabel?, onAction? }. wmap never raises
+                                            // one itself, since only the host knows what analysis it skipped and what running it costs.
+                                            // Replace or clear it later with the controller's setFindingsNotice(notice | undefined).
   insights?:               InsightsOptions  // adds a Map | Insights switch that swaps the map for this wafer's own
                                             // chart suite (Overview, Distributions, Correlation) — default disabled. See §5.9.
   attributes?:             Record<string, WaferAttributeDef>  // your names for wafer attributes: label, facet?, date?: what Group by offers and the strip, Wafers table and reports call each
@@ -469,7 +473,7 @@ Every one of these matters: the six tokens that used to be left unset here — `
 }
 ```
 
-The Summary panel is a docked panel — metadata, yield, detected anomalies (`StatsSummary.findings`, with severity chips wired to `filterFindings`, §7.11; the Kind/Region dropdowns appear once there are at least 8 findings), bin breakdown, region yield, test values, and functional tests — plus one combined "Summary report" button that opens the full HTML report (`renderWaferReportHtml`/`renderLotReportHtml`, §7.6, which already include findings) in an in-app modal (`openReportModal`, §9.2) — no host wiring required. Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/region/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, including `regionYield` and `capability`), so the two surfaces can show overlapping numbers without ever disagreeing.
+The Summary panel is a docked panel — metadata, yield, detected anomalies (`StatsSummary.findings`, with severity chips wired to `filterFindings`, §7.11), bin breakdown, region yield, test values, and functional tests — plus one combined "Summary report" button that opens the full HTML report (`renderWaferReportHtml`/`renderLotReportHtml`, §7.6, which already include findings) in an in-app modal (`openReportModal`, §9.2) — no host wiring required. Always co-visible with the map so a clicked finding can highlight the affected dies right there — see §5.9 for why this is a separate surface from Insights. Its bin/region/test-value numbers and Insights' Overview sub-tab read the same underlying computation (`StatsSummary.stats.*`, including `regionYield` and `capability`), so the two surfaces can show overlapping numbers without ever disagreeing.
 
 Findings render directly beneath the headline stats, above the bin/region/test detail. Every section collapses from its header, and the collapsed set is remembered per panel element across re-renders.
 
@@ -668,7 +672,7 @@ only the CSV export.
 
 ```ts
 export interface DieListDisplayOptions {
-  enabled?:              boolean;                        // the "View die list" link (default true)
+  enabled?:              boolean;                        // the Summary panel's "Data tables" button (default true)
   metadataColumns?:      'auto' | 'none' | string[];   // default 'auto'
   waferMetadataColumns?: 'csv' | 'both' | 'none';        // default 'csv'
   maxRows?:               number;                        // default 50_000; CSV is never capped
@@ -728,6 +732,7 @@ Choose the right update method:
   clearSelection(): void
   resetZoom(): void                                  // return to fitted view
   setStatsSummary(summary: StatsSummary | undefined): void  // update the Summary panel at runtime
+  setFindingsNotice(notice: FindingsNotice | undefined): void  // replace or clear the findings notice row
   closeSummaryPanel(): void  // close the Summary panel if open (e.g. on loading a new file); the user reopens it from the toolbar
   getBinColors(): BinColors  // the bin colours this map draws, with the palette currently chosen — for a host surface (§10.6)
 

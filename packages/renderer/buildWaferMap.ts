@@ -24,6 +24,10 @@ import { hasAnyKey, maxOf, minOf, modeOf } from '../core/utils.js';
 import { aggregateValues, aggregateBinCounts, stackHoldsMeasurements, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 import { normalizePassBins } from '../core/passBins.js';
 import { defaultRingCount } from '../core/ringCount.js';
+import {
+  applyValueFilter, mergeValueFilterTests, valueFilterWarning,
+  type ValueFilterMode, type ValueFilterSummary,
+} from './valueFilter.js';
 
 // ── Public input types ────────────────────────────────────────────────────────
 
@@ -265,6 +269,16 @@ export interface TestDef {
   /** Upper specification limit (STDF `HI_SPEC`). See `specLow`. */
   specHigh?: number;
   /**
+   * Lower **validity limit**: the lowest value that is a real measurement. A value
+   * below it is a tester clamp (a range overflow, an open-circuit rail), not a
+   * reading, and `WaferMapInput.valueFilter` treats it as no value for this test
+   * on that die. Separate from the test and spec limits, which judge good against
+   * bad; a clamped value is neither.
+   */
+  validLow?: number;
+  /** Upper validity limit. See `validLow`. */
+  validHigh?: number;
+  /**
    * Test kind: `'P'` (parametric — a continuous measured value) or `'F'`
    * (functional — a pass/fail outcome, conventionally recorded as 1 = pass,
    * 0 = fail, e.g. an STDF FTR). Functional tests render on the wafer map
@@ -375,6 +389,20 @@ export interface WaferMapInputBase {
    * 3 rings on 28-die wafers that produce correct findings.
    */
   ringCount?: number;
+  /**
+   * Which limit set a test value must lie inside to be used. A value outside it is
+   * treated as missing for that test on that die, and counted
+   * (`WaferMapResult.valueFilter`) so every population label can say so.
+   *
+   * - `'validity'` (default) — the validity limits (`TestDef.validLow`/`validHigh`);
+   *   only tests that define them are affected.
+   * - `'spec'` / `'test'` — keep only values inside the specification / test limits.
+   * - `'none'` — filter nothing.
+   *
+   * Only values change: bins and each die's recorded verdict (`testPass`) are the
+   * tester's own and stay as recorded.
+   */
+  valueFilter?: ValueFilterMode;
   /**
    * Wafer diameters (mm) treated as standard when sanity-checking an *inferred*
    * diameter. Default `[100, 125, 150, 200, 300]`.
@@ -650,7 +678,7 @@ export interface WaferWarning {
       | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected'
       | 'bin-colors-shared' | 'pass-bins-mixed' | 'ring-count-mixed' | 'input-field-removed'
       | 'input-values-not-numbers' | 'input-values-outside-stdf' | 'retests-by-part-id'
-      | 'derived-test-invalid' | (string & {});
+      | 'derived-test-invalid' | 'values-excluded' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -757,6 +785,12 @@ export interface WaferMapResult {
    */
   passBins: number[];
   /**
+   * What the value filter took out (`WaferMapInput.valueFilter`): the limit set it
+   * used and, per test, how many values were excluded. Absent when nothing was
+   * excluded. Counts are across every wafer of a lot build.
+   */
+  valueFilter?: ValueFilterSummary;
+  /**
    * Rings the wafer is divided into (`WaferMapInput.ringCount`, default 4). The
    * renderers, `analyzeWaferMap`, panels and reports read it and none has a ring
    * count option of its own, so ring boundaries and ring findings always agree.
@@ -806,6 +840,7 @@ interface Normalized {
   lotStackOpts: LotStackConfig | undefined;
   passBins:     number[];
   ringCount:    number;
+  valueFilter:  ValueFilterMode;
   /** Correction to `ringCount`, joined into the result's warnings. */
   ringCountWarning: WaferWarning | undefined;
   removedFieldWarning: WaferWarning | undefined;
@@ -1137,6 +1172,7 @@ function normalizeInput(rawInput: DieResult[] | WaferMapInput): Normalized {
       lotStackOpts:     undefined,
       passBins:         normalizePassBins(undefined),
       ringCount:        defaultRingCount(),
+      valueFilter:      'validity',
       ringCountWarning: undefined,
       removedFieldWarning: removedInputWarning(input),
       inputValueWarnings: checked.warnings,
@@ -1159,6 +1195,7 @@ function normalizeInput(rawInput: DieResult[] | WaferMapInput): Normalized {
     lotStackOpts:     input.lotStack
       ? { ...input.lotStack, results: (checked.stackResults ?? input.lotStack.results).map(linked) } : undefined,
     passBins:         normalizePassBins(input.passBins),
+    valueFilter:      input.valueFilter ?? 'validity',
     ...resolveRingCount(input.ringCount),
     removedFieldWarning: removedInputWarning(input),
     inputValueWarnings: checked.warnings,
@@ -1772,8 +1809,15 @@ function attachData<D extends Die>(die: D, pt: DieResult): D {
   return linkDie({ ...die, ...base }, link.table, link.row);
 }
 
+/**
+ * The mode a map opens in: test values when there are any, else the bins the data carries. Hard bins
+ * when any die has one; soft bins when only soft bins were recorded, since a hard-bin map of soft-bin
+ * data draws every die as no data.
+ */
 function autoPlotMode(results: DieResult[]): PlotMode {
-  return results.some(dieHasTestData) ? 'value' : 'hardBin';
+  if (results.some(dieHasTestData)) return 'value';
+  if (results.some(r => r.hbin !== undefined && r.hbin !== null)) return 'hardBin';
+  return results.some(r => r.sbin !== undefined && r.sbin !== null) ? 'softBin' : 'hardBin';
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -1977,6 +2021,28 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   // and plot a number with no physical meaning; deriving after retest collapse
   // could mix a value from one touchdown with a verdict from another.
   const derivedWarnings: WaferWarning[] = [];
+
+  // The value filter runs first of all: a derived test must not be computed from a
+  // clamped reading, and lot stacks and retest resolution then inherit the filtered
+  // values. Counts are summed over the wafers of a lot.
+  let valueFilter: ValueFilterSummary | undefined;
+  if (norm.valueFilter !== 'none' && norm.testDefs) {
+    const mode = norm.valueFilter;
+    const parts = (norm.lotStackOpts ? norm.lotStackOpts.results : [norm.results]).map(records => {
+      const link = records.length > 0 ? dieLink(records[0]) : undefined;
+      if (!link) return [];
+      const filtered = applyValueFilter(link.table, norm.testDefs, mode);
+      if (filtered.tests.length > 0) relink(records, filtered.table);
+      return filtered.tests;
+    });
+    const tests = mergeValueFilterTests(parts);
+    if (tests.length > 0) {
+      valueFilter = { mode, tests };
+      const w = valueFilterWarning(mode, tests, norm.testDefs);
+      if (w) derivedWarnings.push(w);
+    }
+  }
+
   if (norm.derivedTests) {
     const passBinSet = new Set(norm.passBins);
     // Each wafer's table gains a column per derived test; its records are
@@ -2101,6 +2167,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
       isLotStack: false,
       dataCoverage: computeCoverage(allDies),
       passBins: norm.passBins,
+      ...(valueFilter ? { valueFilter } : {}),
       ringCount: norm.ringCount,
       yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode),
       reticles,
@@ -2379,6 +2446,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     isLotStack: norm.lotStackOpts !== undefined,
     dataCoverage: computeCoverage(allDies),
     passBins: norm.passBins,
+    ...(valueFilter ? { valueFilter } : {}),
     ringCount: norm.ringCount,
     yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode),
     reticles,

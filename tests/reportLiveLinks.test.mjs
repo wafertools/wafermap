@@ -106,6 +106,6 @@ test('clicking a finding in the report closes it and selects that finding, as it
 
 test('without a click handler there is no link into the report from the section', () => {
   const l = { level: 'wafer', hasNotableFindings: false, findings: [], stats: { totalDies: 10, analyzedDies: 10, yieldPercent: 90, testsConsidered: [], hardBinsConsidered: [] } };
-  assert.ok(![...buildSynthesisSection(l, [1], undefined, null).querySelectorAll('button')].some(b => /Full report/.test(b.textContent)));
-  assert.ok([...buildSynthesisSection(l, [1], undefined, null, undefined, () => {}).querySelectorAll('button')].some(b => /Full report/.test(b.textContent)));
+  assert.ok(![...buildSynthesisSection(l, [1], {}).querySelectorAll('button')].some(b => /Full report/.test(b.textContent)));
+  assert.ok([...buildSynthesisSection(l, [1], {}, undefined, () => {}).querySelectorAll('button')].some(b => /Full report/.test(b.textContent)));
 });

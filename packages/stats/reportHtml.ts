@@ -1,5 +1,5 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
-import { SYNTHESIS_SMALLER_HEADING, synthesisRowShare, type Synthesis } from './synthesis.js';
+import { SYNTHESIS_ALSO_HEADING, synthesisRowShare, type Synthesis, type SynthesisTarget } from './synthesis.js';
 import { formatFindingTooltip } from './findingText.js';
 import { arrangeFindings } from './filterFindings.js';
 import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, impactShortWord, shortfallColor, shortfallStep, formatPoints, barPercent, type MeterTier } from './presentation.js';
@@ -17,9 +17,9 @@ export interface MetricItem {
 }
 
 
-export function renderSection(title: string, body: string, className = ''): string {
+export function renderSection(title: string, body: string, className = '', id?: string): string {
   const classes = ['report-section', className].filter(Boolean).join(' ');
-  return `<section class="${classes}">
+  return `<section class="${classes}"${id ? ` id="${escHtml(id)}"` : ''}>
   <h2>${escHtml(title)}</h2>
   ${body}
 </section>`;
@@ -144,8 +144,10 @@ export function deltaCell(points: number): TableCell {
 export function withSectionNav(sectionsHtml: string, scope = ''): string {
   const titles: Array<{ id: string; title: string }> = [];
   let n = 0;
-  const body = sectionsHtml.replace(/<section class="(report-section[^"]*)">(\s*<h2>)(.*?)(<\/h2>)/g, (_m, cls, mid, title, end) => {
-    const id = `sec-${scope}${++n}`;
+  // A section that already has an id (one the synthesis links to) keeps it.
+  const body = sectionsHtml.replace(/<section class="(report-section[^"]*)"(?: id="([^"]*)")?>(\s*<h2>)(.*?)(<\/h2>)/g, (_m, cls, own, mid, title, end) => {
+    ++n;
+    const id = own ?? `sec-${scope}${n}`;
     titles.push({ id, title });
     return `<section class="${cls}" id="${id}">${mid}${title}${end}`;
   });
@@ -246,33 +248,35 @@ export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number
 }
 
 /**
- * The synthesis as a section: the headline, the loss items each linked to the finding rows that
- * carry their figures, and what was compared. A part links only when its row is on the page
- * (`anchorIds`), so a sentence never points at nothing.
+ * The synthesis as a section: the headline, the items, and what was compared. Every item links to its
+ * evidence the same way — the lead by a "See" line naming its target and its parts, each further item and
+ * Watch line by its own text — wherever `anchorFor` finds that evidence on the page, so a link never points
+ * at nothing and no item is linked only because of where its figures came from.
  */
-export function synthesisSectionHtml(synthesis: Synthesis, anchorIds: ReadonlySet<string>, scope = ''): string {
-  const run = (parts: Synthesis['headline']): string => parts.map((p) =>
-    p.target && anchorIds.has(p.target.id)
-      ? `<a href="#${findingAnchor(p.target.id, scope)}">${escHtml(p.text)}</a>`
-      : escHtml(p.text)).join('');
+export function synthesisSectionHtml(synthesis: Synthesis, anchorFor: (target: SynthesisTarget) => string | undefined): string {
+  const link = (text: string, target: SynthesisTarget): string => {
+    const anchor = anchorFor(target);
+    return anchor ? `<a href="#${escHtml(anchor)}">${escHtml(text)}</a>` : escHtml(text);
+  };
   const [lead, ...others] = synthesis.items;
   // The top item gets the full sentence in a tinted box; everything else is a compact row (marker, the
   // item in a few words, its share of the dies) so three equal boxes never compete for the eye.
   const smaller = [...others, ...(synthesis.also?.items ?? [])];
   const more = synthesis.also?.more ?? 0;
+  const see = lead ? [link(lead.subject, lead.target), ...lead.chips.map((c) => link(c.label, c.target))] : [];
   const items = lead
-    ? `<ol class="synthesis-items">\n<li class="tier-${lead.impact}">${renderMeter(lead.impact, impactWord(lead.impact))}<span>${run(lead.parts)}</span></li>\n</ol>`
+    ? `<ol class="synthesis-items">\n<li class="tier-${lead.impact}">${renderMeter(lead.impact, impactWord(lead.impact))}<span>${escHtml(lead.text)}<span class="synthesis-see">See: ${see.join(' · ')}</span></span></li>\n</ol>`
     : `<p class="synthesis-none">${escHtml(synthesis.nothing ?? 'Nothing stands out.')}</p>`;
   const rows = smaller.length
-    ? `<p class="synthesis-smaller">${escHtml(SYNTHESIS_SMALLER_HEADING)}</p>
+    ? `<p class="synthesis-smaller">${escHtml(SYNTHESIS_ALSO_HEADING)}</p>
   <ul class="synthesis-more">
-${smaller.map((it) => `<li>${renderMeter(it.impact, impactShortWord(it.impact))}<span>${run([it.brief])}</span><span class="synthesis-share">${escHtml(synthesisRowShare(it))}</span></li>`).join('\n')}${more ? `\n<li class="synthesis-rest"><span></span><span>and ${more} more</span><span></span></li>` : ''}
+${smaller.map((it) => `<li>${renderMeter(it.impact, impactShortWord(it.impact))}<span>${link(it.brief, it.target)}</span><span class="synthesis-share">${escHtml(synthesisRowShare(it))}</span></li>`).join('\n')}${more ? `\n<li class="synthesis-rest"><span></span><span>and ${more} more</span><span></span></li>` : ''}
   </ul>`
     : '';
-  return renderSection('What stands out', `<p class="synthesis-headline">${run(synthesis.headline)}</p>
+  return renderSection('What stands out', `<p class="synthesis-headline">${escHtml(synthesis.headline)}</p>
   ${items}
   ${rows}
-  ${synthesis.watch ? `<ul class="synthesis-watch">${synthesis.watch.map((w) => `<li><strong>Watch</strong> ${run(w.parts)}</li>`).join('')}</ul>` : ''}
+  ${synthesis.watch ? `<ul class="synthesis-watch">${synthesis.watch.map((w) => `<li><strong>Watch</strong> ${link(w.text, w.target)}</li>`).join('')}</ul>` : ''}
   <p class="synthesis-checked">${escHtml(synthesis.checked)}</p>`, 'synthesis');
 }
 
@@ -304,6 +308,7 @@ export function reportStyles(): string {
     --report-font: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --report-text: #1f2328;
     --report-muted: #5c6570;
+    --report-link: #0b5cad;
     --report-subtle: #7a828d;
     --report-line: #d8dee6;
     --report-line-strong: #c7ced8;
@@ -391,7 +396,8 @@ export function reportStyles(): string {
   .synthesis-watch li { margin: 0 0 3px; }
   .synthesis-watch strong { margin-right: 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--report-muted); }
   .synthesis-checked, .synthesis-none { color: var(--report-muted); margin: 0; }
-  .synthesis a { color: inherit; text-decoration: underline dotted; }
+  .synthesis a { color: var(--report-link); text-decoration: underline; text-underline-offset: 2px; }
+  .synthesis-see { display: block; margin-top: 4px; color: var(--report-muted); }
 
   .report-subheading {
     margin: 14px 0 6px;

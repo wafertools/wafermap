@@ -124,6 +124,12 @@ worth reporting, not a pattern to build on.
   lot. Supply or replace the analysis later with `setStatsSummary()`. There is no
   chart-data API to hand-build them from. Charting a selection or one wafer (right-click → histogram, capability,
   saved plots and sweeps) is built in too, with no wiring.
+- **Keep the reader's plots in the host, hand them back in.** The library stores nothing: supply `insights.plots` and keep
+  it current from `insights.onPlotsChange` (the whole list, after every change). Wafer attribute names (`attributes`) and the
+  Data tab need no wiring beyond that.
+- **A value that is not a measurement is excluded by limits, not by editing the data.** A tester clamp or open-circuit reading is
+  handled by `TestDef.validLow`/`validHigh` and `valueFilter` (default `'validity'`). Removing or zeroing such values in the host hides
+  them from the count the library would have shown; deleting the dies changes the yield.
 - **A value computed from other tests is a derived test, not a host-side column.** Pass
   `derivedTests` (a `TestDef` plus an `expression`, e.g. `'abs(t[1020] - t[1010])'`) to
   `buildWaferMap`; it then behaves as a measured test everywhere, marked `†` as not

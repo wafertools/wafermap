@@ -27,6 +27,7 @@ import { fitTicks } from '../../renderer/axisTicks.js';
 import { QUANTITY } from './palette.js';
 import { cardShell, observeResize, makeTooltip, positionChartTooltip, makeBackButton, makeLinkedTestSelect, makeToggle, makeLinkedAxisPrefs, renderEmptyState, fitRowsHeight, setChartGrow, resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, resolveAxisRange, shouldIncludeLimitsByDefault, drawOffAxisLimits, limitLabelSide, limitLines, limitExtent, hasBothLimitKinds, stackLabelRows, strokeLimitLine, PADDING, VALUE_WIDTH, type AxisPrefs, type SaveImageHandler, type WaferContextMenuHandler, WAFER_MENU_HINT, prepareCanvas } from './chartShell.js';
 import { escHtml, maxOf, minOf } from '../../core/utils.js';
+import { excludedNote } from '../../renderer/valueFilter.js';
 
 const BOX_ROW_HEIGHT = 24;
 const BOX_ROW_GAP = 5;
@@ -237,7 +238,8 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       // Clipping moves the AXIS only; every box's statistics are computed over the
       // full population. Saying how many points sit outside the view is what keeps
       // that honest.
-      + (lastClippedCount ? ` · axis clipped, ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside` : '');
+      + (lastClippedCount ? ` · axis clipped, ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside` : '')
+      + (activeTest !== null ? excludedNote(currentDataItems().flatMap(i => i.dies ?? []), activeTest) : '');
   }
   syncHint();
   syncDrillChrome();

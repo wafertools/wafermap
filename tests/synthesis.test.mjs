@@ -36,7 +36,7 @@ function wafer({ region, extra = 0, tag = 0, lot = 'L1' } = {}) {
     hbinDefs: BIN_DEFS, passBins: [1], ringCount: 4 });
 }
 const lot = (maps) => analyzeWaferLot(maps);
-const text = (item) => item.parts.map(p => p.text).join('');
+const text = (item) => item.text;
 
 test('a clean lot says nothing stands out, and still gives the yield and what was compared', () => {
   const s = buildSynthesis(lot([1, 2, 3, 4, 5].map(tag => wafer({ tag }))), { passBins: [1] });
@@ -94,17 +94,30 @@ test('an outlier wafer is costed by its own dies, on the fraction scale every yi
 
 test('a wafer summary has a headline and the same shape', () => {
   const s = buildSynthesis(analyzeWaferMap(wafer({ region: 'quadrant', tag: 3 })), { passBins: [1] });
-  assert.match(s.headline[0].text, /^Yield \d+\.\d% \(\d[\d,]* dies; pass bin 1\)\.$/);
+  assert.match(s.headline, /^Yield \d+\.\d% \(\d[\d,]* dies; pass bin 1\)\.$/);
   assert.match(s.checked, /^Compared: /);
   assert.ok(s.items.length >= 1);
 });
 
-test('every part that links points at a finding that exists', () => {
+test('every item, and every chip, targets a finding that exists', () => {
   const l = lot([1, 2, 3, 4, 5].map(tag => wafer({ region: 'quadrant', tag })));
   const ids = new Set(l.findings.map(f => f.id));
   for (const item of buildSynthesis(l, { passBins: [1] }).items) {
-    for (const p of item.parts) if (p.target) assert.ok(ids.has(p.target.id), `${p.target.id} is a finding`);
+    for (const t of [item.target, ...item.chips.map(c => c.target)]) {
+      assert.equal(t.kind, 'finding');
+      assert.ok(ids.has(t.id), `${t.id} is a finding`);
+    }
   }
+});
+
+test('a lot of one wafer is described from that wafer, not as clean', () => {
+  const m = wafer({ region: 'quadrant', tag: 3 });
+  const l = lot([m]);
+  assert.equal(l.findings.length, 0, 'the lot itself has nothing: a lot finding needs two wafers');
+  const s = buildSynthesis(l, { passBins: [1] });
+  const own = buildSynthesis(analyzeWaferMap(m), { passBins: [1] });
+  assert.equal(s.nothing, undefined);
+  assert.deepEqual(s.items.map(i => i.text), own.items.map(i => i.text));
 });
 
 // ── In the report ────────────────────────────────────────────────────────────
@@ -162,8 +175,8 @@ test('items over the cap go on one "also" line, so nothing material is dropped',
     { name: 'A', dies: 1000, drop: 0.4 }, { name: 'B', dies: 1000, drop: 0.3 }, { name: 'C', dies: 1000, drop: 0.25 },
     { name: 'D', dies: 1000, drop: 0.15 }, { name: 'E', dies: 1000, drop: 0.11 }, { name: 'F', dies: 1000, drop: 0.05 },
   ]));
-  assert.deepEqual(s.items.map(i => i.brief.text.split(':')[0]), ['A', 'B', 'C']);
-  assert.deepEqual(s.also.items.map(i => i.brief.text), ['D: pass rate, 150 dies', 'E: pass rate, 110 dies']);
+  assert.deepEqual(s.items.map(i => i.brief.split(':')[0]), ['A', 'B', 'C']);
+  assert.deepEqual(s.also.items.map(i => i.brief), ['D: pass rate, 150 dies', 'E: pass rate, 110 dies']);
   assert.deepEqual(s.also.items.map(i => synthesisRowShare(i)), ['1.5%', '1.1%']);
   assert.equal(s.also.more, 0);
   assert.ok(!synthesisText(s).includes('F:'), 'a region below the floor is not mentioned');
@@ -241,7 +254,7 @@ const withTests = (spec = [], functional = []) => {
 test('a test below its low limit is an item, said in dies and a share, and sized by the dies it accounts for', () => {
   const s = buildSynthesis(withTests([{ label: 'IP3_DBM', failLowDies: 1100, failHighDies: 0, totalDies: 10000 }]));
   assert.equal(s.items.length, 1);
-  assert.equal(s.items[0].parts.map(p => p.text).join(''), 'IP3_DBM is below its low limit on 1,100 of 10,000 dies (11.0%)');
+  assert.equal(s.items[0].text, 'IP3_DBM is below its low limit on 1,100 of 10,000 dies (11.0%)');
   assert.equal(s.items[0].impact, 'high');
   assert.equal(s.items[0].diesLost, 1100);
 });
@@ -251,7 +264,7 @@ test('a test above its high limit, or outside both, says which', () => {
     { label: 'NF_DB', failLowDies: 0, failHighDies: 500, totalDies: 10000 },
     { label: 'VTH', failLowDies: 120, failHighDies: 180, totalDies: 10000 },
   ]));
-  const lines = s.items.map(i => i.parts.map(p => p.text).join(''));
+  const lines = s.items.map(i => i.text);
   assert.deepEqual(lines, [
     'NF_DB is above its high limit on 500 of 10,000 dies (5.0%)',
     'VTH is outside its limits (120 low, 180 high) on 300 of 10,000 dies (3.0%)',
@@ -260,7 +273,7 @@ test('a test above its high limit, or outside both, says which', () => {
 
 test('a functional test that fails is an item', () => {
   const s = buildSynthesis(withTests([], [{ label: 'SCAN', failDies: 300, totalDies: 10000 }]));
-  assert.equal(s.items[0].parts.map(p => p.text).join(''), 'SCAN fails on 300 of 10,000 dies (3.0%)');
+  assert.equal(s.items[0].text, 'SCAN fails on 300 of 10,000 dies (3.0%)');
   assert.equal(s.items[0].impact, 'medium');
 });
 
@@ -282,7 +295,7 @@ test('test items go on the "also" line like any other, with a short form', () =>
   const l = withTests([1, 2, 3, 4].map(i => ({ label: `T${i}`, failLowDies: 600 - i * 50, failHighDies: 0, totalDies: 10000 })));
   const s = buildSynthesis(l);
   assert.equal(s.items.length, 3);
-  assert.deepEqual(s.also.items.map(i => i.brief.text), ['T4: 400 dies outside limits']);
+  assert.deepEqual(s.also.items.map(i => i.brief), ['T4: 400 dies outside limits']);
 });
 
 // ── Impact is the higher of the share of dies and the share of the lot's loss ─────
@@ -306,7 +319,7 @@ test('the same item in a lot that fails a lot is still low: it is a small part o
 test('shares of the loss: 15% is medium and 40% high, whatever the share of dies', () => {
   const l = fakeLot([{ name: 'A', dies: 1000, drop: 0.12 }, { name: 'B', dies: 1000, drop: 0.115 }]);
   for (const w of l.perWafer) w.summary.stats.yieldPercent = 94;      // 600 failing dies
-  const tiers = Object.fromEntries(buildSynthesis(l).items.map(i => [i.brief.text.split(':')[0], i.impact]));
+  const tiers = Object.fromEntries(buildSynthesis(l).items.map(i => [i.brief.split(':')[0], i.impact]));
   // A: 120 dies = 20% of the loss, 1.2% of the dies → medium.  B: 115 = 19% → medium.
   assert.deepEqual(tiers, { A: 'medium', B: 'medium' });
 });
@@ -318,7 +331,144 @@ test('a merged hard/soft twin is named by its hard bin, in both spellings of the
     variable: { kind: 'hardBin', bin, label }, effect: { direction: 'higher', absoluteDelta: drop },
   });
   lead.findings.push(bin(2, 'HBin and SBin 2 (Leakage) (same dies)', 0.17), bin(3, 'HBin 3 (Edge Ring) and SBin 32 (Edge - Film)', 0.065));
-  const line = buildSynthesis(lead, { passBins: [1] }).items[0].parts.map(p => p.text).join('');
+  const line = buildSynthesis(lead, { passBins: [1] }).items[0].text;
   assert.match(line, /mostly hard bin 2 \(Leakage\) accounts for 17\.0 of those points, hard bin 3 \(Edge Ring\) for 6\.5/);
   assert.ok(!/soft bin|SBin|same dies/.test(line));
+});
+
+// ── Targets, chips and the tests that share a region's dies ───────────────────
+
+test('a test item targets its test, so it acts like every other item', () => {
+  const s = buildSynthesis(withTests([{ label: 'IP3_DBM', failLowDies: 1100, failHighDies: 0, totalDies: 10000 }]));
+  assert.deepEqual(s.items[0].target, { kind: 'test', testNumber: 1 });
+  assert.deepEqual(s.items[0].testNumbers, [1]);
+});
+
+test('a region item lists its fail bins as chips, a leading bin included', () => {
+  const lead = fakeLot([{ name: 'Ring 1 (core)', dies: 1000, drop: 0.3 }]);
+  const bin = (b, drop) => ({ ...lead.findings[0], id: `lot-region:hardBin|hardBin|${b}||ring|ring:0`,
+    variable: { kind: 'hardBin', bin: b, label: `HBin ${b}` }, effect: { direction: 'higher', absoluteDelta: drop } });
+  lead.findings.push(bin(2, 0.2), bin(3, 0.1));
+  const item = buildSynthesis(lead, { passBins: [1] }).items[0];
+  assert.equal(item.target.id, lead.findings[0].id, 'the row shows the region, whose dies it counts');
+  assert.deepEqual(item.chips.map(c => [c.label, c.bin?.bin]), [['Hard bin 2', 2], ['Hard bin 3', 3]]);
+
+  lead.findings.shift();   // no yield finding: the costliest bin leads, and is still a chip
+  const byBin = buildSynthesis(lead, { passBins: [1] }).items[0];
+  assert.equal(byBin.target.id, 'lot-region:hardBin|hardBin|2||ring|ring:0');
+  assert.deepEqual(byBin.chips.map(c => c.bin?.bin), [2, 3]);
+});
+
+/** `fakeLot` with one region of `dies` dies on each wafer, and a test failing on `inside` of them and `outside` elsewhere. */
+function regionWithTest({ inside, outside, lostShare = 1, regionDies = 1000 }) {
+  const l = fakeLot([{ name: 'Ring 4 (edge)', dies: regionDies, drop: 0.3 }]);
+  const keys = l.findings[0].highlight.dieKeysByWafer;
+  const fail = inside + outside;
+  l.stats.testSpecYield = [{ testNumber: 7, label: 'FREQ', failLowDies: fail, failHighDies: 0, totalDies: 10000, passDies: 10000 - fail, yieldPercent: 0 }];
+  l.perWafer.forEach((w, i) => {
+    const own = keys[i].slice(0, inside / 2);
+    const elsewhere = Array.from({ length: outside / 2 }, (_, k) => `x${i}:${k}`);
+    const dieKeys = [...own, ...elsewhere];
+    w.summary.stats.testFailures = { 7: { dieKeys, lostDies: Math.round(dieKeys.length * lostShare) } };
+  });
+  return l;
+}
+
+test('a test failing mostly on a region\'s dies is said in that region\'s item, not ranked against it', () => {
+  // 600 failing dies, 500 of them in a region of 1,000 (10% of the dies): 83% inside, over twice the region's share.
+  const s = buildSynthesis(regionWithTest({ inside: 500, outside: 100 }));
+  assert.equal(s.items.length, 1, synthesisText(s));
+  assert.match(s.items[0].text, /FREQ is below its low limit on 600 dies, 500 of them in Ring 4 \(edge\)$/);
+  assert.deepEqual(s.items[0].chips.map(c => c.target), [{ kind: 'test', testNumber: 7 }]);
+  assert.deepEqual(s.items[0].testNumbers, [7]);
+});
+
+test('a test failing evenly is not claimed by a region it merely overlaps', () => {
+  // 600 failing dies, 60% in a region holding half the dies: not twice its share, so it stands alone.
+  const s = buildSynthesis(regionWithTest({ inside: 360, outside: 240, regionDies: 5000 }));
+  assert.ok(s.items.some(i => i.target.kind === 'test'), synthesisText(s));
+});
+
+test('a test is costed by the dies it fails that also fail yield', () => {
+  const l = regionWithTest({ inside: 0, outside: 600, lostShare: 0.25 });
+  const s = buildSynthesis(l);
+  const t = [...s.items, ...(s.also?.items ?? [])].find(i => i.target.kind === 'test');
+  assert.equal(t.diesLost, 150);
+  assert.match(t.text, /on 600 of 10,000 dies \(6\.0%\); 450 of them are binned as passing, so about 150 dies lost$/);
+  assert.equal(s.items[0].target.kind, 'finding', 'the region (300 dies lost) now leads');
+  assert.equal(t.brief, 'FREQ: outside limits, 150 dies lost');
+});
+
+test('dies outside a test\'s limits but binned as passing are watched, naming only those dies', () => {
+  const l = regionWithTest({ inside: 0, outside: 600, lostShare: 0 });
+  l.stats.testSpecYield[0].failHighDies = 0;
+  const s = buildSynthesis(l);
+  assert.ok(!s.items.some(i => i.target.kind === 'test'), 'it costs no yield, so it is not an item');
+  assert.deepEqual(s.watch.map(w => [w.text, w.target]), [['FREQ is below its low limit on 600 dies binned as passing', { kind: 'test', testNumber: 7 }]]);
+});
+
+test('"also seen as" counts a long family instead of naming each', () => {
+  const l = fakeLot([{ name: 'Ring 4 (edge)', dies: 1000, drop: 0.3 }]);
+  const keys = l.findings[0].highlight.dieKeysByWafer;
+  for (let i = 0; i < 4; i++) {
+    l.findings.push({ ...l.findings[0], id: `arc${i}`, comparison: { family: 'edge-arc', left: `Edge arc ~${'NESW'[i]}`, right: 'Rest' },
+      effect: { direction: 'lower', absoluteDelta: -0.2 }, highlight: { kind: 'wafer', waferIndices: [0, 1], dieKeysByWafer: { 0: keys[0].slice(0, 100), 1: keys[1].slice(0, 100) } } });
+  }
+  assert.match(buildSynthesis(l).items[0].text, /\(also seen as 4 edge arcs\)$/);
+});
+
+test('in the report a test item links to the section its test is in', () => {
+  const results = [];
+  for (let x = -R; x <= R; x++) for (let y = -R; y <= R; y++) {
+    if (Math.hypot(x, y) > R) continue;
+    const low = ((x + 20) * 7 + (y + 20) * 3) % 9 === 0;
+    results.push({ x, y, hbin: low ? 2 : 1, testValues: { 5: low ? 0.5 : 1.5 } });
+  }
+  const m = buildWaferMap({ results, waferConfig: { diameter: 300, notch: { type: 'bottom' } }, hbinDefs: BIN_DEFS, passBins: [1], ringCount: 4,
+    testDefs: [{ testNumber: 5, name: 'GAIN', limitLow: 1 }] });
+  const html = renderWaferReportHtml(m, analyzeWaferMap(m));
+  assert.match(html, /<a href="#report-tests-">GAIN<\/a>|<a href="#report-tests-">GAIN: /);
+  assert.match(html, /<section class="report-section" id="report-tests-">\s*<h2>Test Values<\/h2>/);
+});
+
+// ── Soft bins only, and several pass bins ────────────────────────────────────
+
+/** `fakeLot` judged by soft bins: no hard bin on any wafer, a region whose pass soft bin fell and two fail soft bins rose. */
+function softOnlyLot(passBinsDrop = 0.12) {
+  const l = fakeLot([]);
+  const highlight = { kind: 'wafer', waferIndices: [0, 1], dieKeysByWafer: {
+    0: Array.from({ length: 500 }, (_, k) => `r:${k}`), 1: Array.from({ length: 500 }, (_, k) => `s:${k}`) } };
+  const bin = (b, direction, delta) => ({
+    id: `lot-region:softBin|softBin|${b}||ring|ring:4`, level: 'lot', severity: 'info',
+    variable: { kind: 'softBin', bin: b, label: `SBin ${b}` },
+    comparison: { family: 'ring', left: 'Ring 4 (edge)', right: 'Rest of map' },
+    effect: { direction, absoluteDelta: delta }, stats: { method: 'stouffer-z', sampleSizeLeft: 2, sampleSizeRight: 0 },
+    summary: '', highlight,
+  });
+  l.findings = [bin(1, 'lower', -passBinsDrop), bin(10, 'higher', 0.03), bin(20, 'higher', 0.03), bin(12, 'higher', 0.03)];
+  return l;
+}
+
+test('with soft bins only, the pass bin that fell is the region\'s pass rate, not one fail bin', () => {
+  // 1,000 dies in the ring of 10,000: the pass rate is 12 points down (120 dies, over the floor), each fail bin
+  // only 3 (30 dies, under it alone).
+  const s = buildSynthesis(softOnlyLot(), { passBins: [1] });
+  assert.equal(s.items.length, 1, synthesisText(s));
+  assert.equal(s.items[0].diesLost, 120);
+  assert.match(s.items[0].text, /^Ring 4 \(edge\): pass rate 12\.0 points below the rest of the wafer on 2\/2 wafers; soft bin \d+ accounts for 3\.0/);
+  assert.ok(s.items[0].chips.every(c => c.bin?.bin !== 1), 'the pass bin is the row, not a failing-bin chip');
+});
+
+test('with several pass bins, one of them falling is not the whole pass rate', () => {
+  const s = buildSynthesis(softOnlyLot(), { passBins: [1, 2] });
+  assert.ok(s.items.every(i => i.diesLost < 120), synthesisText(s));
+});
+
+test('when nothing costs a yield point but a finding is unusual, the sentence does not say nothing stands out', () => {
+  const l = fakeLot([{ name: 'A', dies: 1000, drop: 0.05 }]);
+  l.findings[0].severity = 'unusual';
+  const s = buildSynthesis(l);
+  assert.equal(s.items.length, 0);
+  assert.doesNotMatch(s.nothing, /Nothing stands out/);
+  assert.match(s.nothing, /^No region, fail bin or wafer costs as much as 1\.0 yield points, though 1 finding below is marked unusual\.$/);
 });

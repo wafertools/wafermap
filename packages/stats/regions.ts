@@ -111,6 +111,17 @@ const COMPASS_16 = ['E', 'ENE', 'NE', 'NNE', 'N', 'NNW', 'NW', 'WNW', 'W', 'WSW'
 const COMPASS_8  = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'];
 const COMPASS_4  = ['E', 'N', 'W', 'S'];
 
+/**
+ * The compass bucket of a direction `dx, dy` from the wafer centre, of `count` (4, 8 or 16) buckets each
+ * centred on its bearing: east spans −11.25° to 11.25° of 16. The one rule for naming a direction, read by
+ * the sectors and by the edge arcs.
+ */
+export function compassBucket(dx: number, dy: number, count: number): number {
+  const half = Math.PI / count;
+  const angle = (Math.atan2(dy, dx) + 2 * Math.PI + half) % (2 * Math.PI);
+  return Math.floor((angle / (2 * Math.PI)) * count) % count;
+}
+
 /** Compass bearing names for a given sector count, ordered CCW from East. */
 export function sectorCompassNames(sectorCount: number): string[] {
   const safe = [4, 8, 16].includes(sectorCount) ? sectorCount : 16;
@@ -286,14 +297,8 @@ export function buildSectorRegions(dies: PositionedDie[], wafer: Wafer, sectorCo
     const normRadius = Math.hypot(dx, dy) / r;
     if (normRadius < 0.2) continue;   // too close to centre for a directional signal
 
-    // atan2 in [-π, π]; convert to [0, 2π) going CCW from East.
-    // Offset by half a bucket so each label is centred on its compass bearing
-    // rather than starting there (without offset, "E" spans 0°–45° so it reads
-    // as ~2 o'clock; with the offset it spans −22.5°–22.5° around true East).
-    const halfBucket = Math.PI / safe;
-    const angle = (Math.atan2(dy, dx) + 2 * Math.PI + halfBucket) % (2 * Math.PI);
-    const bucketIndex = Math.floor((angle / (2 * Math.PI)) * safe) % safe;
-    const label = names[bucketIndex];
+    // Centred on its bearing: "E" spans −22.5° to 22.5° of 8, not 0° to 45°.
+    const label = names[compassBucket(dx, dy, safe)];
     const key = `sector:${label}`;
 
     const existing = regions.get(key) ?? {

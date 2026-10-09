@@ -141,3 +141,31 @@ test('an invalid column count falls back to auto; a fraction rounds', () => {
   assert.match(gridTemplate(root), /^repeat\(2, /);
   ctrl.destroy();
 });
+
+// ── Filling the row ───────────────────────────────────────────────────────────
+// The cap stops a FEW cards inflating across a wide screen. With more cards than
+// columns, width too narrow for another column (the Summary panel closing, say)
+// goes to the cards instead of into an empty band beside them.
+
+function withGridWidth(root, px) {
+  const grid = [...root.querySelectorAll('div')].find(d => d.style.display === 'grid');
+  Object.defineProperty(grid, 'clientWidth', { configurable: true, get: () => px });
+}
+
+test('with more cards than columns, the columns fill the row; with every card in one row, the cap holds', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  // 3 mm pitch: cards need 524 px, the cap is 524 px, so a gained width cannot add a column early.
+  const ctrl = renderWaferGallery(root, ['W01', 'W02', 'W03', 'W04'].map(w => waferAtPitch(3, w)));
+
+  withGridWidth(root, 1400);   // two columns of 694 px fit, three of 459 px do not
+  ctrl.setColumns(undefined);  // re-runs the auto layout at the new width
+  assert.match(gridTemplate(root), /^repeat\(2, minmax\(0(px)?, 1fr\)\)$/);
+  assert.deepEqual(cardMaxWidths(root), ['none', 'none', 'none', 'none']);
+
+  withGridWidth(root, 2400);   // all four fit in one row: the cap keeps them from stretching
+  ctrl.setColumns(undefined);
+  assert.match(gridTemplate(root), /^repeat\(4, minmax\(0(px)?, 524px\)\)$/);
+  assert.deepEqual(cardMaxWidths(root), ['524px', '524px', '524px', '524px']);
+  ctrl.destroy();
+});

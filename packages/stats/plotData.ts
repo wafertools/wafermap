@@ -18,7 +18,8 @@ import { hasPosition } from '../core/dies.js';
 import { DIE_REGIONS, DIE_REGION_KEYS } from './dieRegions.js';
 import type { Wafer } from '../core/wafer.js';
 import type { WaferMetadata } from '../core/metadata.js';
-import { testValue, testsPresent } from '../core/dieTable.js';
+import { excludedBy, excludedValue, testValue, testsPresent } from '../core/dieTable.js';
+import { limitSetName } from '../renderer/valueFilter.js';
 import { compareNatural, minOf, maxOf } from '../core/utils.js';
 import { isParametricTest, getTestPassStatus, type TestDef } from '../renderer/buildWaferMap.js';
 import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
@@ -129,6 +130,11 @@ export interface ResolvedPlot {
   plotted: number;
   /** Marks left out because a value was missing, by the field it was missing from. */
   omitted: Array<{ field: string; count: number }>;
+  /**
+   * Values the value filter took out of the tests this plot reads: the limit set they were outside of, and how many
+   * dies lost a value per test. Absent when none did. These dies are in `omitted` too (they have no value).
+   */
+  excluded?: { limitSet: string; fields: Array<{ field: string; count: number }> };
 }
 
 // ── field resolution ──────────────────────────────────────────────────────────────────────────────────────
@@ -660,8 +666,20 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     return colorLabel && colorCol && !sameField(colorCol.field, xField) ? `${core} · by ${colorLabel}` : core;
   };
 
+  // Values the value filter excluded from the tests this plot reads: said in the footnote, never silent.
+  const excludedFields: Array<{ field: string; count: number }> = [];
+  let excludedSet: string | undefined;
+  for (const col of new Set([xCol, yCol, colorCol])) {
+    if (!col || !('test' in col.field)) continue;
+    const tn = col.field.test;
+    let count = 0;
+    for (const d of rows.dies) if (excludedValue(d, tn) !== undefined) { count++; excludedSet ??= limitSetName(excludedBy(d)!); }
+    if (count > 0) excludedFields.push({ field: col.label, count });
+  }
+
   return {
     spec, issues: [], notes, marks, level,
+    ...(excludedSet ? { excluded: { limitSet: excludedSet, fields: excludedFields } } : {}),
     autoTitle: title(), x: xAxis, y: yAxis, groups, colorScale, colorLabel, aggregation,
     population: { wafers: items.length, dies: rows.dies.length },
     plotted,
@@ -680,6 +698,9 @@ export function plotFootnote(resolved: ResolvedPlot): string {
   const parts = [`${wafers.toLocaleString('en-GB')} wafer${wafers === 1 ? '' : 's'} · ${dies.toLocaleString('en-GB')} dies`];
   if (resolved.aggregation) parts.push(resolved.aggregation);
   for (const o of resolved.omitted) parts.push(`${o.count.toLocaleString('en-GB')} ${resolved.level === 'die' ? 'dies' : 'wafers'} without ${o.field} not plotted`);
+  if (resolved.excluded) {
+    for (const f of resolved.excluded.fields) parts.push(`${f.count.toLocaleString('en-GB')} ${f.field} value${f.count === 1 ? '' : 's'} outside ${resolved.excluded.limitSet} excluded`);
+  }
   return parts.join(' · ');
 }
 

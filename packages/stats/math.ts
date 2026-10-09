@@ -46,6 +46,43 @@ export function binomialUpperTail(k: number, n: number, p: number): number {
   return Math.min(1, tail);
 }
 
+/** ln Γ(x) for x > 0, by the Lanczos approximation (g = 7, 9 terms): relative error near 1e-15. */
+export function logGamma(x: number): number {
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x);
+  const c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+    -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  const z = x - 1;
+  let a = c[0];
+  for (let i = 1; i < 9; i++) a += c[i] / (z + i);
+  const t = z + 7.5;
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+/**
+ * Two-sided Fisher exact p-value of the 2×2 table [[a, b], [c, d]]: the probability, with the margins fixed,
+ * of a table no more likely than the one observed. For rates whose expected counts are too small for a
+ * normal approximation, which there reports differences far more significant than they are. The table's
+ * probabilities are walked by their ratio, so the cost is the span of the first cell, not the dies.
+ */
+export function fisherExact(a: number, b: number, c: number, d: number): number {
+  const row1 = a + b, row2 = c + d, col1 = a + c, n = row1 + row2;
+  const lo = Math.max(0, col1 - row2), hi = Math.min(row1, col1);
+  if (hi <= lo) return 1;
+  const logP = (x: number): number =>
+    logGamma(row1 + 1) + logGamma(row2 + 1) + logGamma(col1 + 1) + logGamma(n - col1 + 1) - logGamma(n + 1)
+    - logGamma(x + 1) - logGamma(row1 - x + 1) - logGamma(col1 - x + 1) - logGamma(row2 - col1 + x + 1);
+  const observed = Math.exp(logP(a));
+  // P(x + 1) / P(x) = (row1 − x)(col1 − x) / ((x + 1)(row2 − col1 + x + 1)).
+  let p = Math.exp(logP(lo));
+  let total = 0;
+  const tolerance = observed * (1 + 1e-7);
+  for (let x = lo; x <= hi; x++) {
+    if (p <= tolerance) total += p;
+    p *= ((row1 - x) * (col1 - x)) / ((x + 1) * (row2 - col1 + x + 1));
+  }
+  return Math.min(1, total);
+}
+
 /**
  * Benjamini–Hochberg adjusted p-values, in the order given. The one
  * false-discovery-rate rule in the library: findings (`adjustPValues`) and the

@@ -3,7 +3,8 @@ import { requireRingCount } from '../core/ringCount.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Die, PositionedDie } from '../core/dies.js';
 import { hasPosition } from '../core/dies.js';
-import { dieValueEntries, dieVerdictEntries, recordedVerdict, testsPresent } from '../core/dieTable.js';
+import { dieValueEntries, dieVerdictEntries, excludedBy, excludedValue, recordedVerdict, testsPresent } from '../core/dieTable.js';
+import { limitSetName } from './valueFilter.js';
 import type { Reticle } from '../core/reticle.js';
 import { getReticleCell } from '../core/reticle.js';
 import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
@@ -641,7 +642,7 @@ function collectTestRows(
   die: Die,
   testDefs: TestDef[] | undefined,
   fallbackFormat?: 'si' | 'engineering',
-): Array<{ key: number; label: string; value: string; recordedFail?: boolean }> {
+): Array<{ key: number; label: string; value: string; recordedFail?: boolean; excludedBy?: 'validity' | 'spec' | 'test' }> {
   // Plain text only — the caller escapes and adds markup. `recordedFail` is a
   // flag rather than an inline "<i>(recorded fail)</i>", which the tooltip's
   // escaping would otherwise print as literal tags.
@@ -654,7 +655,11 @@ function collectTestRows(
         return [{ key, label: markedTestLabel(def, key), value: p ? 'Pass' : 'Fail' }];
       }
       const v = getDieTestValue(die, key);
-      if (v === undefined) return [];
+      if (v === undefined) {
+        // Not "no result": the value filter took this reading out, and the tooltip says why.
+        const out = excludedValue(die, key);
+        return out === undefined ? [] : [{ key, label: markedTestLabel(def, key), value: fmt(out, def.unit, fallbackFormat), excludedBy: excludedBy(die) }];
+      }
       return [{ key, label: markedTestLabel(def, key), value: fmt(v, def.unit, fallbackFormat), recordedFail: recordedVerdict(die, key) === false }];
     });
     if (rows.length) return rows;
@@ -790,6 +795,7 @@ export function buildHoverText(
         const spec = classifySpec(activeVal, activeDef);
         if (spec === 'failLow' || spec === 'failHigh') leadLine += ' <i>(outside test limits)</i>';
       }
+      if (lead.excludedBy) leadLine += ` <i>(outside ${limitSetName(lead.excludedBy)}, excluded)</i>`;
       lines.push(leadLine);
       // The glyph in the lead label is only half the marker: the tooltip has
       // room for the words, and for the expression — which is the answer to the

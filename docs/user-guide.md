@@ -166,6 +166,19 @@ no gradient to fall back to). **Test pass/fail** is also available as an
 Overlays option on an ordinary parametric test when it carries recorded
 verdicts, as an alternative to limit judgement.
 
+### Values outside a limit set
+
+A tester that runs out of range records its rail instead of a reading: a current held at the compliance clamp, a voltage at the supply, an
+open-circuit value. A test can carry **validity limits**, the range a real measurement lies in, and a value outside them is not a reading. It
+is **missing** for that test on that die: grey on the map, and left out of the statistics and every chart, so one clamp cannot stretch the colour
+scale or move the mean, σ and Cpk. Which limit set a value must lie inside is the host's choice. The usual one is the validity limits, which only
+affect tests that have them; a host can instead keep only values inside the specification limits or the test limits, or filter nothing.
+
+Nothing is hidden. Hover a grey die and the tooltip names the excluded value and the limit set. The Summary panel's Test Values table shows the
+total beside **N** and an **Excl.** column, and the same count appears in the histogram and box plot captions, the capability tooltip and caption,
+the Plot tab's footnote, the report and the CSV exports. The build also lists it among the data warnings. The bin map and each die's pass/fail are
+the tester's own and do not change, so yield is the same with the filter on or off.
+
 <div data-wmap-demo="value-heatmap" class="wmap-demo"></div>
 
 <div data-wmap-demo="spec-passfail" class="wmap-demo"></div>
@@ -217,7 +230,6 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
 | <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
-| <img src="images/icons/findings.svg" width="20" height="20">  | Findings           | Opens or closes the Summary panel (see [Section 6](#6-summary-panel)).                                                                                                                                                                                                                           |
 | <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                                                                                                      |
 
@@ -333,7 +345,6 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | **Legend on each map** adds a legend to every card as well as the shared one above the grid (off by default). While it is on, bin modes also let you choose where that legend sits on each card. |
 | <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with test limits only. Toggles all cards between the limit range and the data range. Leave it on the test limits when comparing wafers — the data range rescales per view. |
-| <img src="images/icons/findings.svg" width="20" height="20"> | Summary panel | Opens or closes the Summary panel covering every wafer in the gallery.                                                                                                           |
 | <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the wafers shown. Collected across every wafer and de-duplicated, so a problem affecting all of them is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
 
@@ -536,8 +547,10 @@ supporting detail.
 
 The Summary panel docks next to the map and gives you the wafer or lot at a
 glance, with findings sitting directly under the headline numbers so a clicked
-finding can highlight the affected dies right there. Open it from the toolbar, or from
-the **Summary** tab on the edge of the map area, which shows while the panel is closed.
+finding can highlight the affected dies right there. The **Summary** button in the row
+above the map, just before Map | Insights, opens and closes it, and shows as pressed while
+it is open. The **▸** button at the end of the panel's title closes it too, and stays in
+view as the panel scrolls.
 
 <div data-wmap-demo="summary-panel" class="wmap-demo"></div>
 
@@ -563,18 +576,29 @@ Sections, top to bottom:
   fails) on a share of the dies that clears the same floor. Its three dots and word (High, Moderate or Low impact) say how
   much of the lot it costs: the higher of its share of all the dies (2% moderate, 4% high)
   and its share of the dies that fail (15% moderate, 40% high), so a small area that is most
-  of a good lot's loss still reads as high. Click a name to highlight that finding on the map.
+  of a good lot's loss still reads as high.
+  A test is costed by the dies it fails that also fail yield: dies outside its limits but binned
+  as passing cost nothing. A test whose failures lie mostly in a region is said as part of that
+  region's item rather than listed again beside it.
+  **Every item is a row, and every row shows its dies on the map** — a wafer icon at its end marks
+  it. Click a region or wafer to highlight it, or a test to show the test's values with the dies it
+  fails selected; click again to clear. Under the top item's sentence, chips name its parts (its
+  failing bins, with their legend colours, the pattern, and tests failing on the same dies), and
+  each chip shows that part alone.
   A **Watch** line (at most two) follows for things that cost no dies yet: a lot of five or more
   wafers whose yield, or a test's mean, trends up or down across the wafers *in the order given*
-  (said as "input order": the order is only a physical one if you know it is), and a test whose
-  Ppk against its limits is under 1.0.
+  (said as "input order": the order is only a physical one if you know it is), a test outside its
+  limits on dies that were binned as passing, and a test whose Ppk against its limits is under 1.0.
+  Watch lines are rows too.
   A wafer or lot with nothing over a yield point says so: "Nothing stands out".
   The reports open with the same section, and **Full report** at the foot of it opens the
   report; in a report opened from the panel, clicking a finding's row shows it on the map.
 - **Findings** — detected anomalies, most severe first, each group marked with
-  three dots filled by severity (Unusual, Notable, Minor). Severity chips narrow
-  the list; Kind and Region dropdowns appear once there are enough findings to
-  be worth narrowing. **Detail** opens the same sentences above a readable list.
+  three dots filled by severity (Unusual, Notable, Minor). The header says how
+  many are unusual or notable, even when the section is collapsed, and the
+  severity chips narrow the list. Click a finding to show it on the map. A spatial
+  pattern has a **Show N supporting findings** line under it that lists the
+  regional findings it explains.
 - **Bin breakdown** — bars as a share of dies, pass bins first and then failing
   bins by descending count, so the dominant failure mode is at the top. It
   follows the map's plot mode: a soft-bin map gets a soft-bin breakdown. When a
@@ -613,8 +637,9 @@ table with Cp/Cpk/Pp/Ppk, and the findings list — and can be saved as a PDF
 from your browser's print dialog. It opens with **What stands out**: the yield,
 up to three regions, fail bins or wafers ranked by how many dies each costs, and a
 line saying what was compared. An item is listed only when it costs at least one
-yield point of the dies analysed; a lot with none says so. Each figure links to its
-row in the Findings table below. Severity is drawn as three dots and a word, so it reads in a
+yield point of the dies analysed; a lot with none says so. Each item links to its
+evidence: a finding to its row in the Findings table below, a test to the Test Values
+or Functional Tests section. Severity is drawn as three dots and a word, so it reads in a
 black-and-white print; yields carry a bar, and a wafer or region is tinted only when it is
 at least a point below the rest.
 
@@ -771,6 +796,8 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   offer one.
 - **Correlation** — a test-to-test correlation matrix and a die-level scatter
   plot, both stating the sample size the coefficients are computed over.
+  **Max tests** (5 to 100, 20 by default) sets how many tests the matrix shows, and
+  **Correlation CSV** saves the matrix as a table.
   Clicking a matrix cell drives the scatter plot onto that pair, where `r` and
   `n` for that pair are printed and update as you filter the legend. Hover a
   point to see which wafer and die it is; **click** it to open that wafer on the

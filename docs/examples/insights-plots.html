@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plots, tables and attributes — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    .demo-content { padding: 0; }
+    #stage { width: 100%; padding: 14px; box-sizing: border-box; }
+    #saved { font-family: monospace; font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Plots, tables and attributes</span>
+    <span class="demo-desc">insights.plots · onPlotsChange · defaultView · attributes · readPlotsFile / writePlotsFile</span>
+  </header>
+
+  <div class="demo-intro">
+    The Insights <strong>Plot</strong> tab is a chart builder, and the library keeps nothing: you hand it the list of saved plots in
+    <code>insights.plots</code> and keep it current from <code>insights.onPlotsChange</code> (here, in <code>localStorage</code>). A plot is a
+    recipe with no lot in it, so the same list draws on the next lot; one whose test the open lot lacks stays in the list, greyed with the reason.
+    Two plots are supplied below to start from: Vth by process split (a box on a wafer attribute) and yield by reticle cell (a bar split by a die field,
+    offered because the lot has a <code>reticleConfig</code>). Add, edit or delete some, reload the page, and they are still there.
+    <strong>Export plots…</strong> writes the same list as a <code>wafermap-plots</code> file (<code>writePlotsFile</code>); <strong>Import plots…</strong> reads one (<code>readPlotsFile</code>).
+    The <strong>Data</strong> tab shows the lot as tables (statistics, dies, wafers) with CSV export, and right-clicking a map, a card or a chart mark opens the drilldown on exactly the dies it counts.
+    <code>attributes</code> names the wafer attributes: <em>processSplit</em> is called <strong>Process split</strong> and offered as a Group by,
+    <em>progRev</em> is shown on the header strip and in the Wafers table but kept out of the Group by list (<code>facet: false</code>), and <em>testDate</em> is a date, grouped by day.
+  </div>
+
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Open on</span>
+      <button class="toggle-btn active" data-view="plot">Plot</button>
+      <button class="toggle-btn"        data-view="data">Data</button>
+      <button class="toggle-btn"        data-view="overview">Overview</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <button class="toggle-btn" id="btn-reset">Reset saved plots</button>
+    <div class="ctrl-sep"></div>
+    <span id="saved"></span>
+  </div>
+
+  <div class="demo-content">
+    <div id="stage"><div id="gallery"></div></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap, writePlotsFile } from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferLot } from 'wafermap/stats';
+    import { makeResults, makeWaferConfig, DIE_CONFIG, TEST_DEFS, HBIN_DEFS, SBIN_DEFS } from './data.js';
+
+    const KEY = 'wafermap-example-plots';
+    const STARTER = [
+      { id: 'vth-by-split', chart: 'box', fields: { x: { meta: 'processSplit' }, y: { test: 1060, name: 'Vth' } } },
+      { id: 'yield-by-cell', chart: 'bar', fields: { x: { builtin: 'reticleCell' }, y: { builtin: 'yield' } } },
+    ];
+
+    function load() {
+      try { const s = JSON.parse(localStorage.getItem(KEY) ?? 'null'); if (Array.isArray(s)) return s; } catch { /* storage unavailable */ }
+      return STARTER;
+    }
+    function save(plots) {
+      try { localStorage.setItem(KEY, JSON.stringify(plots)); } catch { /* storage unavailable */ }
+      document.getElementById('saved').textContent = `${plots.length} saved plot${plots.length === 1 ? '' : 's'} · ${writePlotsFile(plots).length.toLocaleString()} bytes as a plots file`;
+    }
+
+    const RETICLE = { width: 4, height: 3, anchorDie: { x: 0, y: 0 } };
+    const items = [];
+    for (let i = 0; i < 6; i++) {
+      const cfg = makeWaferConfig(i);
+      cfg.metadata = { ...cfg.metadata, progRev: 'B.2', testDate: `2026-09-${String(10 + (i >> 1)).padStart(2, '0')}T08:30:00Z` };
+      const result = buildWaferMap({
+        results: makeResults({ seed: 31 + i, waferIndex: i, quadrant: true, reticlePattern: true }),
+        waferConfig: cfg, dieConfig: DIE_CONFIG, reticleConfig: RETICLE,
+        passBins: [1], testDefs: TEST_DEFS, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS,
+      });
+      items.push({ ...result, label: cfg.metadata.waferId });
+    }
+    const lotStatsSummary = analyzeWaferLot(items, { testDefs: TEST_DEFS, computePerTestStats: true });
+
+    let view = 'plot', gallery;
+    function render() {
+      if (gallery) gallery.destroy();
+      const plots = load();
+      save(plots);
+      gallery = renderWaferGallery(document.getElementById('gallery'), items, {
+        lotStatsSummary,
+        attributes: {
+          processSplit: { label: 'Process split' },
+          progRev:      { label: 'Program revision', facet: false },
+          testDate:     { label: 'Test date', date: true },
+        },
+        insights: {
+          enabled: true, defaultOpen: true, defaultView: view,
+          plots,
+          onPlotsChange: save,
+        },
+        summaryPanel: { placement: 'right' },
+        viewOptions: { plotMode: 'value', activeTest: TEST_DEFS[1].testNumber },
+        showHelpButton: true,
+      });
+    }
+    render();
+
+    document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+      view = b.dataset.view;
+      document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('active', x === b));
+      render();
+    }));
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      try { localStorage.removeItem(KEY); } catch { /* storage unavailable */ }
+      render();
+    });
+  </script>
+
+</body>
+</html>

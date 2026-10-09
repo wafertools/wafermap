@@ -5,7 +5,7 @@
 [![CI and deploy](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml/badge.svg)](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml)
 [![npm](https://img.shields.io/npm/v/@wafertools/wafermap.svg)](https://www.npmjs.com/package/@wafertools/wafermap)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
-![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~65%20kB-blue)
+![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~68%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 <img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
@@ -13,7 +13,7 @@
 Browser-first wafer map visualization for semiconductor test data.
 
 **Zero runtime dependencies.** Pure ES modules with TypeScript types — works in React,
-Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~65 kB
+Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~68 kB
 min+gz; the interactive renderer is larger, and its chart suite and in-app guide are
 loaded on demand rather than shipped up front — [measured sizes](docs/performance.md).
 
@@ -26,7 +26,7 @@ Discussions](https://github.com/wafertools/.github/discussions).
 
 ## Overview
 
-wafermap renders interactive wafer maps from semiconductor prober output. Hard bins, soft bins, test values, retest runs, edge exclusion, and spec limits are native inputs.
+wafermap renders interactive wafer maps from semiconductor prober output. Hard bins, soft bins, test values, retest runs, edge exclusion, and spec and validity limits are native inputs.
 
 - Geometry inference — pass full physical dimensions or raw prober step positions; die pitch, wafer diameter, and coordinate origin are resolved automatically
 - `renderWaferMap` — interactive canvas map with toolbar, zoom/pan, tooltips, die selection, and summary panel
@@ -35,6 +35,9 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 - Derived tests (`derivedTests`) — tests computed per die from other tests (`abs(t[1020] - t[1010])`), which then work everywhere a measured test does, marked † as not measured
 - Parametric sweeps (plots with `chart: 'sweep'`, edited on the Plot tab) — an ordered run of tests read as a response curve, with the crossing and widths between two curves measured; x values given directly or read from the test names, on a linear or log axis
 - Drilldown — right-click selected dies, a wafer card or a wafer's bar to chart just that population, with the population stated on the chart
+- Plot tab and Data tab — a chart builder (scatter, histogram, box, bar, line, sweep over any test, die field or wafer attribute) whose saved plots your app keeps with `insights.plots` and `onPlotsChange`, and the lot as sortable tables (statistics, dies, wafers) with CSV export
+- Validity limits (`TestDef.validLow` / `validHigh`, `valueFilter`) — tester clamps and open-circuit readings are kept out of the map, statistics and charts, and counted wherever a population is shown
+- Reticle and multi-project wafers — stepper-field overlay, reticle cell and shot as die fields to colour, split and chart by, reticle-position findings, and a compact layout for sparse multi-project reticles
 - `analyzeWaferMap` / `analyzeWaferLot` — spatial analysis across rings, quadrants, sectors, and reticle positions; failure cluster detection; lot trend series
 - Pure ES modules, no server, no runtime dependencies — works in React, Svelte, Vue, plain HTML, or a Web Worker
 

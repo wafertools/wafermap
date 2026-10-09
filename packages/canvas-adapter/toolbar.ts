@@ -1268,6 +1268,8 @@ export interface ToolbarHelpers {
   makeBtn(iconKey: string, label: string, onClick: () => void): HTMLButtonElement;
   setActive(btn: HTMLButtonElement, active: boolean): void;
   makeSep(): HTMLDivElement;
+  syncSeparators(bar: HTMLElement): void;
+  syncToolbarVisible(bar: HTMLElement, shownDisplay: string): void;
   makeMenuRow(label: string, active: boolean, indent: boolean, onClick: (e: MouseEvent) => void, mark?: { derived: boolean }): HTMLDivElement;
   makeMenuSection(label: string): HTMLDivElement;
   makeDropdown<T extends string>(
@@ -1297,6 +1299,16 @@ export interface ToolbarHelpers {
 /** `label` is the plain name (with unit); `derived` puts the † in front of it
  *  when the menu draws the row — kept apart so the menu can align it in a slot. */
 export type ModeEntry = { plotMode: PlotMode; activeTest?: number; activeMetadataKey?: string; label: string; logScale?: boolean; derived?: true };
+
+/**
+ * The bin mode a map opens in when the host names no plot mode: hard bins when any die has one, else
+ * soft bins when any die has one. Hard bins over soft-bin data draw every die as no data. With no bins
+ * at all it stays hard bins, as it always has. One rule for the single map and the gallery.
+ */
+export function defaultPlotMode(dieLists: readonly (readonly Pick<Die, 'hbin' | 'sbin'>[])[]): PlotMode {
+  const any = (pick: (d: Pick<Die, 'hbin' | 'sbin'>) => unknown) => dieLists.some(dies => dies.some(d => pick(d) != null));
+  return any(d => d.hbin) ? 'hardBin' : any(d => d.sbin) ? 'softBin' : 'hardBin';
+}
 
 /**
  * Which plot modes the data actually supports — the single derivation shared by
@@ -1968,7 +1980,49 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
       margin:     '0 2px',
       flexShrink: '0',
     });
+    sep.dataset.wmapSep = '1';
     return sep;
+  }
+
+  /**
+   * Shows a separator only when a visible control sits on both sides of it, so a
+   * bar whose groups have been hidden (Insights open, no warnings, no summary)
+   * never draws a divider with nothing to divide. Call after any change to which
+   * of the bar's children are visible. Direct children only; a hidden group
+   * counts as absent.
+   */
+  function syncSeparators(bar: HTMLElement): void {
+    let seenContent = false;
+    let pending: HTMLElement | null = null;
+    for (const child of Array.from(bar.children) as HTMLElement[]) {
+      if (child.dataset.wmapSep) {
+        if (seenContent && !pending) pending = child;
+        else child.style.display = 'none';
+      } else if (child.style.display !== 'none') {
+        if (pending) { pending.style.display = ''; pending = null; }
+        seenContent = true;
+      }
+    }
+    if (pending) pending.style.display = 'none';
+  }
+
+  /** True when a visible control sits anywhere under `el`; separators and hidden groups do not count. */
+  function hasVisibleControl(el: HTMLElement): boolean {
+    for (const child of Array.from(el.children) as HTMLElement[]) {
+      if (child.dataset.wmapSep || child.style.display === 'none') continue;
+      if (child.tagName === 'DIV' && !child.getAttribute('role') && child.children.length) {
+        if (hasVisibleControl(child)) return true;
+      } else return true;
+    }
+    return false;
+  }
+
+  /**
+   * Hides a bordered toolbar that has nothing left in it — its border and padding
+   * would otherwise draw as a stray vertical line. Separators are synced first.
+   */
+  function syncToolbarVisible(bar: HTMLElement, shownDisplay: string): void {
+    bar.style.display = hasVisibleControl(bar) ? shownDisplay : 'none';
   }
 
   function makeMenuRow(
@@ -2173,7 +2227,7 @@ export function createToolbarHelpers(tooltip: HTMLDivElement): ToolbarHelpers {
   }
 
   return {
-    makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown,
+    makeBtn, setActive, makeSep, syncSeparators, syncToolbarVisible, makeMenuRow, makeMenuSection, makeDropdown,
     makeCheckMenuBtn, closeOpenMenu,
     getOpenMenu: () => openMenu,
     setOpenMenu: (m) => { openMenu = m; },

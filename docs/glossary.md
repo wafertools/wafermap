@@ -78,6 +78,14 @@ A statistical measure of how well a parametric test's values fit within its spec
 
 The rectangular exposure field used in photolithography, typically containing a fixed grid of die sites. One reticle field is stepped across the wafer repeatedly to pattern the full surface. The library can overlay the reticle grid and attribute findings to specific reticle positions, which is useful for identifying systematic defects tied to a particular mask location. *Library mapping: `WaferMapInput.reticleConfig`, `ReticleConfig`.*
 
+### Validity limit
+
+The range a real measurement of a test lies in (`validLow`, `validHigh`; tsmap's `lvl`/`uvl`). A tester that runs out of range records its rail, such as a current held at the compliance clamp or an open-circuit value, and that number is not a reading. Validity limits are a third kind beside the test and specification limits: those judge good against bad, these judge a reading against a clamp, and a clamped value is neither. *Library mapping: `TestDef.validLow`, `TestDef.validHigh`.*
+
+### Excluded value
+
+A test value that lies outside the limit set the value filter uses (the validity limits by default). It is treated as missing for that test on that die, in the map, the statistics and every chart, and it is counted wherever a population is shown. Bins and each die's recorded pass/fail are the tester's own and are unchanged. *Library mapping: `WaferMapInput.valueFilter`, `WaferMapResult.valueFilter`, `CapabilityDatum.excluded`.*
+
 ### Reticle cell
 
 A die's position *inside* the reticle: which of the field's dies it is, such as column 1, row 3 of a 4 × 3 field. The same cell recurs in every shot across the wafer, so a cell that is bad everywhere points at the mask or lens rather than at the wafer. Shown as `Reticle cell (1, 3)` and available once a reticle is set. *Library mapping: `getReticleCell`, `DIE_REGIONS.reticleCell`.*

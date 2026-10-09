@@ -15,6 +15,17 @@ export interface ClassifyOptions {
 }
 
 /**
+ * The ring (1 = innermost, `ringCount` = the edge) of a point `dx, dy` from the wafer centre: equal widths of
+ * the radius, a point on a boundary in the outer ring. The one ring rule; the edge ring is `ringCount`.
+ */
+export function ringOf(dx: number, dy: number, radius: number, ringCount: number): number {
+  const normalized = Math.sqrt(dx * dx + dy * dy) / radius;
+  return Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
+}
+
+const QUADRANT_BY_QUARTER: readonly Quadrant[] = ['NE', 'NW', 'SW', 'SE'];
+
+/**
  * Classify a die by its radial ring (1 = innermost) and physical wafer quadrant.
  *
  * Quadrant and ring are computed from `physX/physY`, which carry `wafer.orientation`
@@ -32,14 +43,14 @@ export function classifyDie(die: PositionedDie, wafer: Wafer, options: ClassifyO
   const ringCount = Math.max(1, requireRingCount(options, 'classifyDie'));
   const dx = die.physX - wafer.center.x;
   const dy = die.physY - wafer.center.y;
-  const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;
-  const ring = Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
+  const ring = ringOf(dx, dy, wafer.radius, ringCount);
 
-  let quadrant: Quadrant;
-  if (dx >= 0 && dy >= 0) quadrant = 'NE';
-  else if (dx < 0 && dy >= 0) quadrant = 'NW';
-  else if (dx < 0 && dy < 0) quadrant = 'SW';
-  else quadrant = 'SE';
+  // A quarter turn each, counter-clockwise from east, including its starting edge and not its end, as the
+  // sectors are bucketed: NE holds the positive x axis, NW the positive y axis, SW the negative x axis and
+  // SE the negative y axis. Every quadrant then holds the same share of a symmetric grid (the centre die,
+  // at angle 0, is NE) and a half turn maps each quadrant onto its opposite.
+  const angle = (Math.atan2(dy, dx) + 2 * Math.PI) % (2 * Math.PI);
+  const quadrant: Quadrant = QUADRANT_BY_QUARTER[Math.min(3, Math.floor(angle / (Math.PI / 2)))];
 
   return { ring, quadrant };
 }

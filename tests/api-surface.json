@@ -193,6 +193,7 @@
       "sbinDefs",
       "standardDiameters",
       "testDefs",
+      "valueFilter",
       "waferConfig"
     ],
     "WaferMapInputLayout": [
@@ -212,6 +213,7 @@
       "sbinDefs",
       "standardDiameters",
       "testDefs",
+      "valueFilter",
       "waferConfig"
     ],
     "WaferConfig": [
@@ -243,7 +245,9 @@
       "specLow",
       "testNumber",
       "testType",
-      "unit"
+      "unit",
+      "validHigh",
+      "validLow"
     ],
     "DerivedTestDef": [
       "constants",
@@ -259,7 +263,9 @@
       "specLow",
       "testNumber",
       "testType",
-      "unit"
+      "unit",
+      "validHigh",
+      "validLow"
     ],
     "DieResult": [
       "hbin",
@@ -318,6 +324,7 @@
       "sbinDefs",
       "testDefs",
       "units",
+      "valueFilter",
       "wafer",
       "warnings",
       "yield"
@@ -426,6 +433,7 @@
       "statsSummary",
       "testDefs",
       "units",
+      "valueFilter",
       "viewOptions",
       "wafer",
       "warnings",

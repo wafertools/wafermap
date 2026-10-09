@@ -1,5 +1,5 @@
 import { createViewSwitch, type ViewSwitch } from './viewSwitch.js';
-import { createSummaryRail, type SummaryRail } from './summaryRail.js';
+import { createSummaryToggle, type SummaryToggle } from './summaryToggle.js';
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
 import { metadataCategoricalValue } from '../core/metadata.js';
@@ -10,7 +10,7 @@ import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
-import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { defaultPlotMode, SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { openReportModal, openUserGuideWindow, type UserGuideExtension } from './guideWindow.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
@@ -25,7 +25,7 @@ import { sourceFromBins } from './plotItems.js';
 import type { DrilldownContext } from './drilldown.js';
 import { plotStoreFor, type WithPlotStore } from './plotStore.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
-import { classifyChanged, COLOR_KEYS, findingBin } from './renderWaferMap.js';
+import { classifyChanged, COLOR_KEYS, findingBin, findingPlotMode } from './renderWaferMap.js';
 import { findingPatternKey } from '../stats/filterFindings.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
@@ -652,7 +652,8 @@ export function renderWaferGallery(
   }
 
   let sharedOpts: CardViewOptions = {
-    plotMode:               'hardBin',
+    // From the items already built; a factory's wafer is not known yet.
+    plotMode:               defaultPlotMode(items.flatMap(it => (typeof it === 'function' ? [] : [it.dies ?? []]))),
     showDieLabels:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
@@ -765,8 +766,21 @@ export function renderWaferGallery(
   let nextWindowId = 0;
 
 
-  let btnLotSummary: HTMLButtonElement | null = null;
+  let lotSummaryToggle: SummaryToggle | null = null;
   let activeLotFindingId: string | null = null;
+  // The test a "What stands out" row is showing (its values, its failing dies ringed), or null.
+  // Released by everything that releases a finding, since it describes the map the same way.
+  let activeLotTest: number | null = null;
+  // The shared plot mode and test before a panel row first changed them, put back when that row is
+  // clicked again. Dropped when the user changes the view themselves.
+  let viewBeforeFinding: { plotMode: PlotMode | undefined; activeTest: number | undefined } | null = null;
+  function rememberViewBeforeFinding(): void {
+    if (activeLotFindingId === null && activeLotTest === null) viewBeforeFinding = { plotMode: sharedOpts.plotMode, activeTest: sharedOpts.activeTest };
+  }
+  function restoreViewBeforeFinding(): void {
+    if (viewBeforeFinding) updateShared({ ...viewBeforeFinding }, { fireCallback: false });
+    viewBeforeFinding = null;
+  }
   // Finding-highlight state: indices of cards implicated by the summary-panel
   // finding the user is currently inspecting (outlined until they clear it).
   let findingHighlightIndices = new Set<number>();
@@ -800,7 +814,7 @@ export function renderWaferGallery(
   // card's renderWaferMap uses, so only one tooltip is ever visible at a time.
   const tooltip = getTooltip();
   const tbHelpers = createToolbarHelpers(tooltip);
-  const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
+  const { makeBtn, setActive, makeSep, syncSeparators, syncToolbarVisible, makeMenuRow, makeMenuSection, makeDropdown, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
   // container.ownerDocument, not the bare global — matches renderWaferMap.ts's
   // own fix for the same gap (see its comment): a host could in principle
   // mount the gallery into a container that belongs to a different document.
@@ -844,7 +858,8 @@ export function renderWaferGallery(
    *  active lot finding, as it does a single map's, then reaches the host. */
   function cardOnSelect(item: WaferMapDisplayItem): (dies: Die[]) => void {
     return (dies) => {
-      if (!settingFindingSelection && activeLotFindingId !== null) {
+      if (!settingFindingSelection && (activeLotFindingId !== null || activeLotTest !== null)) {
+        viewBeforeFinding = null;
         clearLotFindingHighlight();
         renderGallerySummaryPanel();
       }
@@ -1348,9 +1363,19 @@ export function renderWaferGallery(
         onFindingClick: (finding, row) => {
           if (activeLotFindingId === finding.id) {
             clearLotFindingHighlight();
+            restoreViewBeforeFinding();
           } else {
+            rememberViewBeforeFinding();
             applyLotFindingHighlight(finding, row);
           }
+          renderGallerySummaryPanel();
+        },
+        activeTest: activeLotTest,
+        onTestClick: (testNumber) => {
+          const again = activeLotTest === testNumber;
+          if (!again) rememberViewBeforeFinding();
+          clearLotFindingHighlight();
+          if (again) restoreViewBeforeFinding(); else applyLotTestHighlight(testNumber);
           renderGallerySummaryPanel();
         },
         // Opens the wafer, which is what the row's own accessible name has always
@@ -1358,7 +1383,9 @@ export function renderWaferGallery(
         // payoff for a click, and a promise the label did not keep.
         onWaferClick: openWindowForCardIndex,
         findingsFor: findingsTallyFor,
-        dieListOptions: options.dieList, onLocateDie: (die, wi) => locateOnCard(wi, die) }), {
+        dieListOptions: options.dieList, onLocateDie: (die, wi) => locateOnCard(wi, die),
+        // The gallery's toolbar always carries the Summary button when it has this panel: a way back in.
+        onClose: () => setLotSummaryOpen(false) }), {
         // The panel is the last lot-wide surface to settle, so finishing it is
         // what makes `onItemsResolved` true — see `panelSettleEmit`.
         onDone: () => { const emit = panelSettleEmit; panelSettleEmit = null; emit?.(); },
@@ -1395,6 +1422,7 @@ export function renderWaferGallery(
 
   function clearLotFindingHighlight(): void {
     activeLotFindingId = null;
+    activeLotTest = null;
     clearFindingHighlight();
     clearDieZoneHighlight();
     restoreFindingScopedCards();
@@ -1404,9 +1432,75 @@ export function renderWaferGallery(
   /** A legend click releases the active lot finding: the user has changed what
    *  the map shows, so the finding no longer describes it. */
   function releaseLotFindingForLegend(): void {
-    if (activeLotFindingId === null) return;
+    if (activeLotFindingId === null && activeLotTest === null) return;
+    viewBeforeFinding = null;
     clearLotFindingHighlight();
     renderGallerySummaryPanel();
+  }
+
+  /**
+   * Plot `testNumber` on the cards: the whole gallery when the lot agrees about the test, otherwise only
+   * `wafers` (the ones the caller has reason to think it means the same thing on). A finding about a test
+   * and a "What stands out" row about a test both come here, so the two can never disagree about it.
+   */
+  function showTestOnCards(testNumber: number, wafers: number[] | null): void {
+    // A finding comes from PER-WAFER analysis, which reads that wafer's own
+    // testDefs — so its test number is meaningful for the wafers it names and
+    // not necessarily for any other. Switching the whole gallery to it was an
+    // unguarded write of `activeTest` that bypassed every reconciliation the
+    // merged list performs: click a `leakage` finding raised on one lot's
+    // wafers and every card plots its own `testValues[1001]`, which in a lot
+    // that calls 1001 `vth_n_mV` is a different physical quantity in
+    // different units, laid out as though it were one comparison.
+    //
+    // So: switch the whole gallery only when the population actually agrees
+    // about this test (it survived `mergeTestDefs`). Otherwise switch only the
+    // wafers named — they come from files that do agree, so the test is
+    // unambiguous for them — and leave everything else alone.
+    // `lotTestDefs()` (not `mergedTestDefs()`) so "nobody supplied any test
+    // definitions" reads as agreement, not disagreement: with nothing to
+    // reconcile there is nothing to contradict, and treating that as a
+    // collision would silently downgrade every finding click to per-card
+    // scoping for the many hosts that pass no `testDefs` at all.
+    const reconciled = lotTestDefs();
+    const agreed = reconciled === undefined || reconciled.some(d => d.testNumber === testNumber);
+    if (agreed) {
+      updateShared({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined }, { fireCallback: false });
+    } else {
+      updateShared({ highlightBin: undefined }, { fireCallback: false });
+      // A withheld test with no wafer list has no honest target at all, so
+      // the plot mode is left exactly as it was rather than defaulting to the
+      // lot-wide switch — that default is the whole bug.
+      //
+      // Nor is there one in a stacked mode: the cards are then aggregates over
+      // the whole lot, not wafers, so a finding's `waferIndices` do not index
+      // them and poking `cardControllers[i]` would put a STACK into value mode
+      // on the very test the lot cannot agree about — aggregating one lot's
+      // nanoamps with another's millivolts per die position.
+      const stacked = STACKED_MODES.has(sharedOpts.plotMode ?? 'hardBin');
+      const scopeTo = stacked ? null : wafers;
+      if (scopeTo) {
+        for (const i of scopeTo) {
+          cardControllers[i]?.setOptions({ plotMode: 'value', activeTest: testNumber });
+        }
+        findingScopedCards = [...scopeTo];
+      }
+    }
+  }
+
+  /**
+   * A "What stands out" row about a test: plot it, and ring the dies it fails on each card. Scoped,
+   * when the lot disagrees about the test, to the wafers that report failures on it.
+   */
+  function applyLotTestHighlight(testNumber: number): void {
+    activeLotTest = testNumber;
+    const failing = (ci: number): string[] | undefined => currentItems[ci]?.statsSummary?.stats.testFailures?.[testNumber]?.dieKeys;
+    const wafers = currentItems.map((_, ci) => ci).filter(ci => failing(ci)?.length);
+    showTestOnCards(testNumber, wafers.length ? wafers : null);
+    clearFindingHighlight();
+    clearDieZoneHighlight();
+    if (STACKED_MODES.has(sharedOpts.plotMode ?? 'hardBin')) return;
+    for (const ci of wafers) applyDieZoneHighlight(failing(ci)!, [ci]);
   }
 
   function applyLotFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
@@ -1417,6 +1511,7 @@ export function renderWaferGallery(
     }
 
     activeLotFindingId   = finding.id;
+    activeLotTest        = null;
     row.style.background = CLR.bgActive;
     row.style.fontWeight = '600';
 
@@ -1426,51 +1521,11 @@ export function renderWaferGallery(
     restoreFindingScopedCards();
     const { kind, index } = finding.variable;
     if (kind === 'test') {
-      const testNumber = index ?? 0;
-      // A finding comes from PER-WAFER analysis, which reads that wafer's own
-      // testDefs — so its test number is meaningful for the wafers it names and
-      // not necessarily for any other. Switching the whole gallery to it was an
-      // unguarded write of `activeTest` that bypassed every reconciliation the
-      // merged list performs: click a `leakage` finding raised on one lot's
-      // wafers and every card plots its own `testValues[1001]`, which in a lot
-      // that calls 1001 `vth_n_mV` is a different physical quantity in
-      // different units, laid out as though it were one comparison.
-      //
-      // So: switch the whole gallery only when the population actually agrees
-      // about this test (it survived `mergeTestDefs`). Otherwise switch only the
-      // wafers the finding is about — they come from files that do agree, so the
-      // test is unambiguous for them — and leave everything else alone.
-      // `lotTestDefs()` (not `mergedTestDefs()`) so "nobody supplied any test
-      // definitions" reads as agreement, not disagreement: with nothing to
-      // reconcile there is nothing to contradict, and treating that as a
-      // collision would silently downgrade every finding click to per-card
-      // scoping for the many hosts that pass no `testDefs` at all.
-      const reconciled = lotTestDefs();
-      const agreed = reconciled === undefined || reconciled.some(d => d.testNumber === testNumber);
-      if (agreed) {
-        updateShared({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined }, { fireCallback: false });
-      } else {
-        updateShared({ highlightBin: undefined }, { fireCallback: false });
-        // A withheld test with no wafer list has no honest target at all, so
-        // the plot mode is left exactly as it was rather than defaulting to the
-        // lot-wide switch — that default is the whole bug.
-        //
-        // Nor is there one in a stacked mode: the cards are then aggregates over
-        // the whole lot, not wafers, so a finding's `waferIndices` do not index
-        // them and poking `cardControllers[i]` would put a STACK into value mode
-        // on the very test the lot cannot agree about — aggregating one lot's
-        // nanoamps with another's millivolts per die position.
-        const stacked = STACKED_MODES.has(sharedOpts.plotMode ?? 'hardBin');
-        const scopeTo = stacked ? null : findingWaferIndices(finding);
-        if (scopeTo) {
-          for (const i of scopeTo) {
-            cardControllers[i]?.setOptions({ plotMode: 'value', activeTest: testNumber });
-          }
-          findingScopedCards = [...scopeTo];
-        }
-      }
+      showTestOnCards(index ?? 0, findingWaferIndices(finding));
     } else {
-      updateShared({ plotMode: kind === 'softBin' ? 'softBin' : 'hardBin', highlightBin: findingBin(finding) }, { fireCallback: false });
+      const hasHardBins = currentItems.some(it => it?.dies?.some(d => d.hbin != null));
+      const lotPassBins = commonPassBins(currentItems.map(it => (it ? itemPassBins(it) : undefined)));
+      updateShared({ plotMode: findingPlotMode(finding, sharedOpts.plotMode, hasHardBins), highlightBin: findingBin(finding, lotPassBins, hasHardBins) }, { fireCallback: false });
     }
 
     // Clear all card outlines and die zone selections before applying new ones.
@@ -1498,32 +1553,30 @@ export function renderWaferGallery(
     }
   }
 
-  // The labelled edge tab that opens the panel while it is closed: it clicks the toolbar's own
-  // Summary button, so the open/close logic stays in one place. Created with `bodyEl`, below.
-  let summaryRail: SummaryRail | null = null;
-  function syncSummaryRail(): void {
-    if (!summaryRail) return;
-    const open = gallerySummaryPanelEl ? gallerySummaryPanelEl.style.display !== 'none' : true;
-    const shown = !!btnLotSummary && btnLotSummary.style.display !== 'none';
-    const notable = !!(currentLotStats?.hasNotableFindings || originalItems.some(it => it?.statsSummary?.hasNotableFindings));
-    summaryRail.sync(shown && !open, notable);
+  function lotSummaryOpen(): boolean {
+    return !!gallerySummaryPanelEl && gallerySummaryPanelEl.style.display !== 'none';
+  }
+  /** The one way the lot panel opens or closes: the Summary button and the panel's own close button. */
+  function setLotSummaryOpen(open: boolean): void {
+    if (!gallerySummaryPanelEl || open === lotSummaryOpen()) return;
+    // Re-render on open so the index reflects all items resolved so far.
+    if (open) renderGallerySummaryPanel();
+    gallerySummaryPanelEl.style.display = open ? 'flex' : 'none';
+    refreshLotSummaryButton();
   }
 
   function refreshLotSummaryButton(): void {
-    if (!btnLotSummary) return;
-    const hasSummaryPanel = !!gallerySummaryPanelEl;
-    btnLotSummary.style.display = ((currentLotStats || hasAnyPerWaferFindings()) && hasSummaryPanel && !insightsOpen) ? 'flex' : 'none';
-    const panelOpen = gallerySummaryPanelEl
-      ? gallerySummaryPanelEl.style.display !== 'none'
-      : false;
-    const hasNotable = currentLotStats?.hasNotableFindings
-      || originalItems.some(it => it?.statsSummary?.hasNotableFindings);
-    if (hasNotable && !panelOpen) {
-      btnLotSummary.style.color = CLR.findingIndicator;
-    } else if (!btnLotSummary.dataset.active) {
-      btnLotSummary.style.color = CLR.icon;
-    }
-    syncSummaryRail();
+    if (!lotSummaryToggle) return;
+    // The toolbar's own controls change with the view too: drop a separator left with nothing beside
+    // it, and the toolbar itself when nothing in it shows.
+    syncSeparators(barEl);
+    syncToolbarVisible(barEl, 'inline-flex');
+    // Hidden while Insights is open: the panel sits behind the Insights grid there.
+    lotSummaryToggle.sync({
+      visible: !!(currentLotStats || hasAnyPerWaferFindings()) && !!gallerySummaryPanelEl && !insightsOpen,
+      open: lotSummaryOpen(),
+      notable: !!(currentLotStats?.hasNotableFindings || originalItems.some(it => it?.statsSummary?.hasNotableFindings)),
+    });
   }
 
   // ── Gallery control bar ────────────────────────────────────────────────────
@@ -2104,27 +2157,6 @@ export function renderWaferGallery(
   galleryViewControlsEl.appendChild(btnDownloadAll);
   syncSelectAcrossBtn();
 
-  // Summary button — toggles the gallery Summary panel. Left unwrapped
-  // in barEl (not grouped with galleryViewControlsEl), but still hidden
-  // while Insights is open (refreshLotSummaryButton checks insightsOpen) —
-  // its panel sits behind the Insights grid with no visible effect there,
-  // matching every other view-specific control.
-  // Shown when lotStatsSummary is provided, or when any item carries per-wafer findings.
-  {
-    if (currentLotStats || hasAnyPerWaferFindings()) {
-      btnLotSummary = makeBtn('findings', 'Summary panel', () => {
-        if (!gallerySummaryPanelEl) return;
-        const isOpen = gallerySummaryPanelEl.style.display !== 'none';
-        if (!isOpen) renderGallerySummaryPanel();
-        gallerySummaryPanelEl.style.display = isOpen ? 'none' : 'flex';
-        setActive(btnLotSummary!, !isOpen);
-        refreshLotSummaryButton();
-      });
-      barEl.appendChild(makeSep());
-      barEl.appendChild(btnLotSummary);
-    }
-  }
-
   // Warning indicator — one per gallery, not one per card. The same geometry
   // advisory legitimately fires on every wafer of a lot; twenty identical
   // badges would bury the one that differs, so collectWarnings de-duplicates
@@ -2169,6 +2201,8 @@ export function renderWaferGallery(
     const show  = count > 0;
     btnWarnings.style.display    = show ? 'flex' : 'none';
     btnWarningsSep.style.display = show ? '' : 'none';
+    syncSeparators(barEl);
+    syncToolbarVisible(barEl, 'inline-flex');
     if (!show) return;
     const worst = severityOf(currentWarnings[0]);
     const label = `${count} data ${count === 1 ? 'warning' : 'warnings'}`;
@@ -2421,6 +2455,8 @@ export function renderWaferGallery(
     if (insightsEl) insightsEl.style.display = open ? 'flex' : 'none';
     bodyEl.style.display = open ? 'none' : 'flex';
     galleryViewControlsEl.style.display = open ? 'none' : 'inline-flex';
+    syncSeparators(barEl);
+    syncToolbarVisible(barEl, 'inline-flex');
     // The bar STAYS while Insights is showing, holding the Insights toggle and
     // Help once the grid-specific controls above have gone.
     //
@@ -2603,10 +2639,23 @@ export function renderWaferGallery(
    * count the user or host picked is an explicit instruction to divide the width
    * that many ways: capping it there left 2 columns at 480px each with the rest
    * of the row empty (0.21.1–0.30.0).
+   *
+   * Within auto layout the cap applies only while every card fits in one row
+   * (`capApplies`). With more cards than columns, the columns fill the row: when
+   * the width gained (the Summary panel closing, a wider window) is too little
+   * for another column, the cards grow into it rather than leaving it empty. They
+   * stay under twice the comfortable width, since one more column did not fit.
    */
   function cardMaxSize(): string {
-    return currentColumns != null ? 'none' : `${currentMaxCardPx}px`;
+    return capApplies() ? `${currentMaxCardPx}px` : 'none';
   }
+
+  /** Whether the density cap bounds the cards: auto layout with every card in one row. */
+  function capApplies(): boolean {
+    return currentColumns == null && !fillRows;
+  }
+  /** Auto layout put more cards than columns, so its columns share the row. Set by `applyGridTemplate`. */
+  let fillRows = false;
 
   /** Re-apply the current cap to every card already in the grid. */
   function applyCardSizeCap(): void {
@@ -2650,10 +2699,11 @@ export function renderWaferGallery(
   // lets a track shrink below the cap when the container is narrow (grid grows
   // tracks equally until the space runs out) but never exceed it, so columns
   // stay adjacent and the grid packs left via justify-content: start.
-  // A fixed column count lifts the cap (see cardMaxSize), so its tracks share
-  // the full width and no card is clamped inside one.
+  // A fixed column count, or auto layout with more cards than columns, lifts the
+  // cap (see cardMaxSize), so its tracks share the full width and no card is
+  // clamped inside one.
   function trackTemplate(cols: number): string {
-    return `repeat(${cols}, minmax(0, ${currentColumns != null ? '1fr' : `${currentMaxCardPx}px`}))`;
+    return `repeat(${cols}, minmax(0, ${capApplies() ? `${currentMaxCardPx}px` : '1fr'}))`;
   }
 
   /**
@@ -2707,6 +2757,12 @@ export function renderWaferGallery(
       // clear the hard floor; otherwise a single column, which the card's own
       // max-size and the container's scrolling handle from there.
       cols = largestColsAtLeast(comfortablePx) || largestColsAtLeast(currentMinCardPx) || 1;
+    }
+    // Before layout (no width yet) the column count is a guess, not a measured fit: keep the cap.
+    const fill = containerW > 0 && cols < N;
+    if (fill !== fillRows) {
+      fillRows = fill;
+      applyCardSizeCap();
     }
     setGridTemplate(trackTemplate(cols));
   }
@@ -2770,10 +2826,6 @@ export function renderWaferGallery(
   }
 
   refreshLotSummaryButton();
-  // Sync toolbar button active state with initial panel visibility
-  if (gallerySummaryPanelEl?.style.display !== 'none' && btnLotSummary) {
-    setActive(btnLotSummary, true);
-  }
 
   const placement = summaryPanelOpts?.placement ?? 'right';
   if (placement === 'left') {
@@ -2782,11 +2834,6 @@ export function renderWaferGallery(
   } else {
     bodyEl.appendChild(gridEl);
     if (gallerySummaryPanelEl) bodyEl.appendChild(gallerySummaryPanelEl);
-  }
-  if (placement === 'left' || placement === 'right') {
-    summaryRail = createSummaryRail(container.ownerDocument, placement, () => btnLotSummary?.click());
-    bodyEl.appendChild(summaryRail.el);
-    syncSummaryRail();
   }
 
   // Toolbar + legend stick to the top of whatever scrolls this gallery. Both
@@ -2849,6 +2896,11 @@ export function renderWaferGallery(
     background: CLR.menuBg } as Partial<CSSStyleDeclaration>);
   chromeRowEl.appendChild(metaPillEl);
   chromeRowEl.appendChild(barEl);
+  // The Summary button: labelled, just before Maps | Insights, above the panel it opens. Built
+  // always and shown once there is a summary, so findings that arrive with a late item show it.
+  lotSummaryToggle = createSummaryToggle(container.ownerDocument, () => setLotSummaryOpen(!lotSummaryOpen()));
+  chromeRowEl.appendChild(lotSummaryToggle.el);
+  refreshLotSummaryButton();
   // Maps | Insights, first in the row and in the same place in both views.
   if (insightsEnabled) {
     viewSwitch = createViewSwitch(container.ownerDocument, 'Maps', 'lot', open => setInsightsOpen(open));
@@ -3778,20 +3830,6 @@ export function renderWaferGallery(
         }
         // Initial render into the hidden panel so content is ready when opened.
         renderGallerySummaryPanel();
-        // Create the toolbar button if not already present.
-        if (!btnLotSummary) {
-          btnLotSummary = makeBtn('findings', 'Summary panel', () => {
-            if (!gallerySummaryPanelEl) return;
-            const isOpen = gallerySummaryPanelEl.style.display !== 'none';
-            // Re-render on open so the index reflects all items resolved so far.
-            if (!isOpen) renderGallerySummaryPanel();
-            gallerySummaryPanelEl.style.display = isOpen ? 'none' : 'flex';
-            setActive(btnLotSummary!, !isOpen);
-            refreshLotSummaryButton();
-          });
-          barEl.appendChild(makeSep());
-          barEl.appendChild(btnLotSummary);
-        }
         refreshLotSummaryButton();
       }
       // NOT refreshed per resolution, even while open. renderLotSummaryContent

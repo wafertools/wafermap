@@ -140,7 +140,7 @@ test('a trend goes in Watch, linked, and is not an item or an outlier wafer', ()
   assert.equal(s.items.length, 0, 'a trend costs no dies of its own');
   assert.match(s.nothing, /Nothing stands out/);
   assert.equal(s.watch.length, 1);
-  assert.equal(s.watch[0].parts[0].target.id, 'drift:yield');
+  assert.deepEqual(s.watch[0].target, { kind: 'finding', id: 'drift:yield' });
   assert.match(synthesisText(s), /Watch: Yield falls on successive wafers: 84\.6% → 74\.0% over 6 wafers \(input order\)/);
   assert.match(s.checked, /no outlier wafers/, 'the trend is not counted as an outlier wafer');
   assert.match(s.checked, /the yield trend across the wafers \(input order\)/);
@@ -153,12 +153,12 @@ test('a test with Ppk under 1.0 is watched, worst first, unless it already costs
     { testNumber: 3, label: 'C', hasSpec: true, ppk: 1.6 },
     { testNumber: 4, label: 'D', hasSpec: false, ppk: null },
   ];
-  const w = buildSynthesis(lotSummary({ stats: { waferCount: 6, capability } })).watch.map(x => x.parts.map(p => p.text).join(''));
+  const w = buildSynthesis(lotSummary({ stats: { waferCount: 6, capability } })).watch.map(x => x.text);
   assert.deepEqual(w, ['B has Ppk 0.40 against its limits (below 1.0)', 'A has Ppk 0.90 against its limits (below 1.0)']);
 
   const spec = [{ testNumber: 2, label: 'B', failLowDies: 300, failHighDies: 0, totalDies: 6000, passDies: 5700, yieldPercent: 95 }];
   const again = buildSynthesis(lotSummary({ stats: { waferCount: 6, capability, testSpecYield: spec } }));
-  assert.ok(!again.watch.some(x => x.parts[0].text.startsWith('B ')), 'B is an item already');
+  assert.ok(!(again.watch ?? []).some(x => x.text.startsWith('B ')), 'B is an item already');
   assert.equal(again.items.length, 1);
 });
 
@@ -166,8 +166,8 @@ test('Watch holds at most two, a trend first', () => {
   const capability = [1, 2, 3].map(i => ({ testNumber: i, label: `T${i}`, hasSpec: true, ppk: 0.5 + i / 10 }));
   const s = buildSynthesis(lotSummary({ findings: [driftFinding()], stats: { waferCount: 6, capability } }));
   assert.equal(s.watch.length, 2);
-  assert.match(s.watch[0].parts.map(p => p.text).join(''), /^Yield falls/);
-  assert.match(s.watch[1].parts.map(p => p.text).join(''), /^T1 has Ppk 0\.60/);
+  assert.match(s.watch[0].text, /^Yield falls/);
+  assert.match(s.watch[1].text, /^T1 has Ppk 0\.60/);
 });
 
 test('a wafer summary has no trend, but its tests can be watched', () => {
@@ -180,10 +180,10 @@ test('a wafer summary has no trend, but its tests can be watched', () => {
 
 test('the panel and the report both show it', () => {
   const l = lotSummary({ findings: [driftFinding()] });
-  const section = buildSynthesisSection(l, [1], () => {}, null);
+  const section = buildSynthesisSection(l, [1], { onFindingClick: () => {} });
   assert.match(section.textContent, /Watch.*Yield falls on successive wafers/i);
   const link = section.querySelector('button[data-wmap-finding="drift:yield"]');
-  assert.ok(link, 'the subject links to the finding');
+  assert.ok(link, 'the Watch line is a row for its finding');
 
   const R = 8;
   const wafer = (k) => {
@@ -195,7 +195,7 @@ test('the panel and the report both show it', () => {
     return buildWaferMap({ results, waferConfig: { diameter: 300, notch: { type: 'bottom' }, metadata: { lot: 'L1', waferId: `W${k}` } }, passBins: [1], ringCount: 4 });
   };
   const html = renderLotReportHtml([0, 1, 2, 3, 4, 5].map(wafer));
-  assert.match(html, /<li><strong>Watch<\/strong> <a href="#finding-[^"]+">Yield<\/a> falls on successive wafers/);
-  const id = /href="#(finding-[^"]+)">Yield</.exec(html)[1];
+  assert.match(html, /<li><strong>Watch<\/strong> <a href="#finding-[^"]+">Yield falls on successive wafers/);
+  const id = /href="#(finding-[^"]+)">Yield falls/.exec(html)[1];
   assert.ok(html.includes(`id="${id}"`), 'the link lands on its row in the Findings table');
 });

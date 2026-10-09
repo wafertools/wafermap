@@ -54,6 +54,12 @@ Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 > build and reproduced exactly: classifier recall and exact match, the 86.2% detection rate,
 > the combined 99.3% / 99.1% rates and per-label rescue, and both false-positive tables.
 >
+> **Re-run 2026-10-08.** Benjamini–Hochberg now adjusts every rate comparison on a wafer as one family, rates with
+> small expected counts are tested exactly (Fisher), and clusters use the exact binomial tail with their own one-family
+> adjustment. The classifier figures are unchanged. The combined rates and the false-positive tables below are this
+> release's; on synthetic random wafers the regional false-positive rate falls by a factor of two to five, at a cost of 15
+> of the 2,881 classifier misses no longer rescued (combined 99.3% → 99.2%).
+>
 > **Re-run 2026-09-27.** The classifier alone, which recognises an edge ring from the failing
 > dies' positions when no large connected group exists: edge-ring recall 75%
 > (precision 92%), scratch 24%, detection 86.4%, exact match 64%; other classes unchanged. The
@@ -77,14 +83,14 @@ Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 
 ### Combined (classifier + regional analysis)
 
-Of the 2,915 wafers the classifier missed, the regional analysis recovered:
+Of the 2,881 wafers the classifier missed, the regional analysis recovered:
 
 | Measure | Rate |
 |---|---|
-| Any regional finding fired | 94.6% of misses |
-| Semantically matched finding | 93.6% of misses |
+| Any regional finding fired | 94.1% of misses |
+| Semantically matched finding | 93.0% of misses |
 
-**Combined detection rate: 99.3%** (any) / **99.1%** (semantically matched)
+**Combined detection rate: 99.2%** (any) / **99.0%** (semantically matched)
 
 The any/match gap is small — regional findings on classifier misses are almost
 always semantically correct, not noise.
@@ -93,11 +99,11 @@ Per-label rescue breakdown (classifier misses only):
 
 | Label | Misses | Any rescue | Match rescue |
 |---|---|---|---|
-| center | 689 | 97.8% | 97.8% |
+| center | 695 | 97.0% | 96.8% |
 | donut | 238 | 97.5% | 95.0% |
-| edge-local | 933 | 94.2% | 94.2% |
-| edge-ring | 456 | 94.3% | 92.8% |
-| scratch | 558 | 90.3% | 87.3% |
+| edge-local | 933 | 94.0% | 94.0% |
+| edge-ring | 456 | 93.9% | 92.3% |
+| scratch | 559 | 89.4% | 86.4% |
 
 > **Re-run 2026-07-28 (v0.20.9).** Numbers above were re-measured after the fix
 > that stopped `buildWaferMap` from mislabelling real probed edge dies as
@@ -123,8 +129,8 @@ Per-label rescue breakdown (classifier misses only):
 | Method | FP rate |
 |---|---|
 | Classifier only | 41.2% |
-| Regional analysis only | 87.4% |
-| Combined | 90.7% |
+| Regional analysis only | 87.1% |
+| Combined | 90.5% |
 
 **Important caveat:** WM-811K "Random" is a catch-all label — ambiguous,
 multi-modal, or low-confidence wafers all end up there. Some fraction genuinely
@@ -138,29 +144,23 @@ WM-811K's range):
 
 | Fail rate | Regional FP rate |
 |---|---|
-| 2% | 14.2% |
-| 5% | 15.1% |
-| 10% | 49.5% ← known issue |
-| 20% | 2.4% |
-| 40% | 2.1% |
-| 60% | 2.9% |
+| 2% | 2.7% |
+| 5% | 8.7% |
+| 10% | 34.1% ← clusters, see below |
+| 20% | 1.1% |
+| 40% | 1.2% |
+| 60% | 1.6% |
 
-> **Re-run 2026-07-28 (v0.20.9).** Same fix as above — the synthetic generator
-> masks to a disc, so its own boundary dies were previously being dropped from
-> the regional-analysis population as phantom `partial` dies. The 10% spike
-> shrank (55.9% → 49.5%) but is not eliminated; it remains the same underlying
-> statistical-power issue, just measured over a slightly larger, correct
-> population. (Aside: the script used to sweep a `minimumRegionExcessFails` option, and every
-> value produced identical results — because no such option exists in the library.
-> The sweep was removed in 0.30.1.)
+Every rate comparison on a wafer (yield, hard and soft bins, functional tests and limit fail rates, in every region
+family) is one family for the Benjamini–Hochberg adjustment, so a wafer of pure noise reports a regional finding about
+as often as the 5% significance level allows. Until 2026-10-08 the adjustment was per variable and region family, some
+twenty families a wafer, and the rates were 14.2%, 15.1%, 49.5%, 2.4%, 2.1% and 2.9%.
 
-The **10% failure rate spike** is a fundamental statistical power problem: with
-1,700+ dies on a large wafer, the two-proportion z-test is powerful enough to
-call random regional clustering noise significant. This cannot be fixed with
-post-hoc count gates — any gate that reduces the number of candidates fed into
-the Bonferroni correction also relaxes the correction, cancelling the benefit.
-The correct fix (replacing Bonferroni with Benjamini-Hochberg FDR applied
-globally) is a larger refactor; this spike is documented as a known limitation.
+What remains at 5–10% is almost all **clusters and edge arcs**: at a 10% fail rate, 18 of every 20 wafers flagged have
+only those. A cluster is a connected group of failing dies, tested against its neighbourhood; the group is chosen
+because it fails, so at a moderate fail rate a random clump reads as a cluster. The fix is a permutation null for the
+largest group on each wafer (reshuffle the failures over the dies and ask how often a group this large appears by
+chance); it is not yet implemented because of its cost on large wafers.
 
 ---
 

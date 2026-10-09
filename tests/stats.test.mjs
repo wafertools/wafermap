@@ -72,12 +72,12 @@ test('a bin found only in one region passes the relative-effect gate, however sm
 });
 
 /** A 200 mm wafer of 10 mm dies, each given `hbin`/`sbin`/`testValues` by `assign(die, ring, i)`. */
-function edgeFixture(assign, testDefs) {
-  const wafer = createWafer({ diameter: 200 });
+function edgeFixture(assign, testDefs, diameter = 200) {
+  const wafer = createWafer({ diameter });
   const dies = clipDiesToWafer(generateDies(wafer, { width: 10, height: 10 }), wafer, { width: 10, height: 10 })
     .filter((die) => !die.partial)
     .map((die, i) => ({ ...die, ...assign(die, classifyDie(die, wafer, { ringCount: 4 }).ring, i) }));
-  return buildWaferMap({ dies, waferConfig: { diameter: 200 }, passBins: [1], testDefs });
+  return buildWaferMap({ dies, waferConfig: { diameter }, passBins: [1], testDefs });
 }
 
 test('a ring is not reported as low in a bin only because the edge is high in it', () => {
@@ -107,8 +107,10 @@ test('inner rings are not reported low in a test only because the edge is high i
 test('a yield loss is judged by its failure rate, as the bin rate of the same dies is', () => {
   // Failures 1-in-30 inside, 1-in-8 at the edge: a yield drop under the 20-point
   // gate, but a near-quadrupling of failures — the same verdict as the bin finding.
+  // A 400 mm wafer, so the rates rest on enough dies to be significant among every
+  // comparison the wafer makes (on 277 dies, 13 edge fails is within chance).
   let n = 0;
-  const summary = analyzeWaferMap(edgeFixture((die, ring) => ({ hbin: n++ % (ring === 4 ? 8 : 30) === 0 ? 2 : 1 })));
+  const summary = analyzeWaferMap(edgeFixture((die, ring) => ({ hbin: n++ % (ring === 4 ? 8 : 30) === 0 ? 2 : 1 }), undefined, 400));
   const yieldLoss = summary.findings.find((f) => f.variable.kind === 'yield' && f.comparison.left === 'Ring 4 (edge)');
   assert.ok(yieldLoss, 'the edge yield loss must be reported');
   assert.ok(Math.abs(yieldLoss.effect.absoluteDelta) < 0.2, 'fixture must sit below the absolute gate');
@@ -755,7 +757,8 @@ test('regional functional pass-rate finding fires on a low-pass-rate quadrant', 
 
   const f = summary.findings.find(x => x.variable.kind === 'functionalTest');
   assert.ok(f, 'a functionalTest finding should be produced');
-  assert.equal(f.stats.method, 'two-proportion-z');
+  // A wafer of a few dozen dies: counts too small for the z-test, so the exact test.
+  assert.equal(f.stats.method, 'fisher-exact');
   assert.match(f.variable.label, /scan_chain pass rate/);
   assert.match(f.summary, /pass rate .* percentage points lower/);
   assert.equal(f.highlight?.kind, 'region');

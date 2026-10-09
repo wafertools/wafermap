@@ -1,3 +1,5 @@
+import { waferDisplayLabel } from '../core/waferLabel.js';
+import type { WaferMetadata } from '../core/metadata.js';
 import { requireRingCount } from '../core/ringCount.js';
 import {
   analyzeWaferMap, candidatesOf, describeRegional, resolveOptions, adjustPValues,
@@ -622,6 +624,8 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], popula
   for (const { index, severity, statistic } of result.outliers) {
     const entry = comparable[index];
     const delta = entry.yieldPercent - center;
+    // The wafer's own ID, as every surface names it; its position only when it has none, and then said so.
+    const name = waferDisplayLabel({ wafer: { metadata: perWafer.find(w => w.waferIndex === entry.waferIndex)?.summary.wafer as WaferMetadata | undefined } }, entry.waferIndex);
     findings.push({
       id: `inter-wafer:yield:${entry.waferIndex}`,
       level: 'inter-wafer',
@@ -632,7 +636,7 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], popula
       },
       comparison: {
         family: 'wafer',
-        left: `Wafer ${entry.waferIndex + 1}`,
+        left: name,
         right: reference.charAt(0).toUpperCase() + reference.slice(1),
       },
       effect: {
@@ -647,7 +651,7 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], popula
         sampleSizeLeft: 1,
         sampleSizeRight: comparable.length - 1,
       },
-      summary: `Wafer ${entry.waferIndex + 1} yield is ${Math.abs(delta).toFixed(1)} percentage points ${delta > 0 ? 'higher' : 'lower'} than the ${reference}`,
+      summary: `${name} yield is ${Math.abs(delta).toFixed(1)} percentage points ${delta > 0 ? 'higher' : 'lower'} than the ${reference}`,
       highlight: {
         kind: 'wafer',
         waferIndices: [entry.waferIndex],

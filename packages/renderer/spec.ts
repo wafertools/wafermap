@@ -47,6 +47,16 @@ export interface SpecLimits {
   limitHighInclusive?: boolean;
 }
 
+/** True when `value` sits below `low` (a value equal to `low` is below only when `inclusive` is `false`). */
+export function belowLow(value: number, low: number, inclusive?: boolean): boolean {
+  return inclusive === false ? value <= low : value < low;
+}
+
+/** True when `value` sits above `high` (a value equal to `high` is above only when `inclusive` is `false`). */
+export function aboveHigh(value: number, high: number, inclusive?: boolean): boolean {
+  return inclusive === false ? value >= high : value > high;
+}
+
 /**
  * Classify `value` against `limits`. Returns `null` when no verdict is possible:
  * no value, a non-finite value, or a test with neither limit defined.
@@ -58,10 +68,8 @@ export function classifySpec(
   if (value === undefined || !Number.isFinite(value)) return null;
   if (limits === undefined) return null;
   if (limits.limitLow === undefined && limits.limitHigh === undefined) return null;
-  if (limits.limitLow !== undefined
-    && (limits.limitLowInclusive === false ? value <= limits.limitLow : value < limits.limitLow)) return 'failLow';
-  if (limits.limitHigh !== undefined
-    && (limits.limitHighInclusive === false ? value >= limits.limitHigh : value > limits.limitHigh)) return 'failHigh';
+  if (limits.limitLow !== undefined && belowLow(value, limits.limitLow, limits.limitLowInclusive)) return 'failLow';
+  if (limits.limitHigh !== undefined && aboveHigh(value, limits.limitHigh, limits.limitHighInclusive)) return 'failHigh';
   return 'pass';
 }
 

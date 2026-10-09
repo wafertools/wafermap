@@ -34,6 +34,21 @@ field-local position (`0`-indexed, relative to `anchorDie`) — independent of
 whether the reticle overlay is currently toggled on. This is on by default
 with no extra configuration.
 
+### Reticle cell and reticle shot
+
+A reticle gives every die two coordinates, and they answer different questions:
+
+- **Reticle cell** `(column, row)` is where the die sits *inside* the mask (`getReticleCell(die, config)`). A cell repeats in every shot, so a cell that
+  keeps failing points at a problem with the mask.
+- **Reticle shot** `(column, row)` is where on the wafer the mask was placed for the die (`getReticleShot(die, config)`). A shot is one place on the wafer, so a
+  shot that fails points at something that varies across the wafer, such as focus or a tilt.
+
+With a `reticleConfig` both join ring and quadrant as die fields in Insights: categories to colour a plot by, to put on a bar or box's axis and to split yield by,
+columns of the Dies table, and **Reticle cell** is a third choice beside Ring and Quadrant in the Summary panel's region yield (one row per cell). The Overview
+also gains a **Reticle cell yield** card: a grid of the stepper field, one cell per position in it, filled from the same ramp as the ring and quadrant cards. A cell
+pools every field on every wafer, so a low one points at the mask and not the wafer. Hover a cell for which it is and its dies; click it to chart or tabulate them.
+Neither field is offered without a `reticleConfig`. The reticle that was used is carried on the wafer as `wafer.reticle`.
+
 ### Reticle analysis in the stats engine
 
 When a `reticleConfig` was used, `analyzeWaferMap` automatically includes

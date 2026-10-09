@@ -35,6 +35,8 @@
     <strong>last</strong> (default) keeps the final result; <strong>first</strong> keeps the initial probe;
     <strong>best</strong> keeps the pass result when one exists (using <code>passBins</code>), falling back to the lowest hbin as a tiebreaker among failures; <strong>worst</strong> prefers a fail result, falling back to the highest hbin.
     Dies with multiple probes get a <code>retestCount</code> — click any die to see its details.
+    A tester can also say outright that a record replaces an earlier one (STDF <code>PART_FLG</code>): switch on <strong>supersedes</strong> to flag every retest that
+    made its die <em>worse</em> with <code>supersedes: 'position'</code>. Under <strong>best</strong> or <strong>first</strong> those dies now keep the flagged retest, because a flagged record wins whatever the policy says.
   </div>
 
   <!-- Switch between retest policies -->
@@ -45,6 +47,12 @@
       <button class="toggle-btn"        id="btn-first">first</button>
       <button class="toggle-btn"        id="btn-best">best</button>
       <button class="toggle-btn"        id="btn-worst">worst</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="ctrl-group">
+      <span class="ctrl-label">Tester flags</span>
+      <button class="toggle-btn" id="btn-supersedes" aria-pressed="false"
+              title="Mark each retest that replaces its earlier record as supersedes: 'position'. Such a record always wins, whatever the policy says.">supersedes</button>
     </div>
     <div class="ctrl-sep"></div>
     <span style="font-size:12px; color:var(--muted)">
@@ -115,15 +123,19 @@
         if (!shouldRetest) continue;
         // Flip the bin on the retest — first probe failed, retest passes (or vice versa)
         const retestBin = r.hbin === 1 ? 2 : 1;
-        retests.push({ ...r, hbin: retestBin });
+        // retestBin 2 is the retest that made the die worse; the tester flags it as replacing the earlier record
+        retests.push({ ...r, hbin: retestBin, ...(retestBin === 2 ? { supersedes: 'position' } : {}) });
       }
 
       // Return primary + retests interleaved (same (x,y) appears twice)
       return [...primary, ...retests];
     }
 
-    const rawResults = makeRetestResults(17);
+    const flaggedResults = makeRetestResults(17);
+    // The same records without the tester's flag
+    const plainResults   = flaggedResults.map(({ supersedes, ...r }) => r);
     let policy = 'last';
+    let flagged = false;
     let ctrl;
 
     function fmt(v) {
@@ -138,7 +150,7 @@
       if (ctrl) ctrl.destroy();
 
       const result = buildWaferMap({
-        results:      rawResults,
+        results:      flagged ? flaggedResults : plainResults,
         waferConfig:  WAFER_CONFIG,
         dieConfig:    DIE_CONFIG,
         hbinDefs:     HBIN_DEFS,
@@ -185,6 +197,13 @@
     }
 
     render();
+
+    document.getElementById('btn-supersedes').addEventListener('click', e => {
+      flagged = !flagged;
+      e.currentTarget.classList.toggle('active', flagged);
+      e.currentTarget.setAttribute('aria-pressed', String(flagged));
+      render();
+    });
 
     const policyBtns = ['last', 'first', 'best', 'worst'];
     policyBtns.forEach(p => {

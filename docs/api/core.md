@@ -51,6 +51,7 @@ type WaferMapInputBase = {
   dies?:             Die[],            // pre-built die array; skips geometry generation
   reticleConfig?:    ReticleConfig,    // stepper field grid overlay
   passBins?:         number[],         // bins that pass (default [1]) — carried on the result as result.passBins
+  valueFilter?:      'validity' | 'spec' | 'test' | 'none', // which limit set a test value must lie inside to be used (default 'validity') — §4.1.14
   ringCount?:        number,           // rings for ring overlays, ring yield and ring findings (default 4) — carried as result.ringCount
   retestPolicy?:     'last' | 'first' | 'best' | 'worst', // how to handle multiple results at the same (x,y); default 'last'
   edgeDieYieldMode?: 'exclude' | 'denominator-only', // default 'exclude'
@@ -316,6 +317,11 @@ Named definition for one test parameter. The toolbar mode dropdown always offers
   specLow?:    number  // lower spec limit (STDF LO_SPEC), distinct from the test limit
   specHigh?:   number  // upper spec limit (STDF HI_SPEC). Process capability uses the spec limits
                        // when both are given, otherwise limitLow/limitHigh; nothing else reads them
+  validLow?:   number  // lower validity limit: the lowest value that is a real measurement. A value
+                       // below it is a tester clamp (a range overflow, an open-circuit rail), not a
+                       // reading — see valueFilter, §4.1.14
+  validHigh?:  number  // upper validity limit. Separate from the test and spec limits, which judge
+                       // good against bad; a clamped value is neither
   testType?:   'P' | 'F'  // 'P' = parametric (continuous measured value, the default),
                        // 'F' = functional (pass/fail outcome ONLY, no measured value —
                        // e.g. an STDF FTR; the verdict lives in DieResult.testPass).
@@ -541,6 +547,47 @@ buildWaferMap({ results, standardDiameters: [] });
 is not on the ladder — better than suppressing every geometry advisory to silence
 one that does not apply to your line.
 
+#### 4.1.14 `valueFilter` and validity limits
+
+```ts
+valueFilter?: 'validity' | 'spec' | 'test' | 'none'   // default 'validity'
+```
+
+A tester that runs out of range does not stop; it records its rail. A current of `1.0E+38`, a voltage held at the supply, an
+open-circuit reading: each is a number in the file and none is a measurement. Left in, it stretches the colour scale, drags the
+mean and the standard deviation, and makes a Cpk meaningless. The **validity limits** (`TestDef.validLow`, `validHigh`) state the
+range a real measurement lies in, and `valueFilter` chooses which limit set a value must lie inside to be used:
+
+| Mode | A value is kept when it lies inside |
+| --- | --- |
+| `'validity'` (default) | the validity limits. Only tests that define them are affected, so a build that sets none changes nothing. |
+| `'spec'` | the specification limits (`specLow`/`specHigh`). |
+| `'test'` | the test limits (`limitLow`/`limitHigh`, with their inclusive flags). |
+| `'none'` | anything: nothing is filtered. |
+
+The filter reads the limits from `testDefs`, so a build without `testDefs` filters nothing. An excluded value is **no value for that test on that die**, in the map, the statistics and every chart; a derived test is computed
+from the filtered values, so it is never built on a clamp. Bins, `DieResult.testPass` and each die's recorded verdict are the
+tester's own and are never changed, so yield and the bin map are the same with the filter on or off.
+
+Nothing is hidden. The result says what was left out:
+
+```ts
+const result = buildWaferMap({
+  results,
+  testDefs: [{ testNumber: 1010, name: 'Idsat', unit: 'A', validLow: 0, validHigh: 0.5 }],
+});
+
+result.valueFilter
+// { mode: 'validity', tests: [{ testNumber: 1010, excluded: 14, total: 2644 }] }
+// undefined when the filter excluded nothing
+result.warnings.find(w => w.code === 'values-excluded')   // one line naming the limit set and the count
+```
+
+The counts are summed across every wafer of a lot build. The tooltip of a die with an excluded value names the value and the limit
+set; the Summary panel's tables carry the total beside N and an **Excl.** column; the histogram, boxplot and capability captions, the Plot
+footnote, the summary report and the CSV exports state the count; and `CapabilityDatum.excluded` (`{ count, limitSet }`) carries it (its `n` does not include
+excluded values).
+
 ### 4.2 Return value
 
 ```ts
@@ -607,6 +654,8 @@ one that does not apply to your line.
   passBins: number[]    // the pass bins given to buildWaferMap. renderWaferMap, renderWaferGallery (per wafer)
                          // and analyzeWaferMap read these — never repeat them in a render or analysis call
   ringCount: number     // the ring count given to buildWaferMap (default 4) — read by the renderers, analysis and reports
+  valueFilter?: ValueFilterSummary  // what the value filter excluded (§4.1.14): { mode, tests: [{ testNumber, excluded, total }] };
+                         // absent when it excluded nothing
   yield: YieldSummary   // pass/fail statistics computed against passBins — NOT scoped to positioned dies,
                          // unlike dataCoverage above; a coordinate-less die with bin data still counts
 }
@@ -687,6 +736,7 @@ The library's one warning vocabulary. Raised by geometry inference on
 | `bin-colors-shared` | `warning` | Raised by the renderers (not `buildWaferMap`) for the bin map on screen: some bins are drawn in a colour another bin also has — more bins than the bin colour scheme has distinct colours, or a `BinDef.color` repeats one. Every die is drawn correctly; colour alone cannot separate those bins. A gallery states it once for all its wafers. |
 | `pass-bins-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different pass bins, and some hard bins pass on one wafer and fail on another. Every wafer's own verdicts and yield are correct; a bin has one colour and one legend row, so the named bins are shown as failing there. |
 | `ring-count-mixed` | `warning` | Raised by `renderWaferGallery`: its wafers were built with different `ringCount`s. Each card and each wafer's findings use their own; the lot-level ring figures (Summary panel, report, Insights) use the count the message names. |
+| `values-excluded` | `info` | Raised by `buildWaferMap`: the value filter (§4.1.14) took values outside the chosen limit set out of the data. The message names the limit set and how many values were excluded; `result.valueFilter` has the count per test. |
 | `input-values-outside-stdf` | `warning` | Raised by `buildWaferMap`: bins, coordinates, test numbers or site numbers outside the STDF V4 ranges (bins 0–32767, coordinates −32767…32767, test numbers 0–4294967295, sites 0–255), test values that are not finite, or a `waferConfig.orientation` other than 0, 90, 180 or 270. Each is **treated as missing**: the bin or site is absent, a die with an illegal coordinate has no position (in either axis), a test with an illegal number is left out of every die and of `testDefs`, a non-finite value is dropped, and the map is built at orientation 0. The input objects are not modified. A `NaN` bin is no bin and is counted here. |
 | `retests-by-part-id` | `info` | Raised by `buildWaferMap`: dies with no position that share a part ID were treated as retests of one die, resolved by `retestPolicy`. Blank part IDs never match, and part IDs are not used on a wafer where one value covers more than 20% of the unpositioned records. |
 | `input-values-not-numbers` | `error` | Raised by `buildWaferMap`: bins, site numbers or test values were given as text, or pass/fail verdicts as something other than `true`/`false` — what a CSV parser produces unless each field is converted. They are **not** converted: each is **treated as missing**, so a die whose bin was `"1"` has no bin (no verdict, not a pass), and a text reading is absent from the map and every chart. Checked on `results`, every lot-stack wafer and pre-built `dies`; the input objects are not modified. The message counts each kind and shows an example; it is also logged to the console. (String `x`/`y` throw instead.) |

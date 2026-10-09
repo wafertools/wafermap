@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Validity limits — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Validity limits</span>
+    <span class="demo-desc">TestDef.validLow · validHigh · valueFilter · result.valueFilter</span>
+  </header>
+
+  <div class="demo-intro">
+    A tester that runs out of range records its rail instead of a reading. Here a handful of dies on Idsat hit the tester's
+    100&nbsp;mA compliance clamp, and a few on Ioff read the open-circuit rail. Each is a number in the data and not a measurement.
+    <code>validLow</code> / <code>validHigh</code> on the <code>TestDef</code> state the range a real measurement lies in, and
+    <code>valueFilter</code> chooses which limit set a value must lie inside:
+    <strong>validity</strong> (the default) drops the clamps; <strong>none</strong> keeps everything, and shows what a clamp does to the colour scale and the
+    statistics. <strong>test</strong> and <strong>spec</strong> keep only values inside those limits. Bins and each die's recorded verdict are the tester's
+    own, so yield does not move. Open the Summary panel for the <em>Excl.</em> column, or hover a grey die for the excluded value.
+  </div>
+
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">valueFilter</span>
+      <button class="toggle-btn active" data-mode="validity">validity</button>
+      <button class="toggle-btn"        data-mode="spec">spec</button>
+      <button class="toggle-btn"        data-mode="test">test</button>
+      <button class="toggle-btn"        data-mode="none">none</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <div class="ctrl-group">
+      <span class="ctrl-label">Test</span>
+      <select id="sel-test">
+        <option value="1050">Idsat</option>
+        <option value="1070">Ioff</option>
+        <option value="1060">Vth</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="demo-content">
+
+    <div class="canvas-card flex-1">
+      <div id="map"></div>
+    </div>
+
+    <div class="demo-panel">
+      <div class="demo-panel-scroll">
+        <div class="section">
+          <div class="section-heading">What the build excluded</div>
+          <div class="info-box" id="vf-box"></div>
+        </div>
+        <div class="section-divider"></div>
+        <div class="section">
+          <div class="section-heading">Selected test, as plotted</div>
+          <div class="info-box" id="stat-box"></div>
+        </div>
+        <div class="section-divider"></div>
+        <div class="section">
+          <div class="section-heading">Yield</div>
+          <div class="info-box" id="yield-box"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }   from 'wafermap';
+    import { renderWaferMap }  from 'wafermap/render';
+    import { analyzeWaferMap } from 'wafermap/stats';
+    import { makeResults, rng, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS, HBIN_DEFS } from './data.js';
+
+    // Tester rails: Idsat clamps at the 100 mA compliance current, Ioff at an open-circuit 1 A reading.
+    const IDSAT_CLAMP = 0.1, IOFF_RAIL = 1;
+
+    // About 3% of dies hit a rail on one of the two tests. The bins are left as recorded.
+    const results = makeResults({ seed: 5 }).map((r, i) => {
+      const u = rng(r.x, r.y, 99);
+      if (u < 0.02) return { ...r, testValues: { ...r.testValues, 1050: IDSAT_CLAMP } };
+      if (u > 0.985) return { ...r, testValues: { ...r.testValues, 1070: IOFF_RAIL } };
+      return r;
+    });
+
+    // Validity limits sit well outside the test limits: a part can fail its limits and still be a real reading.
+    const testDefs = TEST_DEFS.map(d =>
+      d.testNumber === 1050 ? { ...d, validLow: 0, validHigh: 0.05 } :
+      d.testNumber === 1070 ? { ...d, validLow: 0, validHigh: 1e-3 } : d);
+
+    let ctrl, active = 1050, mode = 'validity';
+
+    function fmt(v) {
+      if (v == null) return '—';
+      const a = Math.abs(v);
+      return a >= 1 ? `${v.toPrecision(3)}` : a >= 1e-3 ? `${(v * 1e3).toPrecision(3)} m` : a >= 1e-6 ? `${(v * 1e6).toPrecision(3)} µ` : v.toExponential(2);
+    }
+
+    function render() {
+      if (ctrl) ctrl.destroy();
+      const result = buildWaferMap({
+        results, waferConfig: WAFER_CONFIG, dieConfig: DIE_CONFIG,
+        testDefs, hbinDefs: HBIN_DEFS, passBins: [1],
+        valueFilter: mode,
+      });
+
+      const vf = result.valueFilter;
+      document.getElementById('vf-box').innerHTML = vf
+        ? `Limit set: <strong>${vf.mode}</strong><br>` + vf.tests.map(t => {
+            const def = testDefs.find(d => d.testNumber === t.testNumber);
+            return `${def?.name ?? t.testNumber}: <strong>${t.excluded}</strong> of ${t.total} values`;
+          }).join('<br>')
+        : `<span class="empty">Nothing excluded (<code>result.valueFilter</code> is undefined)</span>`;
+
+      const vals = result.dies.map(d => d.testValues?.[active]).filter(v => v != null);
+      const mean = vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
+      const sd = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / Math.max(vals.length - 1, 1));
+      document.getElementById('stat-box').innerHTML =
+        `N: <strong>${vals.length}</strong><br>Max: <strong>${fmt(Math.max(...vals))}</strong><br>Mean: <strong>${fmt(mean)}</strong><br>σ: <strong>${fmt(sd)}</strong>`;
+      document.getElementById('yield-box').innerHTML =
+        `Yield (pass bin 1): <strong>${result.yield.yieldPercent.toFixed(1)}%</strong><br>` +
+        `<span style="color:var(--muted)">Bins are the tester's own: this figure is the same in every mode.</span>`;
+
+      ctrl = renderWaferMap(document.getElementById('map'), result, {
+        viewOptions: { plotMode: 'value', activeTest: active },
+        statsSummary: analyzeWaferMap(result, { computePerTestStats: true }),
+        summaryPanel: { placement: 'right' },
+        showHelpButton: true,
+      });
+    }
+
+    render();
+
+    document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+      mode = b.dataset.mode;
+      document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('active', x === b));
+      render();
+    }));
+    document.getElementById('sel-test').addEventListener('change', e => {
+      active = Number(e.target.value);
+      render();
+    });
+  </script>
+
+</body>
+</html>

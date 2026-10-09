@@ -343,14 +343,20 @@ function geometry({ radiusMm, pitchMmX, pitchMmY, edgeExcludeMm, notch = 'bottom
       const tOff = temp === 125 ? 0.8 : 0;
       for (const die of dies) {
         const pass = rng() > edgeFailProb(die.x, die.y, pX, pY, radiusMm) + (temp === 125 ? 0.04 : 0);
+        // Tester rails, chosen from the die's position so the draws above and below are untouched:
+        // about 1.5% of dies overload the noise-figure analyser (it reads its 99.99 dB rail) and about
+        // 1% open-circuit on the bias supply (0 mA). Neither is a measurement; the validity limits below say so.
+        const railPick = (Math.imul(die.x + 1000, 73856093) ^ Math.imul(die.y + 1000, 19349663) ^ Math.imul(temp, 83492791) ^ wid.charCodeAt(1)) >>> 0;
+        const nfRail   = railPick % 1000 < 15;
+        const idqOpen  = !nfRail && railPick % 1000 >= 990;
         rows.push({
           LOT_ID: 'RF-PROD-2025-09', WAFER_ID: wid,
           X_LOC: die.x, Y_LOC: die.y,
           SBIN: pass ? 1 : [10, 11, 12, 20][Math.floor(rng() * 4)],
           GAIN_DB:  gaussValue(pass ? 22.5 - tOff : 15.0, pass ? 0.6 : 2.5, rng).toFixed(2),
-          NF_DB:    gaussValue(pass ? 2.8 + tOff * 0.02 : 5.1, pass ? 0.3 : 1.0, rng).toFixed(3),
+          NF_DB:    (v => nfRail ? '99.990' : v)(gaussValue(pass ? 2.8 + tOff * 0.02 : 5.1, pass ? 0.3 : 1.0, rng).toFixed(3)),
           IP3_DBM:  spatialGradient(die.x, die.y, pass ? 18.5 : 10.0, 0.01, rng, 0.4).toFixed(2),
-          IDQ_MA:   gaussValue(pass ? 42.0 + tOff * 0.15 : 38.0, 1.5, rng).toFixed(2),
+          IDQ_MA:   (v => idqOpen ? '0.00' : v)(gaussValue(pass ? 42.0 + tOff * 0.15 : 38.0, 1.5, rng).toFixed(2)),
           TEMP: temp, TESTDATE: '2025-09-12',
         });
       }
@@ -370,10 +376,12 @@ function geometry({ radiusMm, pitchMmX, pitchMmY, edgeExcludeMm, notch = 'bottom
     // colouring and the pass-rate pareto both have something real to show.
     testDefs: [
       { testNumber: 5, name: 'GAIN_DB', unit: 'dB',  limitLow: 14.0 },
-      { testNumber: 6, name: 'NF_DB',   unit: 'dB',  limitHigh: 5.0 },
+      { testNumber: 6, name: 'NF_DB',   unit: 'dB',  limitHigh: 5.0, validLow: 0, validHigh: 30 },
       { testNumber: 7, name: 'IP3_DBM', unit: 'dBm', limitLow: 12.0 },
-      { testNumber: 8, name: 'IDQ_MA',  unit: 'mA',  limitLow: 34.0, limitHigh: 47.0 },
+      { testNumber: 8, name: 'IDQ_MA',  unit: 'mA',  limitLow: 34.0, limitHigh: 47.0, validLow: 5, validHigh: 100 },
     ],
+    // Validity limits: NF_DB reads its 99.99 dB rail when the analyser overloads and IDQ_MA reads 0 mA on an open bias
+    // supply. Those values are excluded (and counted) instead of stretching the scale and the statistics.
   });
   writeFileSync(join(OUT, 'showcase-rf-analog.csv'),
     csv(['LOT_ID','WAFER_ID','X_LOC','Y_LOC','SBIN','GAIN_DB','NF_DB','IP3_DBM','IDQ_MA','TEMP','TESTDATE'], rows));

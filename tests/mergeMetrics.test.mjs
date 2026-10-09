@@ -8,10 +8,11 @@ import { analyzeWaferMap, inQuadrantOrder } from '../dist/packages/stats/analyze
 import { regionAngleBins } from '../dist/packages/stats/regions.js';
 import { visibleFindings } from '../dist/packages/stats/filterFindings.js';
 import { makeResults, WAFER_CONFIG, DIE_CONFIG, TEST_DEFS, HBIN_DEFS, SBIN_DEFS } from '../docs/examples/data.js';
+import { buildLot } from './fixtures/synthLots.mjs';
 
 const VTH = 1060;
 
-test('Vth tilt: adjacent sectors merge into one run, and the limit fail rate stays its own finding', () => {
+test('Vth tilt: adjacent sectors merge into one run', () => {
   const result = buildWaferMap({
     lotStack: { results: [1, 2, 3, 4, 5, 6].map(seed => makeResults({ seed, quadrant: true })), method: 'mean' },
     waferConfig: WAFER_CONFIG, dieConfig: DIE_CONFIG, testDefs: TEST_DEFS, ringCount: 4 });
@@ -20,7 +21,21 @@ test('Vth tilt: adjacent sectors merge into one run, and the limit fail rate sta
   const sectors = mean.filter(f => f.comparison.family === 'sector' && f.effect.direction === 'higher');
   assert.equal(sectors.length, 1, sectors.map(f => f.comparison.left).join(' | '));
   assert.deepEqual(mean.filter(f => f.comparison.family === 'quadrant').map(f => f.comparison.left).sort(), ['NE', 'SW']);
-  assert.ok(findings.some(f => f.id === `specLimit:${VTH}:sector:NE`), 'the limit fail rate is kept, unmerged');
+});
+
+/** One wafer whose VT fails its low limit on 40% of the dies in the NE and N sectors: a mean shift and a limit fail
+ *  rate over the same two sectors, both strong enough to stand among every comparison the wafer makes. */
+const twoSectorTilt = () => {
+  const [m] = buildLot({ name: 'merge:sectors', wafers: 1, tests: 'parametric', testFailures: [{ test: 101, region: 'sectors-NE-N', p: 0.4, binning: 'pass' }] });
+  return analyzeWaferMap(m, { enableTestValueAnalysis: true }).findings;
+};
+
+test('a test\'s mean and its limit fail rate over the same sectors merge separately, one run per metric', () => {
+  const findings = twoSectorTilt();
+  const mean = findings.find(f => f.id === 'test:101:sector:NE-N');
+  const limit = findings.find(f => f.id === 'specLimit:101:sector:NE-N');
+  assert.ok(mean && limit, findings.filter(f => /101/.test(f.id)).map(f => f.id).join(' | '));
+  assert.notEqual(mean, limit);
 });
 
 test('a run of quadrants is named in order round the wafer', () => {
@@ -32,11 +47,7 @@ test('a run of quadrants is named in order round the wafer', () => {
 });
 
 test('adjacent sectors with a limit fail rate merge into one run, recomputed over their union', () => {
-  const result = buildWaferMap({
-    results: makeResults({ seed: 3, quadrant: true }), waferConfig: WAFER_CONFIG, dieConfig: DIE_CONFIG,
-    hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS, testDefs: TEST_DEFS, ringCount: 4 });
-  const { findings } = analyzeWaferMap(result, { enableTestValueAnalysis: true });
-  const limit = findings.filter(f => f.id.startsWith('specLimit:1050:sector:'));
+  const limit = twoSectorTilt().filter(f => f.id.startsWith('specLimit:101:sector:'));
   assert.ok(limit.some(f => (f.relatedIds?.length ?? 0) >= 2), limit.map(f => f.id).join(' | '));
   for (const f of limit) assert.match(f.summary, /limit fail rate for/);
 });
@@ -94,9 +105,15 @@ test('the Vth tilt reads as two findings, not a sector run and a quadrant each',
   const visible = visibleFindings(analyzeWaferMap(stack, { enableTestValueAnalysis: true, testNumbers: [VTH] }).findings);
   const mean = visible.filter(f => f.id.startsWith(`test:${VTH}:`) && ['sector', 'quadrant'].includes(f.comparison.family));
   assert.deepEqual(mean.map(f => `${f.comparison.left}/${f.effect.direction}`).sort(), ['Sectors E–N/higher', 'Sectors W–S/lower']);
-  // A single sector inside a quadrant is a narrower statement, and a limit fail rate a different metric: both stay.
-  assert.ok(visible.some(f => f.id === `specLimit:${VTH}:sector:NE`));
-  assert.ok(visible.some(f => f.id === `specLimit:${VTH}:quadrant:NE`));
+});
+
+test('a sector run absorbs the quadrant inside it per metric, never another metric\'s', () => {
+  const findings = twoSectorTilt();
+  const visible = visibleFindings(findings);
+  const run = (prefix) => findings.find(f => f.id === `${prefix}:101:sector:NE-N`);
+  assert.deepEqual(run('test').absorbedIds, ['test:101:quadrant:NE']);
+  assert.deepEqual(run('specLimit').absorbedIds, ['specLimit:101:quadrant:NE']);
+  assert.ok(visible.includes(run('test')) && visible.includes(run('specLimit')), 'each metric keeps its own run');
 });
 
 test('a lot collapses a sector run and its quadrant the same way, per metric', () => {

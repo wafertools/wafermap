@@ -21,6 +21,7 @@ Some pages cover several related topics; those links point at the relevant secti
 - [Warnings the library surfaces](geometry.html#warnings) — the built-in ⚠ indicator, warning severity, and the `onWarning` opt-out for hosts with their own notification UI · [Guide: Adding die size and wafer geometry](../guide.md#adding-die-size-and-wafer-geometry)
 - [Bins and yield](named-bins.html) — named hard bins, pass/fail colours, yield label · [Guide: Working with bins](../guide/data.md#working-with-bins)
 - [Test values](test-values.html) — parametric measurements, spec limits, colorbar · [Guide: Working with test values](../guide/data.md#working-with-test-values)
+- [Validity limits](validity-limits.html) — tester clamps and open-circuit readings kept out of the map and statistics with `validLow`/`validHigh` and `valueFilter`, with the excluded values counted · [Guide: Validity limits](../guide/data.md#validity-limits-values-that-are-not-measurements)
 - [Bin colours across a full program](bin-colours.html) — a four-wafer lot with 15 hard bins and 32 soft bins — how every bin keeps its colour, two pass grades, and what happens when soft bins outnumber the palette · [Guide: How bin colours are assigned](../guide/data.md#how-bin-colours-are-assigned)
 - [Retests](retests.html) — multi-touch probe sequences and retest policy · [Guide: Retests and enriching dies after build](../guide/data.md#retests-and-enriching-dies-after-build)
 
@@ -43,6 +44,7 @@ Some pages cover several related topics; those links point at the relevant secti
 - [Lot-stack spatial analysis](statistics.html#lot-stack) — mean/median/stddev maps aggregated across a lot · [Guide: Recipes](../guide/recipes.md#recipes)
 - [Multi-site parallel testing](test-sites.html) — site-based analysis across a multi-site prober card
 - [Insights chart suite](insights.html) — the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add · [Guide: The Insights tab](../guide/galleries.md#the-insights-tab)
+- [Plots, tables and attributes](insights-plots.html) — the Plot tab kept by the host with `insights.plots` and `onPlotsChange`, the Data tab, drilldown, and your own names for wafer attributes with `attributes` · [Guide: Saved plots, the Data tab and attribute names](../guide/galleries.md#saved-plots-the-plot-tab-kept-by-the-host)
 - [Derived tests and sweeps](derived-tests.html) — tests computed per die from an expression, and an ordered run of tests read as a response curve with its crossing point and separation measured · [API: DerivedTestDef](../api/core.md#419-derivedtestdef)
 - [Parametric sweeps](sweeps.html) — five characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention, output drive, and an RRAM resistance distribution whose thresholds are read from the test names onto a log axis — each read as a pair of curves with the crossing and width measured · [Guide: Derived tests and sweeps](../guide/galleries.md#derived-tests-and-sweeps)
 

@@ -26,6 +26,8 @@
   <div class="demo-intro">
     A reticle (stepper field) is the group of dies exposed in one lithography step.
     Pass <code>reticleConfig</code> to <code>buildWaferMap</code> to generate field boundary geometry, then pass <code>reticles</code> to <code>renderWaferMap</code> to draw the overlay.
+    The same config gives every die a <strong>reticle cell</strong> (its place inside the mask) and a <strong>reticle shot</strong> (where on the wafer the mask was placed): open <strong>Insights</strong> to see the
+    Reticle cell yield card on the Overview, or the Plot tab to colour, split or bar by cell and shot. A low cell points at the mask; a low shot points at something that varies across the wafer.
     <code>analyzeWaferMap</code> detects systematic defects at the same position within every field.
     Toggle the overlay on/off above, or switch to Value mode to see the parametric spatial pattern.
     The findings panel (open on the right) shows any detected reticle-position findings.

@@ -38,7 +38,7 @@
 
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
-import { testValuesReader } from '../core/dieTable.js';
+import { excludedCounts, testValuesReader } from '../core/dieTable.js';
 import { type Chunked, drain } from '../core/utils.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { countOutOfSpec, hasSpecLimits } from '../renderer/spec.js';
@@ -72,6 +72,8 @@ export interface CapabilityDatum {
   /** Pooled within-wafer sample stddev. NaN if no item contributed ≥2 values. */
   stdWithin: number;
   n: number;
+  /** Dies whose value for this test the value filter excluded (not in `n`), and the limit set they were outside of. */
+  excluded?: { count: number; limitSet: 'validity' | 'spec' | 'test' };
   /** Cp/Cpk use `stdWithin`; null when stdWithin is NaN or 0, or when `hasSpec` is false. */
   cp: number | null;
   cpk: number | null;
@@ -457,6 +459,15 @@ function* computePooledTestStats(
   const stats = new Map<number, DescriptiveStats>();
   const specTally = new Map<number, { n: number; fail: number }>();
   const out: CapabilityDatum[] = [];
+  // Values the value filter excluded, over the same dies the pass above counted.
+  const excluded = new Map<number, number>();
+  let excludedSet: 'validity' | 'spec' | 'test' | undefined;
+  for (const item of items) {
+    const found = excludedCounts((item.dies ?? []).filter(d => isYieldEligibleDie(d)));
+    if (!found) continue;
+    excludedSet ??= found.by;
+    for (const [tn, c] of found.counts) excluded.set(tn, (excluded.get(tn) ?? 0) + c);
+  }
   for (const def of testDefs) {
     yield;
     const testNumber = def.testNumber;
@@ -491,8 +502,10 @@ function* computePooledTestStats(
       const dataSpan = described.max - dataMin;
       norm = dataSpan > 0 ? (v: number) => (v - dataMin) / dataSpan : () => 0.5;
     }
+    const lost = excluded.get(testNumber);
     out.push({
       ...figures,
+      ...(lost && excludedSet ? { excluded: { count: lost, limitSet: excludedSet } } : {}),
       min: norm(described.min),
       q1: norm(described.q1),
       median: norm(described.median),

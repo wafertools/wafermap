@@ -18,6 +18,7 @@ import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { LEADING, SPACE, fontPx, FONT, CLR } from '../toolbar.js';
 import { cardShell, isExpandedCard, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
 import { fmt } from '../../renderer/fmt.js';
+import { limitSetName } from '../../renderer/valueFilter.js';
 import { escHtml } from '../../core/utils.js';
 import { DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
 
@@ -137,13 +138,14 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
 
   let draw: () => void = () => {};
 
-  function renderCaption(shownCount: number, unspecCount: number, totalTests: number, derivedCount: number, basis: 'spec' | 'test' | 'mixed' | undefined): void {
+  function renderCaption(shownCount: number, unspecCount: number, totalTests: number, derivedCount: number, basis: 'spec' | 'test' | 'mixed' | undefined, excludedValues?: { total: number; limitSet: 'validity' | 'spec' | 'test' }): void {
     hintRow.innerHTML = '';
     const line = card.ownerDocument.createElement('span');
     Object.assign(line.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.sm, color: CLR.value, fontSize: FONT.body, fontWeight: '500' } as Partial<CSSStyleDeclaration>);
 
     const excluded = totalTests - shownCount;
-    const unspecNote = unspecCount > 0 ? ` · ${unspecCount} without both limits` : '';
+    const unspecNote = (unspecCount > 0 ? ` · ${unspecCount} without both limits` : '')
+      + (excludedValues ? ` · ${excludedValues.total.toLocaleString('en-GB')} values outside ${limitSetName(excludedValues.limitSet)} excluded` : '');
     const summary = card.ownerDocument.createElement('span');
     summary.dataset.wmapCaption = '1';
     summary.textContent = excluded > 0
@@ -506,7 +508,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
           + (d.expression ? `<br><code>${escHtml(d.expression)}</code>` : '')
           + '<br>'
         : '';
-      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (n=${d.n})<br>${derivedNote}`
+      tooltip.innerHTML = `<strong>${escHtml(d.label)}</strong> (n=${d.n}${d.excluded ? `, ${d.excluded.count} outside ${limitSetName(d.excluded.limitSet)} excluded` : ''})<br>${derivedNote}`
         + (d.hasSpec
           ? `${limitNames(d.limitBasis).lo} ${fv(d.lsl!)} · ${limitNames(d.limitBasis).hi} ${fv(d.usl!)}<br>`
             + `mean ${fv(d.mean)}<br>`
@@ -534,7 +536,10 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     const data = buildCapabilityData(currentItems(), testDefs);
     const totalTestable = testDefs.filter(d => d.testNumber !== undefined).length;
     const unspecCount = data.filter(d => !d.hasSpec).length;
-    renderCaption(data.length, unspecCount, totalTestable, data.filter(d => d.derived).length, sharedBasis(data));
+    const lostValues = data.reduce((n, d) => n + (d.excluded?.count ?? 0), 0);
+    const lostSet = data.find(d => d.excluded)?.excluded?.limitSet;
+    renderCaption(data.length, unspecCount, totalTestable, data.filter(d => d.derived).length, sharedBasis(data),
+      lostValues > 0 && lostSet ? { total: lostValues, limitSet: lostSet } : undefined);
     draw = buildView(data);
     draw();
   }

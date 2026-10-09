@@ -1,5 +1,5 @@
 import { createViewSwitch, type ViewSwitch } from './viewSwitch.js';
-import { createSummaryRail, type SummaryRail } from './summaryRail.js';
+import { createSummaryToggle, type SummaryToggle } from './summaryToggle.js';
 import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
 import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
@@ -9,7 +9,7 @@ import { buildWaferMap, getTestPassStatus, isParametricTest } from '../renderer/
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { defaultPlotMode, SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { openUserGuideWindow, type UserGuideExtension } from './guideWindow.js';
 import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
@@ -38,7 +38,7 @@ import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
-import { requirePassBins } from '../core/passBins.js';
+import { isPassBin, requirePassBins } from '../core/passBins.js';
 import { requireRingCount } from '../core/ringCount.js';
 import { asList, toggleHighlight } from '../core/utils.js';
 import { buildCompactMap, compactLayoutOffered, type CompactMap } from '../core/compact.js';
@@ -585,9 +585,29 @@ export interface CardController extends WaferMapController {
 /** @internal The public view of a card's options: everything but the gallery's shared state. */
 /** The bin a finding is about — what the legend filter shows while the finding
  *  is active — or `undefined` for a yield, test or functional finding. */
-export function findingBin(finding: StatsFinding): number | undefined {
+/**
+ * The bin a finding highlights on the map, or `undefined` for none. A pass bin that fell in a region is that
+ * region's pass rate, so it is shown as a yield finding is, as the region's dies: highlighting the passing
+ * dies would point at the dies the finding is not about. `passBins` are the population's own; without one set
+ * for it (wafers judged differently) no bin is taken for a pass bin.
+ */
+export function findingBin(finding: StatsFinding, passBins: readonly number[] | undefined, hasHardBins: boolean): number | undefined {
   const { kind, bin } = finding.variable;
-  return kind === 'hardBin' || kind === 'softBin' ? bin : undefined;
+  if ((kind !== 'hardBin' && kind !== 'softBin') || bin === undefined) return undefined;
+  return passBins && isPassBin(kind, bin, passBins, hasHardBins) ? undefined : bin;
+}
+
+/**
+ * The bin mode a finding is shown in. A bin finding takes its own bin type. Any other (a yield region,
+ * a spatial pattern) is about which dies, not which bin, so the map keeps the bin mode it is in, and
+ * from another mode takes a bin type the dies carry: a soft-bin-only lot switched to hard bins draws
+ * every die as no data. One rule for the single map and the gallery.
+ */
+export function findingPlotMode(finding: StatsFinding, current: PlotMode | undefined, hasHardBins: boolean): PlotMode {
+  const { kind } = finding.variable;
+  if (kind === 'hardBin' || kind === 'softBin') return kind;
+  if (current === 'hardBin' || current === 'softBin') return current;
+  return hasHardBins ? 'hardBin' : 'softBin';
 }
 
 export function toPublicViewOptions(opts: CardViewOptions): WaferViewOptions {
@@ -1105,6 +1125,12 @@ export function renderWaferMapCard(
   // controls; headerBar is now free to mount only when there is metadata to
   // show, which is the one job it was added for.
   let btnExpand: HTMLButtonElement | null = null;
+  /** Shows or hides Expand, and tidies the separators beside it: hiding it alone left two side by side. */
+  function setExpandShown(shown: boolean): void {
+    if (!btnExpand) return;
+    btnExpand.style.display = shown ? 'flex' : 'none';
+    syncSceneSeparators?.();
+  }
   if (showIdentity) {
     metadataBadge = createIdentityHeader(
       collapsedLabel(wafer.metadata ?? {}, lotStackBadgeContext()) ?? '',
@@ -1180,7 +1206,7 @@ export function renderWaferMapCard(
   const hasDefinedBinColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
 
   let viewOpts: CardViewOptions = {
-    plotMode:               'hardBin',
+    plotMode:               defaultPlotMode([result.dies]),
     showDieLabels:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,
@@ -1405,7 +1431,7 @@ export function renderWaferMapCard(
     // ran this and put Expand back, offering to expand a view that is already
     // expanded — and, because it reappeared only in one of the two views, it
     // shifted the Insights toggle beside it along the bar on every switch.
-    if (btnExpand) btnExpand.style.display = modalHandle ? 'none' : 'flex';
+    setExpandShown(!modalHandle);
     // The toolbar STAYS. It lives in the chrome row above the map, which does
     // not belong to either view, so leaving it up costs no height at all and
     // fixes the real complaint: the way back out of Insights stopped moving
@@ -1429,6 +1455,7 @@ export function renderWaferMapCard(
     // reason: the frame owns identity, so the tab must not repeat it.
     if (headerBar) headerBar.style.display = '';
     syncChromeRowVisibility();
+    syncSceneSeparators?.();
     // metaPanel is a separate sibling in canvasWrap with its own explicit
     // Z_ABOVE z-index (see its mount comment above) — it paints above
     // insightsTab.el (auto z-index) regardless of DOM order, so an expanded
@@ -1571,6 +1598,19 @@ export function renderWaferMapCard(
   let summaryPanelEl: HTMLDivElement | null = null;
   let summaryPanelWrapper: HTMLDivElement | null = null;
   let summaryActiveFindingId: string | null = null;
+  // The test a "What stands out" row is showing (its values, its failing dies selected), or null.
+  // Released with the active finding: it describes the map the same way.
+  let summaryActiveTest: number | null = null;
+  // The plot mode and test in use before a panel row first changed them, put back when that row is
+  // clicked again. Dropped when the user changes the view themselves (`releaseActiveFinding`).
+  let viewBeforeFinding: Pick<CardViewOptions, 'plotMode' | 'activeTest'> | null = null;
+  function rememberViewBeforeFinding(): void {
+    if (summaryActiveFindingId === null && summaryActiveTest === null) viewBeforeFinding = { plotMode: viewOpts.plotMode, activeTest: viewOpts.activeTest };
+  }
+  function restoreViewBeforeFinding(): void {
+    applyOpts({ ...(viewBeforeFinding ?? {}), highlightBin: undefined });
+    viewBeforeFinding = null;
+  }
   // Host-supplied row at the top of the Findings section. Set at render time
   // via `options.findingsNotice` and replaceable through the controller, since
   // what it says (and whether it is needed) changes once the host runs the
@@ -1586,7 +1626,8 @@ export function renderWaferMapCard(
     if (kind === 'test') {
       applyOpts({ plotMode: 'value', activeTest: index ?? 0, highlightBin: undefined });
     } else {
-      applyOpts({ plotMode: kind === 'softBin' ? 'softBin' : 'hardBin', highlightBin: findingBin(finding) });
+      const hasHardBins = currentDies.some(d => d.hbin != null);
+      applyOpts({ plotMode: findingPlotMode(finding, viewOpts.plotMode, hasHardBins), highlightBin: findingBin(finding, passBins, hasHardBins) });
     }
 
     const h = finding.highlight;
@@ -1641,12 +1682,33 @@ export function renderWaferMapCard(
       metadataFields,
       dieListOptions: options.dieList,
       onLocateDie: (die) => locateDie(die),
+      // A close button only when there is a way back in: the Summary button, which exists with a
+      // toolbar and shows with a summary. Read from those, not from `summaryToggle`: the panel's
+      // first render comes before the toolbar is built.
+      onClose: showToolbar && currentStatsSummary ? () => setSummaryPanelOpen(false) : undefined,
+      activeTest: summaryActiveTest,
+      onTestClick: (testNumber) => {
+        if (summaryActiveTest === testNumber) {
+          summaryActiveTest = null;
+          selectionFromKeys([]);
+          restoreViewBeforeFinding();
+        } else {
+          rememberViewBeforeFinding();
+          summaryActiveFindingId = null;
+          summaryActiveTest = testNumber;
+          applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
+          selectionFromKeys(currentStatsSummary?.stats.testFailures?.[testNumber]?.dieKeys);
+        }
+        renderSummaryPanel();
+      },
       onFindingClick: (finding, _row) => {
         if (summaryActiveFindingId === finding.id) {
           summaryActiveFindingId = null;
           selectionFromKeys([]);
-          applyOpts({ highlightBin: undefined });
+          restoreViewBeforeFinding();
         } else {
+          rememberViewBeforeFinding();
+          summaryActiveTest = null;
           summaryActiveFindingId = finding.id;
           applyFindingHighlightFromPanel(finding);
         }
@@ -1657,8 +1719,11 @@ export function renderWaferMapCard(
     if (!run.done) panelRuns.set(el, run);
   }
 
+  /** Re-renders the panel this map has: the placed one, or the auto-mounted one (only one exists). Every
+   *  panel interaction (a finding, a row, a filter) goes through here, so both kinds show its result. */
   function renderSummaryPanel(): void {
     if (summaryPanelEl) renderSummaryPanelInto(summaryPanelEl);
+    else if (autoSummaryPanelEl) renderSummaryPanelInto(autoSummaryPanelEl);
   }
 
   function renderAutoSummaryPanel(): void {
@@ -1667,22 +1732,6 @@ export function renderWaferMapCard(
 
 
 
-  // The labelled edge tab that opens the panel while it is closed. It only proxies
-  // `setSummaryPanelOpen`; `syncSummaryRail` (from the button's own refresh) decides when it shows.
-  let summaryRail: SummaryRail | null = null;
-  function mountSummaryRail(wrapper: HTMLElement, placement: 'right' | 'left' | 'top' | 'bottom'): void {
-    if (placement !== 'right' && placement !== 'left') return;
-    summaryRail = createSummaryRail(ownerDocument, placement, () => setSummaryPanelOpen(true));
-    wrapper.appendChild(summaryRail.el);
-  }
-  function syncSummaryRail(): void {
-    if (!summaryRail) return;
-    const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
-    const open = panelEl ? panelEl.style.display !== 'none' : true;
-    const shown = !!btnSummary && btnSummary.style.display !== 'none';
-    summaryRail.sync(shown && !open, !!currentStatsSummary?.hasNotableFindings);
-  }
-
   if (summaryPanelOpts?.placement) {
     const placement = summaryPanelOpts.placement;
     summaryPanelEl = createSummaryPanelEl(placement, chromeInset, ownerDocument, onFindingMenu);
@@ -1690,7 +1739,6 @@ export function renderWaferMapCard(
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
     summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
-    mountSummaryRail(summaryPanelWrapper, placement);
     parent?.insertBefore(summaryPanelWrapper, next);
     renderSummaryPanel();
   } else if (currentStatsSummary) {
@@ -1705,7 +1753,6 @@ export function renderWaferMapCard(
     const parent = canvasWrap.parentElement;
     const next = canvasWrap.nextSibling;
     autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
-    mountSummaryRail(autoSummaryPanelWrapper, 'right');
     parent?.insertBefore(autoSummaryPanelWrapper, next);
     renderAutoSummaryPanel();
   }
@@ -1720,6 +1767,8 @@ export function renderWaferMapCard(
   // ── Toolbar ────────────────────────────────────────────────────────────────
   let toolbar:          HTMLDivElement    | null = null;
   let sceneControlsEl:  HTMLDivElement    | null = null;
+  /** Hides scene-bar separators with no visible control on one side; set once the toolbar is built. */
+  let syncSceneSeparators: (() => void) | null = null;
   // Map-specific controls (zoom/pan/select, mode/palette/overlays/etc.) — hidden
   // while the Insights tab is open, since none of them apply to the chart suite.
   // Insights/Help stay in sceneControlsEl directly, unwrapped, since those
@@ -1730,7 +1779,9 @@ export function renderWaferMapCard(
   let mapToolsEl:       HTMLDivElement    | null = null;
   let mapViewControlsEl: HTMLDivElement   | null = null;
   let btnBoxSelect:     HTMLButtonElement | null = null;
-  let btnSummary:      HTMLButtonElement | null = null;
+  let summaryToggle:   SummaryToggle | null = null;
+  /** False while the host hides the Summary button (`setSummaryVisible`). */
+  let summaryToggleAllowed = true;
   let btnHelp:          HTMLButtonElement | null = null;
   let btnWarnings:   HTMLButtonElement | null = null;
   let btnWarningsSep: HTMLDivElement | null = null;
@@ -1743,6 +1794,7 @@ export function renderWaferMapCard(
     const show  = count > 0;
     btnWarnings.style.display    = show ? 'flex' : 'none';
     btnWarningsSep.style.display = show ? '' : 'none';
+    syncSceneSeparators?.();
     if (!show) return;
 
     const worst = severityOf(currentWarnings[0]);
@@ -1771,8 +1823,10 @@ export function renderWaferMapCard(
    *  finding the panel shows as active no longer describes the map: release it,
    *  and the half of its view the user did not just replace. */
   function releaseActiveFinding(changed: 'selection' | 'legend' = 'selection'): void {
-    if (summaryActiveFindingId === null) return;
+    if (summaryActiveFindingId === null && summaryActiveTest === null) return;
     summaryActiveFindingId = null;
+    summaryActiveTest = null;
+    viewBeforeFinding = null;
     if (changed === 'selection') applyOpts({ highlightBin: undefined });
     else { selectedKeys = new Set(); onSelect?.([]); }
     renderSummaryPanel();
@@ -1785,22 +1839,16 @@ export function renderWaferMapCard(
   }
 
   function refreshSummaryButton(): void {
-    if (!btnSummary) return;
-    const hasSummary = !!(summaryPanelEl ?? autoSummaryPanelEl);
-    btnSummary.style.display = (currentStatsSummary && hasSummary && !insightsOpen) ? 'flex' : 'none';
-    const activePanelEl = summaryPanelEl ?? autoSummaryPanelEl;
-    const panelOpen = activePanelEl ? activePanelEl.style.display !== 'none' : false;
-    if (currentStatsSummary?.hasNotableFindings && !panelOpen) {
-      btnSummary.style.color = CLR.findingIndicator;
-    } else if (!btnSummary.dataset.active) {
-      btnSummary.style.color = CLR.icon;
-    }
-    syncSummaryRail();
+    if (!summaryToggle) return;
+    syncSceneSeparators?.();
+    const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
+    summaryToggle.sync({
+      visible: summaryToggleAllowed && !!currentStatsSummary && !!panelEl && !insightsOpen,
+      open: !!panelEl && panelEl.style.display !== 'none',
+      notable: !!currentStatsSummary?.hasNotableFindings,
+    });
   }
 
-  // The toolbar helpers are created with the toolbar; kept here so the Summary
-  // panel's open state can be set from outside the toolbar block.
-  let setButtonActive: ((btn: HTMLButtonElement, active: boolean) => void) | null = null;
 
   /**
    * Open or close the Summary panel — the one path for the toolbar button and
@@ -1819,7 +1867,6 @@ export function renderWaferMapCard(
       (options.onSummaryPanelChange ?? modalRoom)?.(open, open ? taken : 0);
     }
     if (open && stalePanels.has(panelEl)) renderSummaryPanelInto(panelEl);
-    if (btnSummary) setButtonActive?.(btnSummary, open);
     refreshSummaryButton();
   }
 
@@ -1877,8 +1924,12 @@ export function renderWaferMapCard(
       // uses when enabled, so the one-tooltip invariant holds across both.
       const tbTooltip = getTooltip(ownerDocument);
       const tbHelpers = createToolbarHelpers(tbTooltip);
-      const { makeBtn, setActive, makeSep, makeMenuRow, makeMenuSection, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
-      setButtonActive = setActive;
+      const { makeBtn, setActive, makeSep, syncSeparators, syncToolbarVisible, makeMenuRow, makeMenuSection, closeOpenMenu, getOpenMenu, setOpenMenu } = tbHelpers;
+      syncSceneSeparators = () => {
+        if (sceneControlsEl) syncSeparators(sceneControlsEl);
+        if (toolbar) syncToolbarVisible(toolbar, 'flex');
+        syncChromeRowVisibility();
+      };
       tbCloseOpenMenu = closeOpenMenu;
       tbGetOpenMenu   = getOpenMenu;
       // Single persistent listener — closes any open dropdown on outside click.
@@ -2144,24 +2195,15 @@ export function renderWaferMapCard(
           mapViewControlsEl!.appendChild(btnOrient);
         }
 
-        // Summary button — toggles the Summary panel. Left unwrapped in
-        // sceneControlsEl (not grouped with mapViewControlsEl) so it stays
-        // reachable and its own open/closed state stays independent of
-        // Insights — the two are separate, non-overlapping surfaces (see
-        // this function's own header comment), not a coordinated pair where
-        // one hides the other's control.
-        // The panel itself is auto-mounted earlier, independently of the toolbar.
-        if (currentStatsSummary) {
-          btnSummary = makeBtn('findings', 'Summary panel', () => {
-            const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
-            if (panelEl) setSummaryPanelOpen(panelEl.style.display === 'none');
-          });
-          sceneControlsEl!.appendChild(makeSep());
-          sceneControlsEl!.appendChild(btnSummary);
-          // Set button active state to match initial panel visibility
-          if (autoSummaryPanelEl?.style.display !== 'none') setActive(btnSummary, true);
-          refreshSummaryButton();
-        }
+        // The Summary button: labelled, in the chrome row just before Maps | Insights, above the
+        // panel it opens. Built with every toolbar and shown once there is a summary, so a summary
+        // given later (`setStatsSummary`) has its button too.
+        summaryToggle = createSummaryToggle(ownerDocument, () => {
+          const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
+          if (panelEl) setSummaryPanelOpen(panelEl.style.display === 'none');
+        });
+        chromeRowEl.insertBefore(summaryToggle.el, viewSwitch?.el ?? null);
+        refreshSummaryButton();
 
         // Warning indicator. Deliberately NOT a toast: these are persistent
         // conditions about whether the map can be trusted, and a message that
@@ -2215,6 +2257,7 @@ export function renderWaferMapCard(
           btnHelp = makeBtn('help', 'User guide', () => openGuideWindow());
           sceneControlsEl!.appendChild(btnHelp);
         }
+        syncSceneSeparators?.();
       }
 
       // Anchored to `mapBox`, not `canvasWrap` — canvasWrap shrinks to
@@ -2324,7 +2367,7 @@ export function renderWaferMapCard(
         // Unconditional: Expand is valid in both views now that the modal can
         // carry the Insights suite, so restoring it must not depend on which
         // view happens to be showing when the modal closes.
-        if (btnExpand) btnExpand.style.display = 'flex';
+        setExpandShown(true);
         // Only the canvas can take focus, and only when it is the visible
         // view — focusing it under an open Insights suite would scroll the
         // charts back to a map nobody is looking at.
@@ -2358,7 +2401,7 @@ export function renderWaferMapCard(
       const taken = openPanel.getBoundingClientRect().width + gap;
       if (taken > 0) modalRoom(true, taken);
     }
-    if (btnExpand) btnExpand.style.display = 'none';
+    setExpandShown(false);
   }
 
   // ── Apply scene option changes ─────────────────────────────────────────────
@@ -2405,7 +2448,7 @@ export function renderWaferMapCard(
     render();
     const modeChanged = partial.plotMode !== undefined && partial.plotMode !== prevMode;
     const colorsChanged = COLOR_KEYS.some(k => k in partial);
-    if (colorsChanged || modeChanged) { renderSummaryPanel(); renderAutoSummaryPanel(); }
+    if (colorsChanged || modeChanged) renderSummaryPanel();
     // logScale/colorbarRangeMode: buildMaplessSummary's histogram resolves
     // its own colour range the same way the map's colorbar does (see
     // resolveValueNormalize, maplessSummary.ts) — a change here needs the
@@ -3468,7 +3511,6 @@ export function renderWaferMapCard(
         const parent = canvasWrap.parentElement;
         const next = canvasWrap.nextSibling;
         autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
-        mountSummaryRail(autoSummaryPanelWrapper, 'right');
         parent?.insertBefore(autoSummaryPanelWrapper, next);
         renderAutoSummaryPanel();
       }
@@ -3500,8 +3542,8 @@ export function renderWaferMapCard(
     },
 
     setSummaryVisible(visible: boolean): void {
-      if (btnSummary) btnSummary.style.display = visible ? 'flex' : 'none';
-      syncSummaryRail();
+      summaryToggleAllowed = visible;
+      refreshSummaryButton();
     },
 
     setViewControlsVisible(visible: boolean): void {
@@ -3509,7 +3551,7 @@ export function renderWaferMapCard(
     },
 
     setExpandVisible(visible: boolean): void {
-      if (btnExpand) btnExpand.style.display = visible ? 'flex' : 'none';
+      setExpandShown(visible);
     },
 
     openUserGuide: openGuideWindow,

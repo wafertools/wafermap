@@ -130,6 +130,18 @@
           separate accessors.</p>
         </div>
       </div>
+      <div class="spec-row">
+        <div class="spec-code">
+          <pre>{ testNumber: 900006, name: 'Window OK in Bin 1', testType: 'F',
+  expression: 'hbin() == 1 and specPass[900001]' }</pre>
+        </div>
+        <div class="spec-notes">
+          <p class="look">An expression can read the die itself: <code>dieX()</code>,
+          <code>dieY()</code>, <code>hbin()</code>, <code>sbin()</code> and <code>site()</code> give its position,
+          bins and probe site, so a test can be cut by bin (<code>hbin() == 1</code>) or position
+          (<code>if(dieX() &lt; 5, t[1010], 0 - 1)</code>). A field the die lacks is no value, never zero.</p>
+        </div>
+      </div>
     </section>
 
   </div>
@@ -302,6 +314,12 @@ renderWaferGallery(container, items, {
       {
         testNumber: 900005, name: 'All Steps Pass', testType: 'F',
         expression: 'all(specPass[1200..1208]) and testPass[1080]',
+      },
+      // A die's own fields: hbin() is its hard bin, and dieX(), dieY(), sbin() and site() read its
+      // position, soft bin and probe site. A field the die lacks is no value, not zero.
+      {
+        testNumber: 900006, name: 'Window OK in Bin 1', testType: 'F',
+        expression: 'hbin() == 1 and specPass[900001]',
       },
     ];
 

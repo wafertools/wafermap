@@ -181,7 +181,7 @@ const items = waferResults.map((r, i) => ({
 }));
 
 renderWaferGallery(container, items);
-// → Summary panel button appears in the toolbar, listing the wafers with findings
+// → the Summary button appears above the gallery, its panel listing the wafers with findings
 // → Each card's own window shows its own per-wafer summary
 ```
 
@@ -317,6 +317,64 @@ Clicking a leaf row in the yield bar or the box plot — or a point on the trend
 
 **→ [Demo: Your first wafer map](../examples/first-map.html)** and **[Demo: Building a lot gallery](../examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
 
+### Saved plots: the Plot tab, kept by the host
+
+The **Plot** tab is a chart builder: **+ New plot** opens a scatter, histogram, box, bar or line over any parametric test, a die's position,
+ring, quadrant, bin, site, reticle cell or shot, a pass/fail test (under **Verdicts**), or a wafer or lot attribute, and **+ New sweep** draws a
+response curve. The library stores nothing itself. A plot is a recipe with no lot in it (`PlotSpec`), so you keep the list wherever you keep settings
+and hand it back on the next render:
+
+```ts
+import { readPlotsFile, writePlotsFile } from '@wafertools/wafermap';
+
+renderWaferGallery(container, items, {
+  insights: {
+    enabled: true,
+    plots: JSON.parse(localStorage.getItem('plots') ?? '[]'),          // the reader's saved plots
+    onPlotsChange: plots => localStorage.setItem('plots', JSON.stringify(plots)),   // the whole list, after every change
+  },
+});
+```
+
+`onPlotsChange` is called once for a burst of typing. A plot that needs a test the open lot lacks is kept, greyed with the reason, and draws again on a lot that has
+it; a test is matched by number and checked by name, so a plot saved against another test program is reported instead of being drawn against the wrong measurement.
+**Export plots…** and **Import plots…** move a set of plots between machines as a `wafermap-plots` file (`writePlotsFile` / `readPlotsFile`; a desktop host passes
+its native dialog as `onPickPlotsFile`). The reader is lenient: it keeps every readable plot, names each setting it dropped, and keeps settings a newer version wrote.
+`insights.sweeps` and `onRemoveSweeps` are deprecated: give sweeps in `plots` as `chart: 'sweep'` plots.
+
+The plot editor refuses a combination that cannot be drawn, with the reason: in the field lists such a field is dimmed ("Yield is per wafer: use a bar or line
+chart"). A plot of a test that has limits draws them as dashed lines (`limits`: `both`, `test`, `spec` or `none`), and every plot states its wafers and dies, how
+values were combined, and how many dies were left out for a missing value. **→ [Demo: Plots, tables and attributes](../examples/insights-plots.html)**
+
+### The Data tab and drilldown
+
+The **Data** tab is the scope as tables: **Statistics**, **Dies** (one row per die, sortable, drawn virtually so hundreds of thousands of dies scroll smoothly) and
+**Wafers**. Open it first with `insights: { defaultView: 'data' }`. The Dies export is **Wide** or **Long**. A die row shows that die on its map. The Summary panel's
+**Data tables** button opens the same tables in a modal even with Insights off.
+
+Right-clicking a map, a gallery card, a finding, a bin in a legend or a chart mark opens the **drilldown** menu on exactly the dies it counts: the charts, the saved plots
+and **Dies**, **Test statistics** and, over several wafers, **Wafers**. In a gallery, Ctrl/Cmd+click a card's header to pick whole wafers, or turn on the toolbar's
+**Select on every wafer** to apply a box or click made on one card at the same die positions on all of them, so a region (the edge ring, a scratch zone, a reticle
+corner) is read lot-wide. Neither needs any wiring; every table's **Export CSV** goes through `onSaveText`.
+
+### Naming wafer attributes
+
+Group by, the plot fields, the header strip, the Wafers table and the reports all name a wafer attribute through one table. Extend it with `attributes`, one entry per
+metadata key:
+
+```ts
+renderWaferGallery(container, items, {
+  attributes: {
+    processSplit: { label: 'Process split' },                  // a Group by and Compare by choice, called this everywhere
+    progRev:      { label: 'Program revision', facet: false }, // on the strip and in the Wafers table, not offered to group by
+    testDate:     { label: 'Test date', date: true },          // an ISO datetime, grouped by day
+  },
+});
+```
+
+`attributeLabel(key, curation?)` is the function they all call, if your own UI should name an attribute the same way. A field that is unique to every wafer is not offered
+to group by.
+
 ## Derived tests and sweeps
 
 Two features for test data that means more together than test by test. A **derived test** computes a new per-die value from the tests already on the die — a shift, a ratio, a margin — and from the build onwards behaves as an ordinary test. A **sweep** reads an ordered run of tests as one response curve and measures the pair of curves against each other. They pair naturally: a sweep shows you the population's curve, and the per-die view of the same thing is a derived scalar plotted on the map, where position is visible.
@@ -340,6 +398,8 @@ const result = buildWaferMap({
 That is all the wiring there is. Test 900001 now appears in the test-value plot modes, the colorbar, tooltips, `analyzeWaferMap`, the Insights panels and the report, with its `limitHigh` driving spec marks and Cpk exactly as a measured limit would.
 
 Three accessors read the die, and the distinction between the last two matters: `t[1020]` is the measured value, `testPass[1020]` is the verdict the *tester* recorded, and `specPass[1020]` is the verdict *the limits* imply. Those two genuinely disagree in the field — guard bands and dynamic limits routinely cause it — so they are separate accessors rather than one conflated "did it pass". `diePass()` gives the die's bin verdict under the map's `passBins`.
+
+A die's own fields are accessors too: `dieX()` and `dieY()` give its position, `hbin()` and `sbin()` its bins and `site()` its probe site, so a derived test can be cut by bin (`hbin() == 5`) or position (`if(dieX() < 5, t[1010], 0 - 1)`). A field the die lacks is no value, not zero, and the call is written with its parentheses: `hbin` alone is refused with the call to use.
 
 A range accessor reads a block of test numbers and must be reduced to a scalar:
 

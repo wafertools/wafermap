@@ -111,7 +111,7 @@ function colorsFor(sev: NonNullable<WaferWarning['severity']>): { bg: string; bo
 
 /** `⚠` for warnings, `⛔` for errors — shape carries the meaning, not just colour. */
 function glyphFor(sev: NonNullable<WaferWarning['severity']>): string {
-  return sev === 'error' ? '⛔' : sev === 'info' ? 'ℹ' : '⚠';
+  return sev === 'error' ? '⛔' : sev === 'info' ? 'ⓘ' : '⚠';
 }
 
 /**
@@ -151,6 +151,7 @@ export const SHORT_LABEL: Record<string, string> = {
   'input-values-outside-stdf':     'Values outside STDF ranges',
   'retests-by-part-id':            'Retests matched by part ID',
   'derived-test-invalid':          'Derived test not applied',
+  'values-excluded':               'Values excluded by limits',
 };
 
 /** Falls back to the message's first sentence when a code has no short form —

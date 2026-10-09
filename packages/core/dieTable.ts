@@ -50,6 +50,14 @@ export interface DieTable {
    * with no verdicts has no `testPass`, exactly as before.
    */
   readonly fields: Uint8Array;
+  /**
+   * Test number → the value that was taken out of `values` by the value filter
+   * (`WaferMapInput.valueFilter`), per row; `NaN` = nothing was excluded there.
+   * Kept so a tooltip can say what was excluded and why. Absent when nothing was.
+   */
+  readonly excluded?: ReadonlyMap<number, Float32Array | Float64Array>;
+  /** The limit set `excluded` values were outside of (the value filter's mode). */
+  readonly excludedBy?: 'validity' | 'spec' | 'test';
 }
 
 /**
@@ -159,7 +167,58 @@ export function extendTable(
     values: new Map([...v].sort((a, b) => a[0] - b[0])),
     verdicts: new Map([...p].sort((a, b) => a[0] - b[0])),
     fields: table.fields.slice(),
+    ...(table.excluded ? { excluded: table.excluded, excludedBy: table.excludedBy } : {}),
   };
+}
+
+/**
+ * A copy of `table` with the value filter's outcome: `values` columns replaced
+ * (excluded entries now `NaN`) and `excluded` holding what was taken out.
+ */
+export function withExcluded(
+  table: DieTable,
+  values: ReadonlyMap<number, Float32Array | Float64Array>,
+  excluded: ReadonlyMap<number, Float32Array | Float64Array>,
+  excludedBy: 'validity' | 'spec' | 'test',
+): DieTable {
+  const v = new Map(table.values);
+  for (const [tn, col] of values) v.set(tn, col);
+  const x = new Map(table.excluded ?? []);
+  for (const [tn, col] of excluded) x.set(tn, col);
+  return { ...table, values: v, excluded: x, excludedBy };
+}
+
+/**
+ * How many of `dies`' values the value filter excluded, per test, and the limit set it used.
+ * Counts the dies given (so a die a retest policy dropped is not counted). `undefined`
+ * when none of them has an excluded value.
+ */
+export function excludedCounts(dies: readonly DieData[]): { counts: Map<number, number>; by: 'validity' | 'spec' | 'test' } | undefined {
+  const counts = new Map<number, number>();
+  let by: 'validity' | 'spec' | 'test' | undefined;
+  for (const die of dies) {
+    const table = (die as LinkedDie)[TABLE];
+    if (table?.excluded === undefined) continue;
+    const row = (die as LinkedDie)[ROW]!;
+    for (const [tn, col] of table.excluded) {
+      if (Number.isNaN(col[row])) continue;
+      counts.set(tn, (counts.get(tn) ?? 0) + 1);
+      by ??= table.excludedBy;
+    }
+  }
+  return counts.size === 0 || by === undefined ? undefined : { counts, by };
+}
+
+/** The limit set the value filter excluded `die`'s values against, when it excluded any in its table. */
+export function excludedBy(die: DieData): 'validity' | 'spec' | 'test' | undefined {
+  return (die as LinkedDie)[TABLE]?.excludedBy;
+}
+
+/** The value the filter excluded from `die` for `testNumber`, or `undefined` when none was. */
+export function excludedValue(die: DieData, testNumber: number): number | undefined {
+  const table = (die as LinkedDie)[TABLE];
+  const v = table?.excluded?.get(testNumber)?.[(die as LinkedDie)[ROW]!];
+  return v === undefined || Number.isNaN(v) ? undefined : v;
 }
 
 /**
@@ -332,6 +391,7 @@ export function detachTables(dieArrays: ReadonlyArray<readonly Die[]>): Detached
     for (const col of t.values.values()) transfer.add(col.buffer as ArrayBuffer);
     for (const col of t.verdicts.values()) transfer.add(col.buffer as ArrayBuffer);
     transfer.add(t.fields.buffer as ArrayBuffer);
+    if (t.excluded) for (const col of t.excluded.values()) transfer.add(col.buffer as ArrayBuffer);
   }
   return { tables, links, transfer: [...transfer] };
 }

@@ -24,7 +24,7 @@ import {
   type PatternClassification, type PatternLabel } from './patternClassification.js';
 import { requirePassBins } from '../core/passBins.js';
 import { requireRingCount } from '../core/ringCount.js';
-import { benjaminiHochberg, fiveNumberSummary, normalCdf, sampleVariance } from './math.js';
+import { benjaminiHochberg, fisherExact, fiveNumberSummary, normalCdf, sampleVariance } from './math.js';
 import { mean, clamp01, maxOf } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 
@@ -249,6 +249,8 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
 function computeTestSpecYield(
   dies: Die[],
   testDefs: TestDef[] | undefined,
+  /** Called for each die outside a test's limits. */
+  onFail?: (testNumber: number, die: Die) => void,
 ): StatsSummary['stats']['testSpecYield'] {
   if (!testDefs?.length) return undefined;
   const limited = testDefs.filter(td => isParametricTest(td) && (td.limitLow !== undefined || td.limitHigh !== undefined));
@@ -265,7 +267,8 @@ function computeTestSpecYield(
       totalDies++;
       if (category === 'failLow') failLowDies++;
       else if (category === 'failHigh') failHighDies++;
-      else passDies++;
+      else { passDies++; continue; }
+      onFail?.(tn, die);
     }
     result.push({
       testNumber:   tn,
@@ -289,6 +292,8 @@ function computeTestSpecYield(
 export function computeFunctionalYield(
   dies: Die[],
   testDefs: TestDef[] | undefined,
+  /** Called for each die failing a test. */
+  onFail?: (testNumber: number, die: Die) => void,
 ): StatsSummary['stats']['functionalYield'] {
   if (!testDefs?.length) return undefined;
   const fDefs = testDefs.filter(td => !isParametricTest(td));
@@ -302,7 +307,9 @@ export function computeFunctionalYield(
       if (die.partial || die.edgeExcluded) continue;
       const status = getTestPassStatus(die, tn, td);
       if (status === undefined) continue;
-      if (status) passDies++; else failDies++;
+      if (status) { passDies++; continue; }
+      failDies++;
+      onFail?.(tn, die);
     }
     const totalDies = passDies + failDies;
     result.push({
@@ -373,31 +380,41 @@ export function zPValue(z: number): number {
   return clamp01(2 * (1 - normalCdf(Math.abs(z))));
 }
 
-function twoProportionPValue(
-  leftPass: number,
-  leftTotal: number,
-  rightPass: number,
-  rightTotal: number,
-): number {
-  const z = twoProportionZ(leftPass, leftTotal, rightPass, rightTotal);
-  return z === 0 ? 1 : zPValue(z);
+/** Below this expected count in any cell of the 2×2 table the normal approximation is not trusted (Cochran's rule). */
+const MIN_EXPECTED_FOR_Z = 5;
+
+/**
+ * The p-value of a region's rate against the rest's, and the test that gave it: the two-proportion z-test,
+ * or Fisher's exact test when an expected count is under five — a rare bin, a small region, a nearly clean
+ * wafer — where the z-test reports a difference far more significant than it is.
+ */
+function rateTest(leftHits: number, leftTotal: number, rightHits: number, rightTotal: number): { pValue: number; method: string } {
+  const n = leftTotal + rightTotal;
+  const hits = leftHits + rightHits;
+  const minExpected = n > 0 ? (Math.min(hits, n - hits) * Math.min(leftTotal, rightTotal)) / n : 0;
+  if (minExpected < MIN_EXPECTED_FOR_Z) {
+    return { pValue: fisherExact(leftHits, leftTotal - leftHits, rightHits, rightTotal - rightHits), method: 'fisher-exact' };
+  }
+  const z = twoProportionZ(leftHits, leftTotal, rightHits, rightTotal);
+  return { pValue: z === 0 ? 1 : zPValue(z), method: 'two-proportion-z' };
 }
 
+function twoProportionPValue(leftHits: number, leftTotal: number, rightHits: number, rightTotal: number): number {
+  return rateTest(leftHits, leftTotal, rightHits, rightTotal).pValue;
+}
+
+/**
+ * Benjamini–Hochberg over the findings given, as ONE family. Callers pass every comparison of one kind
+ * of test that one analysis makes — every rate comparison on a wafer (each region family, each of yield,
+ * hard bins, soft bins, functional tests and limit failures), every regional comparison of a lot — so the
+ * false-discovery rate holds for what the analysis reports as a whole. Corrected per (variable, region
+ * family) group instead, a clean wafer with some twenty such groups reports a false finding more often
+ * than not.
+ */
 export function adjustPValues(findings: RawFinding[]): RawFinding[] {
-  const families = new Map<string, RawFinding[]>();
-  for (const finding of findings) {
-    const key = `${finding.variable.kind}:${finding.comparison.family}`;
-    const entries = families.get(key) ?? [];
-    entries.push(finding);
-    families.set(key, entries);
-  }
-
-  for (const entries of families.values()) {
-    const tested = entries.filter((entry) => entry.stats.pValue !== undefined);
-    const adjusted = benjaminiHochberg(tested.map((entry) => entry.stats.pValue!));
-    tested.forEach((entry, i) => { entry.stats.adjustedPValue = adjusted[i]; });
-  }
-
+  const tested = findings.filter((entry) => entry.stats.pValue !== undefined);
+  const adjusted = benjaminiHochberg(tested.map((entry) => entry.stats.pValue!));
+  tested.forEach((entry, i) => { entry.stats.adjustedPValue = adjusted[i]; });
   return findings;
 }
 
@@ -673,10 +690,10 @@ function bucketDiesByRegion<D extends Die>(dies: readonly D[], regionFamily: Sta
 }
 
 /**
- * Shared tail of every proportion-findings builder: BH-adjust the p-values over
- * the family, drop insignificant / small-effect findings, then map the survivors
- * to their severity. Extracted so yield, bin, and functional pass-rate findings
- * can never drift in how significance is applied.
+ * The one tail of every rate comparison on a wafer, called once with all of them (yield, bins,
+ * functional tests, limit failures, every region family): BH-adjust them as one family, drop the
+ * insignificant and the small, then map the survivors to their severity. One call, so no kind of
+ * finding can be held to a different standard of significance from another.
  */
 function finalizeProportionFindings(findings: RawFinding[], options: ResolvedOptions): RawFinding[] {
   adjustPValues(findings);
@@ -853,7 +870,7 @@ function buildYieldFindings(
     const leftRate = leftPass / leftSize;
     const rightRate = rightPass / rightSize;
     const delta = leftRate - rightRate;
-    const pValue = twoProportionPValue(leftPass, leftSize, rightPass, rightSize);
+    const { pValue, method } = rateTest(leftPass, leftSize, rightPass, rightSize);
 
     findings.push(withRate(ofRegion(region, {
       id: `yield:${region.key}`,
@@ -872,7 +889,7 @@ function buildYieldFindings(
         relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
         effectSize: delta },
       stats: {
-        method: 'two-proportion-z',
+        method,
         pValue,
         sampleSizeLeft: leftSize,
         sampleSizeRight: rightSize },
@@ -884,7 +901,7 @@ function buildYieldFindings(
         dieKeys: [...region.dieKeys] } }), { hits: leftPass, n: leftSize, restHits: rightPass, restN: rightSize, passRate: true }));
   }
 
-  return finalizeProportionFindings(findings, options);
+  return findings;
 }
 
 function buildBinFindings(
@@ -939,7 +956,7 @@ function buildBinFindings(
       const leftRate = leftHits / leftSize;
       const rightRate = rightHits / rightSize;
       const delta = leftRate - rightRate;
-      const pValue = twoProportionPValue(leftHits, leftSize, rightHits, rightSize);
+      const { pValue, method } = rateTest(leftHits, leftSize, rightHits, rightSize);
       const binLabel = labelForBin(bin, defs, prefix);
 
       findings.push(withRate(ofRegion(region, {
@@ -960,7 +977,7 @@ function buildBinFindings(
           relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
           effectSize: delta },
         stats: {
-          method: 'two-proportion-z',
+          method,
           pValue,
           sampleSizeLeft: leftSize,
           sampleSizeRight: rightSize },
@@ -973,7 +990,7 @@ function buildBinFindings(
     }
   }
 
-  return finalizeProportionFindings(findings, options);
+  return findings;
 }
 
 /**
@@ -1036,7 +1053,7 @@ function buildFunctionalPassFindings(
       const leftRate = leftPass / leftSize;
       const rightRate = rightPass / rightSize;
       const delta = leftRate - rightRate;
-      const pValue = twoProportionPValue(leftPass, leftSize, rightPass, rightSize);
+      const { pValue, method } = rateTest(leftPass, leftSize, rightPass, rightSize);
       const testNumber = testNumbers[i];
 
       findings.push(withRate(ofRegion(region, {
@@ -1058,7 +1075,7 @@ function buildFunctionalPassFindings(
           relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
           effectSize: delta },
         stats: {
-          method: 'two-proportion-z',
+          method,
           pValue,
           sampleSizeLeft: leftSize,
           sampleSizeRight: rightSize },
@@ -1071,7 +1088,7 @@ function buildFunctionalPassFindings(
     }
   }
 
-  return finalizeProportionFindings(findings, options);
+  return findings;
 }
 
 /**
@@ -1364,7 +1381,7 @@ function buildSpecLimitFindings(
         const leftRate = leftFail / leftN;
         const rightRate = rightFail / rightN;
         const delta = leftRate - rightRate;
-        const pValue = twoProportionPValue(leftFail, leftN, rightFail, rightN);
+        const { pValue, method } = rateTest(leftFail, leftN, rightFail, rightN);
 
         findings.push(withRate(ofRegion(region, {
           id: `specLimit:${tn}:${region.key}`,
@@ -1386,7 +1403,7 @@ function buildSpecLimitFindings(
             relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
             effectSize: delta },
           stats: {
-            method: 'two-proportion-z',
+            method,
             pValue,
             sampleSizeLeft: leftN,
             sampleSizeRight: rightN },
@@ -1398,7 +1415,7 @@ function buildSpecLimitFindings(
             dieKeys: [...region.dieKeys] } }), { hits: leftFail, n: leftN, restHits: rightFail, restN: rightN, passRate: false }));
       }
 
-      allFindings.push(...finalizeProportionFindings(findings, options));
+      allFindings.push(...findings);
     }
   }
 
@@ -1677,13 +1694,13 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     const leftRate = left.valid > 0 ? left.fail / left.valid : 0;
     const rightRate = right.valid > 0 ? right.fail / right.valid : 0;
     const delta = leftRate - rightRate;
-    const pValue = twoProportionPValue(left.fail, left.valid, right.fail, right.valid);
+    const { pValue, method } = rateTest(left.fail, left.valid, right.fail, right.valid);
     effect = {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta };
-    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: left.valid, sampleSizeRight: right.valid };
+    stats = { method, pValue, sampleSizeLeft: left.valid, sampleSizeRight: right.valid };
     const graded = gradedP(pValue, multiplier);
     severity = severityForFinding(graded, delta,
       rateRelativeEffect({ hits: left.fail, n: left.valid, restHits: right.fail, restN: right.valid, passRate: false }));
@@ -1720,13 +1737,13 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     const leftRate = leftN > 0 ? leftPass / leftN : 0;
     const rightRate = rightN > 0 ? rightPass / rightN : 0;
     const delta = leftRate - rightRate;
-    const pValue = twoProportionPValue(leftPass, leftN, rightPass, rightN);
+    const { pValue, method } = rateTest(leftPass, leftN, rightPass, rightN);
     effect = {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta };
-    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
+    stats = { method, pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
     const graded = gradedP(pValue, multiplier);
     severity = severityForFinding(graded, delta,
       rateRelativeEffect({ hits: leftPass, n: leftN, restHits: rightPass, restN: rightN, passRate: true }));
@@ -1760,13 +1777,13 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     const leftRate = leftN > 0 ? leftPass / leftN : 0;
     const rightRate = rightN > 0 ? rightPass / rightN : 0;
     const delta = leftRate - rightRate;
-    const pValue = twoProportionPValue(leftPass, leftN, rightPass, rightN);
+    const { pValue, method } = rateTest(leftPass, leftN, rightPass, rightN);
     effect = {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta };
-    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
+    stats = { method, pValue, sampleSizeLeft: leftN, sampleSizeRight: rightN };
     const graded = gradedP(pValue, multiplier);
     severity = severityForFinding(graded, delta,
       rateRelativeEffect({ hits: leftPass, n: leftN, restHits: rightPass, restN: rightN, passRate: true }));
@@ -1781,13 +1798,13 @@ function buildMergedFinding(run: RawFinding[], ctx: MergeContext): RawFinding {
     const leftRate = leftHit / leftDies.length;
     const rightRate = rightHit / rightDies.length;
     const delta = leftRate - rightRate;
-    const pValue = twoProportionPValue(leftHit, leftDies.length, rightHit, rightDies.length);
+    const { pValue, method } = rateTest(leftHit, leftDies.length, rightHit, rightDies.length);
     effect = {
       direction: delta === 0 ? 'different' : delta > 0 ? 'higher' : 'lower',
       absoluteDelta: delta,
       relativeDelta: rightRate === 0 ? undefined : delta / rightRate,
       effectSize: delta };
-    stats = { method: 'two-proportion-z', pValue, sampleSizeLeft: leftDies.length, sampleSizeRight: rightDies.length };
+    stats = { method, pValue, sampleSizeLeft: leftDies.length, sampleSizeRight: rightDies.length };
     const graded = gradedP(pValue, multiplier);
     severity = severityForFinding(graded, delta,
       rateRelativeEffect({ hits: leftHit, n: leftDies.length, restHits: rightHit, restN: rightDies.length, passRate: false }));
@@ -2167,8 +2184,11 @@ function analyzeWaferMapUncollected(
   const sectorRegions = buildSectorRegions(positionedIncludedDies, result.wafer, resolved.sectorCount);
 
   const findings: RawFinding[] = [];
+  // Every rate comparison — yield, hard and soft bins, functional tests, limit failures, in every region
+  // family — is one family for the false-discovery rate, corrected and gated together below.
+  const rateFindings: RawFinding[] = [];
   if (hasHbinData) {
-    findings.push(
+    rateFindings.push(
       ...buildYieldFindings(eligibleDies, ringRegions, resolved.passBins, resolved),
       ...buildYieldFindings(eligibleDies, quadrantRegions, resolved.passBins, resolved),
       ...buildYieldFindings(eligibleDies, reticlePositionRegions, resolved.passBins, resolved),
@@ -2177,7 +2197,7 @@ function analyzeWaferMapUncollected(
     );
   }
   if (hasHbinData) {
-    findings.push(
+    rateFindings.push(
       ...buildBinFindings(eligibleDies, ringRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, quadrantRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
       ...buildBinFindings(eligibleDies, reticlePositionRegions, 'hard', result.hbinDefs, 'hardBin', resolved),
@@ -2187,7 +2207,7 @@ function analyzeWaferMapUncollected(
   }
   {
     const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined);
-    findings.push(
+    rateFindings.push(
       ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, reticlePositionRegions, 'soft', result.sbinDefs, 'softBin', resolved),
@@ -2208,7 +2228,7 @@ function analyzeWaferMapUncollected(
     if (ring.warning) warnings.push(ring.warning);
     activeTestNumbers = ring.activeTestNumbers;
 
-    findings.push(...buildSpecLimitFindings(
+    rateFindings.push(...buildSpecLimitFindings(
       eligibleDies,
       [ringRegions, quadrantRegions, reticlePositionRegions, testSiteRegions, sectorRegions],
       result.testDefs,
@@ -2218,7 +2238,7 @@ function analyzeWaferMapUncollected(
     // Functional tests get pass-rate findings (two-proportion, like yield/bin)
     // instead of the parametric Welch comparisons above, from which they are
     // excluded. No-op unless a functional testDef exists.
-    findings.push(
+    rateFindings.push(
       ...buildFunctionalPassFindings(eligibleDies, ringRegions, result.testDefs, resolved),
       ...buildFunctionalPassFindings(eligibleDies, quadrantRegions, result.testDefs, resolved),
       ...buildFunctionalPassFindings(eligibleDies, reticlePositionRegions, result.testDefs, resolved),
@@ -2226,6 +2246,7 @@ function analyzeWaferMapUncollected(
       ...buildFunctionalPassFindings(eligibleDies, sectorRegions, result.testDefs, resolved),
     );
   }
+  findings.push(...finalizeProportionFindings(rateFindings, resolved));
   {
     const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.testDefs);
     if (!isLotStack || hasHbinData || failPredicate !== undefined) {
@@ -2316,10 +2337,20 @@ function analyzeWaferMapUncollected(
     stats.isLotStack = true;
     if (stackMethod) stats.aggregationMethod = stackMethod;
   }
-  const specYield = computeTestSpecYield(result.dies, result.testDefs);
+  // Each test's failing dies, and how many of them fail the wafer's yield too: a die outside a test's
+  // limits that is binned as passing costs no yield, and the synthesis must not rank it as if it did.
+  const passSet = new Set(baseResolved.passBins);
+  const failures: NonNullable<StatsSummary['stats']['testFailures']> = {};
+  const onFail = (tn: number, die: Die): void => {
+    const f = failures[tn] ??= { dieKeys: [], lostDies: 0 };
+    f.dieKeys.push(getDieKey(die));
+    if (diePassStatus(die, passSet) !== true) f.lostDies++;
+  };
+  const specYield = computeTestSpecYield(result.dies, result.testDefs, onFail);
   if (specYield) stats.testSpecYield = specYield;
-  const functionalYield = computeFunctionalYield(result.dies, result.testDefs);
+  const functionalYield = computeFunctionalYield(result.dies, result.testDefs, onFail);
   if (functionalYield) stats.functionalYield = functionalYield;
+  if (Object.keys(failures).length) stats.testFailures = failures;
   if (spatialPattern) stats.spatialPattern = spatialPattern;
   // Per-test descriptive stats (quartiles for box plots). Produced when the full
   // test-value analysis ran (reusing its discovered test numbers) OR when the

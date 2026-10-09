@@ -274,6 +274,15 @@ export interface StatsSummary {
       yieldPercent: number | null;
     }>;
     /**
+     * The dies each test fails, by test number: outside its limits for a parametric test (the dies
+     * `testSpecYield` counts in `failLowDies + failHighDies`), failing for a functional test
+     * (`functionalYield`'s `failDies`). `dieKeys` are `getDieKey` strings; `lostDies` is how many of
+     * them also fail the wafer's yield (not in a pass bin, or with no bin to judge by), so a test's
+     * failures on dies binned as passing are told apart from the yield it costs. Only tests with a
+     * failing die are present.
+     */
+    testFailures?: Record<number, { dieKeys: string[]; lostDies: number }>;
+    /**
      * Per-test pass rate for each functional (`testType: 'F'`) test — "functional
      * yield" in fab terms. Verdicts are read via `getTestPassStatus` (recorded
      * `testPass` first, then the legacy 0/1 `testValues` fallback). The

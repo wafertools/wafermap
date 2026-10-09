@@ -41,7 +41,9 @@
       "testNumber": 6,
       "name": "NF_DB",
       "unit": "dB",
-      "limitHigh": 5
+      "limitHigh": 5,
+      "validLow": 0,
+      "validHigh": 30
     },
     {
       "testNumber": 7,
@@ -54,7 +56,9 @@
       "name": "IDQ_MA",
       "unit": "mA",
       "limitLow": 34,
-      "limitHigh": 47
+      "limitHigh": 47,
+      "validLow": 5,
+      "validHigh": 100
     }
   ]
 }

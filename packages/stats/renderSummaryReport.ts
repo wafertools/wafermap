@@ -1,6 +1,7 @@
 import type { Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
+import type { WaferMetadata } from '../core/metadata.js';
 import { binPassSets, binPassSetsByWafer, mergeBinDefs, resolveBinColors, resolveBinColorsByWafer, type BinColors, type BinPassGroup } from '../renderer/binColors.js';
 import { commonPassBins, itemPassBins, passBinsLabel } from '../core/passBins.js';
 import { itemRingCount } from '../core/ringCount.js';
@@ -17,16 +18,18 @@ import { buildYieldDataCombined } from './yield.js';
 import { describeWaferPopulation, populationLabel } from './population.js';
 import { buildTestPassRateData, hasJudgeableTests , poolFunctionalYield } from './testPassRate.js';
 import { buildCapabilityData } from './capability.js';
-import { buildSynthesis } from './synthesis.js';
+import { buildSynthesis, type SynthesisTarget } from './synthesis.js';
 import { binBreakdownRows, binBreakdownTitle, binCountsFrom, pooledBinCounts, totalOf } from './binRows.js';
 import { MEAN_WAFER_YIELD_LABEL, shortfallLegend } from './presentation.js';
 import { regionYieldRows, waferYieldRows } from './yieldRows.js';
 import { describeValues } from './math.js';
 import { fmt } from '../renderer/fmt.js';
 import { getDieKey, isPositionedDie, diePassStatus } from '../core/dies.js';
-import { testValue } from '../core/dieTable.js';
+import { excludedCounts, testValue } from '../core/dieTable.js';
+import { limitSetName } from '../renderer/valueFilter.js';
 import {
   findingsTableHtml,
+  findingAnchor,
   synthesisSectionHtml,
   LIVE_FINDINGS_SCRIPT,
   barCell,
@@ -193,6 +196,8 @@ function testSection(
   specYield?: readonly SpecYieldRow[],
   /** Said under the table when the lot's statistics are pooled, so the missing columns are explained. */
   note?: string,
+  /** The section's `id`, for the synthesis to link a test to. */
+  anchorId?: string,
 ): string {
   if (!testDefs.length) return '';
   const active = dies.filter(d => !d.partial && !d.edgeExcluded);
@@ -213,6 +218,13 @@ function testSection(
   const hasLimitYield = rows.some(r => r.limitYield !== undefined && r.limitYield !== null);
   const value = (v: number | undefined, unit?: string): string => v === undefined ? '—' : fmt(v, unit);
 
+  // Values the value filter took out are stated, never silent.
+  const excl = excludedCounts(active);
+  const exclNote = excl
+    ? `${[...excl.counts.values()].reduce((x, y) => x + y, 0).toLocaleString('en-GB')} values outside the ${limitSetName(excl.by)} are excluded (not in N): `
+      + [...excl.counts].map(([tn, c]) => `${testDefs.find(d => d.testNumber === tn)?.name ?? `test ${tn}`} ${c.toLocaleString('en-GB')}`).join(', ') + '. '
+    : '';
+
   const headers = ['Test', 'N', 'Min', ...(hasQuartiles ? ['Q1', 'Median'] : []), 'Mean', ...(hasQuartiles ? ['Q3'] : []), 'Max',
     ...(hasSigma ? ['StdDev'] : []), ...(hasLimitYield ? ['Limit yield'] : [])];
   const body: TableCell[][] = rows.map(({ name, unit, stats: s, limitYield }) => [
@@ -227,7 +239,7 @@ function testSection(
     ...(hasLimitYield ? [limitYield === undefined || limitYield === null ? '—' : `${limitYield.toFixed(1)}%`] : []),
   ]);
   return renderSection('Test Values', renderTable(headers, body, { className: 'compact' })
-    + `<p class="report-legend">${hasSigma ? 'StdDev is the sample standard deviation (n−1). ' : ''}${note ?? ''}</p>`);
+    + `<p class="report-legend">${hasSigma ? 'StdDev is the sample standard deviation (n−1). ' : ''}${exclNote}${note ?? ''}</p>`, '', anchorId);
 }
 
 /**
@@ -240,6 +252,8 @@ function functionalSection(
   dies: Die[],
   testDefs: TestDef[],
   precomputed?: NonNullable<StatsSummary['stats']['functionalYield']>,
+  /** The section's `id`, for the synthesis to link a test to. */
+  anchorId?: string,
 ): string {
   const data = precomputed ?? computeFunctionalYield(dies, testDefs);
   if (!data?.length) return '';
@@ -250,7 +264,7 @@ function functionalSection(
     String(r.failDies),
     r.passRatePercent !== null ? `${r.passRatePercent.toFixed(1)}%` : '—',
   ]);
-  return renderSection('Functional Tests', renderTable(['Test', 'N', 'Pass', 'Fail', 'Pass Rate'], rows, { className: 'compact' }));
+  return renderSection('Functional Tests', renderTable(['Test', 'N', 'Pass', 'Fail', 'Pass Rate'], rows, { className: 'compact' }), '', anchorId);
 }
 
 /** Cp/Cpk/Pp/Ppk for every parametric test with recorded values — tests
@@ -286,10 +300,33 @@ function findingsSection(allFindings: StatsFinding[], totalWafers?: number, scop
   return renderSection('Findings', findingsTableHtml(findings, totalWafers, scope, live));
 }
 
-/** The synthesis, linked to the rows `findingsSection` anchors for the same summary. */
-function synthesisSection(summary: StatsSummary | LotStatsSummary, passBins: readonly number[] | undefined, scope = ''): string {
+/** Section ids a test can be linked to, scoped like the finding anchors. */
+const testsAnchor = (scope: string): string => `report-tests-${scope}`;
+const functionalAnchor = (scope: string): string => `report-functional-${scope}`;
+
+/**
+ * The synthesis, linked to its evidence on the same page: a finding to its row in the table
+ * `findingsSection` anchors, a test to the Test Values or Functional Tests section it is in.
+ */
+function synthesisSection(
+  summary: StatsSummary | LotStatsSummary, passBins: readonly number[] | undefined, scope: string,
+  /** Each test's section, for the tests whose section is on the page. */
+  testSections: ReadonlyMap<number, string>,
+): string {
   const anchorIds = new Set(visibleFindings(summary.findings).map((f) => f.id));
-  return synthesisSectionHtml(buildSynthesis(summary, { passBins: passBins ? [...passBins] : undefined }), anchorIds, scope);
+  const anchorFor = (t: SynthesisTarget): string | undefined => t.kind === 'finding'
+    ? (anchorIds.has(t.id) ? findingAnchor(t.id, scope) : undefined)
+    : testSections.get(t.testNumber);
+  return synthesisSectionHtml(buildSynthesis(summary, { passBins: passBins ? [...passBins] : undefined }), anchorFor);
+}
+
+/** Which section each test is in, given which of the two sections were rendered. */
+function testSectionMap(testDefs: readonly TestDef[], scope: string, hasTests: boolean, hasFunctional: boolean): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const d of testDefs) {
+    if (isParametricTest(d) ? hasTests : hasFunctional) out.set(d.testNumber, isParametricTest(d) ? testsAnchor(scope) : functionalAnchor(scope));
+  }
+  return out;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -339,17 +376,19 @@ export function renderSummaryReportHtml(
     ...(yieldSummary.edgeExcludedDies > 0 ? [{ label: 'Edge excluded (outer zone)', value: String(yieldSummary.edgeExcludedDies) }] : []),
   ];
 
+  const testsHtml = testSection(dies, testDefs, statsSummary?.stats.perTestStats, statsSummary?.stats.testSpecYield, undefined, testsAnchor(''));
+  const functionalHtml = functionalSection(dies, testDefs, statsSummary?.stats.functionalYield, functionalAnchor(''));
   const sections = [
     renderMetadataSection([{ metadata: wafer.metadata }]),
     renderSection('Summary', [
       renderMetricGrid(summaryMetrics),
     ].filter(Boolean).join('\n')),
-    statsSummary ? synthesisSection(statsSummary, passBins) : '',
+    statsSummary ? synthesisSection(statsSummary, passBins, '', testSectionMap(testDefs, '', !!testsHtml, !!functionalHtml)) : '',
     binSection(dies, hbinDefs, sbinDefs, { hard: statsSummary?.stats.hardBinCounts, soft: statsSummary?.stats.softBinCounts }, passBins, binColorsFor),
     regionYieldSection('Ring Yield', ringRegions, dies, passBins),
     regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins),
-    testSection(dies, testDefs, statsSummary?.stats.perTestStats, statsSummary?.stats.testSpecYield),
-    functionalSection(dies, testDefs, statsSummary?.stats.functionalYield),
+    testsHtml,
+    functionalHtml,
     capabilitySection([{ dies }], testDefs),
     statsSummary ? findingsSection(statsSummary.findings, undefined, '', params.live) : '',
   ].filter(Boolean).join('\n');
@@ -449,7 +488,7 @@ function perWaferFindingsSection(lotSummary: LotStatsSummary): string {
   for (const pw of lotSummary.perWafer) {
     const findings = visibleFindings(pw.summary.findings);
     if (!findings.length) continue;
-    const label = (pw.summary.wafer?.waferId as string | undefined) ?? `Wafer ${pw.waferIndex + 1}`;
+    const label = waferDisplayLabel({ wafer: { metadata: pw.summary.wafer as WaferMetadata | undefined } }, pw.waferIndex);
     blocks.push(`<h3 class="report-subheading">${escHtml(label)}</h3>`
       + findingsTableHtml(findings));
   }
@@ -622,6 +661,7 @@ function lotTestTable(
   perWaferSummaries?: StatsSummary[],
   /** `LotStatsSummary.stats.testSpecYield`. */
   specYield?: readonly SpecYieldRow[],
+  anchorId?: string,
 ): string {
   let pooled: TestRowStats[] | undefined;
   if (perWaferSummaries?.length && perWaferSummaries.every(s => s.stats.perTestStats !== undefined)) {
@@ -651,7 +691,7 @@ function lotTestTable(
     });
   }
   return testSection(allDies, testDefs, pooled, specYield,
-    pooled ? 'Quartiles are not shown for a lot: they cannot be combined from each wafer\u2019s own.' : undefined);
+    pooled ? 'Quartiles are not shown for a lot: they cannot be combined from each wafer\u2019s own.' : undefined, anchorId);
 }
 
 /**
@@ -659,9 +699,9 @@ function lotTestTable(
  * per-wafer `StatsSummary.stats.functionalYield` when every wafer has one
  * (counts pool losslessly); otherwise recomputes from the pooled dies.
  */
-function lotFunctionalTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: StatsSummary[]): string {
+function lotFunctionalTable(allDies: Die[], testDefs: TestDef[], perWaferSummaries?: StatsSummary[], anchorId?: string): string {
   const pooled = poolFunctionalYield(perWaferSummaries);
-  return functionalSection(allDies, testDefs, pooled);
+  return functionalSection(allDies, testDefs, pooled, anchorId);
 }
 
 // Identity fields that must never be silently pooled across a lot report —
@@ -829,15 +869,16 @@ function renderLotGroupSections(
   const quadSection = hasBins && allWafers.length
     ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, lotRing, passBinsByWafer)
     : '';
-  const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries, lotSummary.stats.testSpecYield) : '';
-  const functionalSectionHtml = testDefs.length ? lotFunctionalTable(allDies, testDefs, perWaferSummaries) : '';
+  const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries, lotSummary.stats.testSpecYield, testsAnchor(scope)) : '';
+  const functionalSectionHtml = testDefs.length ? lotFunctionalTable(allDies, testDefs, perWaferSummaries, functionalAnchor(scope)) : '';
   const capabilitySectionHtml = testDefs.length ? capabilitySection(items, testDefs) : '';
   const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount, scope, live) : '';
   const perWaferFindingsHtml = perWaferFindingsSection(lotSummary);
 
   const sections = [
     summarySection,
-    synthesisSection(lotSummary, commonPassBins(passGroups.map((g) => g.passBins)), scope),
+    synthesisSection(lotSummary, commonPassBins(passGroups.map((g) => g.passBins)), scope,
+      testSectionMap(testDefs, scope, !!testSectionHtml, !!functionalSectionHtml)),
     metadataSection,
     waferYieldSection,
     splitsSectionHtml,

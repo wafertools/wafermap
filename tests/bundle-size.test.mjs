@@ -110,11 +110,17 @@ const THRESHOLDS = {
   // Raised deliberately from 66_000 in 0.35.0: the die regions (one definition shared by plots, tables and findings), the wafer
   // attribute label and curation, and a die's own fields in a derived-test expression took the data layer to ~66.1 KB locally
   // (~66.4 KB on CI's zlib), and the budget keeps ~1.5% over the CI figure.
-  'wafermap (root)':            67_500,   // gzipped bytes — measured ~66.1 KB
+  // Raised deliberately from 67_500: the unreleased work since 0.35.0 took the data layer to ~68.3 KB locally, and each
+  // test's failing dies (`stats.testFailures`, read by the synthesis and the Summary panel's test rows) to ~68.4 KB.
+  'wafermap (root)':            69_500,   // gzipped bytes — measured ~68.4 KB
   // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
   // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
   // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.
-  'wafermap/render (initial)':  138_000,  // gzipped bytes — measured ~134.0 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
+  // Raised deliberately from 138_000: the value filter (validity limits and the excluded-value wording shared by the tooltip,
+  // the Summary panel and the chart captions) took the initial chunk to ~138.3 KB locally; the budget keeps ~1.5% over that.
+  // Raised deliberately from 140_000: the Summary panel's "What stands out" rows, part chips and test actions took the
+  // initial chunk to ~140.3 KB locally; the budget keeps ~1.5% over that.
+  'wafermap/render (initial)':  142_500,  // gzipped bytes — measured ~140.3 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

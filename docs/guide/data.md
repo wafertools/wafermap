@@ -244,6 +244,11 @@ renderWaferMap(container, result, {
 });
 ```
 
+A value exactly equal to a test limit passes by default. A tester that records the limit as exclusive (STDF `PARM_FLG` bits 6 and 7) is stated with
+`limitLowInclusive: false` and `limitHighInclusive: false`, and the map and the per-test pass rates then judge a value on the limit as a fail.
+The specification limits (`specLow`, `specHigh`, STDF `LO_SPEC` and `HI_SPEC`) are separate from the test limits: they are what process capability (Cp, Cpk, Pp, Ppk)
+is measured against when a test has both, and the charts draw them as the long-dashed LSL and USL.
+
 Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.stats.testSpecYield` with per-test spec yield, fail-low count, and fail-high count for every test that has at least one limit defined.
 
 **→ [Demo: Working with test values](../examples/test-values.html)**
@@ -254,6 +259,38 @@ Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.sta
 The same map with the view option 'Limit pass/fail' selected. Now the map shows the dies within the test limits in green and the dies out of limits in red, for the given test.
 
 ![Limit pass/fail colouring active](../images/guide-test-values-spec-passfail.png)
+
+### Validity limits: values that are not measurements
+
+A tester that runs out of range records its rail rather than a reading: `1.0E+38` from an overflowing current, a voltage held at the
+supply, an open-circuit value. These are numbers in the file and not measurements, and one of them stretches the colour scale and
+moves the mean, the standard deviation and the Cpk of the whole wafer. Give the test the range a real measurement lies in:
+
+```ts
+const testDefs = [
+  {
+    testNumber: 1050, name: 'Idsat', unit: 'A',
+    limitLow: 1e-3, limitHigh: 4e-3,   // test limits: good against bad
+    validLow: 0,    validHigh: 0.1,    // validity limits: a reading against a clamp
+  },
+];
+
+const result = buildWaferMap({ results, testDefs });   // valueFilter defaults to 'validity'
+```
+
+A value outside the validity limits is **no value for that test on that die**, in the map, the statistics and every chart, and a
+derived test is computed from the filtered values. The die is grey on that test's map and its tooltip names the excluded value and
+the limit set. Bins and each die's recorded verdict are the tester's own and are unchanged, so yield is the same either way.
+
+The count is never hidden. `result.valueFilter` gives the limit set and, per test, how many values were excluded; the build's
+`warnings` carry a `values-excluded` line; and the Summary panel (a total beside N and an **Excl.** column), the histogram and boxplot
+captions, the capability chart, the Plot footnote, the report and the CSV exports state it.
+
+`valueFilter` chooses which limit set a value must lie inside: `'validity'` (the default, which only affects tests that define
+validity limits), `'spec'` or `'test'` to keep only values inside the specification or test limits, or `'none'`. See
+[`buildWaferMap` §4.1.14](../api/core.md#4114-valuefilter-and-validity-limits). **→ [Demo: Validity limits](../examples/validity-limits.html)**
+
+![Validity limits: clamped readings excluded from the scale and the statistics](../images/guide-validity-limits.png)
 
 ### Functional tests (pass/fail only, no measured value)
 
@@ -452,6 +489,10 @@ const result = buildWaferMap({
 result.dies.filter(d => d.retestCount !== undefined)
            .forEach(d => console.log(`(${d.x},${d.y}) retested ${d.retestCount}×`));
 ```
+
+A tester that flags a record as replacing an earlier one (STDF `PART_FLG`) can say so with `DieResult.supersedes`: `'position'` for the earlier
+record at the same position, `'partId'` for the earlier record with the same `partId`. Such a record always wins, whatever `retestPolicy` says.
+[Retests](../examples/retests.html) shows both rules side by side.
 
 Retested dies automatically show "Retests: N" in their hover tooltip. `retestCount` is only set on dies that appeared more than once in the input — non-retested dies have `retestCount === undefined`.
 

@@ -307,7 +307,7 @@ function lotOf(yields) {
     level: 'lot', hasNotableFindings: false, findings: [],
     lotYieldSeries: yields.map((y, i) => ({ waferIndex: i, yieldPercent: y })),
     stats: { waferCount: yields.length },
-    perWafer: yields.map((y, i) => ({ waferIndex: i, summary: { stats: { yieldPercent: y, totalDies: 100, analyzedDies: 100, testsConsidered: [], hardBinsConsidered: [] } } })),
+    perWafer: yields.map((y, i) => ({ waferIndex: i, summary: { level: 'wafer', findings: [], stats: { yieldPercent: y, totalDies: 100, analyzedDies: 100, testsConsidered: [], hardBinsConsidered: [] } } })),
   };
 }
 
@@ -392,24 +392,62 @@ test('findings render above the bin/region/test detail, not below it', () => {
   assert.ok(findingsAt < binsAt, `findings must precede the bin breakdown: ${titles}`);
 });
 
-test('the Kind/Region filter dropdowns are withheld below the findings threshold', () => {
-  const render = (count) => {
+test('the Findings section has only its severity chips as filters, and no Detail modal', () => {
+  const panel = panelDiv();
+  renderWaferSummaryContent(panel, {
+    wafer: wafer(), dies: dualBinDies(),
+    statsSummary: {
+      level: 'wafer', hasNotableFindings: false,
+      stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0 },
+      findings: Array.from({ length: 12 }, (_, i) => finding(i)),
+    },
+    onFindingClick: () => {}, findingsFilter: {}, onFindingsFilterChange: () => {},
+  });
+  assert.doesNotMatch(panel.textContent, /Kind:|Region:|Detail/);
+  assert.equal(panel.querySelectorAll('select').length, 0);
+});
+
+test('the Findings header names the unusual and notable count, and a pattern labels its supporting findings', () => {
+  const pattern = {
+    ...finding(0), id: 'p', severity: 'unusual', relatedIds: ['f1'],
+    variable: { kind: 'spatialPattern', label: 'Spatial pattern' },
+    comparison: { family: 'spatial-pattern', left: 'edge-ring', right: 'random' },
+    summary: 'Spatial pattern: edge-ring',
+  };
+  const render = (activeFindingId) => {
     const panel = panelDiv();
     renderWaferSummaryContent(panel, {
       wafer: wafer(), dies: dualBinDies(),
       statsSummary: {
-        level: 'wafer', hasNotableFindings: false,
+        level: 'wafer', hasNotableFindings: true,
         stats: { totalDies: 6, testsConsidered: [], hardBinsConsidered: [], analyzedDies: 6, excludedDies: 0 },
-        findings: Array.from({ length: count }, (_, i) => finding(i)),
+        findings: [pattern, finding(1), { ...finding(2), severity: 'info' }],
       },
-      onFindingClick: () => {}, findingsFilter: {}, onFindingsFilterChange: () => {},
+      onFindingClick: () => {}, activeFindingId, findingsFilter: {}, onFindingsFilterChange: () => {},
     });
     return panel;
   };
-  // Four findings: the controls for narrowing the list were taller than the list.
-  assert.doesNotMatch(render(4).textContent, /Kind:/);
-  assert.match(render(10).textContent, /Kind:/);
-  assert.match(render(10).textContent, /Region:/);
+  const panel = render(null);
+  const header = [...panel.querySelectorAll('button[aria-expanded]')].find(b => /Findings \(3\)/.test(b.textContent));
+  assert.ok(header, 'expected the Findings header');
+  assert.match(header.textContent, /1 unusual, 1 notable$/);
+
+  const toggle = [...panel.querySelectorAll('button')].find(b => /supporting finding/.test(b.textContent));
+  assert.equal(toggle.textContent, '▸Show 1 supporting finding');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  // The list it opens follows it (What stands out above may show the same finding too).
+  const list = toggle.nextElementSibling;
+  assert.ok(list.querySelector('[data-wmap-finding="f1"]'));
+  assert.equal(list.style.display, 'none');
+  toggle.click();
+  assert.equal(toggle.textContent, '▾Hide 1 supporting finding');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(list.style.display, 'block');
+
+  // Showing a supporting finding re-renders the panel; the list it is in stays open.
+  const again = render('f1');
+  const reopened = [...again.querySelectorAll('button')].find(b => /supporting finding/.test(b.textContent));
+  assert.equal(reopened.getAttribute('aria-expanded'), 'true');
 });
 
 test('lot panel renders one region section and follows the gallery plot mode', () => {

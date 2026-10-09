@@ -95,8 +95,8 @@ Controls:
   · Columns  [opens menu]
   · 0  [aria="Select the same dies on every wafer: off (click to turn on)"]
   · Download gallery PNG
-  · Summary panel
   · User guide
+  · Summary
   · Maps
       hint: The wafer maps
   · Insights
@@ -124,8 +124,6 @@ Controls:
   · W04 · 86.7%▾  [aria="Wafer info for W04 · 86.7%. Click to expand."]
   · W05 · 81.8%▾  [aria="Wafer info for W05 · 81.8%. Click to expand."]
   · W06 · 80.5%▾  [aria="Wafer info for W06 · 80.5%. Click to expand."]
-  · ◂ Summary
-      hint: Open the Summary panel: what stands out, findings and statistics
 
 Menu — Plot mode:
     · Idsat (A)  [unchecked]
@@ -549,8 +547,8 @@ Controls:
   · Columns  [opens menu]
   · 0  [aria="Select the same dies on every wafer: off (click to turn on)"]
   · Download gallery PNG
-  · Summary panel
   · User guide
+  · Summary
   · Maps
       hint: The wafer maps
   · Insights
@@ -568,34 +566,40 @@ Controls:
   · W02▾  [aria="Wafer info for W02. Click to expand."]
   · W03▾  [aria="Wafer info for W03. Click to expand."]
   · W04▾  [aria="Wafer info for W04. Click to expand."]
+  · ▸  [aria="Close the Summary panel"]
   · Summary report
   · Data tables
   · ▶What stands out
-  · Ring 4 (edge): pass rate, 216 dies
-      hint: Ring 4 (edge) yield is 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined
+  · ●●●High impact † Window OK in Bin 1 fails on 531 of 2,644 dies (20.1%); 43 of them are binned as passing, so about 488 dies lost
+      hint: Click to show this test on the map, with the dies it fails
+  · ●●●HighRing 4 (edge): pass rate, 216 dies8.2%
+      hint: Ring 4 (edge) has HBin 1 (Pass) and SBin 10 (Pass) (same dies) occurrence 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined Click to show it on the map
+  · ●●●HighVth: outside limits, 110 dies lost4.2%
+      hint: Click to show this test on the map, with the dies it fails
+  · WatchVth is outside its limits on 327 dies binned as passing
+      hint: Click to show this test on the map, with the dies it fails
+  · WatchContinuity fails on 122 dies binned as passing
+      hint: Click to show this test on the map, with the dies it fails
   · Full report ▸
-  · ▶Findings (10)10
+  · ▶Findings (10)9 unusual, 1 notable
   · ●●●Unusual 9
   · ●●○Notable 1
-  · All kinds▾  [aria="Kind", opens menu]
-  · All regions▾  [aria="Region", opens menu]
-  · Detail ▸
   · Spatial pattern: edge-local — seen on 2/4 wafers (50%)
-      hint: Spatial pattern: edge-local — seen on 2/4 wafers (50%)
+      hint: Spatial pattern: edge-local — seen on 2/4 wafers (50%) Click to show it on the map
   · Hard bin 2 (Contact Open) and soft bin 20 (Contact Fail) (same dies) occurrence 8.9 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 8.9 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 8.9 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined Click to show it on the map
   · Hard bin 3 (Vth - Hi) and soft bin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined Click to show it on the map
   · Hard bin 4 (Leakage) and soft bin 21 (Leakage Fail) (same dies) occurrence 6.7 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
-      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (Leakage Fail) (same dies) occurrence 6.7 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (Leakage Fail) (same dies) occurrence 6.7 percentage points higher than the rest of the map — higher on 4/4 wafers, all wafers' data combined Click to show it on the map
   · Yield is 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined
-      hint: Ring 4 (edge) yield is 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined
+      hint: Ring 4 (edge) yield is 21.6 percentage points lower than the rest of the map — lower on 4/4 wafers, all wafers' data combined Click to show it on the map
   · ▶Wafer Yield (79.7–83.8%) · median 81.3%
   · Slot  [radio, checked]
   · Yield  [radio, unchecked]
   · W01983.8%+2.5  [aria="W01, 83.8% yield, 9 findings, 7 unusual — open wafer"]
   · W02879.7%−1.6  [aria="W02, 79.7% yield, 8 findings — open wafer"]
-  · W031281.8%+0.5  [aria="W03, 81.8% yield, 12 findings — open wafer"]
+  · W03781.8%+0.5  [aria="W03, 81.8% yield, 7 findings — open wafer"]
   · W04880.8%−0.5  [aria="W04, 80.8% yield, 8 findings, 2 unusual — open wafer"]
   · ▶Hard Bin Breakdown — % of dies (N=2,644)
   · Hard  [radio, checked]
@@ -604,7 +608,7 @@ Controls:
   · Ring  [radio, checked]
   · Quadrant  [radio, unchecked]
   · ▶Test Values (24) · N=2,644
-  · ▶Functional Tests (3) · N=2,644
+  · ▶Functional Tests (4) · N=2,644
 
 Menu — Plot mode:
     · Test Value ▶  [checked, opens menu]
@@ -662,6 +666,7 @@ Controls:
   · Off
   · Mode Hard Bin Value — Idsat  [select]
   · LOT-DEMO · W01▾Product: DEMO-DEVICE
+  · Summary
   · Map
       hint: The wafer map
   · Insights
@@ -679,46 +684,46 @@ Controls:
   · Overlays  [opens menu]
   · Legend style  [opens menu]
   · Orientation  [opens menu]
-  · Summary panel
   · Expand (E)
   · User guide
+  · ▸  [aria="Close the Summary panel"]
   · Summary report
   · Data tables
   · ▶What stands out
-  · Ring 4 (edge)
-      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map
-  · hard bin 2 (Contact Open)
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map
-  · hard bin 3 (Vth - Hi)
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map
-  · Reticle cell (0, 1): pass rate, 21 dies
-      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions
+  · ●●●High impact Ring 4 (edge): pass rate 28.1 points below the rest of the wafer; hard bin 2 (Contact Open) accounts for 12.2 of those points, hard bin 3 (Vth - Hi) for 10.7 — about 70 dies lost. Idsat is below its low limit on 11 dies, all of them in Ring 4 (edge). Ioff is above its high limit on 32 dies, all of them in Ring 4 (edge)
+      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map Click to show it on the map
+  · Hard bin 2 (Contact Open)
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map Click to show it on the map
+  · Hard bin 3 (Vth - Hi)
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map Click to show it on the map
+  · Idsat
+      hint: Click to show this test on the map, with the dies it fails
+  · Ioff
+      hint: Click to show this test on the map, with the dies it fails
+  · ●●○ModerateReticle cell (0, 1): pass rate, 21 dies3.2%
+      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions Click to show it on the map
+  · WatchIoff is above its high limit on 21 dies binned as passing
+      hint: Click to show this test on the map, with the dies it fails
   · Full report ▸
-  · ▶Findings (19)17
+  · ▶Findings (17)7 unusual, 10 notable
   · ●●●Unusual 7
   · ●●○Notable 10
-  · ●○○Minor 2
-  · All kinds▾  [aria="Kind", opens menu]
-  · All regions▾  [aria="Region", opens menu]
-  · Detail ▸
   · Spatial pattern: edge-local (medium confidence) — 40% of edge dies failing
-      hint: Spatial pattern: edge-local (medium confidence) — 40% of edge dies failing
+      hint: Spatial pattern: edge-local (medium confidence) — 40% of edge dies failing Click to show it on the map
   · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map Click to show it on the map
   · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map Click to show it on the map
   · Yield is 28.1 percentage points lower than the rest of the map
-      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map
-  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map Click to show it on the map
   · Yield is 37.8 percentage points lower than other reticle positions
-      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions
-  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions
-      hint: Reticle cell (0, 1) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions Click to show it on the map
   · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 13.3 percentage points higher than other reticle positions
-      hint: Reticle cell (0, 1) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 13.3 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 13.3 percentage points higher than other reticle positions Click to show it on the map
+  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions Click to show it on the map
   · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 11.9 percentage points higher than other reticle positions
-      hint: Reticle cell (0, 1) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 11.9 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 11.9 percentage points higher than other reticle positions Click to show it on the map
   · ▶Hard Bin Breakdown — % of dies (N=661)
   · Hard  [radio, checked]
   · Soft  [radio, unchecked]
@@ -744,6 +749,7 @@ Menu — Overlays:
 ## Metadata / layout plot mode
 
 Controls:
+  · Summary
   · Map
       hint: The wafer map
   · Insights
@@ -760,18 +766,17 @@ Controls:
   · Overlays  [opens menu]
   · Legend style  [opens menu]
   · Orientation  [opens menu]
-  · Summary panel
   · Expand (E)
   · User guide
+  · ▸  [aria="Close the Summary panel"]
   · Summary report
   · Data tables
   · ▶What stands out
   · Full report ▸
-  · ▶Findings (1)1
+  · ▶Findings (1)1 notable
   · ●●○Notable 1
-  · Detail ▸
   · Spatial pattern: near-full (medium confidence) — 67% of dies failing
-      hint: Spatial pattern: near-full (medium confidence) — 67% of dies failing
+      hint: Spatial pattern: near-full (medium confidence) — 67% of dies failing Click to show it on the map
   · ▶Hard Bin Breakdown — % of dies (N=24)
   · ▶Ring Yield
   · Ring  [radio, checked]
@@ -790,6 +795,7 @@ Controls:
   · Site 3 fail
   · None
   · LOT-DEMO · W01▾Product: DEMO-DEVICE
+  · Summary
   · Map
       hint: The wafer map
   · Insights
@@ -807,42 +813,43 @@ Controls:
   · Overlays  [opens menu]
   · Legend style  [opens menu]
   · Orientation  [opens menu]
-  · Summary panel
   · Expand (E)
   · User guide
+  · ▸  [aria="Close the Summary panel"]
   · Summary report
   · Data tables
   · ▶What stands out
-  · Ring 4 (edge)
-      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map
-  · hard bin 2 (Contact Open)
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map
-  · hard bin 3 (Vth - Hi)
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map
-  · Site 3: pass rate, 38 dies
-      hint: Site 3 yield is 22.5 percentage points lower than other test sites
+  · ●●●High impact Ring 4 (edge): pass rate 21.7 points below the rest of the wafer; hard bin 2 (Contact Open) accounts for 10.4 of those points, hard bin 3 (Vth - Hi) for 6.0 — about 54 dies lost
+      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map Click to show it on the map
+  · Hard bin 2 (Contact Open)
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map Click to show it on the map
+  · Hard bin 3 (Vth - Hi)
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map Click to show it on the map
+  · ●●●HighSite 3: pass rate, 38 dies5.7%
+      hint: Site 3 yield is 22.5 percentage points lower than other test sites Click to show it on the map
+  · ●○○LowSector E: hard bin 2 (Contact Open), 8 dies1.3%
+      hint: Sector E has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map Click to show it on the map
   · Full report ▸
-  · ▶Findings (17)17
+  · ▶Findings (19)17 notable
   · ●●○Notable 17
-  · All kinds▾  [aria="Kind", opens menu]
-  · All regions▾  [aria="Region", opens menu]
-  · Detail ▸
+  · ●○○Minor 2
   · Spatial pattern: edge-local (medium confidence) — 34% of edge dies failing
-      hint: Spatial pattern: edge-local (medium confidence) — 34% of edge dies failing
+      hint: Spatial pattern: edge-local (medium confidence) — 34% of edge dies failing Click to show it on the map
+  · ▸Show 2 supporting findings
   · Yield is 21.7 percentage points lower than the rest of the map
-      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map
+      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map Click to show it on the map
   · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than the rest of the map Click to show it on the map
   · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 6.0 percentage points higher than the rest of the map Click to show it on the map
   · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map
+      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 5.2 percentage points higher than the rest of the map Click to show it on the map
   · Yield is 22.5 percentage points lower than other test sites
-      hint: Site 3 yield is 22.5 percentage points lower than other test sites
+      hint: Site 3 yield is 22.5 percentage points lower than other test sites Click to show it on the map
   · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 10.4 percentage points higher than other test sites
-      hint: Site 3 has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than other test sites
+      hint: Site 3 has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 10.4 percentage points higher than other test sites Click to show it on the map
   · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 7.9 percentage points higher than other test sites
-      hint: Site 3 has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 7.9 percentage points higher than other test sites
+      hint: Site 3 has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 7.9 percentage points higher than other test sites Click to show it on the map
   · ▶Hard Bin Breakdown — % of dies (N=661)
   · Hard  [radio, checked]
   · Soft  [radio, unchecked]
@@ -858,6 +865,8 @@ Controls:
   · first
   · best
   · worst
+  · supersedes
+      hint: Mark each retest that replaces its earlier record as supersedes: 'position'. Such a record always wins, whatever the policy says.
   · LOT-DEMO · W01▾Product: DEMO-DEVICE
   · Map
       hint: The wafer map

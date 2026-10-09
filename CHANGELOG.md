@@ -24,6 +24,102 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **Validity limits, and a value filter that excludes values outside a limit set.** A test can carry `validLow`/`validHigh`: the
+  range a real measurement lies in. A value outside it is a tester clamp (a range overflow, an open-circuit rail), not a reading.
+  `buildWaferMap`'s `valueFilter` option chooses which limit set a value must lie inside: `'validity'` (the default, which only
+  affects tests that have validity limits), `'spec'` or `'test'` to keep only values inside the specification or test limits, or
+  `'none'`. An excluded value is no value for that test on that die, in the map, the statistics and every chart, and a derived test
+  is computed from the filtered values. Bins and each die's recorded verdict are the tester's own and are unchanged.
+- **Excluded values are counted and shown.** `WaferMapResult.valueFilter` gives the limit set and, per test, how many values were
+  excluded, and the result's warnings carry a `values-excluded` line. The tooltip on a grey die names the excluded value and the
+  limit set. The Summary panel (a total beside N and an Excl. column), its CSV export, the summary report, the Plot footnote, the
+  histogram and boxplot captions and the capability tooltip and caption state the count. `CapabilityDatum.excluded` carries it;
+  `n` does not include excluded values.
+
+- **`StatsSummary.stats.testFailures`: the dies each test fails.** Per test number, the failing dies' keys (outside its limits for a
+  parametric test, failing for a functional one) and `lostDies`, how many of them also fail the wafer's yield. Absent when no test fails
+  a die.
+
+### Changed
+
+- **"What stands out" items are rows that act, every one the same way.** Each item, the further items below it and each Watch line is a
+  row that shows its dies on the map when clicked, marked by a wafer icon at its end: a region or wafer its finding, a test the test's
+  values with the dies it fails selected. The sentences themselves no longer contain links. The leading item's parts (its fail bins,
+  with their legend colours, the spatial pattern, and tests failing on the same dies) are chips under its sentence, each showing that
+  part alone.
+- **A test is costed by the dies it fails that also fail yield.** Dies outside a test's limits but binned as passing cost no yield, so
+  they no longer rank the test; the item says how many there are, and past one yield point they are a Watch line ("Voltage is outside
+  its limits on 432 dies binned as passing"). A test whose failing dies lie mostly on a region item's dies (at least half of them, and
+  at least twice the region's share of the dies) is said in that region's item and shown as one of its chips, rather than ranked
+  against it as a second item over the same dies.
+- **A lot of one wafer is described from that wafer.** Its "What stands out" is the wafer's own.
+- **With a single pass bin, a fall in that bin is a region's pass rate.** Data with soft bins only has no separate yield
+  finding, and its region items are now costed by the pass bin's fall (the whole shortfall), with the fail bins as its parts.
+- **When nothing costs a yield point but a finding below is marked Unusual**, "What stands out" says so instead of "Nothing stands
+  out".
+- **A map of soft-bin-only data opens in soft-bin mode.** Without a `plotMode` from the host, `renderWaferMap` and
+  `renderWaferGallery` open on hard bins when the dies carry any, otherwise soft bins. `WaferMapResult.plotMode` is `'softBin'`
+  for such data.
+- **An outlier wafer is named by its ID** in its finding, "What stands out" and the report's per-wafer findings ("W05 yield is 16.1
+  points below the lot median"), or as "Wafer 5 (no ID)" when it has none, as every other surface names it.
+- **The single map's auto-mounted Summary panel shows a clicked finding or row as selected**, and its findings filters apply, as the
+  placed panel's do.
+- **Bins are said to "account for" a region's shortfall only when together they fit within it.** When other fail bins fell in the
+  region, the named bins are given as points higher instead. A test is said as part of a region's item only when it fails on at
+  least 1% of the dies, the floor for listing it on its own; the dies counted "in" the region are the named region's own.
+- **One false-discovery family per analysis.** Benjamini–Hochberg now adjusts every rate comparison on a wafer together (yield,
+  hard and soft bins, functional tests and limit fail rates, in every region family), every regional comparison of a lot together,
+  and every cluster tested on a wafer together. On synthetic wafers of random failures, the share reporting a regional finding is
+  2.7% at a 2% fail rate, 8.7% at 5% and 1–2% from 20% up (see Detection analysis); on WM-811K, the regional analysis still
+  rescues 94.1% of the patterns the classifier misses (combined detection 99.2%). Findings that rested on weak evidence are no
+  longer reported, and severities, `adjustedPValue`, `hasNotableFindings` and "What stands out" change accordingly.
+- **Rates with small expected counts are tested exactly.** A region's rate is compared with Fisher's exact test when any expected
+  count of its 2×2 table is under 5, and with the two-proportion z-test otherwise; `stats.method` is `'fisher-exact'` or
+  `'two-proportion-z'`. A cluster's rate uses the exact binomial tail.
+- **An edge arc across due east is an edge arc.** Its angular span is measured round the circle, so an arc from 355° to 5° spans
+  10°, as an arc anywhere else does.
+- **Quadrants are quarter turns of equal share.** A die is in the quadrant whose quarter turn, counted counter-clockwise from
+  east, holds its angle: NE holds the positive x axis, NW the positive y axis, SW the negative x axis and SE the negative y axis, as
+  sectors are bucketed. On a die grid with a centre row and column each quadrant now holds the same number of dies (the centre die
+  is NE). Quadrant yields, quadrant findings and the Ring | Quadrant region tables change for such data, by up to two points on a
+  wafer of a few hundred dies.
+- **A pass bin's finding is shown as its region.** Clicking a finding or row about a pass bin that fell in a region highlights the
+  region's dies, as a yield finding does, without picking out the passing dies.
+- **A sector is compared with the other sectors** in "What stands out" ("below the other sectors"), as its finding is: sectors leave
+  out the dies near the centre.
+- **Showing a finding keeps the map's bin mode.** A finding that is not about one bin (a yield region, a spatial pattern) is shown
+  in the bin mode the map is in, or from another mode in a bin type the dies carry, never one the data lacks. Clicking the same
+  finding or "What stands out" row again restores the plot mode and test in use before it was first clicked.
+- **"Also seen as" counts a long family** ("9 edge arcs") instead of naming each, and the compact list's heading reads "Also, each
+  costing at least 1% of the dies".
+- **Gallery cards fill the width they are given.** In auto layout, when there are more cards than columns, the columns share the whole
+  row: width too narrow for another column (the Summary panel closing, a wider window) enlarges the cards instead of leaving an empty
+  band beside them. The size cap applies while every card fits in one row, so a few wafers still do not stretch across a wide screen.
+- **The Summary panel opens from a labelled Summary button and closes from its own header.** The button sits in the row above the map,
+  just before Map | Insights (above the panel it opens), and shows as pressed while the panel is open; its icon takes the findings colour
+  while the panel is closed and a finding is notable. It replaces the toolbar's Summary icon and the "◂ Summary" tab on the edge of the
+  map area, so a closed panel leaves no column behind. The panel's title ends with a close button pointing to the edge it folds into (▸
+  for a panel on the right), and the title stays at the top while the panel scrolls. A map without a toolbar, which has no Summary
+  button, shows no close button.
+- **The Findings section's controls are its severity chips.** The header says how many findings are unusual or notable ("1 unusual,
+  2 notable"), also while the section is collapsed. Every finding row ends with the wafer icon of the rows that show their dies on the
+  map, and a spatial pattern has a "Show 3 supporting findings" line under it that opens the regional findings it explains (open from
+  the start when the finding on the map is one of them). The Kind and Region dropdowns and the Detail modal are gone: the list is
+  grouped by region, and the Summary report holds the findings at length.
+- **In the reports, every item links to its evidence**: a finding to its row in the Findings table, a test to the Test Values or
+  Functional Tests section. The leading item ends with a "See" line naming its region and its parts. Links are drawn in a link colour.
+
+### Docs
+
+- **Validity limits and the value filter are documented** in the API reference (`TestDef.validLow`/`validHigh`, `valueFilter`, `WaferMapResult.valueFilter`, the `values-excluded` warning),
+  the developer guide, the user guide and the glossary, with a new **Validity limits** example in which tester clamps are kept out of the map and statistics and counted. The RF analog
+  sample data carries validity limits and a few clamped readings.
+- **A Plots, tables and attributes example and guide section.** It shows `insights.plots` and `onPlotsChange` keeping the reader's plots, the Data tab, drilldown, whole-wafer picks and Select on every wafer,
+  and `attributes` naming wafer attributes. The reticle guide and example explain reticle cell and shot and the Reticle cell yield card; the derived-tests example reads a die's own fields
+  (`hbin()`); the retests example shows `supersedes`; `findingsNotice` and `setFindingsNotice` are in the API reference.
+
 ## [0.35.0] — 2026-10-06
 
 ### Added

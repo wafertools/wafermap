@@ -14,19 +14,21 @@
 
 import type { Wafer } from '../core/wafer.js';
 import type { Die, PositionedDie } from '../core/dies.js';
-import { testValue } from '../core/dieTable.js';
+import { excludedCounts, testValue } from '../core/dieTable.js';
+import { limitSetName } from '../renderer/valueFilter.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
 import { itemRingCount } from '../core/ringCount.js';
 import { commonPassBins, itemPassBins, passBinsLabel, requirePassBins } from '../core/passBins.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { testLabel, markedTestLabel, unmarkedLabel, derivedFields, derivedKeyText, derivedCsvCell, isDerivedTest, DERIVED_CSV_HEADER } from '../renderer/testLabel.js';
-import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity, StatsVariableKind, StatsComparisonFamily } from '../stats/types.js';
+import type { StatsFinding, StatsSummary, LotStatsSummary, StatsSeverity } from '../stats/types.js';
 import { buildRingRegions, buildQuadrantRegions, buildReticlePositionRegions, buildRegionYieldData } from '../stats/regions.js';
 import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 // The report builders are loaded when a report is opened, not with the map (see `openReportModal`'s callers):
 // they are most of the report's markup and stylesheet, and a panel that is never exported to a report never needs them.
 import type { ReportMap } from '../stats/renderSummaryReport.js';
-import { buildSynthesis, synthesisText, synthesisRowShare, SYNTHESIS_SMALLER_HEADING, type SynthesisPart } from '../stats/synthesis.js';
+import { buildSynthesis, synthesisSource, synthesisRowShare, SYNTHESIS_ALSO_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
+import { ICONS } from './icons.js';
 import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWord, impactShortWord, formatPoints, shortfallColor, type MeterTier } from '../stats/presentation.js';
 import { regionYieldRows, waferYieldRows } from '../stats/yieldRows.js';
 import { formatFindingTooltip } from '../stats/findingText.js';
@@ -47,7 +49,7 @@ import { describeValues } from '../stats/math.js';
 import { pooledTestStatsSteps, type CapabilityItem } from '../stats/capability.js';
 import { binBreakdownRows, binBreakdownTitle, binCountsFrom, totalOf } from '../stats/binRows.js';
 import { poolFunctionalYield } from '../stats/testPassRate.js';
-import { makeLabeledSelect, makeSegmented } from './charts/chartShell.js';
+import { makeSegmented } from './charts/chartShell.js';
 import { SHADOW, MOTION, LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, sevColor, openModal, wireTooltip, type SaveTextHandler } from './toolbar.js';
 import { openReportModal } from './guideWindow.js';
 import type { DieListDisplayOptions } from './dieList.js';
@@ -187,13 +189,14 @@ function panelUiState(panel: HTMLElement | undefined): PanelUiState {
 function collapsibleSection(
   label: string,
   defaultOpen = true,
-  badge?: string,
   opts?: {
     stateKey?: string;
     panel?: HTMLElement;
     control?: (rerender: () => void) => HTMLElement | null;
     /** Fills the content div. Required when `control` is used, so the control can rebuild it. */
     render?: (content: HTMLElement) => void;
+    /** A few plain words at the header's end ("1 unusual"), read even while the section is collapsed. */
+    note?: string;
   },
 ): { outer: HTMLDivElement; content: HTMLDivElement } {
   const outer = el('div');
@@ -243,16 +246,8 @@ function collapsibleSection(
   toggle.appendChild(arrow);
   toggle.appendChild(titleEl);
 
-  if (badge) {
-    const badgeEl = el('span', {
-      fontSize:     FONT.meta,   // ornament exemption (UI_STANDARDS.md type scale)
-      fontWeight:   '700',
-      background:   CLR.warnBg,
-      color:        CLR.warnText,
-      borderRadius: RADIUS.pill,
-      padding:      '1px 5px',
-    }, badge);
-    toggle.appendChild(badgeEl);
+  if (opts?.note) {
+    toggle.appendChild(el('span', { fontSize: FONT.body, color: LABEL_COLOR, whiteSpace: 'nowrap' }, opts.note));
   }
 
   const content = el('div');
@@ -930,7 +925,6 @@ export function buildBinBreakdownSection(params: {
   const { outer } = collapsibleSection(
     binBreakdownTitle(mode, total),
     true,
-    undefined,
     {
       stateKey: 'bins',
       panel,
@@ -1015,7 +1009,6 @@ export function buildRegionYieldPanelSection(params: {
   const { outer } = collapsibleSection(
     family === 'ring' ? 'Ring Yield' : family === 'quadrant' ? 'Quadrant Yield' : 'Reticle Cell Yield',
     true,
-    undefined,
     {
       stateKey: 'regionYield',
       panel,
@@ -1185,7 +1178,6 @@ export function buildPerWaferYieldSection(
   const { outer } = collapsibleSection(
     'Wafer Yield' + rangeNote + medNote,
     true,
-    undefined,
     {
       stateKey: 'waferYield',
       panel,
@@ -1566,11 +1558,17 @@ export function* buildTestSectionSteps(
   // itself the interesting case and was previously invisible among identical values.
   const counts = new Set(rows.map(r => r.stats.count));
   const uniformN = counts.size === 1 ? rows[0].stats.count : null;
+  // Values the value filter took out: shown, never silent. A per-test column when
+  // any test lost values, and the total (with the limit set) beside N in the title.
+  const excl = excludedCounts(activeDies);
+  const exclOf = (tn: number): number => excl?.counts.get(tn) ?? 0;
+  const exclTotal = excl ? [...excl.counts.values()].reduce((a, b) => a + b, 0) : 0;
 
   const outer = el('div');
 
   const headerRow = el('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: SPACE.sm });
-  const nNote = uniformN !== null ? ` · N=${uniformN.toLocaleString()}` : '';
+  const nNote = (uniformN !== null ? ` · N=${uniformN.toLocaleString()}` : '')
+    + (excl ? ` · ${exclTotal.toLocaleString()} outside ${limitSetName(excl.by)} excluded` : '');
   const titleText = csv?.populationLabel
     ? `Test Values  (${rows.length}) — ${csv.populationLabel}${nNote}`
     : `Test Values  (${rows.length})${nNote}`;
@@ -1595,6 +1593,7 @@ export function* buildTestSectionSteps(
       { header: 'Test', get: r => r.entry.name },
       { header: 'Unit', get: r => r.entry.unit ?? '' },
       { header: 'N', get: r => r.stats.count },
+      ...(excl ? [{ header: `Excluded (outside ${limitSetName(excl.by)})`, get: (r: Row) => exclOf(r.entry.testNumber) }] : []),
       { header: 'Min', get: r => r.stats.min },
       { header: 'Q1', get: r => r.stats.q1 },
       { header: 'Median', get: r => r.stats.median },
@@ -1659,6 +1658,7 @@ export function* buildTestSectionSteps(
   // what fraction of dies made it. The full table is one click away in the report.
   const headers = ['Test'];
   if (uniformN === null) headers.push('N');
+  if (excl) headers.push('Excl.');
   if (columns === 'full') headers.push('Min', 'Q1', 'Median');
   headers.push('Mean');
   if (columns === 'full') headers.push('Q3', 'Max', 'StdDev');
@@ -1707,6 +1707,7 @@ export function* buildTestSectionSteps(
     };
     cell(markedTestLabel(entry, entry.testNumber), 'left');
     if (uniformN === null) cell(`${stats.count}`);
+    if (excl) cell(exclOf(entry.testNumber) > 0 ? `${exclOf(entry.testNumber)}` : '—');
     if (columns === 'full') { cell(f(stats.min)); cell(f(stats.q1)); cell(f(stats.median)); }
     cell(f(stats.mean));
     if (columns === 'full') { cell(f(stats.q3)); cell(f(stats.max)); cell(f(stats.stddev)); }
@@ -1744,7 +1745,7 @@ export function* buildTestSectionSteps(
   // the shell's label (so collapsing hides the table, not the title) and Export
   // CSV becomes its header control.
   headerRow.remove();
-  const { outer: shell } = collapsibleSection(titleText, true, undefined, {
+  const { outer: shell } = collapsibleSection(titleText, true, {
     stateKey: 'testValues',
     panel,
     render: content => content.appendChild(tableBlock),
@@ -1887,7 +1888,7 @@ export function buildFunctionalTestSection(
   }
   headerRow.remove();
   const { outer: shell } = collapsibleSection(
-    titleText, true, undefined,
+    titleText, true,
     { stateKey: 'functionalTests', panel, render: content => content.appendChild(fnBlock), control: exportable ? () => exportBtn : undefined },
   );
   return shell;
@@ -2011,19 +2012,13 @@ export function buildFindingsSection(
    * section that forgets whether the reader collapsed it.
    */
   standalone = false,
-  /** The pass bins every wafer was judged by, for the synthesis the Detail modal opens with; omitted when they differ. */
-  passBins?: readonly number[],
 ): HTMLDivElement | null {
   if (!findings.length) return null;
 
-  const hasNotable = findings.some(f => f.severity === 'unusual' || f.severity === 'notable');
-  const badge = hasNotable
-    ? findings.filter(f => f.severity !== 'info').length.toString()
-    : undefined;
-
+  const note = findingsHeaderNote(findings);
   const { outer, content } = standalone
     ? (() => { const wrap = el('div'); return { outer: wrap, content: wrap }; })()
-    : collapsibleSection(`Findings (${findings.length})`, hasNotable, badge);
+    : collapsibleSection(`Findings (${findings.length})`, !!note, { note });
 
   function groupLabel(family: string, left: string): string {
     const familyMap: Record<string, string> = {
@@ -2058,8 +2053,8 @@ export function buildFindingsSection(
     const row = document.createElement('button');
     row.type = 'button';
     row.dataset.wmapFinding = finding.id;
-    row.textContent = findingRowText(finding, groupLeft);
-    wireTooltip(row, formatFindingTooltip(finding));
+    row.append(el('span', { flex: '1', minWidth: '0' }, findingRowText(finding, groupLeft)), showOnMapMark());
+    wireTooltip(row, `${formatFindingTooltip(finding)}\n${SHOW_ON_MAP_TIP}`);
     // isActive already drives the row's highlighted background/font-weight
     // visually; aria-current carries the same "this is the one currently
     // shown on the map" state to a screen reader, which colour/weight alone
@@ -2067,6 +2062,9 @@ export function buildFindingsSection(
     // above), so no separate sync path is needed when the selection changes.
     row.setAttribute('aria-current', isActive ? 'true' : 'false');
     Object.assign(row.style, {
+      display:      'flex',
+      alignItems:   'baseline',
+      gap:          SPACE.sm,
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(finding.severity)}`,
       background:   isActive ? CLR.bgActive : CLR.menuBg,
@@ -2085,99 +2083,6 @@ export function buildFindingsSection(
     return row;
   }
 
-  // "Detail ▸": the findings as a readable list in a modal, headed by the synthesis sentences.
-  const detailBtn = el('button', {
-    flexShrink: '0',
-    border:     'none',
-    background: 'none',
-    fontSize:   FONT.body,
-    color:      CLR.icon,
-    cursor:     'pointer',
-    padding:    '0',
-    lineHeight: LEADING.base,
-    whiteSpace: 'nowrap',
-  }, 'Detail ▸');
-  (detailBtn as HTMLButtonElement).type = 'button';
-  wireControlHover(detailBtn, 'bare');
-    detailBtn.addEventListener('click', () => {
-      const handle = openModal({ title: 'Findings Summary', onClose: () => {}, anchor: detailBtn });
-
-      // What stands out, as sentences: the same synthesis the panel's first section shows.
-      const synthesis = buildSynthesis(statsSummary, { passBins });
-      const narPara = el('div', {
-        fontSize:     '16px',
-        lineHeight:   LEADING.base,
-        color:        CLR.text,
-        padding:      `${SPACE.xxl} ${SPACE.xxxl} ${SPACE.xxl}`,
-        margin:       '0',
-        borderBottom: `1px solid ${CLR.menuBorder}`,
-        flexShrink:   '0',
-        display:      'flex',
-        flexDirection: 'column',
-        gap:          SPACE.md,
-      });
-      for (const line of synthesisText(synthesis).split('\n')) narPara.appendChild(el('p', { margin: '0' }, plainBinTerms(line)));
-      handle.contentWrap.appendChild(narPara);
-
-      // Scrollable findings list — pattern parents first, then standalone groups
-      const listWrap = el('div', {
-        overflowY: 'auto',
-        padding: `${SPACE.xxl} ${SPACE.xxxl}`,
-        flex:      '1',
-      });
-
-      const modalGroupHeader = (severity: StatsFinding['severity'], text: string) => {
-        const h = el('div', {
-          display: 'flex', alignItems: 'center', gap: '7px',
-          fontSize: FONT.sub, fontWeight: '600', color: VALUE_COLOR,
-          marginTop: SPACE.lg, marginBottom: SPACE.xs,
-        });
-        h.appendChild(sevDot(severity));
-        h.appendChild(el('span', {}, text));
-        return h;
-      };
-
-      for (const pf of patternFindings) {
-        listWrap.appendChild(modalGroupHeader(pf.severity, pf.comparison.left));
-        listWrap.appendChild(el('div', {
-          fontSize:    FONT.body,
-          color:       CLR.text,
-          padding:     '4px 0 4px 15px',   // optical: 15px indents the text under the finding's severity dot
-          marginBottom: SPACE.xxs,
-        }, plainBinTerms(pf.summary)));
-        const children = findings.filter(f => pf.relatedIds?.includes(f.id));
-        for (const cf of children) {
-          listWrap.appendChild(el('div', {
-            fontSize:    FONT.body,
-            color:       LABEL_COLOR,
-            padding:     '2px 0 2px 23px',   // optical: aligns a child finding under its parent's label, not the dot
-            marginBottom: SPACE.xxs,
-          }, plainBinTerms(cf.summary)));
-        }
-      }
-
-      for (const group of groups) {
-        const [fam, left] = group.key.split('\0');
-        listWrap.appendChild(modalGroupHeader(group.worst, groupLabel(fam, left)));
-        for (const f of group.findings) {
-          listWrap.appendChild(el('div', {
-            fontSize:    FONT.body,
-            color:       CLR.text,
-            padding:     '4px 0 4px 15px',   // optical: 15px indents under the severity dot, as above
-            marginBottom: SPACE.xxs,
-          }, findingRowText(f, left)));
-        }
-      }
-      const modalKey = derivedFindingsKey(shownFindings());
-      if (modalKey) listWrap.appendChild(modalKey);
-      handle.contentWrap.appendChild(listWrap);
-      Object.assign(handle.contentWrap.style, { flexDirection: 'column', overflow: 'hidden' });
-    });
-
-  const detailRow = el('div', { display: 'flex', justifyContent: 'flex-end', marginBottom: SPACE.xs });
-  detailRow.appendChild(detailBtn);
-  content.appendChild(detailRow);
-
   let firstItem = true;
 
   // Render spatial-pattern findings as collapsible parents
@@ -2188,19 +2093,21 @@ export function buildFindingsSection(
     const children = findings.filter(f => pf.relatedIds?.includes(f.id));
     const hasChildren = children.length > 0;
 
-    // Parent row wrapper (flex row: clickable text area + chevron toggle)
-    const parentWrap = el('div', { position: 'relative', marginBottom: hasChildren ? '2px' : '4px' });
+    const parentWrap = el('div', { marginBottom: hasChildren ? '2px' : '4px' });
 
     const isActive = activeFindingId === pf.id;
     const parentRow = document.createElement('button');
     parentRow.type = 'button';
     parentRow.dataset.wmapFinding = pf.id;
     Object.assign(parentRow.style, {
+      display:      'flex',
+      alignItems:   'baseline',
+      gap:          SPACE.sm,
       border:       `1px solid ${CLR.menuBorder}`,
       borderLeft:   `3px solid ${sevColor(pf.severity)}`,
       background:   isActive ? CLR.bgActive : CLR.menuBg,
       borderRadius: RADIUS.container,
-      padding:      '8px 32px 8px 10px', // optical: 32px right clears the absolutely-positioned chevron
+      padding:      '8px 10px',
       textAlign:    'left',
       fontSize:     FONT.body,
       fontWeight:   isActive ? '600' : '500',
@@ -2208,8 +2115,8 @@ export function buildFindingsSection(
       cursor:       'pointer',
       width:        '100%',
     });
-    parentRow.textContent = plainBinTerms(pf.summary);
-    wireTooltip(parentRow, pf.summary);
+    parentRow.append(el('span', { flex: '1', minWidth: '0' }, plainBinTerms(pf.summary)), showOnMapMark());
+    wireTooltip(parentRow, `${pf.summary}\n${SHOW_ON_MAP_TIP}`);
     // See makeFindingRow's identical comment — isActive already drives the
     // visual highlight, this exposes the same state to a screen reader.
     parentRow.setAttribute('aria-current', isActive ? 'true' : 'false');
@@ -2218,57 +2125,42 @@ export function buildFindingsSection(
     parentWrap.appendChild(parentRow);
 
     if (hasChildren) {
-      // Child container — initially collapsed
-      const childWrap = el('div', {
-        display:     'none',
-        paddingLeft: '12px',
-        marginBottom: SPACE.xs,
-      });
-      for (const cf of children) {
-        childWrap.appendChild(makeFindingRow(cf, true));
-      }
-      parentWrap.appendChild(childWrap);
+      // A labelled line under the pattern, not a glyph inside it: the count and what it opens are
+      // on screen. Open from the start when the finding shown on the map is one of these, so a
+      // click on a supporting finding (which re-renders the panel) keeps it in view.
+      let expanded = children.some(cf => cf.id === activeFindingId);
+      const childWrap = el('div', { paddingLeft: '12px', marginBottom: SPACE.xs });
+      for (const cf of children) childWrap.appendChild(makeFindingRow(cf, true));
 
-      // Chevron toggle button (absolutely positioned in top-right of parentRow)
-      let expanded = false;
-      const chevron = el('button', {
-        position:   'absolute',
-        top:        '50%',
-        right:      '8px',
-        transform:  'translateY(-50%)',
+      const relatedToggle = document.createElement('button');
+      Object.assign(relatedToggle.style, {
+        display:    'flex',
+        gap:        SPACE.xs,
         border:     'none',
         background: 'none',
+        padding:    `${SPACE.xxs} ${SPACE.xs}`,
+        margin:     `${SPACE.xxs} 0 ${SPACE.xs}`,
         fontSize:   FONT.body,
         color:      CLR.icon,
         cursor:     'pointer',
-        padding: `${SPACE.xxs} ${SPACE.xs}`,
-        lineHeight: LEADING.none,
-      }, '▸') as HTMLButtonElement;
-      wireControlHover(chevron, 'bare');
-      chevron.type = 'button';
-      // No text argument — the tooltip live-reads `aria-label`, which the click
-      // handler below already keeps in step with the expanded state.
-      wireTooltip(chevron);
-      // The glyph alone (▸/▾) carries no name a screen reader will read, and the
-      // tooltip is a hover-only hint a keyboard/AT user never sees —
-      // aria-label is the one that actually reaches them, and aria-expanded
-      // exposes the open/closed state `childWrap`'s visibility otherwise only
-      // conveys visually.
-      // (No second `wireControlHover` here — it was called twice, and the second
-      // call snapshotted the FIRST one's hover colours as the resting state, so
-      // the chevron stayed painted as hovered from the first hover onwards.)
-      chevron.setAttribute('aria-label', 'Show supporting findings');
-      chevron.setAttribute('aria-expanded', 'false');
-      chevron.addEventListener('click', (e) => {
-        e.stopPropagation();
-        expanded = !expanded;
-        childWrap.style.display = expanded ? 'block' : 'none';
-        chevron.textContent = expanded ? '▾' : '▸';
-        const label = expanded ? 'Hide supporting findings' : 'Show supporting findings';
-        chevron.setAttribute('aria-label', label);
-        chevron.setAttribute('aria-expanded', String(expanded));
+        textAlign:  'left',
       });
-      parentWrap.appendChild(chevron);
+      relatedToggle.type = 'button';
+      const glyph = el('span', {});
+      glyph.setAttribute('aria-hidden', 'true');
+      const label = el('span', {});
+      relatedToggle.append(glyph, label);
+      const n = children.length;
+      const paint = (): void => {
+        childWrap.style.display = expanded ? 'block' : 'none';
+        glyph.textContent = expanded ? '▾' : '▸';
+        label.textContent = `${expanded ? 'Hide' : 'Show'} ${n} supporting finding${n === 1 ? '' : 's'}`;
+        relatedToggle.setAttribute('aria-expanded', String(expanded));
+      };
+      paint();
+      wireControlHover(relatedToggle, 'bare');
+      relatedToggle.addEventListener('click', () => { expanded = !expanded; paint(); });
+      parentWrap.append(relatedToggle, childWrap);
     }
 
     content.appendChild(parentWrap);
@@ -2323,113 +2215,193 @@ function meterEl(tier: MeterTier, word: string): HTMLSpanElement {
   return wrap;
 }
 
+/** What the "What stands out" rows act on, and what is selected now. */
+export interface SynthesisSectionActions {
+  /** Selects a finding, exactly as its row in the Findings list does. */
+  onFindingClick?: (finding: StatsFinding, row: HTMLButtonElement) => void;
+  activeFindingId?: string | null;
+  /** Shows a test on the map with the dies it fails. Omitted ⇒ test rows are shown but do not act. */
+  onTestClick?: (testNumber: number) => void;
+  /** The test `onTestClick` last showed, while it is still shown. */
+  activeTest?: number | null;
+  /** The map's bin colours, so a bin chip carries the swatch the legend shows. */
+  binColors?: BinColors;
+}
+
+/** The marker every acting row ends with: this row shows something on the map. */
+/** The tooltip line every row marked by {@link showOnMapMark} ends with. */
+const SHOW_ON_MAP_TIP = 'Click to show it on the map';
+
+function showOnMapMark(): HTMLSpanElement {
+  const mark = el('span', { display: 'inline-flex', width: '12px', height: '12px', flexShrink: '0', color: CLR.icon, alignSelf: 'center' });
+  mark.innerHTML = ICONS.wafer;
+  const svg = mark.querySelector('svg');
+  if (svg) { svg.setAttribute('width', '12'); svg.setAttribute('height', '12'); }
+  mark.setAttribute('aria-hidden', 'true');
+  return mark;
+}
+
 /**
  * The first section of both panels: what the wafer or lot did and what stands out, from the same
  * `buildSynthesis` the HTML reports open with. A clean one says so ("Nothing stands out"), which a
  * list of findings cannot, so this is its own section and not a part of the Findings one — that
  * section is absent when there are no findings.
  *
- * Linked names (a region, a bin) select that finding, exactly as its row in the list below does.
+ * One rule for what acts: every item is a row, and every row shows its dies on the map (a finding's
+ * dies, or a test with the dies it fails), marked by the same wafer icon at its end. The sentences
+ * themselves never link. An item's parts — its fail bins, the pattern, a test failing on the same dies —
+ * are chips under its sentence, each showing that part alone.
  */
 export function buildSynthesisSection(
   source: StatsSummary | LotStatsSummary,
   /** The pass bins every wafer was judged by; omitted when they differ, and the items then rest on yield alone. */
   passBins: readonly number[] | undefined,
-  onFindingClick: ((finding: StatsFinding, row: HTMLButtonElement) => void) | undefined,
-  activeFindingId: string | null,
+  actions: SynthesisSectionActions,
   /** Panel element owning the collapsed state. Omit for a stateless render. */
   panel?: HTMLElement,
   /** Opens the full report, which begins with this same section. Omitted ⇒ no link. */
   onOpenReport?: () => void,
 ): HTMLDivElement {
+  const { onFindingClick, activeFindingId = null, onTestClick, activeTest = null, binColors } = actions;
   const synthesis = buildSynthesis(source, { passBins });
-  const byId = new Map(source.findings.map(f => [f.id, f]));
-  const { outer, content } = collapsibleSection('What stands out', true, undefined, { stateKey: 'synthesis', panel });
+  const byId = new Map(synthesisSource(source).findings.map(f => [f.id, f]));
+  const { outer, content } = collapsibleSection('What stands out', true, { stateKey: 'synthesis', panel });
 
-  /** Parts as inline text, with a part that names a finding as a button that selects it. */
-  const appendParts = (parent: HTMLElement, parts: SynthesisPart[]): void => {
-    for (const part of parts) {
-      const finding = part.target ? byId.get(part.target.id) : undefined;
-      const text = plainBinTerms(part.text);
-      if (!finding || !onFindingClick || !text) { parent.appendChild(document.createTextNode(text)); continue; }
-      const link = document.createElement('button');
-      link.type = 'button';
-      link.textContent = text;
-      link.dataset.wmapFinding = finding.id;
-      link.setAttribute('aria-current', activeFindingId === finding.id ? 'true' : 'false');
-      Object.assign(link.style, {
-        border: 'none', background: 'none', padding: '0', margin: '0', font: 'inherit', color: 'inherit',
-        textDecoration: 'underline dotted', textUnderlineOffset: '2px', cursor: 'pointer', textAlign: 'inherit',
-        fontWeight: activeFindingId === finding.id ? '600' : 'inherit',
-      });
-      wireTooltip(link, formatFindingTooltip(finding));
-      // Dotted at rest, solid and in the accent colour under the pointer or keyboard focus: the
-      // reader is told this text acts before they press it.
-      const emphasise = (on: boolean): void => {
-        link.style.textDecoration = on ? 'underline solid' : 'underline dotted';
-        link.style.color = on ? CLR.iconActive : 'inherit';
-      };
-      link.addEventListener('mouseenter', () => emphasise(true));
-      link.addEventListener('mouseleave', () => emphasise(false));
-      link.addEventListener('focus', () => emphasise(true));
-      link.addEventListener('blur', () => emphasise(false));
-      link.addEventListener('click', () => onFindingClick(finding, link));
-      parent.appendChild(link);
+  const isActive = (t: SynthesisTarget): boolean =>
+    t.kind === 'finding' ? activeFindingId === t.id : activeTest === t.testNumber;
+  /** Wires `btn` to show `target`; false when nothing can show it here, and the element stays inert. */
+  const wire = (btn: HTMLButtonElement, target: SynthesisTarget, tip: string): boolean => {
+    if (target.kind === 'finding') {
+      const finding = byId.get(target.id);
+      if (!finding || !onFindingClick) return false;
+      btn.dataset.wmapFinding = finding.id;
+      wireTooltip(btn, `${formatFindingTooltip(finding)}\n${tip}`);
+      btn.addEventListener('click', () => onFindingClick(finding, btn));
+    } else {
+      if (!onTestClick) return false;
+      btn.dataset.wmapTest = String(target.testNumber);
+      wireTooltip(btn, tip);
+      btn.addEventListener('click', () => onTestClick(target.testNumber));
     }
+    btn.setAttribute('aria-current', isActive(target) ? 'true' : 'false');
+    if (isActive(target)) btn.dataset.on = 'true';
+    return true;
   };
+  const tipFor = (t: SynthesisTarget): string => t.kind === 'finding'
+    ? SHOW_ON_MAP_TIP
+    : 'Click to show this test on the map, with the dies it fails';
 
-  const line = (parts: SynthesisPart[], styles: Partial<CSSStyleDeclaration>): HTMLDivElement => {
-    const row = el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text, ...styles });
-    appendParts(row, parts);
-    return row;
+  /** A row: the findings-list look, with a severity edge, filled when it is the one shown on the map. */
+  const row = (target: SynthesisTarget, edge: string, children: HTMLElement[], column = false): HTMLElement => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const on = isActive(target);
+    Object.assign(btn.style, {
+      display: 'flex', flexDirection: column ? 'column' : 'row', alignItems: column ? 'stretch' : 'baseline', gap: column ? SPACE.xxs : SPACE.sm,
+      width: '100%', textAlign: 'left', font: 'inherit', fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text,
+      border: `1px solid ${CLR.menuBorder}`, borderLeft: `3px solid ${edge}`, borderRadius: RADIUS.container,
+      background: on ? CLR.bgActive : CLR.menuBg, fontWeight: on ? '600' : '400',
+      padding: `${SPACE.sm} ${SPACE.md}`, marginBottom: SPACE.xs, cursor: 'pointer',
+    });
+    for (const c of children) btn.appendChild(c);
+    if (!wire(btn, target, tipFor(target))) {
+      // Nothing to show it with (a stateless render, or a host without the action): a plain block, not a dead button.
+      const plain = el('div', {});
+      plain.style.cssText = btn.style.cssText;
+      plain.style.cursor = 'default';
+      while (btn.firstChild) plain.appendChild(btn.firstChild);
+      plain.querySelector('[data-wmap-mark]')?.remove();
+      return plain;
+    }
+    wireControlHover(btn, 'bare');
+    return btn;
   };
+  const marked = (): HTMLSpanElement => { const m = showOnMapMark(); m.dataset.wmapMark = ''; return m; };
 
-  content.appendChild(line(synthesis.headline, { fontWeight: '600', marginBottom: SPACE.sm }));
+  content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text, fontWeight: '600', marginBottom: SPACE.sm }, plainBinTerms(synthesis.headline)));
 
   if (synthesis.nothing) {
     content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text, marginBottom: SPACE.sm }, synthesis.nothing));
   }
-  // The top item gets the tinted box and its full sentence. The rest are one compact list: a
-  // marker, the item in a few words, its share of the dies. Three boxes of equal weight read as
+  // The top item gets its full sentence and its chips. The rest are one compact list: a marker,
+  // the item in a few words, its share of the dies. Three full sentences of equal weight read as
   // three alarms; the list lets the eye find the one that matters and still see the others.
   const [lead, ...others] = synthesis.items;
   if (lead) {
-    const box = el('div', {
-      borderLeft: `3px solid ${sevColor(TIER_SEVERITY[lead.impact])}`,
-      background: TIER_TINT[lead.impact] || CLR.bgActive,
-      borderRadius: `0 ${RADIUS.container} ${RADIUS.container} 0`,
-      padding: `${SPACE.sm} ${SPACE.md}`,
-      marginBottom: SPACE.sm,
-    });
-    box.appendChild(meterEl(lead.impact, impactWord(lead.impact)));
-    box.appendChild(line(lead.parts, { marginTop: SPACE.xxs }));
-    content.appendChild(box);
+    const head = el('div', { display: 'flex', alignItems: 'center', gap: SPACE.sm });
+    head.appendChild(meterEl(lead.impact, impactWord(lead.impact)));
+    head.appendChild(el('span', { flex: '1' }));
+    head.appendChild(marked());
+    const main = row(lead.target, sevColor(TIER_SEVERITY[lead.impact]), [head, el('div', {}, plainBinTerms(lead.text))], true);
+    if (!isActive(lead.target)) main.style.background = TIER_TINT[lead.impact] || CLR.menuBg;
+    if (lead.chips.length) {
+      // Chips sit below the row, never inside it: a button inside a button is not valid markup.
+      main.style.marginBottom = '0';
+      main.style.borderBottomLeftRadius = '0';
+      main.style.borderBottomRightRadius = '0';
+      const chips = el('div', {
+        display: 'flex', flexWrap: 'wrap', gap: SPACE.xs, padding: `${SPACE.sm} ${SPACE.md}`, marginBottom: SPACE.sm,
+        border: `1px solid ${CLR.menuBorder}`, borderTop: 'none', borderLeft: `3px solid ${sevColor(TIER_SEVERITY[lead.impact])}`,
+        borderRadius: `0 0 ${RADIUS.container} ${RADIUS.container}`,
+      });
+      chips.setAttribute('role', 'group');
+      chips.setAttribute('aria-label', 'Show one part on the map');
+      for (const chip of lead.chips) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        Object.assign(btn.style, { ...controlStyle('toggle', isActive(chip.target)), borderRadius: RADIUS.pill, padding: `0 ${SPACE.md}`,
+          display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, lineHeight: LEADING.base });
+        const colour = chip.bin && binColors ? (chip.bin.kind === 'hardBin' ? binColors.hard : binColors.soft).get(chip.bin.bin) : undefined;
+        if (colour) {
+          const sw = el('span', { width: '8px', height: '8px', borderRadius: RADIUS.control, background: colour, flexShrink: '0' });
+          sw.setAttribute('aria-hidden', 'true');
+          btn.appendChild(sw);
+        }
+        btn.appendChild(document.createTextNode(plainBinTerms(chip.label)));
+        if (!wire(btn, chip.target, tipFor(chip.target))) {
+          const plain = el('span', { ...controlStyle('toggle'), borderRadius: RADIUS.pill, padding: `0 ${SPACE.md}`, cursor: 'default',
+            display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, lineHeight: LEADING.base });
+          while (btn.firstChild) plain.appendChild(btn.firstChild);
+          chips.appendChild(plain);
+          continue;
+        }
+        wireControlHover(btn, 'toggle');
+        chips.appendChild(btn);
+      }
+      content.appendChild(main);
+      content.appendChild(chips);
+    } else {
+      main.style.marginBottom = SPACE.sm;
+      content.appendChild(main);
+    }
   }
   const smaller = [...others, ...(synthesis.also?.items ?? [])];
   if (smaller.length) {
-    content.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR, marginBottom: SPACE.xxs }, SYNTHESIS_SMALLER_HEADING));
+    content.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR, marginBottom: SPACE.xxs }, SYNTHESIS_ALSO_HEADING));
     const list = el('div', { marginBottom: SPACE.sm });
     list.setAttribute('role', 'list');
     for (const it of smaller) {
-      const row = el('div', { display: 'flex', alignItems: 'baseline', gap: SPACE.sm, fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text });
-      row.setAttribute('role', 'listitem');
-      row.appendChild(meterEl(it.impact, impactShortWord(it.impact)));
-      const label = el('span', { flex: '1', minWidth: '0' });
-      appendParts(label, [it.brief]);
-      row.appendChild(label);
-      row.appendChild(el('span', { color: LABEL_COLOR, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }, synthesisRowShare(it)));
-      list.appendChild(row);
+      const r = row(it.target, sevColor(TIER_SEVERITY[it.impact]), [
+        meterEl(it.impact, impactShortWord(it.impact)),
+        el('span', { flex: '1', minWidth: '0' }, plainBinTerms(it.brief)),
+        el('span', { color: LABEL_COLOR, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }, synthesisRowShare(it)),
+        marked(),
+      ]);
+      r.setAttribute('role', 'listitem');
+      list.appendChild(r);
     }
     const more = synthesis.also?.more ?? 0;
     if (more > 0) list.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR }, `and ${more} more`));
     content.appendChild(list);
   }
   for (const w of synthesis.watch ?? []) {
-    const row = line(w.parts, { marginBottom: SPACE.xs });
-    row.insertBefore(el('span', { fontSize: FONT.meta, fontWeight: '600', letterSpacing: TRACKING, textTransform: 'uppercase', color: LABEL_COLOR, marginRight: SPACE.sm }, 'Watch'), row.firstChild);
-    content.appendChild(row);
+    content.appendChild(row(w.target, CLR.menuBorder, [
+      el('span', { fontSize: FONT.meta, fontWeight: '600', letterSpacing: TRACKING, textTransform: 'uppercase', color: LABEL_COLOR }, 'Watch'),
+      el('span', { flex: '1', minWidth: '0' }, plainBinTerms(w.text)),
+      marked(),
+    ]));
   }
-  content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: LABEL_COLOR }, plainBinTerms(synthesis.checked)));
+  content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: LABEL_COLOR, marginTop: SPACE.xs }, plainBinTerms(synthesis.checked)));
   if (onOpenReport) {
     const full = el('button', {
       border: 'none', background: 'none', padding: '0', marginTop: SPACE.sm, fontSize: FONT.body, color: CLR.icon,
@@ -2445,33 +2417,19 @@ export function buildSynthesisSection(
 
 // ── Findings filter row ───────────────────────────────────────────────────────
 
-const FINDINGS_KIND_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: '',               label: 'All kinds' },
-  { value: 'yield',          label: 'Yield' },
-  { value: 'hardBin',        label: 'Hard bin' },
-  { value: 'softBin',        label: 'Soft bin' },
-  { value: 'test',           label: 'Test value' },
-  { value: 'functionalTest', label: 'Functional test' },
-  { value: 'spatialPattern', label: 'Spatial pattern' },
-];
-
-const FINDINGS_FAMILY_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: '',                label: 'All regions' },
-  { value: 'ring',             label: 'Ring' },
-  { value: 'quadrant',         label: 'Quadrant' },
-  { value: 'reticle-position', label: 'Reticle position' },
-  { value: 'test-site',        label: 'Test site' },
-  { value: 'wafer',            label: 'Wafer' },
-  { value: 'sector',           label: 'Sector' },
-  { value: 'cluster',          label: 'Cluster' },
-  { value: 'edge-arc',         label: 'Edge arc' },
-  { value: 'spatial-pattern',  label: 'Spatial pattern' },
-];
-
 const FINDINGS_SEVERITIES: StatsSeverity[] = ['unusual', 'notable', 'info'];
 const FINDINGS_SEVERITY_LABEL: Record<StatsSeverity, string> = { unusual: 'Unusual', notable: 'Notable', info: 'Minor' };
 
-/** Severity/kind/region filter controls, wired to `stats/filterFindings.ts`.
+/** The Findings header's note: how many are unusual or notable ("1 unusual, 2 notable"), or nothing when all are minor. */
+function findingsHeaderNote(findings: readonly StatsFinding[]): string | undefined {
+  const parts = (['unusual', 'notable'] as const)
+    .map(s => [s, findings.filter(f => f.severity === s).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([s, n]) => `${n} ${FINDINGS_SEVERITY_LABEL[s].toLowerCase()}`);
+  return parts.length ? parts.join(', ') : undefined;
+}
+
+/** The severity filter, wired to `stats/filterFindings.ts`.
  *  Mutates `filter` in place and calls `onChange` after every control
  *  change — the caller re-renders the findings list below with the updated
  *  filter.
@@ -2536,31 +2494,9 @@ function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFil
   }
   row.appendChild(severityWrap);
 
-  // The Kind/Region dropdowns cost two full rows of a 260px column. Below the
-  // threshold the whole findings list is shorter than the controls for filtering
-  // it, and the severity chips above already subset it — so they only appear once
-  // there are enough findings to be worth narrowing. They stay mounted whenever a
-  // filter is actually active, so a user who filtered down to two findings can
-  // still see and clear the filter that got them there.
-  const filterActive = filter.kind !== undefined || filter.family !== undefined;
-  if (allFindings.length >= FINDINGS_FILTER_THRESHOLD || filterActive) {
-    row.appendChild(makeLabeledSelect('Kind:', FINDINGS_KIND_OPTIONS, (filter.kind as string) ?? '', (v) => {
-      filter.kind = v ? (v as StatsVariableKind) : undefined;
-      onChange();
-    }, { maxWidth: '130px' }));
-
-    row.appendChild(makeLabeledSelect('Region:', FINDINGS_FAMILY_OPTIONS, (filter.family as string) ?? '', (v) => {
-      filter.family = v ? (v as StatsComparisonFamily) : undefined;
-      onChange();
-    }, { maxWidth: '150px' }));
-  }
-
   return row;
 }
 
-/** Findings count at or above which the Kind/Region dropdowns are worth their
- *  vertical space in the panel. */
-const FINDINGS_FILTER_THRESHOLD = 8;
 
 /**
  * Findings section with severity/kind/region filter controls — the
@@ -2634,23 +2570,17 @@ export function buildFindingsSectionWithFilter(
   panel?: HTMLElement,
   /** See {@link FindingsNotice}. Rendered above the filter row. */
   notice?: FindingsNotice,
-  /** The pass bins every wafer was judged by; omitted when they differ. See {@link buildSynthesisSection}. */
-  passBins?: readonly number[],
 ): HTMLDivElement | null {
   // A notice is itself a reason to render the section: the case it exists for
   // is a lot whose only findings would have come from the analysis that was
   // skipped, where returning null here would hide the very offer to run it.
   if (!source.findings.length && !notice) return null;
 
-  const hasNotable = source.findings.some(f => f.severity === 'unusual' || f.severity === 'notable');
-  const badge = hasNotable
-    ? source.findings.filter(f => f.severity !== 'info').length.toString()
-    : undefined;
-
+  const note = findingsHeaderNote(source.findings);
   const ownerDocument = panel?.ownerDocument ?? document;
   const { outer, content } = collapsibleSection(
-    `Findings (${source.findings.length})`, hasNotable || !!notice, badge,
-    { stateKey: 'findings', panel },
+    `Findings (${source.findings.length})`, !!note || !!notice,
+    { stateKey: 'findings', panel, note },
   );
   if (notice) content.appendChild(buildFindingsNoticeRow(notice, ownerDocument));
   if (!source.findings.length) return outer;
@@ -2664,7 +2594,7 @@ export function buildFindingsSectionWithFilter(
     return outer;
   }
 
-  const section = buildFindingsSection(filtered, source, onFindingClick, activeFindingId, true, passBins);
+  const section = buildFindingsSection(filtered, source, onFindingClick, activeFindingId, true);
   if (section) content.appendChild(section);
   return outer;
 }
@@ -2837,6 +2767,7 @@ export function createSummaryPanelEl(
     fontSize:    FONT.sub,
     boxShadow:   SHADOW.panel,
   }, undefined, ownerDocument);
+  panel.dataset.wmapPlacement = placement;
 
   // Inset from the map area's edge, stated by the caller. This panel is
   // styled as a CARD —
@@ -2948,13 +2879,61 @@ function showFindingFromReport(
   onFindingClick(finding, row);
 }
 
-function panelHeader(text: string): HTMLDivElement {
-  return el('div', {
-    fontSize:      FONT.heading,
-    fontWeight:    '600',
-    color:         VALUE_COLOR,
-    marginBottom: SPACE.lg,
-  }, text);
+/** The edge a panel docks against, read by {@link panelHeader} for its close glyph. */
+type PanelPlacement = 'right' | 'left' | 'top' | 'bottom';
+
+/** The close glyph points to the edge the panel folds into. */
+const CLOSE_GLYPH: Record<PanelPlacement, string> = { right: '▸', left: '◂', top: '×', bottom: '×' };
+
+/**
+ * The panel's title, with a close button at its end when the host can reopen it (its Summary button),
+ * as a side panel has. Pinned to the top while the panel scrolls, so closing never needs a scroll back up.
+ */
+function panelHeader(panel: HTMLElement, text: string, onClose?: () => void): HTMLDivElement {
+  const header = el('div', {
+    display:      'flex',
+    alignItems:   'flex-start',
+    gap:          SPACE.sm,
+    position:     'sticky',
+    // The panel's padding is SPACE.xl: the header reaches over it, so it pins flush to the top
+    // edge and rows scrolling under it are hidden, not seen through a gap.
+    top:          `calc(-1 * ${SPACE.xl})`,
+    zIndex:       '1',
+    margin:       `calc(-1 * ${SPACE.xl}) calc(-1 * ${SPACE.xl}) ${SPACE.lg}`,
+    padding:      `${SPACE.xl} ${SPACE.xl} ${SPACE.sm}`,
+    background:   PANEL_BG,
+  });
+  header.appendChild(el('div', {
+    flex:       '1',
+    minWidth:   '0',
+    fontSize:   FONT.heading,
+    fontWeight: '600',
+    color:      VALUE_COLOR,
+  }, text));
+  if (onClose) {
+    const placement = (panel.dataset.wmapPlacement ?? 'right') as PanelPlacement;
+    const close = panel.ownerDocument.createElement('button');
+    close.type = 'button';
+    close.dataset.wmapSummaryClose = '1';
+    close.textContent = CLOSE_GLYPH[placement];
+    close.setAttribute('aria-label', 'Close the Summary panel');
+    Object.assign(close.style, {
+      flexShrink:   '0',
+      border:       `1px solid ${CLR.menuBorder}`,
+      borderRadius: RADIUS.control,
+      background:   CLR.menuBg,
+      color:        CLR.icon,
+      fontSize:     FONT.body,
+      lineHeight:   LEADING.none,
+      padding:      `${SPACE.xs} ${SPACE.sm}`,
+      cursor:       'pointer',
+    });
+    wireControlHover(close, 'bare');
+    wireTooltip(close);
+    close.addEventListener('click', onClose);
+    header.appendChild(close);
+  }
+  return header;
 }
 
 function reportButton(label: string, onClick: () => void): HTMLButtonElement {
@@ -3069,6 +3048,10 @@ export function* renderWaferSummaryContentSteps(
     fallbackFormat?: 'si' | 'engineering';
     onFindingClick?: (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
+    /** Shows a test on the map with the dies it fails, for the "What stands out" rows about a test. */
+    onTestClick?: (testNumber: number) => void;
+    /** The test `onTestClick` last showed, while it is still shown. */
+    activeTest?: number | null;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
     /** See {@link FindingsNotice} — a host row at the top of the Findings section. */
@@ -3093,6 +3076,8 @@ export function* renderWaferSummaryContentSteps(
      * authoritative in neither place, is the thing being avoided in both cases.
      */
     metadataShownElsewhere?: boolean;
+    /** Closes the panel; the panel's header shows a close button only when given. See {@link panelHeader}. */
+    onClose?: () => void;
   },
 ): Chunked<void> {
   const savedScroll = panel.scrollTop;
@@ -3102,13 +3087,13 @@ export function* renderWaferSummaryContentSteps(
     hbinDefs, sbinDefs, testDefs,
     statsSummary, passBins, ringCount,
     binColors, plotMode, fallbackFormat,
-    onFindingClick, activeFindingId = null,
+    onFindingClick, activeFindingId = null, onTestClick, activeTest = null,
     findingsFilter, onFindingsFilterChange,
     findingsNotice,
-    onSaveText, metadataFields, dieListOptions, onLocateDie, metadataShownElsewhere,
+    onSaveText, metadataFields, dieListOptions, onLocateDie, metadataShownElsewhere, onClose,
   } = params;
 
-  panel.appendChild(panelHeader('Wafer Summary'));
+  panel.appendChild(panelHeader(panel, 'Wafer Summary', onClose));
 
   const warnings = params.warnings ?? collectWarnings({ statsSummary });
   if (warnings.length) panel.appendChild(buildWarningsBanner(warnings, panel.ownerDocument));
@@ -3168,12 +3153,12 @@ export function* renderWaferSummaryContentSteps(
   // of the panel: they used to be reachable only after scrolling past two full test tables — the
   // panel's most important content behind its densest.
   if (statsSummary) {
-    append(buildSynthesisSection(statsSummary, passBins, onFindingClick, activeFindingId, panel, openReport ?? undefined));
+    append(buildSynthesisSection(statsSummary, passBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors }, panel, openReport ?? undefined));
     yield;
   }
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
     append(buildFindingsSectionWithFilter(
-      statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice, passBins,
+      statsSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice,
     ));
     yield;
   }
@@ -3272,6 +3257,10 @@ export function* renderLotSummaryContentSteps(
     fallbackFormat?:  'si' | 'engineering';
     onFindingClick?:  (finding: StatsFinding, row: HTMLButtonElement) => void;
     activeFindingId?: string | null;
+    /** Shows a test on the map with the dies it fails, for the "What stands out" rows about a test. */
+    onTestClick?: (testNumber: number) => void;
+    /** The test `onTestClick` last showed, while it is still shown. */
+    activeTest?: number | null;
     onWaferClick?:    (waferIndex: number) => void;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
@@ -3288,6 +3277,8 @@ export function* renderLotSummaryContentSteps(
      *  `buildPerWaferYieldSection`. */
     findingsFor?: (waferIndex: number) => { total: number; unusual: number; notable: number } | undefined;
 
+    /** Closes the panel; the panel's header shows a close button only when given. See {@link panelHeader}. */
+    onClose?: () => void;
   },
 ): Chunked<void> {
   const savedScroll = panel.scrollTop;
@@ -3297,11 +3288,11 @@ export function* renderLotSummaryContentSteps(
     hbinDefs, sbinDefs, testDefs,
     passBins, ringCount: ringCountOpt,
     binColors, plotMode, fallbackFormat,
-    onFindingClick, activeFindingId = null,
+    onFindingClick, activeFindingId = null, onTestClick, activeTest = null,
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
     findingsNotice,
-    onSaveText, dieListOptions, onLocateDie, findingsFor,
+    onSaveText, dieListOptions, onLocateDie, findingsFor, onClose,
   } = params;
   // The lot-level ring figures use one ring count: the caller's own, else the first wafer's (wafers built with different
   // ring counts are named by `ring-count-mixed`, not pooled). There is no default.
@@ -3310,7 +3301,7 @@ export function* renderLotSummaryContentSteps(
 
   // Names the population, not an assumed lot: "Lot LOT123 · 13 wafers" only
   // when every wafer records that lot, else "26 wafers from 2 lots" / "13 wafers".
-  panel.appendChild(panelHeader(`Summary — ${populationLabel(describeWaferPopulation(lotSummary.perWafer.map(pw => pw.summary.wafer)))}`));
+  panel.appendChild(panelHeader(panel, `Summary — ${populationLabel(describeWaferPopulation(lotSummary.perWafer.map(pw => pw.summary.wafer)))}`, onClose));
 
   // collectWarnings de-duplicates on code+message: the same geometry advisory
   // legitimately fires on many wafers of a lot, and listing it once per wafer
@@ -3419,11 +3410,16 @@ export function* renderLotSummaryContentSteps(
   // stats, ahead of the bin/region/test detail. The pass bins are named only when every wafer shares
   // them; a lot mixing programs gets items that rest on yield alone.
   const lotPassBins = commonPassBins(items.map(it => (it ? itemPassBins(it, passBins) : undefined)).filter((b): b is readonly number[] => b !== undefined));
-  append(buildSynthesisSection(lotSummary, lotPassBins, onFindingClick, activeFindingId, panel, openReport));
+  // The gallery-wide colours when given; otherwise resolved wafer by wafer, so a lot mixing test
+  // programs is judged per wafer here too. Shared by the synthesis chips and the bin breakdown.
+  const lotBinColors = binColors ?? resolveBinColorsByWafer(
+    items.flatMap((it) => it ? [{ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }] : []),
+    { hbinDefs, sbinDefs }).colors;
+  append(buildSynthesisSection(lotSummary, lotPassBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors: lotBinColors }, panel, openReport));
   yield;
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {
     append(buildFindingsSectionWithFilter(
-      lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice, lotPassBins,
+      lotSummary, onFindingClick, activeFindingId, findingsFilter, onFindingsFilterChange, panel, findingsNotice,
     ));
     yield;
   }
@@ -3433,11 +3429,7 @@ export function* renderLotSummaryContentSteps(
 
   append(buildBinBreakdownSection({
     dies: allDies, hbinDefs, sbinDefs, plotMode, passBins, panel,
-    // The gallery-wide colours when given; otherwise resolved wafer by wafer,
-    // so a lot mixing test programs is judged per wafer here too.
-    binColors: binColors ?? resolveBinColorsByWafer(
-      items.flatMap((it) => it ? [{ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }] : []),
-      { hbinDefs, sbinDefs }).colors,
+    binColors: lotBinColors,
   }));
   yield;
 

@@ -331,6 +331,16 @@ export const CAPTURES = [
     setup: [['hover']],
   },
 
+  // ── guide-validity-limits.png — §7 Validity limits: clamps excluded, scale and statistics from real readings ─
+  {
+    file: 'guide-validity-limits',
+    group: 'maps',
+    page: '/examples/validity-limits.html',
+    selector: '.demo-content',
+    wait: 1000,
+    setup: [['hover']],
+  },
+
   // ── guide-display-rotated-rings.png — §8 Display control: rotated + ring boundaries ─
   {
     file: 'guide-display-rotated-rings',

@@ -2,6 +2,7 @@ import type { PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import { findConnectedComponents } from './connectedComponents.js';
 import { clamp01 } from '../core/utils.js';
+import { ringOf } from '../core/classify.js';
 
 export type PatternLabel =
   | 'center'
@@ -140,11 +141,7 @@ export const DEFAULT_PATTERN_THRESHOLDS: PatternThresholds = {
 // ── Feature computation ────────────────────────────────────────────────────────
 
 function isEdgeDie(die: PositionedDie, wafer: Wafer, ringCount: number): boolean {
-  const dx = die.physX - wafer.center.x;
-  const dy = die.physY - wafer.center.y;
-  const normalized = Math.sqrt(dx * dx + dy * dy) / wafer.radius;
-  const ring = Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
-  return ring === ringCount;
+  return ringOf(die.physX - wafer.center.x, die.physY - wafer.center.y, wafer.radius, ringCount) === ringCount;
 }
 
 function computeEccentricity(dies: PositionedDie[], cx: number, cy: number): number {

@@ -13,6 +13,7 @@ import { generateDies, getDieKey } from '../dist/packages/core/dies.js';
 import { renderWaferMap, renderWaferGallery } from '../dist/packages/canvas-adapter/index.js';
 import { renderWaferMapCard } from '../dist/packages/canvas-adapter/renderWaferMap.js';
 import { mpwDies } from './fixtures/mpwLayout.mjs';
+import { setupDom, pointerEvent, click } from './fixtures/domHarness.mjs';
 import { buildCompactMap } from '../dist/packages/core/compact.js';
 import { openModal, openFloatingWindow, roomForPanel } from '../dist/packages/canvas-adapter/toolbar.js';
 
@@ -45,259 +46,6 @@ function makeDies() {
   ];
 }
 
-function makeCanvasContext() {
-  return {
-    scale() {},
-    fillRect() {},
-    strokeRect() {},
-    clearRect() {},
-    beginPath() {},
-    moveTo() {},
-    lineTo() {},
-    closePath() {},
-    stroke() {},
-    fill() {},
-    save() {},
-    restore() {},
-    setTransform() {},
-    fillText() {},
-    drawImage() {},
-    arc() {},
-    arcTo() {},
-    rect() {},
-    measureText(text) {
-      return { width: String(text).length * 6 };
-    },
-    setLineDash() {},
-    strokeText() {},
-    clip() {},
-    translate() {},
-  };
-}
-
-function setupDom() {
-  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-    pretendToBeVisual: true,
-    url: 'http://localhost/',
-  });
-
-  const { window } = dom;
-  const previous = new Map();
-  const globals = [
-    'window',
-    'document',
-    'HTMLElement',
-    'HTMLCanvasElement',
-    'HTMLDivElement',
-    'HTMLButtonElement',
-    'Node',
-    'Event',
-    'MouseEvent',
-    'KeyboardEvent',
-    'CustomEvent',
-    'Blob',
-    'DOMRect',
-    'navigator',
-    'getComputedStyle',
-    'matchMedia',
-    'ResizeObserver',
-    'URL',
-  ];
-
-  for (const key of globals) previous.set(key, globalThis[key]);
-
-  globalThis.window = window;
-  globalThis.document = window.document;
-  globalThis.HTMLElement = window.HTMLElement;
-  globalThis.HTMLCanvasElement = window.HTMLCanvasElement;
-  globalThis.HTMLDivElement = window.HTMLDivElement;
-  globalThis.HTMLButtonElement = window.HTMLButtonElement;
-  globalThis.Node = window.Node;
-  globalThis.Event = window.Event;
-  globalThis.MouseEvent = window.MouseEvent;
-  globalThis.KeyboardEvent = window.KeyboardEvent;
-  globalThis.CustomEvent = window.CustomEvent;
-  globalThis.Blob = window.Blob;
-  globalThis.DOMRect = window.DOMRect;
-  // globalThis.navigator is a read-only getter on Node ≥ 21 — use defineProperty.
-  Object.defineProperty(globalThis, 'navigator', {
-    value: window.navigator,
-    configurable: true,
-    writable: true,
-  });
-  globalThis.getComputedStyle = window.getComputedStyle.bind(window);
-  // JSDOM's window has no native matchMedia. The library now derives its window
-  // reference from the rendered container's own document (`ownerDocument.defaultView`)
-  // rather than the bare global, so the shim must live on the JSDOM `window` object
-  // itself, not just on globalThis, or `container.ownerDocument.defaultView.matchMedia`
-  // resolves to undefined.
-  const matchMediaShim = window.matchMedia?.bind(window) ?? (() => ({
-    matches: false,
-    media: '',
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-    dispatchEvent() { return false; },
-  }));
-  window.matchMedia = matchMediaShim;
-  globalThis.matchMedia = matchMediaShim;
-  globalThis.URL = window.URL;
-  if (typeof globalThis.URL.createObjectURL !== 'function') {
-    globalThis.URL.createObjectURL = () => 'blob:mock';
-  }
-  if (typeof globalThis.URL.revokeObjectURL !== 'function') {
-    globalThis.URL.revokeObjectURL = () => {};
-  }
-
-  class FakeResizeObserver {
-    constructor(callback) {
-      this.callback = callback;
-    }
-    observe(target) {
-      this.callback([{ target }], this);
-    }
-    disconnect() {}
-    unobserve() {}
-  }
-  // Same reasoning as the matchMedia shim above: the library now derives its
-  // ResizeObserver constructor from the rendered container's own window
-  // (`ownerDocument.defaultView.ResizeObserver`) rather than the bare global,
-  // so the shim must live on the JSDOM `window` object itself.
-  window.ResizeObserver = FakeResizeObserver;
-  globalThis.ResizeObserver = FakeResizeObserver;
-
-  window.devicePixelRatio = 1;
-
-  const canvasProto = window.HTMLCanvasElement.prototype;
-  canvasProto.getContext = function getContext() {
-    if (!this.__ctx) this.__ctx = makeCanvasContext();
-    return this.__ctx;
-  };
-  canvasProto.toBlob = function toBlob(callback) {
-    callback(new window.Blob(['fake'], { type: 'image/png' }));
-  };
-  canvasProto.focus = function focus() {};
-  canvasProto.setPointerCapture = function setPointerCapture() {};
-  canvasProto.releasePointerCapture = function releasePointerCapture() {};
-  canvasProto.getBoundingClientRect = function getBoundingClientRect() {
-    const width = this.clientWidth || 400;
-    const height = this.clientHeight || 400;
-    return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON() {} };
-  };
-
-  Object.defineProperty(window.HTMLCanvasElement.prototype, 'clientWidth', {
-    configurable: true,
-    get() {
-      return this.__clientWidth ?? (Number.parseInt(this.style.width, 10) || 400);
-    },
-  });
-  Object.defineProperty(window.HTMLCanvasElement.prototype, 'clientHeight', {
-    configurable: true,
-    get() {
-      return this.__clientHeight ?? (Number.parseInt(this.style.height, 10) || 400);
-    },
-  });
-
-  // Gallery card detach opens a real popup window (see openDetachWindow in
-  // toolbar.ts) — a genuinely separate Window/Document pair, which is exactly
-  // what a second JSDOM instance is. Track every popup opened during this
-  // setupDom() session so cleanup() can close them (mirrors the real browser
-  // API: popups outlive their opener unless explicitly closed).
-  const popups = [];
-  window.open = function open() {
-    const popupDom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
-      pretendToBeVisual: true,
-      url: 'http://localhost/',
-    });
-    const popupWindow = popupDom.window;
-    installTestShims(popupWindow);
-    popups.push(popupDom);
-    return popupWindow;
-  };
-
-  return {
-    window,
-    root: window.document.getElementById('root'),
-    cleanup() {
-      for (const [key, value] of previous) {
-        if (value === undefined) delete globalThis[key];
-        else globalThis[key] = value;
-      }
-      for (const popupDom of popups) popupDom.window.close();
-      dom.window.close();
-    },
-  };
-}
-
-/** Install the same matchMedia/ResizeObserver/canvas shims setupDom() gives
- * the main JSDOM window onto a popup window, so a renderWaferMap instance
- * mounted inside it behaves identically to one in the main document. */
-function installTestShims(win) {
-  win.matchMedia = win.matchMedia?.bind(win) ?? (() => ({
-    matches: false,
-    media: '',
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-    dispatchEvent() { return false; },
-  }));
-
-  class FakeResizeObserver {
-    constructor(callback) { this.callback = callback; }
-    observe(target) { this.callback([{ target }], this); }
-    disconnect() {}
-    unobserve() {}
-  }
-  win.ResizeObserver = FakeResizeObserver;
-  win.devicePixelRatio = 1;
-
-  const canvasProto = win.HTMLCanvasElement.prototype;
-  canvasProto.getContext = function getContext() {
-    if (!this.__ctx) this.__ctx = makeCanvasContext();
-    return this.__ctx;
-  };
-  canvasProto.toBlob = function toBlob(callback) {
-    callback(new win.Blob(['fake'], { type: 'image/png' }));
-  };
-  canvasProto.focus = function focus() {};
-  canvasProto.setPointerCapture = function setPointerCapture() {};
-  canvasProto.releasePointerCapture = function releasePointerCapture() {};
-  canvasProto.getBoundingClientRect = function getBoundingClientRect() {
-    const width = this.clientWidth || 400;
-    const height = this.clientHeight || 400;
-    return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON() {} };
-  };
-  Object.defineProperty(canvasProto, 'clientWidth', {
-    configurable: true,
-    get() { return this.__clientWidth ?? (Number.parseInt(this.style.width, 10) || 400); },
-  });
-  Object.defineProperty(canvasProto, 'clientHeight', {
-    configurable: true,
-    get() { return this.__clientHeight ?? (Number.parseInt(this.style.height, 10) || 400); },
-  });
-}
-
-function pointerEvent(window, type, init = {}) {
-  const ev = new window.MouseEvent(type, {
-    bubbles: true,
-    cancelable: true,
-    clientX: init.clientX ?? 100,
-    clientY: init.clientY ?? 100,
-    button: init.button ?? 0,
-  });
-  Object.defineProperties(ev, {
-    pointerId: { value: init.pointerId ?? 1 },
-    ctrlKey: { value: init.ctrlKey ?? false },
-    metaKey: { value: init.metaKey ?? false },
-  });
-  return ev;
-}
-
-function click(window, target) {
-  target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
-}
 
 /**
  * Wait for the Insights tab's DOM to appear after `setInsightsOpen(true)`.
@@ -509,6 +257,11 @@ test('renderWaferMap Expand modal reparents the toolbar and canvas via openRepar
         `toolbar should be reparented into the modal alongside the canvas on open #${cycle}`,
       );
       assert.equal(container.contains(canvas), false, `canvas should have left container while expanded on open #${cycle}`);
+      // Expand hides itself in the modal; the separators either side of it must not be left side by side.
+      const bar = dialog.querySelector('[data-wmap-toolbar="single"]');
+      const shown = (e) => { for (let n = e; n && n !== bar; n = n.parentElement) if (n.style.display === 'none') return false; return true; };
+      const order = [...bar.querySelectorAll('button, [data-wmap-sep]')].filter(shown).map(e => (e.dataset.wmapSep !== undefined ? '|' : 'b'));
+      assert.doesNotMatch(order.join(''), /\|\||^\||\|$/, `no doubled, leading or trailing separator in the expanded toolbar on open #${cycle}`);
 
       // "Close (Esc)": the keyboard shortcut moved from the native `title` into
       // the accessible name, so a screen-reader user is told it exists too.
@@ -714,7 +467,7 @@ test('a hidden Summary panel is rendered when it is opened, not before', () => {
     ctrl.setOptions({ plotMode: 'value', activeTest: 1010 });
     assert.ok(!/Vth/.test(panelText()), 'an option change does not render it either');
 
-    const open = [...root.querySelectorAll('button')].find(b => b.ariaLabel === 'Summary panel' || b.title === 'Summary panel');
+    const open = root.querySelector('[data-wmap-summary-toggle]');
     assert.ok(open, 'the Summary panel button exists');
     click(window, open);
     assert.ok(/Vth/.test(panelText()), 'opening the panel renders it, with the current data');
@@ -817,16 +570,16 @@ test('closeSummaryPanel closes the panel and leaves the Summary button showing n
     });
     const statsSummary = { ...analyzeWaferMap(wafer), hasNotableFindings: true };
     const ctrl = renderWaferMap(container, wafer, { statsSummary, summaryPanel: { defaultOpen: true } });
-    const btn = [...root.querySelectorAll('button')].find((b) => b.ariaLabel === 'Summary panel');
-    assert.equal(btn.dataset.active, '1', 'panel starts open');
+    const btn = root.querySelector('[data-wmap-summary-toggle]');
+    assert.equal(btn.getAttribute('aria-pressed'), 'true', 'panel starts open');
 
     ctrl.closeSummaryPanel();
-    assert.equal(btn.dataset.active, undefined, 'button no longer active');
-    assert.match(btn.style.color, /finding-indicator/, 'notable-findings colour shown once the panel is closed');
+    assert.equal(btn.getAttribute('aria-pressed'), 'false', 'button no longer pressed');
+    assert.match(btn.querySelector('span').style.color, /finding-indicator/, 'notable-findings colour shown once the panel is closed');
 
     ctrl.closeSummaryPanel(); // no-op when already closed
     click(window, btn);
-    assert.equal(btn.dataset.active, '1', 'the toolbar button reopens it');
+    assert.equal(btn.getAttribute('aria-pressed'), 'true', 'the Summary button reopens it');
   } finally {
     cleanup();
   }
@@ -1798,7 +1551,7 @@ test('renderWaferMap: summaryPanel option renders a docked Summary panel with se
     });
 
     const buttons = [...root.querySelectorAll('button')];
-    const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
+    const summaryBtn = root.querySelector('[data-wmap-summary-toggle]');
     assert.ok(summaryBtn, 'Summary toolbar button should exist');
 
     // Severity filter chips (e.g. "Unusual 2") should be present in the
@@ -1834,7 +1587,7 @@ test('renderWaferMap: insights option renders a full-takeover tab with Overview/
     const buttons = [...root.querySelectorAll('button')];
     const insightsBtn = root.querySelector('[data-wmap-view="insights"]');
     const mapsTab = root.querySelector('[data-wmap-view="maps"]');
-    const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
+    const summaryBtn = root.querySelector('[data-wmap-summary-toggle]');
     assert.ok(insightsBtn, 'the Maps | Insights switch has an Insights tab');
     assert.equal(buttons.find((btn) => btn.ariaLabel === 'Insights'), undefined, 'the toolbar has no Insights button of its own');
     assert.ok(summaryBtn, 'Summary toolbar button should exist alongside Insights');
@@ -1965,7 +1718,7 @@ test('renderWaferGallery: Insights hides the Summary button, and the Maps | Insi
     });
 
     const buttons = [...root.querySelectorAll('button')];
-    const summaryBtn = buttons.find((btn) => btn.ariaLabel === 'Summary panel');
+    const summaryBtn = root.querySelector('[data-wmap-summary-toggle]');
     const insightsBtn = root.querySelector('[data-wmap-view="insights"]');
     const mapsTab = root.querySelector('[data-wmap-view="maps"]');
     assert.ok(summaryBtn, 'Summary toolbar button should exist (item carries per-wafer findings)');

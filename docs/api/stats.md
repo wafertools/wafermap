@@ -171,7 +171,7 @@ A finding is emitted only when it clears two independent gates: it must be stati
 
 | Option | Default | Applies to |
 |--------|---------|------------|
-| `significanceLevel` | `0.05` | adjusted p-value threshold after per-family BH correction |
+| `significanceLevel` | `0.05` | adjusted p-value threshold after Benjamini–Hochberg correction (see *Multiple comparisons*) |
 | `minimumEffectSize` | `0.20` | absolute proportion delta for yield/bin findings |
 | `minimumRelativeEffect` | `1.0` | relative effect `\|delta / background\|` for yield/bin/cluster findings |
 | minimum region size | auto | auto-scaled to ~1% of wafer die count (min 5); not user-configurable |
@@ -194,11 +194,11 @@ Test-value findings use Cohen's d (pooled standard deviation), not a proportion 
 
 **Tests implemented:**
 
-- Yield / bin proportions: two-proportion z-test (per-region vs. rest of wafer)
+- Yield / bin / functional pass rates and limit fail rates: two-proportion z-test (per region vs. the rest of the wafer; a sector vs. the other sectors), or Fisher's exact test when any expected count of the 2×2 table is under 5 (a rare bin, a small region, a nearly clean wafer), where the z-test overstates significance. `stats.method` names the test used: `'two-proportion-z'` or `'fisher-exact'`.
 - Test-value comparisons: Welch-style t (z-approx) with pooled SD → Cohen's d effect size
-- Contiguous cluster / edge-arc: one-sided binomial test (cluster failure rate vs. wafer-wide background)
+- Contiguous cluster / edge-arc: exact one-sided binomial test (cluster failure rate vs. wafer-wide background)
 
-**Multiple comparisons:** p-values are adjusted per variable-family using a Benjamini–Hochberg FDR procedure (grouping key: `variable.kind` + `comparison.family`). Only findings that pass both the adjusted p-value gate and the effect size gate are emitted.
+**Multiple comparisons:** p-values are adjusted with the Benjamini–Hochberg FDR procedure over every comparison of one kind that the analysis makes, as one family: on a wafer, every rate comparison (yield, hard and soft bins, functional tests and limit fail rates, in every region family) together; the test-value comparisons of each region family; and every cluster tested. A lot's regional comparisons are one family too. A finding is emitted only when it passes both the adjusted p-value gate and the effect size gate, and a finding's `severity` is read from its adjusted p-value. A merged run of adjacent regions is re-tested over its union and carries the weakest multiplier of the run.
 
 **Severity mapping** (how the `severity` field is derived):
 
@@ -277,6 +277,12 @@ Either the rate criterion or the size criterion can trigger the severity level; 
       failDies:        number
       totalDies:       number         // dies with a recorded verdict — never counts untested dies as fails
       passRatePercent: number | null  // (passDies / totalDies) × 100 ∈ [0, 100]; null when totalDies = 0
+    }>
+    testFailures?: Record<number, {   // per test number, the dies the test fails: outside its limits (the dies counted in
+                                      // testSpecYield's failLowDies + failHighDies) or failing a functional test (failDies).
+                                      // Only tests with a failing die; absent when there are none
+      dieKeys:  string[]              // getDieKey strings
+      lostDies: number                // of those, the dies that also fail yield (not in a pass bin, or with no bin)
     }>
     perTestStats?: Array<{            // present only when computePerTestStats or enableTestValueAnalysis is set;
                                       // one entry per active test with enough data
