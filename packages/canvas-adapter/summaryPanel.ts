@@ -27,7 +27,7 @@ import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 // The report builders are loaded when a report is opened, not with the map (see `openReportModal`'s callers):
 // they are most of the report's markup and stylesheet, and a panel that is never exported to a report never needs them.
 import type { ReportMap } from '../stats/renderSummaryReport.js';
-import { buildSynthesis, synthesisSource, synthesisRowShare, SYNTHESIS_ALSO_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
+import { buildSynthesis, synthesisSource, synthesisRowShare, synthesisMoreTests, SYNTHESIS_ALSO_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
 import { ICONS } from './icons.js';
 import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWord, impactShortWord, formatPoints, shortfallColor, type MeterTier } from '../stats/presentation.js';
 import { regionYieldRows, waferYieldRows } from '../stats/yieldRows.js';
@@ -2368,6 +2368,8 @@ export function buildSynthesisSection(
         wireControlHover(btn, 'toggle');
         chips.appendChild(btn);
       }
+      const moreTests = synthesisMoreTests(lead);
+      if (moreTests) chips.appendChild(el('span', { fontSize: FONT.meta, color: LABEL_COLOR, alignSelf: 'center' }, moreTests));
       content.appendChild(main);
       content.appendChild(chips);
     } else {

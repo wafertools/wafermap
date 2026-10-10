@@ -82,6 +82,7 @@ const BIN_NAMES = { 1: 'Pass', 2: 'Pass grade B', 3: 'Open', 4: 'Short', 5: 'Lea
  * @property {Record<number, number>} [binMap]  logical bin → the number the dies carry (default identity)
  * @property {'parametric' | 'functional' | 'both' | 'none'} [tests]
  * @property {TestFailure[]} [testFailures]
+ * @property {number} [extraTests]  further parametric tests shaped like VT, numbered from 301
  * @property {boolean} [limits]  whether the test definitions carry their limits (default true)
  * @property {0 | 90 | 180 | 270} [rotate]  rotate every die about the centre, counter-clockwise
  * @property {boolean} [mirror]  mirror every die left to right (after any rotation)
@@ -98,11 +99,17 @@ export const PARAMETRIC = [
 ];
 export const FUNCTIONAL = [{ testNumber: 201, name: 'SCAN', testType: 'F' }];
 
+/** The parametric tests a spec can carry: the three above, then its `extraTests`. */
+const parametricOf = (spec) => [
+  ...PARAMETRIC,
+  ...Array.from({ length: spec.extraTests ?? 0 }, (_, i) => ({ ...PARAMETRIC[0], testNumber: 301 + i, name: `P${301 + i}` })),
+];
+
 /** The test definitions a spec's wafers carry. */
 export function testDefsOf(spec) {
   const kind = spec.tests ?? 'none';
   const p = kind === 'parametric' || kind === 'both'
-    ? PARAMETRIC.map(({ mean: _m, sd: _s, ...d }) => (spec.limits === false ? { testNumber: d.testNumber, name: d.name, unit: d.unit } : d))
+    ? parametricOf(spec).map(({ mean: _m, sd: _s, ...d }) => (spec.limits === false ? { testNumber: d.testNumber, name: d.name, unit: d.unit } : d))
     : [];
   const f = kind === 'functional' || kind === 'both' ? FUNCTIONAL : [];
   return [...p, ...f];
@@ -123,7 +130,7 @@ export const passBinsOf = (spec) => logicalPassBins(spec).map(b => spec.binMap?.
 export function logicalWafers(spec) {
   const r = rng(hash(spec.name));
   const tests = testDefsOf(spec);
-  const params = PARAMETRIC.filter(p => tests.some(t => t.testNumber === p.testNumber));
+  const params = parametricOf(spec).filter(p => tests.some(t => t.testNumber === p.testNumber));
   const functional = tests.some(t => t.testNumber === 201);
   const out = [];
   for (let w = 0; w < spec.wafers; w++) {
@@ -145,7 +152,7 @@ export function logicalWafers(spec) {
         const testPass = functional ? { 201: true } : undefined;
         for (const f of spec.testFailures ?? []) {
           if (!REGIONS[f.region](x, y, rr) || r() >= f.p) continue;
-          const p = PARAMETRIC.find(q => q.testNumber === f.test);
+          const p = params.find(q => q.testNumber === f.test);
           if (p && f.test in testValues) {
             testValues[f.test] = f.side === 'high' ? +(p.limitHigh + p.sd * (1 + r())).toFixed(4) : +(p.limitLow - p.sd * (1 + r())).toFixed(4);
           } else if (f.test === 201 && testPass) testPass[201] = false;

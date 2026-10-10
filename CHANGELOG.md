@@ -24,6 +24,14 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Changed
+
+- **A toolbar divider shows only where a visible control sits on both sides of it.** A bordered toolbar with no visible control is
+  hidden, so a toolbar whose groups are hidden (Insights open, no warnings, no Summary button) leaves no stray line.
+- **"What stands out" shows at most five test chips per item.** When more tests fail on an item's dies, the five failing the most
+  dies are chips and the rest are counted ("and 25 more tests"), in the Summary panel and the summary report alike. The tests named
+  in the item's sentence are likewise the ones failing the most dies.
+
 ## [0.35.1] — 2026-10-09
 
 ### Added

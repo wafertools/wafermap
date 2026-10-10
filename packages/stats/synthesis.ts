@@ -52,6 +52,8 @@ export interface SynthesisItem {
   target: SynthesisTarget;
   /** Its parts that can be shown alone, in the order the sentence names them. Empty for a single-part item. */
   chips: SynthesisChip[];
+  /** Tests folded into the item beyond its chips, counted rather than listed. Absent when every test is a chip. */
+  moreTests?: number;
   /** The leading finding, then the others that stand on the same dies. */
   findingIds: string[];
   /** Tests the item names: its own test, or tests whose failing dies lie mostly on its dies. */
@@ -452,24 +454,30 @@ const FOLD_SHARE = 0.5;
 /** …and that share is at least this many times the item's own share of the dies, so a test failing evenly
  *  across the wafer is not claimed by whichever large region it happens to overlap most. */
 const FOLD_ENRICHMENT = 2;
-/** An item's sentence names at most this many folded tests; the rest are chips only. */
+/** An item's sentence names at most this many folded tests… */
 const MAX_TESTS_SAID = 2;
+/** …and its chips show at most this many; the rest are counted. A wafer whose every test fails on the edge
+ *  folds dozens of tests into one item, and a chip per test buries the item it belongs to. */
+const MAX_TEST_CHIPS = 5;
 
 /**
  * Folds each test into the region item whose dies hold most of its failures. A region item counts only the
  * dies above the rest of the wafer, a test every die it fails, so the two ranked side by side put a test
  * ahead of the region it fails in — the same dies, counted twice and on different scales. Folded, the test
- * is said as part of the region's item and shown as one of its chips. Returns the tests left standing alone.
+ * is said as part of the region's item and shown as one of its chips, the tests failing most dies first.
+ * Returns the tests left standing alone, in the order they came.
  */
 function foldTests(
   tests: TestLoss[], regionItems: SynthesisItem[], itemDies: Map<SynthesisItem, Set<string>>, total: number,
 ): TestLoss[] {
-  const alone: TestLoss[] = [];
+  const alone = new Set<TestLoss>();
   const said = new Map<SynthesisItem, number>();
-  for (const t of tests) {
+  const shown = new Map<SynthesisItem, number>();
+  const ranked = [...tests].sort((a, b) => b.failDies - a.failDies || a.testNumber - b.testNumber);
+  for (const t of ranked) {
     const keys = t.keys;
     // A test too small to be listed on its own is too small to add to another item's sentence.
-    if (total > 0 && t.failDies / total < MIN_SHARE_OF_DIES) { alone.push(t); continue; }
+    if (total > 0 && t.failDies / total < MIN_SHARE_OF_DIES) { alone.add(t); continue; }
     let best: { item: SynthesisItem; inside: number } | undefined;
     if (keys && keys.size > 0 && total > 0) {
       for (const item of regionItems) {
@@ -481,17 +489,23 @@ function foldTests(
         if (share >= FOLD_SHARE && share >= FOLD_ENRICHMENT * (dies.size / total) && (!best || inside > best.inside)) best = { item, inside };
       }
     }
-    if (!best) { alone.push(t); continue; }
+    if (!best) { alone.add(t); continue; }
     const n = said.get(best.item) ?? 0;
     if (n < MAX_TESTS_SAID) {
       const where = best.inside === t.failDies ? 'all' : count(best.inside);
       best.item.text += `. ${t.label} ${t.verb} on ${plural(t.failDies, 'die')}, ${where} of them in ${best.item.subject}`;
       said.set(best.item, n + 1);
     }
-    best.item.chips.push({ label: t.label, target: t.item.target });
+    const chips = shown.get(best.item) ?? 0;
+    if (chips < MAX_TEST_CHIPS) {
+      best.item.chips.push({ label: t.label, target: t.item.target });
+      shown.set(best.item, chips + 1);
+    } else {
+      best.item.moreTests = (best.item.moreTests ?? 0) + 1;
+    }
     best.item.testNumbers.push(t.testNumber);
   }
-  return alone;
+  return tests.filter(t => alone.has(t));
 }
 
 /**
@@ -686,6 +700,10 @@ export const SYNTHESIS_ALSO_HEADING = `Also, each costing at least ${(MIN_SHARE_
 
 /** A compact-list row: the item in a few words, then its share of the analysed dies. Plain text. */
 export const synthesisRowShare = (it: SynthesisItem): string => `${(it.shareOfDies * 100).toFixed(1)}%`;
+
+/** After an item's chips: the folded tests not shown as one. Undefined when every test is a chip. Plain text. */
+export const synthesisMoreTests = (it: SynthesisItem): string | undefined =>
+  it.moreTests ? `and ${it.moreTests} more test${it.moreTests === 1 ? '' : 's'}` : undefined;
 
 /** A synthesis as plain text, one line per item, for tests and for any surface that is not HTML. */
 export function synthesisText(s: Synthesis): string {

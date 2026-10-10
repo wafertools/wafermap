@@ -990,6 +990,35 @@
    ]
   }
  },
+ "many-tests-fail-in-ring": {
+  "lot": [
+   "Yield 67.1% (mean of 4 wafers, 5,252 dies; pass bin 1), range 66.3–67.4%.",
+   "1. (high, 30.8%) → hardBin @ Ring 4 (edge) | Edge-ring pattern on 4/4 wafers. Ring 4 (edge): pass rate 75.3 points below the rest of the wafer on 4/4 wafers; hard bin 6 (Speed) is 76.9 points higher — about 1,615 dies lost. P327 is outside its limits (640 low, 2 high) on 642 dies, 640 of them in Ring 4 (edge). P328 is below its low limit on 628 dies, 627 of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); P327 → test 327; P328 → test 328; P329 → test 329; P330 → test 330; P326 → test 326; +25 tests]",
+   "Compared: 33 tests, 4 hard bins, the ring, quadrant and sector regions, wafer-to-wafer yield (no outlier wafers). 5 smaller findings not listed above."
+  ],
+  "wafers": {
+   "W01": [
+    "Yield 67.4% (1,313 dies; pass bin 1).",
+    "1. (high, 30.8%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 75.4 points below the rest of the wafer; hard bin 6 (Speed) is 76.9 points higher — about 404 dies lost (also seen as Cluster at (-11, 12)). P330 is below its low limit on 163 dies, all of them in Ring 4 (edge). P327 is below its low limit on 158 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); P330 → test 330; P327 → test 327; P328 → test 328; P329 → test 329; P326 → test 326; +25 tests]",
+    "Compared: 33 tests, 4 hard bins, the ring, quadrant and sector regions. 2 smaller findings not listed above."
+   ],
+   "W02": [
+    "Yield 67.3% (1,313 dies; pass bin 1).",
+    "1. (high, 30.7%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 75.3 points below the rest of the wafer; hard bin 6 (Speed) is 76.9 points higher — about 404 dies lost (also seen as Cluster at (-9, 13)). P327 is outside its limits (176 low, 2 high) on 178 dies, 176 of them in Ring 4 (edge). P330 is below its low limit on 162 dies, 161 of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); P327 → test 327; P330 → test 330; P329 → test 329; P328 → test 328; P322 → test 322; +25 tests]",
+    "Compared: 33 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
+   ],
+   "W03": [
+    "Yield 67.2% (1,313 dies; pass bin 1).",
+    "1. (high, 30.5%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 74.7 points below the rest of the wafer; hard bin 6 (Speed) is 76.9 points higher — about 401 dies lost (also seen as Cluster at (2, -16)). P328 is below its low limit on 166 dies, all of them in Ring 4 (edge). P327 is below its low limit on 161 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); P328 → test 328; P327 → test 327; P330 → test 330; P329 → test 329; P326 → test 326; +25 tests]",
+    "Compared: 33 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
+   ],
+   "W04": [
+    "Yield 66.3% (1,313 dies; pass bin 1).",
+    "1. (high, 31.0%) → yield @ Ring 4 (edge) | Edge-ring pattern. Ring 4 (edge): pass rate 75.8 points below the rest of the wafer; hard bin 6 (Speed) is 76.9 points higher — about 407 dies lost (also seen as Cluster at (13, 10)). P329 is outside its limits (159 low, 1 high) on 160 dies, all of them in Ring 4 (edge). P328 is below its low limit on 152 dies, all of them in Ring 4 (edge)  [Edge-ring pattern → spatialPattern @ Edge-ring; Hard bin 6 (Speed) → hardBin @ Ring 4 (edge); P329 → test 329; P328 → test 328; P330 → test 330; P326 → test 326; P327 → test 327; +25 tests]",
+    "Compared: 33 tests, 4 hard bins, the ring, quadrant and sector regions. Nothing else was found."
+   ]
+  }
+ },
  "showcase:bin-rich": {
   "lot": [
    "Yield 78.9% (mean of 4 wafers, 7,444 dies; pass bins 1, 2), range 78.1–80.4%.",

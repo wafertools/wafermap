@@ -1,5 +1,5 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
-import { SYNTHESIS_ALSO_HEADING, synthesisRowShare, type Synthesis, type SynthesisTarget } from './synthesis.js';
+import { SYNTHESIS_ALSO_HEADING, synthesisMoreTests, synthesisRowShare, type Synthesis, type SynthesisTarget } from './synthesis.js';
 import { formatFindingTooltip } from './findingText.js';
 import { arrangeFindings } from './filterFindings.js';
 import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, impactShortWord, shortfallColor, shortfallStep, formatPoints, barPercent, type MeterTier } from './presentation.js';
@@ -264,6 +264,8 @@ export function synthesisSectionHtml(synthesis: Synthesis, anchorFor: (target: S
   const smaller = [...others, ...(synthesis.also?.items ?? [])];
   const more = synthesis.also?.more ?? 0;
   const see = lead ? [link(lead.subject, lead.target), ...lead.chips.map((c) => link(c.label, c.target))] : [];
+  const moreTests = lead && synthesisMoreTests(lead);
+  if (moreTests) see.push(escHtml(moreTests));
   const items = lead
     ? `<ol class="synthesis-items">\n<li class="tier-${lead.impact}">${renderMeter(lead.impact, impactWord(lead.impact))}<span>${escHtml(lead.text)}<span class="synthesis-see">See: ${see.join(' · ')}</span></span></li>\n</ol>`
     : `<p class="synthesis-none">${escHtml(synthesis.nothing ?? 'Nothing stands out.')}</p>`;

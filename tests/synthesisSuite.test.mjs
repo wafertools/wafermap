@@ -66,6 +66,9 @@ const SPECS = [
     testFailures: [{ test: 102, region: 'everywhere', p: 0.04, binning: 'pass' }, { test: 201, region: 'centre', p: 0.5, binning: 7 }] },
   { name: 'small-loss-good-lot', wafers: 6, baseRate: 0.004, signatures: [{ region: 'cluster', p: 0.9, bin: 4 }] },
   { name: 'poor-lot', wafers: 6, baseRate: 0.2, signatures: [ring(5, 0.3)] },
+  // Every test failing on the same edge, each a little more than the last: far more tests than chips.
+  { name: 'many-tests-fail-in-ring', wafers: 4, tests: 'parametric', extraTests: 30, signatures: [ring(5)],
+    testFailures: Array.from({ length: 30 }, (_, i) => ({ test: 301 + i, region: 'edge-ring', p: 0.1 + 0.01 * i, binning: 6 })) },
 ];
 
 /** A showcase CSV and its meta file, read the way the examples read them. Test numbers are column indices. */
@@ -137,7 +140,7 @@ function describeTarget(t, findings) {
 
 function describe(s, summary) {
   const findings = new Map(synthesisSource(summary).findings.map(f => [f.id, f]));
-  const chips = (it) => (it.chips.length ? `  [${it.chips.map(c => `${c.label} → ${describeTarget(c.target, findings)}`).join('; ')}]` : '');
+  const chips = (it) => (it.chips.length ? `  [${it.chips.map(c => `${c.label} → ${describeTarget(c.target, findings)}`).join('; ')}${it.moreTests ? `; +${it.moreTests} tests` : ''}]` : '');
   return [
     s.headline,
     ...(s.nothing ? [`nothing: ${s.nothing}`] : []),
@@ -179,6 +182,8 @@ test('every lot and wafer says what the snapshot says', () => {
 // ── 2. Invariants ────────────────────────────────────────────────────────────
 
 const MIN_SHARE = 0.01;
+/** The most tests an item shows as chips (`MAX_TEST_CHIPS` in stats/synthesis.ts). */
+const MAX_TEST_CHIPS = 5;
 const plain = /\b(NaN|undefined|null|Infinity)\b|HBin|SBin|same dies|\s{2}| [,.;)]|\(\s/;
 
 /** Every problem with one synthesis, as sentences. Empty when it is sound. */
@@ -191,6 +196,10 @@ function problems(s, summary, passBins) {
   const tests = new Set([
     ...(src.stats.testSpecYield ?? []).map(t => t.testNumber), ...(src.stats.functionalYield ?? []).map(t => t.testNumber),
     ...(src.stats.capability ?? []).map(t => t.testNumber),
+  ]);
+  const failDies = new Map([
+    ...(src.stats.testSpecYield ?? []).map(t => [t.testNumber, t.failLowDies + t.failHighDies]),
+    ...(src.stats.functionalYield ?? []).map(t => [t.testNumber, t.failDies]),
   ]);
   const resolves = (t) => (t.kind === 'finding' ? findings.has(t.id) : tests.has(t.testNumber));
   const all = [...s.items, ...(s.also?.items ?? [])];
@@ -219,6 +228,15 @@ function problems(s, summary, passBins) {
     const parts = [...it.text.matchAll(/(?:accounts for|for) ([\d.]+)(?: of those points)?/g)].map(m => +m[1]);
     if (whole && parts.length && parts.reduce((a, b) => a + b, 0) > +whole[1] + 0.05 * (parts.length + 1)) out.push(`bins account for more than the whole: ${it.text}`);
     for (const c of it.chips) if (c.bin && !new RegExp(`\\bbin ${c.bin.bin}\\b`).test(c.label)) out.push(`bin chip names another bin: ${c.label}`);
+    // The tests folded into an item: a few chips, the tests failing most dies first, and the rest counted, none dropped.
+    const testChips = it.chips.filter(c => c.target.kind === 'test').map(c => c.target.testNumber);
+    if (testChips.length > MAX_TEST_CHIPS) out.push(`${testChips.length} test chips: ${it.brief}`);
+    if (it.target.kind === 'finding' && testChips.length + (it.moreTests ?? 0) !== it.testNumbers.length) {
+      out.push(`tests folded and tests shown disagree: ${it.brief}`);
+    }
+    for (let i = 1; i < testChips.length; i++) {
+      if ((failDies.get(testChips[i]) ?? 0) > (failDies.get(testChips[i - 1]) ?? 0)) out.push(`test chips not ranked by failing dies: ${it.brief}`);
+    }
   }
   for (let i = 1; i < s.items.length; i++) if (s.items[i].diesLost > s.items[i - 1].diesLost) out.push('items are not ranked by dies lost');
   const claimed = all.flatMap(i => i.findingIds);
