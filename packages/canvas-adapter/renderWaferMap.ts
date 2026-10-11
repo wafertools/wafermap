@@ -5,11 +5,11 @@ import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitl
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, PATH_SHAPES, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
-import { buildWaferMap, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
-import { defaultPlotMode, SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
+import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { openUserGuideWindow, type UserGuideExtension } from './guideWindow.js';
 import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
@@ -1206,7 +1206,7 @@ export function renderWaferMapCard(
   const hasDefinedBinColors = [...(hbinDefs ?? []), ...(sbinDefs ?? [])].some(d => d.color);
 
   let viewOpts: CardViewOptions = {
-    plotMode:               defaultPlotMode([result.dies]),
+    plotMode:               defaultBinMode([result.dies]),
     showDieLabels:               false,
     showRingBoundaries:     false,
     showQuadrantBoundaries: false,

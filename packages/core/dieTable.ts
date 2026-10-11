@@ -209,6 +209,20 @@ export function excludedCounts(dies: readonly DieData[]): { counts: Map<number, 
   return counts.size === 0 || by === undefined ? undefined : { counts, by };
 }
 
+/** How many of `dies` lost their value for `testNumber` to the value filter, and the limit set; `undefined` when none did. One column, not every test. */
+export function excludedCountFor(dies: readonly DieData[], testNumber: number): { count: number; by: 'validity' | 'spec' | 'test' } | undefined {
+  let count = 0;
+  let by: 'validity' | 'spec' | 'test' | undefined;
+  for (const die of dies) {
+    const table = (die as LinkedDie)[TABLE];
+    const col = table?.excluded?.get(testNumber);
+    if (col === undefined || Number.isNaN(col[(die as LinkedDie)[ROW]!])) continue;
+    count++;
+    by ??= table!.excludedBy;
+  }
+  return count > 0 && by !== undefined ? { count, by } : undefined;
+}
+
 /** The limit set the value filter excluded `die`'s values against, when it excluded any in its table. */
 export function excludedBy(die: DieData): 'validity' | 'spec' | 'test' | undefined {
   return (die as LinkedDie)[TABLE]?.excludedBy;

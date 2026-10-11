@@ -1301,16 +1301,6 @@ export interface ToolbarHelpers {
 export type ModeEntry = { plotMode: PlotMode; activeTest?: number; activeMetadataKey?: string; label: string; logScale?: boolean; derived?: true };
 
 /**
- * The bin mode a map opens in when the host names no plot mode: hard bins when any die has one, else
- * soft bins when any die has one. Hard bins over soft-bin data draw every die as no data. With no bins
- * at all it stays hard bins, as it always has. One rule for the single map and the gallery.
- */
-export function defaultPlotMode(dieLists: readonly (readonly Pick<Die, 'hbin' | 'sbin'>[])[]): PlotMode {
-  const any = (pick: (d: Pick<Die, 'hbin' | 'sbin'>) => unknown) => dieLists.some(dies => dies.some(d => pick(d) != null));
-  return any(d => d.hbin) ? 'hardBin' : any(d => d.sbin) ? 'softBin' : 'hardBin';
-}
-
-/**
  * Which plot modes the data actually supports — the single derivation shared by
  * `renderWaferMap` and `renderWaferGallery`.
  *

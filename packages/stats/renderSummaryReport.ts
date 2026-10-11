@@ -222,7 +222,7 @@ function testSection(
   const excl = excludedCounts(active);
   const exclNote = excl
     ? `${[...excl.counts.values()].reduce((x, y) => x + y, 0).toLocaleString('en-GB')} values outside the ${limitSetName(excl.by)} are excluded (not in N): `
-      + [...excl.counts].map(([tn, c]) => `${testDefs.find(d => d.testNumber === tn)?.name ?? `test ${tn}`} ${c.toLocaleString('en-GB')}`).join(', ') + '. '
+      + [...excl.counts].map(([tn, c]) => `${escHtml(testDefs.find(d => d.testNumber === tn)?.name ?? `test ${tn}`)} ${c.toLocaleString('en-GB')}`).join(', ') + '. '
     : '';
 
   const headers = ['Test', 'N', 'Min', ...(hasQuartiles ? ['Q1', 'Median'] : []), 'Mean', ...(hasQuartiles ? ['Q3'] : []), 'Max',

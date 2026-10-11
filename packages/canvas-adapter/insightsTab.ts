@@ -925,7 +925,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const cellRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, cellBuilder);
       if (cellRows.length) {
         const cells = renderRegionYieldDiagram({
-          title: 'Reticle cell yield', mode: 'reticleCell', rows: cellRows, grid: { width: reticle.width, height: reticle.height },
+          title: 'Reticle cell yield', mode: 'reticleCell', rows: cellRows, grid: { width: Math.max(1, Math.floor(reticle.width)), height: Math.max(1, Math.floor(reticle.height)) },
           onSelectRegion: regionClick(cellBuilder), onSaveImage, ownerDocument: doc,
         });
         elements.push(cells.card);

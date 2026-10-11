@@ -409,7 +409,9 @@ class Parser {
         this.usesDiePass = true;
         return { node: { k: 'diePass' }, type: 'boolean' };
       }
-      if (Object.prototype.hasOwnProperty.call(DIE_FIELD_CALLS, t.text)) {
+      // A host constant of the same name still reads as the constant when written without parentheses.
+      if (Object.prototype.hasOwnProperty.call(DIE_FIELD_CALLS, t.text)
+        && (this.at('(') || !Object.prototype.hasOwnProperty.call(this.ctx.constants, t.text))) {
         if (!this.at('(')) {
           throw new ParseError(`${JSON.stringify(t.text)} at position ${t.pos} reads a die's own field and is written with parentheses: ${t.text}().`, t.pos);
         }

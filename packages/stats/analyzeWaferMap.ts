@@ -797,7 +797,8 @@ export function confirmRegionalFindings<T>(
     const test = (t: T, without: readonly T[]): RegionRetest => isLoss && !isLoss(t)
       ? retest(t, [...new Set([...without, ...leaning])].filter(o => o !== t))
       : retest(t, without);
-    if (group.length === 1) { kept.add(group[0]); continue; }
+    // A lone finding stands unless it is a gain with regions leaning towards a loss to be re-tested without.
+    if (group.length === 1 && (!isLoss || isLoss(group[0]) || leaning.length === 0)) { kept.add(group[0]); continue; }
     const stands: T[] = [];
     let remaining = [...group];
     for (;;) {

@@ -1815,9 +1815,18 @@ function attachData<D extends Die>(die: D, pt: DieResult): D {
  * data draws every die as no data.
  */
 function autoPlotMode(results: DieResult[]): PlotMode {
-  if (results.some(dieHasTestData)) return 'value';
-  if (results.some(r => r.hbin !== undefined && r.hbin !== null)) return 'hardBin';
-  return results.some(r => r.sbin !== undefined && r.sbin !== null) ? 'softBin' : 'hardBin';
+  return results.some(dieHasTestData) ? 'value' : defaultBinMode([results]);
+}
+
+/**
+ * The bin mode a map opens in when it has no test values: hard bins when any die has one, else soft bins
+ * when any die has one, else hard bins. The one rule for `buildWaferMap`'s own mode and for the renderers
+ * (single map and gallery), over one or several die lists.
+ */
+export function defaultBinMode(dieLists: ReadonlyArray<ReadonlyArray<{ hbin?: number | null; sbin?: number | null }>>): 'hardBin' | 'softBin' {
+  const any = (pick: (d: { hbin?: number | null; sbin?: number | null }) => unknown) =>
+    dieLists.some(dies => dies.some(d => pick(d) != null));
+  return any(d => d.hbin) ? 'hardBin' : any(d => d.sbin) ? 'softBin' : 'hardBin';
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────

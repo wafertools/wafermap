@@ -2389,8 +2389,11 @@ export function buildSynthesisSection(
         el('span', { color: LABEL_COLOR, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }, synthesisRowShare(it)),
         marked(),
       ]);
-      r.setAttribute('role', 'listitem');
-      list.appendChild(r);
+      // The listitem is the wrapper: a role on the button itself would replace its button role.
+      const item = el('div', {});
+      item.setAttribute('role', 'listitem');
+      item.appendChild(r);
+      list.appendChild(item);
     }
     const more = synthesis.also?.more ?? 0;
     if (more > 0) list.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR }, `and ${more} more`));

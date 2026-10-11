@@ -40,8 +40,9 @@ function severityForCluster(
   return 'info';
 }
 
-/** Shuffles of the fail labels in a cluster's null distribution, and the exceedances that end it early. */
-const PERMUTATIONS = 99;
+/** Fewest shuffles of the fail labels in a cluster's null distribution, the most, and the exceedances that end it early. */
+const MIN_PERMUTATIONS = 99;
+const MAX_PERMUTATIONS = 9999;
 const EXCEEDANCES_TO_STOP = 10;
 
 /**
@@ -82,15 +83,15 @@ class LargestGroupNull {
   /**
    * How often random placement makes a group of at least `size` (Besag and Clifford, 1991): the count stops
    * at {@link EXCEEDANCES_TO_STOP}, with p = exceedances / shuffles so far, so a group no larger than random
-   * placement makes is settled in a few dozen shuffles; otherwise all {@link PERMUTATIONS} are drawn and
+   * placement makes is settled in a few dozen shuffles; otherwise all every shuffle is drawn and
    * p = (1 + exceedances) / (1 + shuffles).
    */
-  pValue(size: number): number {
+  pValue(size: number, permutations: number): number {
     let exceed = 0;
-    for (let i = 0; i < PERMUTATIONS; i++) {
+    for (let i = 0; i < permutations; i++) {
       if (this.at(i) >= size && ++exceed === EXCEEDANCES_TO_STOP) return EXCEEDANCES_TO_STOP / (i + 1);
     }
-    return (1 + exceed) / (1 + PERMUTATIONS);
+    return (1 + exceed) / (1 + permutations);
   }
 }
 
@@ -142,8 +143,10 @@ function remember<T>(cache: Map<string, T>, key: string, limit: number, make: ()
  * The largest group under random placement is the null that selection implies. Comparing every group with
  * the largest also makes the wafer's groups one family (family-wise), so no further correction applies.
  */
-function clusterPermutationPValues(dies: readonly PositionedDie[], failCount: number, sizes: readonly number[]): number[] {
+function clusterPermutationPValues(dies: readonly PositionedDie[], failCount: number, sizes: readonly number[], significanceLevel: number): number[] {
   const n = dies.length;
+  // The smallest p-value is 1 / (1 + shuffles), so a stricter level needs more shuffles to be reachable at all.
+  const permutations = Math.min(MAX_PERMUTATIONS, Math.max(MIN_PERMUTATIONS, Math.ceil(1 / significanceLevel)));
   const layout = layoutKey(dies);
   const fails = failBand(failCount, n);
   const nul = remember(NULLS, `${layout}:${fails}`, 16, () => {
@@ -152,7 +155,7 @@ function clusterPermutationPValues(dies: readonly PositionedDie[], failCount: nu
     const [, a, b] = layout.split(':').map(Number);
     return new LargestGroupNull(sizer, n, fails, (a ^ Math.imul(b, 0x2c1b3c6d) ^ Math.imul(fails + 1, 0x85ebca6b)) >>> 0);
   });
-  return sizes.map(size => nul.pValue(size));
+  return sizes.map(size => nul.pValue(size, permutations));
 }
 
 interface ClusterOptions {
@@ -252,7 +255,7 @@ export function buildClusterFindings(
 
   // The largest group is the statistic, so its p-value is already family-wise over the wafer's groups:
   // it is both the p-value and the adjusted one.
-  const pValues = clusterPermutationPValues(dies, failing.length, tested.map(t => t.k));
+  const pValues = clusterPermutationPValues(dies, failing.length, tested.map(t => t.k), significanceLevel);
   for (let i = 0; i < tested.length; i++) {
     const { component, k, clusterRate, delta, relativeDelta } = tested[i];
     const pValue = pValues[i];

@@ -31,6 +31,17 @@ under `### Breaking`.
 - **"What stands out" shows at most five test chips per item.** When more tests fail on an item's dies, the five failing the most
   dies are chips and the rest are counted ("and 25 more tests"), in the Summary panel and the summary report alike. The tests named
   in the item's sentence are likewise the ones failing the most dies.
+- **A lone regional gain is re-tested without the regions that lean towards a loss.** A region reported as better than the rest of
+  the wafer must still hold when the regions leaning the other way are left out of the rest, whether or not another finding shares
+  its group, so some wafers list one fewer smaller finding.
+- **The cluster permutation test draws as many shuffles as the significance level needs.** 99 at the default level, up to 9,999
+  below it, so a stricter `significanceLevel` can still report a cluster.
+- **A derived-test constant named `site`, `hbin`, `sbin`, `dieX` or `dieY` reads as that constant when written without parentheses.**
+  With parentheses the name is the die's own field, as before.
+- **The excluded-values note counts one test over the yield-eligible dies**, the population the chart draws, and the report's note
+  escapes test names. The Reticle cell yield grid takes the field size as whole dies, as cell placement does. The compact "What
+  stands out" rows keep their button role inside a list. The map's default bin mode is one function (`defaultBinMode`) for
+  `buildWaferMap` and both renderers.
 
 ## [0.35.1] — 2026-10-09
 

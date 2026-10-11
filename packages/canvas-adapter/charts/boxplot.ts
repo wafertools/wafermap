@@ -239,7 +239,7 @@ export function renderBoxplotPanel(options: BoxplotPanelOptions): BoxplotPanelHa
       // full population. Saying how many points sit outside the view is what keeps
       // that honest.
       + (lastClippedCount ? ` · axis clipped, ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside` : '')
-      + (activeTest !== null ? excludedNote(currentDataItems().flatMap(i => i.dies ?? []), activeTest) : '');
+      + excludedNote(currentDataItems().flatMap(i => i.dies ?? []), activeTest);
   }
   syncHint();
   syncDrillChrome();

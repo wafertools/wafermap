@@ -333,7 +333,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     // The clipped count is stated, never silent: these values exist and are still
     // in every statistic — only this chart's range excludes them.
     statsLabel.textContent = `max ${maxCount} dies/bucket`
-      + excludedNote(chartDies(), activeTest!)
+      + excludedNote(chartDies(), activeTest)
       + (lastClippedCount ? ` · ${lastClippedCount} value${lastClippedCount === 1 ? '' : 's'} outside clipped range` : '')
       + (options.onSelectBucket ? ' · click a bar to chart or tabulate its dies' : '');
     body.appendChild(statsLabel);
@@ -507,7 +507,7 @@ export function renderHistogramPanel(options: HistogramPanelOptions): HistogramP
     statsLabel.dataset.wmapCaption = '1';
     Object.assign(statsLabel.style, { fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.xxs } as Partial<CSSStyleDeclaration>);
     statsLabel.textContent = `${series.length} groups · max ${maxCount} dies/bucket`
-      + excludedNote(chartDies(), activeTest!)
+      + excludedNote(chartDies(), activeTest)
       + (options.onSelectBucket ? ' · click a column to chart or tabulate its dies' : '');
     body.appendChild(statsLabel);
 

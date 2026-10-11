@@ -11,7 +11,8 @@
  * and are left alone.
  */
 import type { DieTable } from '../core/dieTable.js';
-import { excludedCounts, withExcluded, type DieData } from '../core/dieTable.js';
+import { excludedCountFor, withExcluded, type DieData } from '../core/dieTable.js';
+import { isYieldEligibleDie, type Die } from '../core/dies.js';
 import type { TestDef, WaferWarning } from './buildWaferMap.js';
 import { aboveHigh, belowLow } from './spec.js';
 
@@ -97,10 +98,9 @@ export function applyValueFilter(
  * The caption fragment for `testNumber` over `dies`: " · 3 values outside validity limits excluded", or ''
  * when the filter took nothing out of them. One wording for every chart caption.
  */
-export function excludedNote(dies: readonly DieData[], testNumber: number): string {
-  const found = excludedCounts(dies);
-  const count = found?.counts.get(testNumber) ?? 0;
-  return found && count > 0 ? ` · ${count.toLocaleString('en-GB')} value${count === 1 ? '' : 's'} outside ${limitSetName(found.by)} excluded` : '';
+export function excludedNote(dies: readonly DieData[], testNumber: number | null): string {
+  const found = testNumber === null ? undefined : excludedCountFor(dies.filter(d => isYieldEligibleDie(d as Die)), testNumber);
+  return found ? ` · ${found.count.toLocaleString('en-GB')} value${found.count === 1 ? '' : 's'} outside ${limitSetName(found.by)} excluded` : '';
 }
 
 /** Sums per-wafer outcomes into one (a lot is filtered wafer by wafer). */
