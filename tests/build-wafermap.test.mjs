@@ -496,3 +496,38 @@ test('a fully coordinate-less wafer (no positioned dies at all) does not throw',
   assert.equal(result.dataCoverage.ratio, 0, 'ratio must not be NaN when totalDies is 0');
   assert.equal(result.yield.totalDies, 2, 'yield still counts unpositioned dies — it is not spatial');
 });
+
+// The SEMI flat and notch sizes are millimetres. A wafer sized in die pitches
+// (no die size known) took them as pitches: a ~46-pitch wafer got a 32.5-pitch
+// flat that cut off its bottom rows of probed dies (tsmap, pystdf's lot2.stdf,
+// WCR WF_FLAT = 'D'). The side is kept; the size is not invented.
+test('orientation mark: side kept, no cut, when the diameter is in die pitches', () => {
+  const results = [];
+  for (let x = -20; x <= 20; x++) for (let y = -20; y <= 20; y++) {
+    if ((Math.abs(x) + 0.5) ** 2 + (Math.abs(y) + 0.5) ** 2 <= 400) results.push({ x, y, hbin: 1 });
+  }
+  const pitches = buildWaferMap({ results, waferConfig: { notch: { type: 'bottom' } } });
+  assert.deepEqual(pitches.wafer.notch, { type: 'bottom', length: 0 });
+  const mm = buildWaferMap({ results, waferConfig: { notch: { type: 'bottom' }, diameter: 100 }, dieConfig: { width: 2.4, height: 2.4 } });
+  assert.deepEqual(mm.wafer.notch, { type: 'bottom', length: 32.5 });
+});
+
+// A bin-occurrence stack stamps the counted bin on every die so the map can name
+// it; the data is the count in test 0. Analysed as bins, a bin found on a small
+// share of a lot's dies came out as "near-full — 100% of dies failing" with a 0%
+// yield (tsmap gallery, stacked hard bins).
+test('analyzeWaferMap: a countBin stack is not read as every die in that bin', async () => {
+  const { analyzeWaferMap } = await import('../dist/packages/stats/index.js');
+  const wafers = [0, 1, 2].map(w => {
+    const results = [];
+    for (let x = -20; x <= 20; x++) for (let y = -20; y <= 20; y++) {
+      if (x * x + y * y <= 400) results.push({ x, y, hbin: (x + y + w) % 13 === 0 ? 5 : 1 });
+    }
+    return results;
+  });
+  const stack = buildWaferMap({ lotStack: { results: wafers, method: 'countBin', targetBin: 5 } });
+  const summary = analyzeWaferMap(stack);
+  assert.ok(!summary.findings.some(f => /near-full|100% of dies/.test(f.summary ?? '')),
+    summary.findings.map(f => f.summary).join(' | '));
+  assert.notEqual(summary.stats.yieldPercent, 0, 'a bin stamp is not a 0% yield');
+});

@@ -3,7 +3,7 @@ import type { DieMetadata, WaferMetadata } from '../core/metadata.js';
 import type { Wafer } from '../core/wafer.js';
 import type { Reticle } from '../core/reticle.js';
 import { createWafer } from '../core/wafer.js';
-import { isYieldEligibleDie, getDieKey, hasPosition } from '../core/dies.js';
+import { isYieldEligibleDie, getDieKey, hasPosition, positionKey } from '../core/dies.js';
 import { applyOrientation, transformDies, clipDiesToWafer } from '../core/transforms.js';
 import { generateDies } from '../core/dies.js';
 import { dieHasAnyTestData, dieLink, finaliseDie, linkDie, recordedVerdict, recordedVerdictsReader, tableFromRows, testValue, testsPresent, VERDICT_FAIL, VERDICT_NONE, VERDICT_PASS } from '../core/dieTable.js';
@@ -21,7 +21,7 @@ export type { DerivedTestDef } from './derivedTests/apply.js';
 import type { PlotMode } from './buildView.js';
 import { isStdfBin, isStdfCoord, isStdfTestNumber, isStdfSite, STDF_BIN_MAX, STDF_COORD_MAX, STDF_TEST_NUM_MAX, STDF_SITE_MAX } from '../core/stdf.js';
 import { hasAnyKey, maxOf, minOf, modeOf } from '../core/utils.js';
-import { aggregateValues, aggregateBinCounts, stackHoldsMeasurements, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
+import { aggregateValues, aggregateBinCounts, stackHoldsMeasurements, stackBinsAreData, type AggregationMethod as CoreAggregationMethod } from '../core/aggregates.js';
 import { normalizePassBins } from '../core/passBins.js';
 import { defaultRingCount } from '../core/ringCount.js';
 import {
@@ -615,6 +615,12 @@ export interface WaferWarning {
    *   lands in ring 1 — and ring/quadrant/edge findings then describe the assumed
    *   wafer, not the probed area. A genuinely partial map looks identical and is
    *   equally worth reporting, so the message names both causes.
+   * - `'implausible-center'` — a supplied `waferConfig.center`, with no diameter, lies
+   *   more than the dies' own span outside their bounding box on either axis. It
+   *   was ignored and the centre inferred from the dies, since sizing the wafer to
+   *   reach the dies from it would draw a wafer many times the die extent. Typical
+   *   source: a placeholder centre in a tester's WCR record. Supply
+   *   `waferConfig.diameter` too if the centre is real.
    * - `'test-count-capped'` — raised by `analyzeWaferMap`: more tests were found in
    *   the die data than the analysis cap allows, so test-value analysis was skipped
    *   entirely and NO test findings were produced. Pass `testNumbers` to scope it.
@@ -678,7 +684,7 @@ export interface WaferWarning {
       | 'edge-exclusion-exceeds-radius' | 'analysis-option-corrected'
       | 'bin-colors-shared' | 'pass-bins-mixed' | 'ring-count-mixed' | 'input-field-removed'
       | 'input-values-not-numbers' | 'input-values-outside-stdf' | 'retests-by-part-id'
-      | 'derived-test-invalid' | 'values-excluded' | (string & {});
+      | 'derived-test-invalid' | 'values-excluded' | 'implausible-center' | (string & {});
   /** Human-readable explanation, suitable for direct display. */
   message: string;
   /**
@@ -1275,6 +1281,52 @@ function resolveGridOriginOffset(
  * Extents are measured in the die-col frame (using `offsetX`/`offsetY`), so the
  * result is consistent with how die positions are computed downstream.
  */
+/**
+ * Whether a supplied wafer centre is too far from the probed dies to be one.
+ *
+ * With no diameter, the wafer is sized to reach the furthest die from the
+ * centre, so a centre far outside the data draws a wafer many times the die
+ * extent with the dies in one corner. A tester's WCR record can carry exactly
+ * that: a placeholder centre, with its size fields left at zero.
+ *
+ * Judged per axis against the dies' own span: a centre more than one span
+ * beyond the bounding box is implausible. Partial data keeps its centre: a
+ * probed half or quadrant has the true centre at the box's edge or corner,
+ * well inside that margin. Below MIN_DIES_FOR_FILL_CHECK dies an extent is not
+ * a measurement (a small retest cluster can sit far from the true centre), so
+ * the centre is trusted.
+ */
+function implausibleCenter(gridPoints: Array<{ x: number; y: number }>, center: { x: number; y: number }): boolean {
+  if (gridPoints.length < MIN_DIES_FOR_FILL_CHECK) return false;
+  const b = gridBounds(gridPoints);
+  const outside = (c: number, lo: number, hi: number) => {
+    const span = hi - lo + 1;
+    return c < lo - span || c > hi + span;
+  };
+  return outside(Math.round(center.x), b.xMin, b.xMax) || outside(Math.round(center.y), b.yMin, b.yMax);
+}
+
+function gridBounds(gridPoints: Array<{ x: number; y: number }>) {
+  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+  for (const p of gridPoints) {
+    const x = Math.round(p.x), y = Math.round(p.y);
+    if (x < xMin) xMin = x; if (x > xMax) xMax = x;
+    if (y < yMin) yMin = y; if (y > yMax) yMax = y;
+  }
+  return { xMin, xMax, yMin, yMax };
+}
+
+/** Opening phrase of the implausible-center advisory. */
+const IMPLAUSIBLE_CENTER_MARKER = 'The supplied wafer centre';
+
+function implausibleCenterMessage(gridPoints: Array<{ x: number; y: number }>, center: { x: number; y: number }): string {
+  const b = gridBounds(gridPoints);
+  return `${IMPLAUSIBLE_CENTER_MARKER} (${center.x}, ${center.y}) is far outside the probed dies ` +
+    `(X ${b.xMin}…${b.xMax}, Y ${b.yMin}…${b.yMax}), so it was ignored and the centre was inferred from the dies. ` +
+    `Used as given, it would draw a wafer many times the die extent with the dies in one corner. ` +
+    `If it is the real centre, supply waferConfig.diameter as well.`;
+}
+
 function resolveCenterAnchor(
   gridPoints: Array<{ x: number; y: number }>,
   offsetX: number,
@@ -1485,11 +1537,16 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
     ratio: totalDies > 0 ? filledDies / totalDies : 0 };
 }
 
-function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclude' | 'denominator-only' = 'exclude'): YieldSummary {
+function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclude' | 'denominator-only' = 'exclude', binsAreData = true): YieldSummary {
   const passBinSet = new Set(passBins);
   const fullDies = dies.filter(d => !d.partial);
   const edgeCount = fullDies.filter(d => d.edgeExcluded).length;
   const partialDies = dies.filter(d => d.partial).length;
+  // A stack whose bins are not data (stackBinsAreData) has no yield, rather than
+  // one read off the bin it stamps on every die.
+  if (!binsAreData) {
+    return { passDies: 0, failDies: 0, edgeExcludedDies: edgeCount, partialDies, totalDies: 0, yieldPercent: null, yieldPercentGross: null };
+  }
 
   let passDies = 0;
   let failDies = 0;
@@ -1622,11 +1679,30 @@ const PART_ID_DEFAULT_SHARE = 0.2;
  * `'partId'`, an earlier record with the same part ID at another position is
  * removed too. Merging by part ID is an inference, so it is reported.
  */
+/**
+ * True when `applyRetestPolicy` would return its input unchanged: every die has a
+ * position, no two share one (by `positionKey`, so the same identity the slots
+ * use) and none supersedes another. One pass over number keys, so a file without
+ * retests (most of them) skips the string-keyed slot maps — 0.14 s on a
+ * 119k-die wafer. Any other case takes the full path.
+ */
+function noRetests(dies: readonly DieResult[]): boolean {
+  const seen = new Set<number | string>();
+  for (const d of dies) {
+    if (d.supersedes !== undefined || !hasPosition(d)) return false;
+    const key = positionKey(d);
+    if (seen.has(key)) return false;
+    seen.add(key);
+  }
+  return true;
+}
+
 function applyRetestPolicy(
   allResults: DieResult[],
   policy: 'last' | 'first' | 'best' | 'worst',
   passBins: number[],
 ): { results: DieResult[]; warning: WaferWarning | undefined } {
+  if (noRetests(allResults)) return { results: allResults.slice(), warning: undefined };
   const passBinSet = new Set(passBins);
   // 'best': pass beats fail; within same category, lower hbin wins.
   // 'worst': fail beats pass; within same category, higher hbin wins.
@@ -1889,7 +1965,7 @@ export function defaultBinMode(dieLists: ReadonlyArray<ReadonlyArray<{ hbin?: nu
  * supported input and is inferred confidently — it is NOT a warning. The
  * advisories are `'partial-coverage'` (data not spanning a full symmetric wafer,
  * so the inferred diameter/centre may be wrong), `'geometry-conflict'`,
- * `'non-standard-diameter'` and `'diameter-exceeds-die-extent'`. Detection lives
+ * `'non-standard-diameter'`, `'diameter-exceeds-die-extent'` and `'implausible-center'`. Detection lives
  * at the inference site, which records each advisory with its code; here each
  * gains its severity and the inference confidence.
  */
@@ -1913,6 +1989,7 @@ function buildWarnings(advisories: GeometryAdvisory[], inference: WaferMapResult
       // supported input, and flagging it in red left tsmap's own diameter setting
       // showing an error nobody could clear.)
       severity: (code === 'non-standard-diameter' || code === 'diameter-exceeds-die-extent'
+        || code === 'implausible-center'
         ? 'warning' : 'error') as WaferWarning['severity'],
       confidence: inference.wafer.confidence };
   });
@@ -2210,11 +2287,19 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
 
   const { flipX, flipY } = resolveAxisFlips(norm.dieOpts, origin);
 
+  // A supplied centre far outside the probed dies, with no diameter to bound
+  // the wafer, is ignored and reported (see implausibleCenter).
+  const centerRejected = norm.waferOpts?.diameter === undefined
+    && norm.waferOpts?.center !== undefined
+    && implausibleCenter(gridPoints, norm.waferOpts.center);
+  const center = centerRejected ? undefined : norm.waferOpts?.center;
+  if (centerRejected) advisories.push({ code: 'implausible-center', message: implausibleCenterMessage(gridPoints, norm.waferOpts!.center!) });
+
   // Physical offset placing the wafer centre at (0,0).  When waferConfig.center
   // is given that prober coordinate is anchored to (0,0); otherwise the observed
   // data extent is centred (correct only for full, symmetric coverage).
   const { colMidX, colMidY, anchored } = resolveCenterAnchor(
-    gridPoints, offsetX, offsetY, pitchX, pitchY, norm.waferOpts?.center,
+    gridPoints, offsetX, offsetY, pitchX, pitchY, center,
   );
 
   let waferDiameter = norm.waferOpts?.diameter;
@@ -2307,7 +2392,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
   // already told us the map covers part of the wafer. Reporting low fill back to
   // them would be flagging the fix.
   if (norm.waferOpts?.diameter !== undefined
-      && norm.waferOpts.center === undefined
+      && center === undefined
       && requiredRadius > 0
       && gridPoints.length >= MIN_DIES_FOR_FILL_CHECK) {
     const fill = requiredRadius / (waferDiameter / 2);
@@ -2374,6 +2459,7 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
 
   const wafer = createWafer({
     diameter:    waferDiameter,
+    units,
     notch:       norm.waferOpts?.notch,
     orientation: norm.waferOpts?.orientation ?? 0,
     metadata:    norm.waferOpts?.metadata,
@@ -2457,7 +2543,8 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     passBins: norm.passBins,
     ...(valueFilter ? { valueFilter } : {}),
     ringCount: norm.ringCount,
-    yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode),
+    yield: computeYield(allDies, norm.passBins, norm.edgeDieYieldMode,
+      stackBinsAreData(norm.lotStackOpts !== undefined, norm.lotStackOpts?.method)),
     reticles,
     hbinDefs: norm.hbinDefs,
     sbinDefs: norm.sbinDefs,

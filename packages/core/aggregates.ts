@@ -13,6 +13,19 @@ export function stackHoldsMeasurements(method: string): boolean {
   return method !== 'stddev' && method !== 'count';
 }
 
+/**
+ * Whether the bins on a stack's dies are data. On a wafer and on a 'mode' stack
+ * (each position's most frequent bin) they are. A bin-occurrence stack
+ * ('countBin', 'percent') stamps the counted bin on every die so the map can name
+ * it; its data is the count in test 0, so it has no yield and no bin findings.
+ * A value stack ('mean' and the rest) keeps its template dies' bins, which
+ * describe one wafer, not the stack. The one rule for the build's yield and the
+ * analysis.
+ */
+export function stackBinsAreData(isLotStack: boolean | undefined, method: string | undefined): boolean {
+  return !isLotStack || method === 'mode';
+}
+
 /** Minimal die shape required by aggregation functions — satisfied by both Die and DieResult. */
 export interface DieLike {
   x: number;

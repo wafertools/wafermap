@@ -26,6 +26,41 @@ under `### Breaking`.
 
 ### Changed
 
+- **A supplied wafer centre far outside the probed dies is ignored, with a warning.** When `waferConfig.center` is given without a
+  `diameter` and lies more than the dies' own span outside their bounding box on either axis (with at least 20 dies), the centre is
+  inferred from the dies instead and an `implausible-center` warning names the supplied value and the die extent. A wafer is
+  otherwise sized to reach the dies from that centre. A centre at the edge or corner of partial data, a centre with a diameter, and
+  a centre for fewer than 20 dies are used as given. This can move the plotted wafer outline and ring assignment for such input.
+- **A wafer sized in die pitches draws no flat or notch into its outline.** With no die size, the diameter is a count of die
+  pitches, and the SEMI flat and notch sizes are millimetres, so `waferConfig.notch` keeps its side (the orientation marker) and
+  `wafer.notch.length` is 0. A wafer whose diameter is in millimetres keeps its standard flat or notch. This changes the drawn outline,
+  and the dies counted inside the wafer, for a pitch-sized wafer with a notch side set.
+- **The correlation matrix pairs at most 300 tests.** Above 300 parametric tests, the tests entering the matrix are chosen first:
+  the most dies outside their test limits, then the widest spread against the limit window. The panel says so ("Among the 300 of
+  2,002 tests with the most dies outside their limits, then the widest spread"), and the matrix carries `testSample`. A file with
+  thousands of tests opens the Correlation view in about a second.
+- **A bin-count stack is analysed as counts, and has no yield.** A `countBin` or `percent` lot stack, and each card of the gallery's
+  stacked hard and soft bin view, carries the counted bin on every die so the map can name it; its data is the count per position.
+  Its analysis no longer reads that bin as every die's verdict, so such a card no longer reports "near-full — 100% of dies failing"
+  or a 0% yield: its yield is not stated, and value findings on the count follow the same option as a stacked test value. A value
+  stack (`mean`, `median` and the rest) likewise no longer reports soft-bin findings from its template wafer's bins.
+- **A dense map is drawn without light bands.** When the kerf between dies would be narrower than one device pixel, the dies
+  are drawn edge to edge across their full pitch, each edge on a whole device pixel, and without die outlines; a kerf and edges
+  a fraction of a pixel wide had beaten against the pixel grid into horizontal bands and washed the colours out. Zoomed in until
+  the kerf is a pixel or more, the map is drawn as before.
+- **Out-of-spec marks are left off dies smaller than 5 CSS pixels.** Below that size a ▽/△ mark is larger than its die and covers
+  its neighbours. The colorbar says "▽△ limit marks: zoom in" in place of the marks' key; zooming in brings them back.
+- **The correlation matrix caps its work at 250 million pair updates.** Past that (300 tests over more than ~5,600 dies), the dies are
+  thinned to an even spread that fits, and the panel's sample note gives the count.
+- **Large lots analyse and render faster.** Per-wafer pass-rate tallies are counted once and reused by the load-time pass, the Summary
+  panel and Insights; a wafer without retests skips the retest grouping; 8-connected components are labelled over a grid index; a
+  cluster search stops when every die or none fails; regions are built only when a finding can use them; and the lot report's test
+  table takes its statistics from the pooled pass the panel already ran when wafers carry none of their own.
+- **Insights hides a single map's docked Summary panel completely.** The panel's title row and close button no longer show over the
+  chart suite while Insights is open in `renderWaferMap`.
+
+- **The Insights Data tab and the Tables menu list Statistics, Wafers, then Dies.** The views run from the coarsest to the finest; a
+  single-wafer population still lists Statistics and Dies.
 - **A toolbar divider shows only where a visible control sits on both sides of it.** A bordered toolbar with no visible control is
   hidden, so a toolbar whose groups are hidden (Insights open, no warnings, no Summary button) leaves no stray line.
 - **"What stands out" shows at most five test chips per item.** When more tests fail on an item's dies, the five failing the most

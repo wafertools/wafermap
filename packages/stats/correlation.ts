@@ -85,6 +85,13 @@ export interface CorrelationMatrix {
    * library exists to prevent. `correlationSampleNote()` is the wording.
    */
   sample?: { of: number; used: number };
+  /**
+   * Present only when the matrix covers a selection of the tests — see
+   * `CORRELATION_TEST_BUDGET`. `of` is how many parametric tests there were, `used`
+   * how many entered the matrix. Same rule as `sample`: a surface showing the matrix
+   * says so (`correlationSampleNote`).
+   */
+  testSample?: { of: number; used: number };
 }
 
 /**
@@ -121,11 +128,73 @@ function strideIndices(length: number, budget: number): number[] {
   return out;
 }
 
-/** The sentence a panel puts next to a sampled matrix. */
-export function correlationSampleNote(sample: CorrelationMatrix['sample']): string | undefined {
-  if (!sample) return undefined;
-  return `From a ${sample.used.toLocaleString()}-die sample of ${sample.of.toLocaleString()}, `
-    + `spread evenly across the lot`;
+/**
+ * Tests entering the pairwise pass of `buildCorrelationMatrix`.
+ *
+ * The pass is quadratic in tests: 6 accumulators per pair and one cell per ordered
+ * pair. A real test program reaches thousands of parametric tests — at 2,002 the
+ * matrix took 38 s to build, at 15,000 (112M pairs, ~5 GB of accumulators) it never
+ * finished. The panel shows at most 100 tests (20 by default), the strongest pairs
+ * first, so the candidates are chosen before pairing instead of after.
+ *
+ * 300 tests is 44,850 pairs: about a second and a half on a 3,000-die wafer.
+ */
+export const CORRELATION_TEST_BUDGET = 300;
+
+/**
+ * Pair updates (test pairs × dies) the pairwise pass may make. Within it the die
+ * sample is `CORRELATION_DIE_BUDGET`; past it the dies are thinned, evenly, to fit:
+ * 300 tests (44,850 pairs) read about 5,600 dies, where the standard error of r is
+ * ~0.013 — while 300 tests over the full 25,000-die budget was 1.1×10⁹ updates and
+ * 12 s in a browser.
+ */
+export const CORRELATION_WORK_BUDGET = 250_000_000;
+
+/** The sentence a panel puts next to a matrix built from a sample of the dies or the tests. */
+export function correlationSampleNote(m: Pick<CorrelationMatrix, 'sample' | 'testSample'>): string | undefined {
+  const parts: string[] = [];
+  if (m.testSample) {
+    parts.push(`Among the ${m.testSample.used.toLocaleString()} of ${m.testSample.of.toLocaleString()} tests with `
+      + `the most dies outside their limits, then the widest spread`);
+  }
+  if (m.sample) {
+    parts.push(`${parts.length ? 'from' : 'From'} a ${m.sample.used.toLocaleString()}-die sample of `
+      + `${m.sample.of.toLocaleString()}, spread evenly across the lot`);
+  }
+  return parts.length ? parts.join(', ') : undefined;
+}
+
+/**
+ * The `budget` tests most worth pairing, in their original order: most dies outside
+ * the test limits first (a failing test is the one a correlation is wanted for), then
+ * the widest spread — the standard deviation as a share of the limit window, or of
+ * the mean when a limit is missing. One pass over the dies, linear in tests.
+ */
+function selectCorrelationTests(
+  tests: CorrelationTestInfo[], defs: Map<number, TestDef>, dies: Die[], budget: number,
+): CorrelationTestInfo[] {
+  const n = tests.length;
+  const cnt = new Float64Array(n), sum = new Float64Array(n), sq = new Float64Array(n), fails = new Float64Array(n);
+  const lo = tests.map(t => defs.get(t.testNumber)?.limitLow);
+  const hi = tests.map(t => defs.get(t.testNumber)?.limitHigh);
+  for (const die of dies) {
+    for (let i = 0; i < n; i++) {
+      const v = testValue(die, tests[i].testNumber);
+      if (v === undefined || !Number.isFinite(v)) continue;
+      cnt[i]++; sum[i] += v; sq[i] += v * v;
+      if ((lo[i] !== undefined && v < lo[i]!) || (hi[i] !== undefined && v > hi[i]!)) fails[i]++;
+    }
+  }
+  const spread = (i: number): number => {
+    if (cnt[i] < 3) return -1;
+    const mean = sum[i] / cnt[i];
+    const sd = Math.sqrt(Math.max(0, sq[i] / cnt[i] - mean * mean));
+    const window = lo[i] !== undefined && hi[i] !== undefined ? hi[i]! - lo[i]! : Math.abs(mean);
+    return window > 0 ? sd / window : 0;
+  };
+  const score = tests.map((_, i) => ({ i, fails: cnt[i] < 3 ? -1 : fails[i], spread: spread(i) }));
+  score.sort((a, b) => b.fails - a.fails || b.spread - a.spread || a.i - b.i);
+  return score.slice(0, budget).map(s => s.i).sort((a, b) => a - b).map(i => tests[i]);
 }
 
 function testInfoFrom(testDefs: TestDef[]): CorrelationTestInfo[] {
@@ -135,16 +204,38 @@ function testInfoFrom(testDefs: TestDef[]): CorrelationTestInfo[] {
 }
 
 /**
- * Pearson correlation matrix for every test in `testDefs` across every die
- * in `dies`.
+ * Pearson correlation matrix for the parametric tests in `testDefs` across the
+ * dies in `dies` — every test up to `CORRELATION_TEST_BUDGET` (above it, the
+ * chosen ones: `testSample`), every die up to `CORRELATION_DIE_BUDGET` (above it,
+ * an even spread: `sample`).
  *
  * Running-accumulator algorithm: one die-walk, 6 Float64 accumulators per
  * upper-triangle pair (count, sumX, sumY, sumXX, sumYY, sumXY). No pair
  * arrays stored — O(N²) memory, O(N×D + N²) time.
  */
 export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): CorrelationMatrix {
-  const tests = testInfoFrom(testDefs);
-  if (tests.length < 2) return { tests, cells: [] };
+  const allTests = testInfoFrom(testDefs);
+  if (allTests.length < 2) return { tests: allTests, cells: [] };
+
+  // With test values, and in a stable order, so the sample can stride across the
+  // whole population rather than over dies that may carry nothing.
+  const withValues = dies.filter(dieHasValues);
+  const pickSample = withValues.length > CORRELATION_DIE_BUDGET;
+  const picked = pickSample
+    ? strideIndices(withValues.length, CORRELATION_DIE_BUDGET).map(i => withValues[i])
+    : withValues;
+
+  const testSampling = allTests.length > CORRELATION_TEST_BUDGET;
+  const tests = testSampling
+    ? selectCorrelationTests(allTests, new Map(testDefs.flatMap(d => d.testNumber === undefined ? [] : [[d.testNumber, d] as const])), picked, CORRELATION_TEST_BUDGET)
+    : allTests;
+
+  // The pair pass reads at most CORRELATION_WORK_BUDGET pair updates: past it, an
+  // even spread of the sample, never a prefix (see strideIndices).
+  const pairCount = (tests.length * (tests.length - 1)) / 2;
+  const dieBudget = Math.max(1, Math.floor(CORRELATION_WORK_BUDGET / Math.max(1, pairCount)));
+  const read = picked.length > dieBudget ? strideIndices(picked.length, dieBudget).map(i => picked[i]) : picked;
+  const sampling = read.length < withValues.length;
 
   const n = tests.length;
   const nums = tests.map(t => t.testNumber);
@@ -168,14 +259,6 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
     // xi < yi guaranteed at call sites
     return xi * n - ((xi * (xi + 1)) >> 1) + (yi - xi - 1);
   }
-
-  // With test values, and in a stable order, so the sample can stride across the
-  // whole population rather than over dies that may carry nothing.
-  const withValues = dies.filter(dieHasValues);
-  const sampling = withValues.length > CORRELATION_DIE_BUDGET;
-  const read = sampling
-    ? strideIndices(withValues.length, CORRELATION_DIE_BUDGET).map(i => withValues[i])
-    : withValues;
 
   // Hoisted out of the die loop: these were allocated per die, which is two
   // allocations per die (800k on a 400k-die lot) for scratch that is fully
@@ -222,9 +305,11 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
       cells.push({ xIndex: xi, yIndex: yi, r: pearsonFromAccumulators(pi), n: cnt[pi] });
     }
   }
-  return sampling
-    ? { tests, cells, sample: { of: withValues.length, used: read.length } }
-    : { tests, cells };
+  return {
+    tests, cells,
+    ...(sampling ? { sample: { of: withValues.length, used: read.length } } : {}),
+    ...(testSampling ? { testSample: { of: allTests.length, used: tests.length } } : {}),
+  };
 }
 
 export interface CorrelationSummary {

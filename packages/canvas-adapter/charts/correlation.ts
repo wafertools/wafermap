@@ -222,18 +222,21 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   let draw: () => void = () => {};
 
-  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[], pairN: number | null, sample: CorrelationMatrix['sample'], anyDerived: boolean): void {
+  function renderSummary(strongPairs: number, moderatePairs: number, hiddenWeakPairs: number, strongestPair: { xLabel: string; yLabel: string; r: number } | null, mixedFields: string[], pairN: number | null, sampled: Pick<CorrelationMatrix, 'sample' | 'testSample'>, anyDerived: boolean): void {
     hintRow.innerHTML = '';
 
     // A sampled matrix must say so where the reader cannot miss it. Above
     // ~25k dies the matrix is computed from an even spread rather than every die
-    // (see CORRELATION_DIE_BUDGET) — a sound estimate, but an unlabelled one is a
-    // number the reader takes for the whole population.
-    const sampleNote = correlationSampleNote(sample);
+    // (see CORRELATION_DIE_BUDGET), and above 300 tests from a selection of the
+    // tests (CORRELATION_TEST_BUDGET) — sound, but an unlabelled one is a number
+    // the reader takes for the whole population.
+    const sampleNote = correlationSampleNote(sampled);
     if (sampleNote) {
       const note = card.ownerDocument.createElement('div');
       note.dataset.wmapCaption = '1';
-      note.textContent = `${sampleNote} — r is an estimate, not the whole population.`;
+      note.textContent = sampled.sample
+        ? `${sampleNote} — r is an estimate, not the whole population.`
+        : `${sampleNote}.`;
       Object.assign(note.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
       hintRow.appendChild(note);
     }
@@ -514,7 +517,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     lastMatrix = matrix;
     // `fullMatrix`'s sample note, not `matrix`'s: filterCorrelationMatrix narrows
     // which tests are shown, and does not carry the sampling forward.
-    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields, pairN, fullMatrix.sample, matrix.tests.some(t => t.derived));
+    renderSummary(strongPairs, moderatePairs, hiddenWeakPairs, strongestPair, mixedFields, pairN, fullMatrix, matrix.tests.some(t => t.derived));
     draw = buildMatrixView(matrix);
     draw();
   }

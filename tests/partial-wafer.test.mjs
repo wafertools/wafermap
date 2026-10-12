@@ -287,3 +287,38 @@ test('invariant: geometry-conflict is its own warning code, distinct from partia
   // and the string mirror that code used to be recovered from is gone.
   for (const result of [conflict, partial]) assert.ok(!('warnings' in result.inference));
 });
+
+// ── A supplied centre far outside the dies ──────────────────────────────────
+// A tester's WCR record can carry a placeholder centre with its size fields
+// zero: the real lot2.stdf (pystdf) says (128, 128) for dies at X 4…45,
+// Y −45…−3. Used as an anchor with no diameter, the wafer is sized to reach
+// the dies from there — about ten times the die extent.
+
+test('centre: one far outside the dies, with no diameter, is ignored and reported', () => {
+  const results = disc(24, -24, 20);
+  const r = buildWaferMap({ results, waferConfig: { center: { x: 128, y: 128 } } });
+  const w = r.warnings.find((x) => x.code === 'implausible-center');
+  assert.ok(w, `expected implausible-center, got ${r.warnings.map((x) => x.code)}`);
+  assert.equal(w.severity, 'warning');
+  assert.match(w.message, /\(128, 128\)/);
+  const plain = buildWaferMap({ results });
+  assert.equal(r.wafer.diameter, plain.wafer.diameter, 'sized as if no centre had been given');
+});
+
+test('centre: a partial quadrant keeps its supplied centre at the box corner', () => {
+  const results = disc(0, 0, 15, (x, y) => x >= 0 && y >= 0);
+  const r = buildWaferMap({ results, waferConfig: { center: { x: 0, y: 0 } } });
+  assert.ok(!r.warnings.some((x) => x.code === 'implausible-center'));
+});
+
+test('centre: a far centre is kept when a diameter bounds the wafer', () => {
+  const results = disc(24, -24, 20);
+  const r = buildWaferMap({ results, ...anchoredConfig({ x: 128, y: 128 }) });
+  assert.ok(!r.warnings.some((x) => x.code === 'implausible-center'));
+});
+
+test('centre: a handful of dies is too few to judge, so the centre is trusted', () => {
+  const results = [{ x: 60, y: 0, hbin: 1 }, { x: 61, y: 0, hbin: 1 }, { x: 60, y: 1, hbin: 1 }];
+  const r = buildWaferMap({ results, waferConfig: { center: { x: 0, y: 0 } } });
+  assert.ok(!r.warnings.some((x) => x.code === 'implausible-center'));
+});

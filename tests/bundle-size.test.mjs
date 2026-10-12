@@ -117,7 +117,9 @@ const THRESHOLDS = {
   // budget keeps ~2% over that for CI's zlib.
   // Raised deliberately from 72_000: the classifier's line and radial-profile features (a scratch at any angle, a
   // donut by its radial fail rates) took the data layer to ~72.1 KB locally; the budget keeps ~1.5% over that.
-  'wafermap (root)':            73_200,   // gzipped bytes — measured ~72.1 KB
+  // Raised deliberately from 73_200: the correlation test budget (a candidate pick before the pairwise pass), the
+  // retest fast path, the per-wafer pass-rate tally cache and the stack-bins rule took it to ~73.3 KB; ~1.5% over.
+  'wafermap (root)':            74_400,   // gzipped bytes — measured ~73.3 KB
   // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
   // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
   // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.
@@ -127,7 +129,9 @@ const THRESHOLDS = {
   // initial chunk to ~140.3 KB locally; the budget keeps ~1.5% over that.
   // Raised deliberately from 142_500: the labelled Summary button, the panel's own close button with its click shield and
   // the Findings section's labelled expander took the initial chunk to ~142.5 KB locally; the budget keeps ~1% over that.
-  'wafermap/render (initial)':  144_000,  // gzipped bytes — measured ~142.5 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
+  // Raised deliberately from 144_000: hiding the docked Summary panel behind Insights, the tiny-die limit-mark note,
+  // count-stack card analysis and the per-test pass-rate tally cache took the initial chunk to ~144.0 KB; ~1% over.
+  'wafermap/render (initial)':  145_500,  // gzipped bytes — measured ~144.0 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {

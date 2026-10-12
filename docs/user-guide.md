@@ -874,7 +874,7 @@ Right-click on any wafer's bar, box or point opens the same menu for the whole w
 *Data sub-tab, Statistics view: the Test Values and Functional Tests tables for the lot, each with its own CSV button; **Dies** and **Wafers** are one click away.*
 
 The **Data** sub-tab shows the wafers Insights is scoped to as tables, one at a
-time, chosen with the **Statistics | Dies | Wafers** control. It follows the
+time, chosen with the **Statistics | Wafers | Dies** control. It follows the
 same "Group by" and "Show" scope as the charts.
 
 - **Statistics** — the **Test Values** table (count, min, quartiles, mean, σ,

@@ -4,6 +4,7 @@ import { computeCapability, computeTestFlagYield, computeRegionYield } from './s
 import { binPassSets } from '../renderer/binColors.js';
 import { diePassStatus, isYieldEligibleDie, getDieKey, isPositionedDie, positionKey } from '../core/dies.js';
 import { dieHasValues, testsPresent, testValue } from '../core/dieTable.js';
+import { stackBinsAreData } from '../core/aggregates.js';
 import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
 import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
 import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
@@ -2229,8 +2230,12 @@ function analyzeWaferMapUncollected(
     ringCount: requireRingCount(result, 'analyzeWaferMap') };
   const isLotStack  = result.isLotStack;
   const stackMethod = result.aggrMethod;
-  const hasHbinData = !isLotStack ||
-    stackMethod === 'mode' || stackMethod === 'countBin' || stackMethod === 'percent';
+  // Bins are data on a wafer and on a 'mode' stack (each position's most frequent
+  // bin). A bin-occurrence stack ('countBin', 'percent') stamps the counted bin on
+  // every die so the map can name it; its data is the count in test 0. Read as bins,
+  // a bin on 5% of a lot's dies came out as "near-full — 100% of dies failing".
+  const binsAreData = stackBinsAreData(isLotStack, stackMethod);
+  const hasHbinData = binsAreData;
   const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die));
   // Cluster/pattern detection are spatial (physX/physY-based flood-fill and
   // shape features) — an unpositioned die can't belong to a spatial cluster
@@ -2247,13 +2252,18 @@ function analyzeWaferMapUncollected(
   // isPositionedDie narrows physX/physY alongside x/y, so this filter produces
   // the PositionedDie[] the region builders require without a cast.
   const positionedIncludedDies = includedDies.filter(isPositionedDie);
-  const ringRegions = buildRingRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
-  const quadrantRegions = buildQuadrantRegions(positionedIncludedDies, result.wafer, resolved.ringCount);
-  const reticlePositionRegions = buildReticlePositionRegions(positionedIncludedDies, result.reticleConfig);
+  const softEligible = binsAreData ? eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined) : [];
+  // Regions exist only for the findings below; with no bins and no value analysis
+  // (a count-stacked card, say) none of them can produce one, so none are built.
+  const needsRegions = (hasHbinData && eligibleDies.some(die => die.hbin !== undefined))
+    || softEligible.length > 0 || resolved.enableTestValueAnalysis;
+  const ringRegions = needsRegions ? buildRingRegions(positionedIncludedDies, result.wafer, resolved.ringCount) : [];
+  const quadrantRegions = needsRegions ? buildQuadrantRegions(positionedIncludedDies, result.wafer, resolved.ringCount) : [];
+  const reticlePositionRegions = needsRegions ? buildReticlePositionRegions(positionedIncludedDies, result.reticleConfig) : [];
   // Test-site regions exist only when the wafer has meaningful site duplication —
   // buildTestSiteRegions' own guard decides.
-  const testSiteRegions = buildTestSiteRegions(includedDies, false);
-  const sectorRegions = buildSectorRegions(positionedIncludedDies, result.wafer, resolved.sectorCount);
+  const testSiteRegions = needsRegions ? buildTestSiteRegions(includedDies, false) : [];
+  const sectorRegions = needsRegions ? buildSectorRegions(positionedIncludedDies, result.wafer, resolved.sectorCount) : [];
 
   const findings: RawFinding[] = [];
   // Every rate comparison — yield, hard and soft bins, functional tests, limit failures, in every region
@@ -2278,7 +2288,7 @@ function analyzeWaferMapUncollected(
     );
   }
   {
-    const softEligibleDies = eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined);
+    const softEligibleDies = softEligible;
     rateFindings.push(
       ...buildBinFindings(softEligibleDies, ringRegions, 'soft', result.sbinDefs, 'softBin', resolved),
       ...buildBinFindings(softEligibleDies, quadrantRegions, 'soft', result.sbinDefs, 'softBin', resolved),
@@ -2332,7 +2342,7 @@ function analyzeWaferMapUncollected(
   // finding (not the constituents) via relatedIds.
   const mergedFindings = mergeAdjacentFindings(findings, {
     eligibleDies,
-    softEligibleDies: eligibleDies.filter((die): die is EligibleDie => die.sbin !== undefined),
+    softEligibleDies: softEligible,
     testDies: eligibleDies,
     passBins: resolved.passBins,
     ringCount: resolved.ringCount,

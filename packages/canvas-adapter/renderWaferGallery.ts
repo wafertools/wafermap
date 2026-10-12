@@ -3184,6 +3184,19 @@ export function renderWaferGallery(
         stats: { ...summary.stats, isLotStack: true, aggregationMethod, lotSize } };
     }
 
+    // A bin-count card is analysed on its count, the scalar the card draws (test 0),
+    // not on the bin every die carries so the hover can name it (stackBinsAreData).
+    // The card is not a built map, so the analysis rebuilds it and would not know it
+    // is a stack: the stamped bins are left out of its input instead. Read as bins,
+    // a bin on 5% of the dies came out as "near-full — 100% of dies failing".
+    function analyzeCountStack(dies: Die[], countName: string): import('../stats/types.js').StatsSummary {
+      const counted = dies.map(d => ({ ...d, hbin: undefined, sbin: undefined }));
+      return analyzeWaferMap(
+        { wafer: stackedWafer, dies: counted, passBins: [...stackPassBins!], ringCount: stackRingCount,
+          testDefs: [{ testNumber: 0, name: countName }] },
+        { testNumbers: [0] });
+    }
+
     if (mode === 'stackedValues') {
       // Collect testDefs from items (now on WaferMapResult, not sharedOpts).
       // Functional tests are excluded: mean/median/σ of a pass/fail outcome is
@@ -3257,10 +3270,7 @@ export function renderWaferGallery(
           isLotStack: true,
           aggrMethod: 'countBin',
           lotSize,
-          statsSummary: asLotStackSummary(
-            analyzeWaferMap({ wafer: stackedWafer, dies, passBins: [...stackPassBins], ringCount: stackRingCount, hbinDefs: itemHbinDefs }),
-            'countBin',
-          ) };
+          statsSummary: asLotStackSummary(analyzeCountStack(dies, `Wafers in hard bin ${def.bin}`), 'countBin') };
       });
     }
 
@@ -3286,10 +3296,7 @@ export function renderWaferGallery(
           isLotStack: true,
           aggrMethod: 'countBin',
           lotSize,
-          statsSummary: asLotStackSummary(
-            analyzeWaferMap({ wafer: stackedWafer, dies, passBins: [...stackPassBins], ringCount: stackRingCount, sbinDefs: itemSbinDefs }),
-            'countBin',
-          ) };
+          statsSummary: asLotStackSummary(analyzeCountStack(dies, `Wafers in soft bin ${def.bin}`), 'countBin') };
       });
     }
 

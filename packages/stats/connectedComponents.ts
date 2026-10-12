@@ -39,6 +39,8 @@ const STEP_Y = [-1, -1, -1, 0, 0, 1, 1, 1];
  */
 export function findConnectedComponents(failing: readonly PositionedDie[]): PositionedDie[][] {
   if (failing.length === 0) return [];
+  const dense = denseComponents(failing);
+  if (dense) return dense;
 
   const byKey = new Map<number, PositionedDie>();
   for (const d of failing) byKey.set(gridKey(d.x, d.y), d);
@@ -70,6 +72,57 @@ export function findConnectedComponents(failing: readonly PositionedDie[]): Posi
     components.push(component);
   }
 
+  return components;
+}
+
+/**
+ * {@link findConnectedComponents} over typed arrays indexed by grid cell, for the
+ * usual case: whole-number positions filling a good share of their bounding box.
+ * Same seeds in the same order, same LIFO walk and neighbour order, and the same
+ * die per position (the last one given, as the keyed version's map keeps), so the
+ * components and their order are identical. On a fully failing 119k-die wafer the
+ * keyed version's map and set were most of the stacked-card analysis.
+ * Returns undefined when the dies do not fit that shape.
+ */
+function denseComponents(failing: readonly PositionedDie[]): PositionedDie[][] | undefined {
+  const n = failing.length;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const { x, y } = failing[i];
+    if (!Number.isInteger(x) || !Number.isInteger(y)) return undefined;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const w = maxX - minX + 1, h = maxY - minY + 1;
+  if (w * h > 4 * n + 1024 || w * h > 1 << 26) return undefined;
+  const cell = (x: number, y: number) => (x - minX) * h + (y - minY);
+  // 1 + index of the die at a cell (0 = none): the last die given for a position wins.
+  const at = new Int32Array(w * h);
+  for (let i = 0; i < n; i++) at[cell(failing[i].x, failing[i].y)] = i + 1;
+  const visited = new Uint8Array(w * h);
+  const components: PositionedDie[][] = [];
+  const queue: PositionedDie[] = [];
+  for (let s = 0; s < n; s++) {
+    const seed = failing[s];
+    const sc = cell(seed.x, seed.y);
+    if (visited[sc]) continue;
+    visited[sc] = 1;
+    const component: PositionedDie[] = [];
+    queue.push(seed);
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      component.push(current);
+      for (let k = 0; k < 8; k++) {
+        const x = current.x + STEP_X[k], y = current.y + STEP_Y[k];
+        if (x < minX || x > maxX || y < minY || y > maxY) continue;
+        const c = cell(x, y);
+        if (visited[c] || at[c] === 0) continue;
+        visited[c] = 1;
+        queue.push(failing[at[c] - 1]);
+      }
+    }
+    components.push(component);
+  }
   return components;
 }
 

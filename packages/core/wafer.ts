@@ -23,6 +23,13 @@ export interface WaferReticle {
 
 export interface WaferSpec {
   diameter: number;
+  /**
+   * What `diameter` is measured in. `'normalized'` (die pitches, when no physical
+   * size is known) keeps the orientation mark's direction but gives it length 0:
+   * the SEMI flat and notch sizes are millimetres, and a millimetre table applied
+   * to a pitch count cut a third of a small wafer off. Default `'mm'`.
+   */
+  units?: 'mm' | 'normalized';
   center?: { x: number; y: number };
   notch?: WaferNotch;
   orientation?: number; // degrees
@@ -36,7 +43,9 @@ export interface Wafer {
   center: { x: number; y: number };
   /**
    * Resolved orientation mark.  `length` is the standard chord length (flat) or
-   * half-width (V-notch), derived from the wafer diameter by `createWafer`.
+   * half-width (V-notch), derived from the wafer diameter by `createWafer`. 0 when
+   * the diameter is not in millimetres: the mark's side is known, its size is
+   * not, so nothing is cut into the outline (the side is still drawn as a marker).
    */
   notch?: { type: 'top' | 'bottom' | 'left' | 'right'; length: number };
   orientation: number;
@@ -65,7 +74,8 @@ export function createWafer(config: WaferSpec): Wafer {
     radius:      config.diameter / 2,
     center:      config.center ?? { x: 0, y: 0 },
     notch:       config.notch
-                   ? { type: config.notch.type, length: standardNotchLength(config.diameter) }
+                   ? { type: config.notch.type,
+                       length: config.units === 'normalized' ? 0 : standardNotchLength(config.diameter) }
                    : undefined,
     orientation: config.orientation ?? 0,
     metadata:    config.metadata,

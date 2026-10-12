@@ -188,6 +188,12 @@ export function buildClusterFindings(
   const isFailingFn = options.isFailingDie ?? defaultIsFailingDie;
   const failing = dies.filter(isFailingFn);
   const pBg = failing.length / dies.length;
+  // No group can stand out from a background with no fails, or (with a positive
+  // effect threshold) from one where every die fails: its rate is the background's.
+  // A count-stacked bin card is the second case on every die, and walking that
+  // one wafer-sized group was most of the card's analysis.
+  if (failing.length === 0) return [];
+  if (pBg === 1 && minimumEffectSize > 0 && minimumRelativeEffect > 0) return [];
 
   // Derive pitch from die dimensions (adapts to any die size).
   const firstDie = dies[0];

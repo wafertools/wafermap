@@ -169,6 +169,11 @@ export interface View {
   /** Die rectangles to fill, in draw order, already carrying their resolved colour. */
   rectangles: ViewRect[];
   /**
+   * The visual kerf between dies, in mm: each rectangle is its die's pitch less this.
+   * The drawer needs it to tile dies edge to edge when the kerf is too small to draw.
+   */
+  dieGap: number;
+  /**
    * Transformed centre of each die, index-parallel with {@link dies}. Separate
    * from `rectangles` because a die always has a centre for hit-testing and
    * viewport fitting, however many rectangles it draws as.
@@ -1067,7 +1072,8 @@ function buildBoundaryOverlay(wafer: Wafer, toScreen: Affine<'physical', 'screen
   const tx = (p: Point): Point => affinePoint(toScreen, p.x, p.y);
 
   // Determine rendering style from diameter — same threshold used in resolveNotch.
-  const isVNotch = notch !== undefined && wafer.diameter > 150;
+  // A zero-length mark (diameter not in mm, see createWafer) cuts nothing.
+  const isVNotch = notch !== undefined && notch.length > 0 && wafer.diameter > 150;
 
   if (!isVNotch) {
     // Flat / no alignment feature — uniform angle sweep with chord clamping.
@@ -1734,6 +1740,7 @@ export function buildView(
 
   const view: View = {
     rectangles,
+    dieGap: gap,
     hoverPoints,
     texts,
     overlays,

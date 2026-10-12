@@ -1378,6 +1378,19 @@ export function renderWaferMapCard(
     }, 700) as unknown as number);
   }
 
+  /**
+   * The docked Summary panel is hidden while Insights is open, for the same reason
+   * canvasWrap is: it is canvasWrap's sibling, not its child, so the rule above does
+   * not reach it, and its sticky title row (`z-index: 1`) painted over the chart
+   * suite while the rest of the panel sat beneath it. Called again wherever a panel
+   * is created, since one can mount while Insights is already open.
+   */
+  function syncPanelsBehindInsights(): void {
+    for (const p of [summaryPanelEl, autoSummaryPanelEl]) {
+      if (p) p.style.visibility = insightsOpen ? 'hidden' : '';
+    }
+  }
+
   function setInsightsOpen(open: boolean): void {
     if (!insightsEnabled) return;
     const wasOpen = insightsOpen;
@@ -1410,6 +1423,7 @@ export function renderWaferMapCard(
     // closing Insights triggers no resize/redraw, and hidden controls leave the
     // tab order and the accessibility tree.
     canvasWrap.style.visibility = open ? 'hidden' : '';
+    syncPanelsBehindInsights();
     // Map-specific toolbar controls (zoom/pan/select, mode/palette/overlays/etc.)
     // have no effect on the chart suite — hide them as a group while it's open.
     // Summary is hidden too (refreshSummaryButton checks insightsOpen) since
@@ -1756,6 +1770,7 @@ export function renderWaferMapCard(
     parent?.insertBefore(autoSummaryPanelWrapper, next);
     renderAutoSummaryPanel();
   }
+  syncPanelsBehindInsights();
 
   // ── Tooltip ────────────────────────────────────────────────────────────────
   // One shared tooltip element for the whole document (see toolbar.ts). `tooltip`
@@ -3513,6 +3528,7 @@ export function renderWaferMapCard(
         autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
         parent?.insertBefore(autoSummaryPanelWrapper, next);
         renderAutoSummaryPanel();
+        syncPanelsBehindInsights();
       }
       refreshSummaryButton();
     },

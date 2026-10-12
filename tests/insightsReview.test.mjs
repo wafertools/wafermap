@@ -648,7 +648,7 @@ test('the Data tab\'s table switcher and the Plot editor\'s tabs explain themsel
   const { items, lot } = lotItems(2);
   const tab = mountWithSweeps(items, lot, 'data', undefined);
   const labels = [...tab.el.querySelectorAll('[role=radiogroup][aria-label=Table] button')];
-  assert.deepEqual(labels.map(b => b.textContent), ['Statistics', 'Dies', 'Wafers']);
+  assert.deepEqual(labels.map(b => b.textContent), ['Statistics', 'Wafers', 'Dies']);
   for (const b of labels) assert.ok((b.dataset.wmapTip ?? '').length > 10, `${b.textContent} has a hint`);
 });
 

@@ -568,7 +568,7 @@ test('each saved plot is a row of the drilldown menu, with "New plot…", betwee
   const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
   const store = createPlotStore([SCATTER, MISSING], undefined, 0);
   const close = openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
-  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Vth vs Idsat', 'Leak', 'New plot…', 'New sweep…', 'Dies', 'Test statistics']);
+  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Vth vs Idsat', 'Leak', 'New plot…', 'New sweep…', 'Test statistics', 'Dies']);
   const state = Object.fromEntries(menuRows().map(r => [r.textContent, r.getAttribute('aria-disabled')]));
   assert.equal(state['Vth vs Idsat'], null);
   assert.equal(state['Leak'], 'true', 'a plot the dies cannot draw is listed, disabled');
@@ -975,7 +975,7 @@ test('a sweep is a row of the drilldown menu under Plots, and unavailable when t
   const src = selectionPopulation(items[0].dies.slice(0, 8), { waferLabel: 'W1', testDefs: DEFS });
   const store = createPlotStore([SWEEP, FOREIGN_SWEEP, SCATTER], undefined, 0);
   const close = openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
-  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Two-test sweep', 'Other program', 'Vth vs Idsat', 'New plot…', 'New sweep…', 'Dies', 'Test statistics']);
+  assert.deepEqual(menuRows().map(r => r.textContent), ['Value histogram', 'Process capability', 'Two-test sweep', 'Other program', 'Vth vs Idsat', 'New plot…', 'New sweep…', 'Test statistics', 'Dies']);
   const state = Object.fromEntries(menuRows().map(r => [r.textContent, r.getAttribute('aria-disabled')]));
   assert.equal(state['Two-test sweep'], null);
   assert.equal(state['Other program'], 'true');

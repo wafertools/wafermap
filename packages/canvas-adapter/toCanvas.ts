@@ -19,6 +19,15 @@ import { hitGridDims } from './hitGrid.js';
  * `tri` is the half-size (apex distance from centre). Used for out-of-spec die
  * glyphs and their colorbar key, so the shape is defined in exactly one place.
  */
+/**
+ * Smallest die, in CSS pixels, that carries an out-of-spec ▽/△ mark. The mark has a
+ * floor size (2.5 px half-width plus its halo) so it stays visible zoomed out; below
+ * this the marks are larger than the dies, cover their neighbours and cannot be told
+ * apart, and on a 100k-die wafer drawing them cost over a second per paint. The map
+ * leaves them off and the colorbar says "zoom in".
+ */
+const MIN_MARKED_DIE_PX = 5;
+
 function triPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, tri: number, dir: number): void {
   ctx.moveTo(cx, cy + dir * tri);
   ctx.lineTo(cx - tri * 0.9, cy - dir * tri * 0.6);
@@ -499,10 +508,21 @@ export function drawMapCanvas(
   // Dividing by ppm·dpr instead pinned sizes to DEVICE pixels, so every line
   // and marker halved on a 2× display and thirded on a 3× one.
   const cssPx    = 1 / ppm;
+  // Set when the map has out-of-spec dies too small to carry their ▽/△ mark (see
+  // MIN_MARKED_DIE_PX); the colorbar then says so instead of keying marks that are not drawn.
+  let specMarksHidden = false;
   // The one deliberate exception: the die outline is a hairline separator, one
   // device pixel wide at most. In CSS pixels it would cover a larger share of
   // each small die as dpr rises and grey out a dense map on a high-DPI screen.
   const devicePx = 1 / (ppm * dpr);
+
+  // A kerf narrower than one device pixel cannot be drawn, and neither can a die's
+  // edges at that scale: anti-aliased, the gap's and the edges' partial coverage
+  // beats against the pixel grid into light bands across a dense wafer. So the
+  // dies are then drawn edge to edge across their full pitch, snapped to whole
+  // device pixels — neighbours share every edge — and without outlines. Zoomed in
+  // until the kerf is a pixel or more, they are drawn as before.
+  const snapDies = view.rectangles.length > 0 && view.dieGap * ppm * dpr < 1;
 
   // Batch rectangles by fill color — one beginPath/fill per unique color instead of per die.
   // Uses ctx.rect() on pre-parsed ViewRect coords, eliminating svgPathToCanvas string parsing.
@@ -518,6 +538,11 @@ export function drawMapCanvas(
     // app on Linux) slows down faster than linearly with a path's size: one
     // path per colour made a hard-bin gallery of 10 × 10k dies take 377 ms to
     // fill, and paths of 256 take 43 ms. Chrome is unaffected (78 → 69 ms).
+    // Snapped: device-pixel coordinates under an identity transform. A die's edges
+    // are its pitch's, rounded, so two neighbours round one shared edge to one pixel
+    // boundary; a die narrower than a pixel still gets one.
+    const scale = ppm * dpr, ox = originX * dpr, oy = originY * dpr, g = view.dieGap / 2;
+    if (snapDies) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); }
     for (const [fill, group] of byColor) {
       ctx.fillStyle = fill;
       for (let i = 0; i < group.length; i += PATH_SHAPES) {
@@ -525,11 +550,19 @@ export function drawMapCanvas(
         const end = Math.min(group.length, i + PATH_SHAPES);
         for (let j = i; j < end; j++) {
           const r = group[j];
-          ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
+          if (snapDies) {
+            const hw = r.width / 2 + g, hh = r.height / 2 + g;
+            const x0 = Math.round(ox + (r.x - hw) * scale), x1 = Math.max(x0 + 1, Math.round(ox + (r.x + hw) * scale));
+            const y0 = Math.round(oy - (r.y + hh) * scale), y1 = Math.max(y0 + 1, Math.round(oy - (r.y - hh) * scale));
+            ctx.rect(x0, y0, x1 - x0, y1 - y0);
+          } else {
+            ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);
+          }
         }
         ctx.fill();
       }
     }
+    if (snapDies) ctx.restore();
     // Die outlines (constant colour and width), stroked as their merged edges,
     // not one rectangle per die: WebKit's canvas (the desktop app on Linux)
     // took ~5 s to stroke a 266k-die gallery rectangle by rectangle. Square caps
@@ -538,19 +571,23 @@ export function drawMapCanvas(
     // path of every edge far more slowly than many small ones (a 25-card
     // gallery's switch to value mode, 3.8 s → 1.8 s). Chrome draws the same
     // pixels either way.
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-    ctx.lineWidth = 0.5 * devicePx;
-    ctx.lineCap = 'square';
-    const outline = outlineCache.get(view.rectangles) ?? outlineSegments(view.rectangles);
-    outlineCache.set(view.rectangles, outline);
-    const perPath = PATH_SHAPES * 4;
-    for (let s = 0; s < outline.length; s += perPath) {
-      ctx.beginPath();
-      const end = Math.min(outline.length, s + perPath);
-      for (let i = s; i < end; i += 4) { ctx.moveTo(outline[i], outline[i + 1]); ctx.lineTo(outline[i + 2], outline[i + 3]); }
-      ctx.stroke();
+    // Not when snapped: a separator a fraction of a pixel wide is the same beat
+    // against the pixel grid as the kerf it would mark.
+    if (!snapDies) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth = 0.5 * devicePx;
+      ctx.lineCap = 'square';
+      const outline = outlineCache.get(view.rectangles) ?? outlineSegments(view.rectangles);
+      outlineCache.set(view.rectangles, outline);
+      const perPath = PATH_SHAPES * 4;
+      for (let s = 0; s < outline.length; s += perPath) {
+        ctx.beginPath();
+        const end = Math.min(outline.length, s + perPath);
+        for (let i = s; i < end; i += 4) { ctx.moveTo(outline[i], outline[i + 1]); ctx.lineTo(outline[i + 2], outline[i + 3]); }
+        ctx.stroke();
+      }
+      ctx.lineCap = 'butt';
     }
-    ctx.lineCap = 'butt';
 
     // Out-of-spec markers (value mode, 'data' colorbar range): the die keeps its
     // gradient fill, so flag out-of-spec dies with a triangle glyph — down = below
@@ -612,7 +649,9 @@ export function drawMapCanvas(
     }
 
     const marked = view.rectangles.filter(r => r.specMark);
-    if (marked.length > 0) {
+    specMarksHidden = marked.length > 0
+      && Math.min(marked[0].width, marked[0].height) < MIN_MARKED_DIE_PX * cssPx;
+    if (marked.length > 0 && !specMarksHidden) {
       // Bucket by (shape, glyph colour). contrastTextColor yields only black or
       // white, so there are at most 4 buckets → ≤8 draw calls regardless of die
       // count, matching the previous marker's efficiency class. ViewRect is never
@@ -939,8 +978,10 @@ export function drawMapCanvas(
 
           // Key: a tiny triangle to the left of the label tying the out-of-spec die
           // marker shape to its limit (▽ below LSL, △ above USL). Shown in both
-          // colorbar ranges, since the ▽/△ die markers now appear in both.
+          // colorbar ranges, since the ▽/△ die markers now appear in both — and
+          // only when the map draws them.
           // Screen space here: y increases downward, so apex-up needs dir=-1.
+          if (specMarksHidden) continue;
           const dir = label === 'Hi limit' ? -1 : 1; // up for the high limit (fail-high), down for the low limit
           const keyTri = 4;
           const kx = cbX - 3 - ctx.measureText(label).width - keyTri - 4;
@@ -978,6 +1019,19 @@ export function drawMapCanvas(
         ctx.restore();
         belowCursor += 15;
       }
+    }
+
+    // The out-of-spec marks were left off dies too small to carry them: say so, or
+    // the absence reads as "nothing outside the limits".
+    if (specMarksHidden) {
+      ctx.save();
+      ctx.fillStyle    = theme.text;
+      ctx.font         = SCALE_NOTE_FONT();
+      ctx.textAlign    = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText('▽△ limit marks: zoom in', cssW - padding, belowCursor);
+      ctx.restore();
+      belowCursor += 15;
     }
 
     // Supporting context (e.g. "stacked (6 wafers)") beneath the scale note, in the roomy

@@ -288,7 +288,6 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
     });
   };
   return [
-    { section: 'Tables', label: 'Dies', unavailable: none, open: open('dies', 'Dies') },
     {
       section: 'Tables', label: 'Test statistics',
       unavailable: none ?? (testsWithValues(source, dies, 1).length > 0 ? null : 'These dies have no parametric test values'),
@@ -296,6 +295,7 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
     },
     // One row per wafer, only where the population spans more than one.
     ...(source.items.length > 1 ? [{ section: 'Tables', label: 'Wafers', unavailable: none, open: open('wafers', 'Wafers') }] : []),
+    { section: 'Tables', label: 'Dies', unavailable: none, open: open('dies', 'Dies') },
   ];
 }
 

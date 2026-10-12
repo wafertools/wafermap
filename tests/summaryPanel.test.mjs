@@ -278,7 +278,7 @@ test('buildTestSection / buildFunctionalTestSection CSVs never contain a die-lev
   assert.ok(!saved2.text.split('\n')[0].toLowerCase().includes('part'));
 });
 
-// ── "Data tables" button: gates the modal of Statistics | Dies (| Wafers) tables ──
+// ── "Data tables" button: gates the modal of Statistics (| Wafers) | Dies tables ──
 //
 // No dedicated toolbar button — reached only from an already-open summary
 // panel, the same way "Summary report" opens the HTML report without one.
@@ -362,7 +362,7 @@ test('renderLotSummaryContent — "Data tables" pools every wafer\'s dies with a
   const rows = dieRows();
   assert.equal(rows.length, 3, 'all dies across both wafers');
   assert.deepEqual(rows.map(r => r.querySelector('td').textContent).sort(), ['W1', 'W2', 'W2']);
-  assert.deepEqual([...document.querySelectorAll('[data-wmap-data-view]')].map(b => b.dataset.wmapDataView), ['statistics', 'dies', 'wafers']);
+  assert.deepEqual([...document.querySelectorAll('[data-wmap-data-view]')].map(b => b.dataset.wmapDataView), ['statistics', 'wafers', 'dies']);
 });
 
 // ── "Summary report": opens in an in-app modal by default —

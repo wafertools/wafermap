@@ -128,12 +128,6 @@ export function buildTestPassRateData(
     }
   };
 
-  const readValues = testValuesReader(wanted.map(d => d.testNumber!));
-  const values = new Float64Array(wanted.length);
-  // `getTestPassStatus`'s rule, read for every wanted test of a die at once.
-  const readVerdicts = testPassStatusReader(wanted);
-  const verdicts = new Int8Array(wanted.length);
-
   // Only meaningful while comparing the two parametric sources, and only once
   // some die has actually carried both — otherwise it stays null, which is a
   // different statement from "0 disagreements".
@@ -162,39 +156,18 @@ export function buildTestPassRateData(
         continue;
       }
 
-      // Die by die is dies × tests reads, so values and verdicts come through
-      // the bulk readers (columns looked up once per table) and each test's two tallies
-      // are resolved once per item, not once per die.
-      // Plain arrays and direct increments, no destructuring or per-count
-      // helper: this loop runs dies × tests times, and WebKit (the desktop app)
-      // ran those constructs several times slower than V8 does.
-      const overallAcc = wanted.map(def => byTest.get(def.testNumber!)!.overall);
-      const groupAcc = wanted.map(def => byTest.get(def.testNumber!)!.perGroup[gi]);
-      for (const die of item.dies ?? []) {
-        if (!isYieldEligibleDie(die)) continue;
-        readValues(die, values);
-        readVerdicts(die, verdicts);
-        for (let k = 0; k < wanted.length; k++) {
-          const def = wanted[k];
-          const specCat = classifySpec(values[k], def);
-          const flagVerdict = verdicts[k] === -1 ? undefined : verdicts[k] === 1;
-
-          if (comparingParametric && specCat !== null && flagVerdict !== undefined) {
-            comparableDies++;
-            if ((specCat === 'pass') !== flagVerdict) disagreements++;
-          }
-
-          const overall = overallAcc[k], group = groupAcc[k];
-          if (kind === 'spec') {
-            if (specCat === null) continue;
-            if (specCat === 'pass') { overall.pass++; group.pass++; continue; }
-            overall.fail++; group.fail++;
-            if (specCat === 'failLow') { overall.failLow++; group.failLow++; }
-            else { overall.failHigh++; group.failHigh++; }
-          } else {
-            if (flagVerdict === undefined) continue;
-            if (flagVerdict) { overall.pass++; group.pass++; } else { overall.fail++; group.fail++; }
-          }
+      // Die by die is dies × tests reads. A wafer's tally depends only on its dies
+      // and the tests' definitions, and is the same for every view that groups it —
+      // the load-time pass, the Summary panel and Insights — so it is counted once
+      // per wafer (itemTally) and added up here.
+      const t = itemTally(item.dies ?? [], wanted, kind);
+      comparableDies += t.comparable;
+      disagreements += t.disagreements;
+      for (let k = 0; k < wanted.length; k++) {
+        const row = byTest.get(wanted[k].testNumber!)!;
+        for (const target of [row.overall, row.perGroup[gi]]) {
+          target.pass += t.pass[k]; target.fail += t.fail[k];
+          target.failLow += t.failLow[k]; target.failHigh += t.failHigh[k];
         }
       }
     }
@@ -233,6 +206,92 @@ export function buildTestPassRateData(
     rows,
     disagreementDies: comparingParametric && comparableDies > 0 ? disagreements : null,
   };
+}
+
+/** One wafer's counts for each of `wanted`'s tests, in its order. */
+interface ItemTally {
+  pass: Int32Array; fail: Int32Array; failLow: Int32Array; failHigh: Int32Array;
+  comparable: number; disagreements: number;
+}
+
+// Per test, both judgements at once — the load-time pass asks for the tester's
+// verdict and Insights for the spec limits, over the same values and verdicts.
+const SPEC_PASS = 0, SPEC_FAIL_LOW = 1, SPEC_FAIL_HIGH = 2, FLAG_PASS = 3, FLAG_FAIL = 4, COMPARABLE = 5, DISAGREE = 6;
+const SLOTS = 7;
+
+/** Per die array, each test's counts by what they depend on besides the dies: its number, limits and type. */
+const TALLIES = new WeakMap<readonly Die[], Map<string, Int32Array>>();
+
+const testKey = (d: TestDef): string =>
+  `${d.testNumber},${d.limitLow},${d.limitHigh},${d.limitLowInclusive},${d.limitHighInclusive},${d.testType}`;
+
+/**
+ * `dies`' pass/fail counts for each test in `wanted` under `kind`, and the dies on
+ * which the spec judgement and the recorded verdict could be compared and
+ * disagreed. Each test is counted once per die array — both judgements in one
+ * walk — and reused by every later view, whichever judgement or tests it asks for.
+ */
+function itemTally(dies: readonly Die[], wanted: readonly TestDef[], kind: TestPassKind): ItemTally {
+  let cache = TALLIES.get(dies);
+  if (!cache) { cache = new Map(); TALLIES.set(dies, cache); }
+  const keys = wanted.map(testKey);
+  const missing = wanted.filter((_, k) => !cache!.has(keys[k]));
+  if (missing.length) countTests(dies, missing, cache);
+
+  const n = wanted.length;
+  const t: ItemTally = {
+    pass: new Int32Array(n), fail: new Int32Array(n), failLow: new Int32Array(n), failHigh: new Int32Array(n),
+    comparable: 0, disagreements: 0,
+  };
+  const comparingParametric = kind === 'spec' || kind === 'testFlag';
+  for (let k = 0; k < n; k++) {
+    const c = cache.get(keys[k])!;
+    if (comparingParametric) { t.comparable += c[COMPARABLE]; t.disagreements += c[DISAGREE]; }
+    if (kind === 'spec') {
+      t.pass[k] = c[SPEC_PASS]; t.failLow[k] = c[SPEC_FAIL_LOW]; t.failHigh[k] = c[SPEC_FAIL_HIGH];
+      t.fail[k] = c[SPEC_FAIL_LOW] + c[SPEC_FAIL_HIGH];
+    } else {
+      t.pass[k] = c[FLAG_PASS]; t.fail[k] = c[FLAG_FAIL];
+    }
+  }
+  return t;
+}
+
+/** One walk of `dies` for `tests`, storing each test's counts in `cache`. */
+function countTests(dies: readonly Die[], tests: readonly TestDef[], cache: Map<string, Int32Array>): void {
+  const n = tests.length;
+  const counts = tests.map(() => new Int32Array(SLOTS));
+  const readValues = testValuesReader(tests.map(d => d.testNumber!));
+  const values = new Float64Array(n);
+  // `getTestPassStatus`'s rule, read for every test of a die at once.
+  const readVerdicts = testPassStatusReader(tests);
+  const verdicts = new Int8Array(n);
+  // Plain arrays and direct increments, no destructuring or per-count helper: this
+  // loop runs dies × tests times, and WebKit (the desktop app) ran those
+  // constructs several times slower than V8 does.
+  for (const die of dies) {
+    if (!isYieldEligibleDie(die)) continue;
+    readValues(die, values);
+    readVerdicts(die, verdicts);
+    for (let k = 0; k < n; k++) {
+      const c = counts[k];
+      const specCat = classifySpec(values[k], tests[k]);
+      const v = verdicts[k];
+      if (specCat !== null) {
+        if (specCat === 'pass') c[SPEC_PASS]++;
+        else if (specCat === 'failLow') c[SPEC_FAIL_LOW]++;
+        else c[SPEC_FAIL_HIGH]++;
+      }
+      if (v !== -1) {
+        if (v === 1) c[FLAG_PASS]++; else c[FLAG_FAIL]++;
+        if (specCat !== null) {
+          c[COMPARABLE]++;
+          if ((specCat === 'pass') !== (v === 1)) c[DISAGREE]++;
+        }
+      }
+    }
+  }
+  for (let k = 0; k < n; k++) cache.set(testKey(tests[k]), counts[k]);
 }
 
 /**

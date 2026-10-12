@@ -75,3 +75,22 @@ test('a long one-die-wide snake is one component', () => {
   for (let i = 0; i < 100000; i++) snake.push({ x: i, y: 0 });
   assert.equal(findConnectedComponents(snake).length, 1);
 });
+
+// The dense (typed-array) path and the keyed path must give identical components
+// in identical order. One far-away die makes the bounding box sparse, which sends
+// the same set down the keyed path; its own one-die component is dropped before
+// comparing. Duplicate positions are included: both keep the last die given.
+test('findConnectedComponents — dense and keyed paths agree exactly, order included', () => {
+  let seed = 7;
+  const rand = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32;
+  const failing = [];
+  for (let x = -40; x <= 40; x++) for (let y = -40; y <= 40; y++) {
+    if (rand() < 0.45) failing.push({ x, y, physX: x, physY: y, tag: `${x},${y}` });
+  }
+  failing.push({ ...failing[10], tag: 'duplicate of 10' });
+  const dense = findConnectedComponents(failing);
+  const far = { x: 100000, y: 100000, physX: 0, physY: 0, tag: 'far' };
+  const keyed = findConnectedComponents([...failing, far]).filter(c => !(c.length === 1 && c[0] === far));
+  assert.equal(dense.length, keyed.length);
+  assert.deepEqual(dense.map(c => c.map(d => d.tag)), keyed.map(c => c.map(d => d.tag)));
+});

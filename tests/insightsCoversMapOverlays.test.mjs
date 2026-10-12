@@ -125,3 +125,28 @@ test('Insights keeps the identity details panel openable', async () => {
   assert.equal(isVisibilityHidden(metaPanel, root), false, 'details panel not hidden with the map view');
   ctrl.destroy?.();
 });
+
+// The docked Summary panel is canvasWrap's SIBLING, so hiding canvasWrap does
+// not reach it. Its sticky title row is z-indexed and painted "Wafer Summary"
+// and its close chevron over the chart suite (tsmap, any single-wafer file:
+// lot2.stdf). Covers the panel mounted at render time and one mounted later.
+test('Insights hides the docked Summary panel, title row included', async () => {
+  const { analyzeWaferMap } = await import('../dist/packages/stats/index.js');
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const result = buildWaferMap({
+    results: Array.from({ length: 16 }, (_, k) => ({ x: k % 4, y: Math.floor(k / 4), hbin: k % 5 ? 1 : 2, testValues: { 3001: 10 + k } })),
+    testDefs: TEST_DEFS, passBins: [1],
+  });
+  const ctrl = renderWaferMap(root, result, { insights: { enabled: true }, statsSummary: analyzeWaferMap(result), summaryPanel: { defaultOpen: true } });
+  const title = findByText(root, 'Wafer Summary');
+  assert.ok(title, 'Summary panel mounted with its title');
+  assert.equal(isHidden(title, root), false, 'visible on the map view');
+
+  await toggleInsights(root, true);
+  assert.equal(isHidden(title, root), true, 'hidden while Insights is open');
+
+  await toggleInsights(root, false);
+  assert.equal(isHidden(title, root), false, 'visible again after leaving Insights');
+  ctrl.destroy?.();
+});

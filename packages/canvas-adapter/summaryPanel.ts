@@ -2998,7 +2998,7 @@ function reportButtonRow(...buttons: Array<HTMLButtonElement | null>): HTMLDivEl
 }
 
 /**
- * Opens the Data tables (Statistics | Dies, and Wafers for a lot) in wmap's own
+ * Opens the Data tables (Statistics, Wafers for a lot, and Dies) in wmap's own
  * modal — the same tables as Insights' Data tab, over the wafer or lot this panel
  * describes, with Export CSV and Copy. It does not depend on Insights being
  * enabled: the tables are loaded on first use and built from the dies given.

@@ -48,8 +48,8 @@ export interface DataItem {
 
 export const DATA_VIEWS: ReadonlyArray<{ key: DataView; label: string; hint: string }> = [
   { key: 'statistics', label: 'Statistics', hint: 'One row per test: count, spread, limits and limit yield' },
-  { key: 'dies', label: 'Dies', hint: 'One row per die, with its position, bins and every test' },
   { key: 'wafers', label: 'Wafers', hint: 'One row per wafer: its attributes, die counts, yield and test means' },
+  { key: 'dies', label: 'Dies', hint: 'One row per die, with its position, bins and every test' },
 ];
 
 /** Rows Excel can open. A file with more is still valid; the reader is told. */
@@ -533,7 +533,7 @@ export function renderDataTables(input: DataTablesInput): { el: HTMLElement; des
   const allDies = items.flatMap(it => it.dies);
   const allDefs = input.testDefs ?? [];
   const parametric = allDefs.filter(isParametricTest);
-  const views = input.views ?? (items.length > 1 ? ['statistics', 'dies', 'wafers'] as const : ['statistics', 'dies'] as const);
+  const views = input.views ?? (items.length > 1 ? ['statistics', 'wafers', 'dies'] as const : ['statistics', 'dies'] as const);
 
   // Identity for the Test Values CSV: the population in words for a selection, else the wafer
   // (or the wafers pooled), exactly as the panels' own tables stamp theirs.
@@ -584,5 +584,5 @@ export function renderSelectionTables(input: {
   onLocateDie?: DataTablesInput['onLocateDie'];
 }): { el: HTMLElement; destroy: () => void } {
   // One row per wafer only means something when the population spans more than one.
-  return renderDataTables({ ...input, views: input.items.length > 1 ? ['statistics', 'dies', 'wafers'] : ['statistics', 'dies'] });
+  return renderDataTables({ ...input, views: input.items.length > 1 ? ['statistics', 'wafers', 'dies'] : ['statistics', 'dies'] });
 }

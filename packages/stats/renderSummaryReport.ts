@@ -17,7 +17,7 @@ import { visibleFindings } from './filterFindings.js';
 import { buildYieldDataCombined } from './yield.js';
 import { describeWaferPopulation, populationLabel } from './population.js';
 import { buildTestPassRateData, hasJudgeableTests , poolFunctionalYield } from './testPassRate.js';
-import { buildCapabilityData } from './capability.js';
+import { buildCapabilityData, pooledTestStatsSteps, type CapabilityItem } from './capability.js';
 import { buildSynthesis, type SynthesisTarget } from './synthesis.js';
 import { binBreakdownRows, binBreakdownTitle, binCountsFrom, pooledBinCounts, totalOf } from './binRows.js';
 import { MEAN_WAFER_YIELD_LABEL, shortfallLegend } from './presentation.js';
@@ -42,7 +42,7 @@ import {
   renderTable,
   reportStyles,
 } from './reportHtml.js';
-import { escHtml } from '../core/utils.js';
+import { escHtml, drain } from '../core/utils.js';
 
 export interface SummaryReportParams {
   wafer:        Wafer;
@@ -656,6 +656,7 @@ function lotRegionYieldTable(
  * instead of re-walking `allDies` — see `testSection`'s doc comment.
  */
 function lotTestTable(
+  items: CapabilityItem[],
   allDies: Die[],
   testDefs: TestDef[],
   perWaferSummaries?: StatsSummary[],
@@ -690,7 +691,12 @@ function lotTestTable(
       return { testNumber, count: acc.n, min: acc.min, max: acc.max, mean, ...(variance !== undefined ? { stddev: Math.sqrt(variance) } : {}) };
     });
   }
-  return testSection(allDies, testDefs, pooled, specYield,
+  // Without every wafer's statistics (a program past the analysis test cap), the lot's own come from the
+  // pooled pass the Summary panel and Insights already ran over these wafers — cached, so not a second walk
+  // of every die and test — rather than from one value read per die per test here.
+  const fromPool = pooled ? undefined
+    : [...drain(pooledTestStatsSteps(items, testDefs)).stats].map(([testNumber, d]): TestRowStats => ({ testNumber, ...d }));
+  return testSection(allDies, testDefs, pooled ?? fromPool, specYield,
     pooled ? 'Quartiles are not shown for a lot: they cannot be combined from each wafer\u2019s own.' : undefined, anchorId);
 }
 
@@ -869,7 +875,7 @@ function renderLotGroupSections(
   const quadSection = hasBins && allWafers.length
     ? lotRegionYieldTable('Quadrant Yield (All Wafers)', buildQuadrantRegions, diesByWafer, allWafers, lotRing, passBinsByWafer)
     : '';
-  const testSectionHtml = testDefs.length ? lotTestTable(allDies, testDefs, perWaferSummaries, lotSummary.stats.testSpecYield, testsAnchor(scope)) : '';
+  const testSectionHtml = testDefs.length ? lotTestTable(items, allDies, testDefs, perWaferSummaries, lotSummary.stats.testSpecYield, testsAnchor(scope)) : '';
   const functionalSectionHtml = testDefs.length ? lotFunctionalTable(allDies, testDefs, perWaferSummaries, functionalAnchor(scope)) : '';
   const capabilitySectionHtml = testDefs.length ? capabilitySection(items, testDefs) : '';
   const findingsSectionHtml = lotSummary.findings.length ? findingsSection(lotSummary.findings, lotSummary.stats.waferCount, scope, live) : '';

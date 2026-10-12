@@ -139,6 +139,7 @@ export const SHORT_LABEL: Record<string, string> = {
   'geometry-conflict':             'Geometry conflict',
   'non-standard-diameter':         'Non-standard wafer diameter',
   'diameter-exceeds-die-extent':   'Diameter exceeds die extent',
+  'implausible-center':            'Wafer centre ignored',
   'edge-exclusion-exceeds-radius': 'Edge exclusion exceeds radius',
   'test-count-capped':             'Test analysis skipped',
   'test-def-collision':            'Test definitions disagree',
