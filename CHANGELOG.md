@@ -24,6 +24,8 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-10-13
+
 ### Breaking
 
 - **Rotation, mirroring, the compact layout and log scale are display state, not preferences.** `rotation`, `flipX`, `flipY`,

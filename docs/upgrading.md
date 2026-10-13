@@ -6,7 +6,7 @@ release first. Each release's full list of changes is in the
 each removal, and whether it could come back, are in
 [API_REMOVALS.md](https://github.com/wafertools/wafermap/blob/main/API_REMOVALS.md).
 
-## Next release
+## 0.36.0
 
 ### Test-value analysis runs by default when it fits a budget
 
