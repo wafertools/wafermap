@@ -48,6 +48,7 @@
 // single-wafer view never had this bug.
 
 import type { TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
+import { fmtExact } from '../renderer/fmt.js';
 
 /** Which field disagreed. `'limits'` is the soft tier; the rest are hard. */
 export type TestDefConflictKind = 'name' | 'unit' | 'testType' | 'limits' | 'specLimits';
@@ -227,10 +228,10 @@ export function mergeTestDefs(items: Array<{ testDefs?: TestDef[] } | null | und
         testNumber,
         kind: 'limits',
         excluded: false,
-        values: lows.length > 1 ? lows.map(v => String(v))
-          : highs.length > 1 ? highs.map(v => String(v))
-          : lowIncl.length > 1 ? lowIncl.map(incl => `${incl ? '≥' : '>'} ${lows[0]}`)
-          : highIncl.map(incl => `${incl ? '≤' : '<'} ${highs[0]}`),
+        values: lows.length > 1 ? lows.map(fmtExact)
+          : highs.length > 1 ? highs.map(fmtExact)
+          : lowIncl.length > 1 ? lowIncl.map(incl => `${incl ? '≥' : '>'} ${fmtExact(lows[0])}`)
+          : highIncl.map(incl => `${incl ? '≤' : '<'} ${fmtExact(highs[0])}`),
       });
     }
 
@@ -244,7 +245,7 @@ export function mergeTestDefs(items: Array<{ testDefs?: TestDef[] } | null | und
         testNumber,
         kind: 'specLimits',
         excluded: false,
-        values: (specLows.length > 1 ? specLows : specHighs).map(v => String(v)),
+        values: (specLows.length > 1 ? specLows : specHighs).map(fmtExact),
       });
     }
 

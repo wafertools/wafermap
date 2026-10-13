@@ -322,3 +322,11 @@ test('an agreed exclusive limit survives the merge', () => {
   assert.equal(defs[0].limitHighInclusive, false);
   assert.equal(defs[0].limitLowInclusive, undefined);
 });
+
+test('a limits conflict names float32 limits in their stored digits, not their widened ones', () => {
+  const { conflicts } = mergeTestDefs([
+    item({ testNumber: 1, name: 'Vt', limitLow: Math.fround(1.6), limitHigh: 2 }),
+    item({ testNumber: 1, name: 'Vt', limitLow: Math.fround(1.7), limitHigh: 2 }),
+  ]);
+  assert.deepEqual(conflicts[0].values, ['1.6', '1.7']);
+});

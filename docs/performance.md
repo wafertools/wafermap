@@ -264,6 +264,14 @@ coefficients are unchanged at the precision they are shown to (the standard erro
 of `r` at n=25,000 is under 0.007), and a sampled matrix always says so on the
 panel and in `CorrelationMatrix.sample`.
 
+**And at most 300 tests, and 2.5×10⁸ pair updates.** Pairs grow with the square of
+the test count: 2,002 tests took 38 s and 15,000 never finished. Above 300 parametric
+tests, the ones paired are chosen first — most dies outside their limits, then the widest
+spread against the limit window — and the panel names the selection
+(`CorrelationMatrix.testSample`). Past 2.5×10⁸ pair updates (300 tests over more than
+~5,600 dies) the dies are thinned to fit, evenly, which the sample note reports; the
+standard error of `r` there is about 0.013.
+
 ---
 
 ## Galleries: let `analyzeWaferLot` reuse work you already did

@@ -86,6 +86,24 @@ export function plainBinTerms(text: string): string {
 }
 
 /**
+ * A stored number as text, in the fewest digits that are still exactly it. STDF
+ * stores limits and results as 32-bit floats, so a limit written as 1.6 arrives as
+ * 1.600000023841858; a value that is exactly a float32 is written in the shortest
+ * digits that are still that float32 ("1.6", "2.0087667"), any other number as it
+ * is. For a value shown as itself — a limit, a category of a discrete X — where
+ * `fmt`'s rounding to a few figures would hide a real difference. Display only:
+ * comparisons keep the exact value.
+ */
+export function fmtExact(v: number): string {
+  if (!Number.isFinite(v) || Math.fround(v) !== v) return String(v);
+  for (let p = 1; p <= 9; p++) {
+    const shortest = Number(v.toPrecision(p));
+    if (Math.fround(shortest) === v) return String(shortest);
+  }
+  return String(v);
+}
+
+/**
  * Format a numeric value for display (tooltips, overlays, single-value labels).
  *
  * - With a unit: always uses SI prefix (e.g. `12 µV`).

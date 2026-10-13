@@ -44,10 +44,15 @@ under `### Breaking`.
   Its analysis no longer reads that bin as every die's verdict, so such a card no longer reports "near-full — 100% of dies failing"
   or a 0% yield: its yield is not stated, and value findings on the count follow the same option as a stacked test value. A value
   stack (`mean`, `median` and the rest) likewise no longer reports soft-bin findings from its template wafer's bins.
-- **A dense map is drawn without light bands.** When the kerf between dies would be narrower than one device pixel, the dies
-  are drawn edge to edge across their full pitch, each edge on a whole device pixel, and without die outlines; a kerf and edges
-  a fraction of a pixel wide had beaten against the pixel grid into horizontal bands and washed the colours out. Zoomed in until
-  the kerf is a pixel or more, the map is drawn as before.
+- **Stored numbers are shown in their stored digits.** A limits conflict between wafers and the categories of a box or bar
+  plot over a numeric X show a float32 value (STDF stores limits and results that way) in its shortest exact form, `1.6`
+  rather than `1.600000023841858`. The same text is exported as `fmtExact` for a host that shows limits itself.
+- **A dense map is drawn without light bands.** When the kerf between dies would be narrower than one device pixel, each die
+  is drawn on whole device pixels without an outline: a die of 4 device pixels or more keeps a kerf of exactly one pixel, a
+  smaller one is drawn edge to edge across its pitch. A kerf and edges a fraction of a pixel wide had beaten against the pixel
+  grid into horizontal bands and washed the colours out; small and mid-sized maps (a gallery card, the compact view) now show
+  a crisp one-pixel gap between dies where they had a soft outline. Zoomed in until the kerf is a pixel or more, the map is
+  drawn as before.
 - **Out-of-spec marks are left off dies smaller than 5 CSS pixels.** Below that size a ▽/△ mark is larger than its die and covers
   its neighbours. The colorbar says "▽△ limit marks: zoom in" in place of the marks' key; zooming in brings them back.
 - **The correlation matrix caps its work at 250 million pair updates.** Past that (300 tests over more than ~5,600 dies), the dies are

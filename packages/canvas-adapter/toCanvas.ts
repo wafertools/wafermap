@@ -28,6 +28,13 @@ import { hitGridDims } from './hitGrid.js';
  */
 const MIN_MARKED_DIE_PX = 5;
 
+/**
+ * Smallest die pitch, in device pixels, that keeps a one-pixel kerf when dies are
+ * snapped to the pixel grid (see `snapDies`). Below it a pixel of kerf would be a
+ * quarter or more of the die, and the dies are drawn edge to edge instead.
+ */
+const SNAP_GAP_MIN_PITCH = 4;
+
 function triPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, tri: number, dir: number): void {
   ctx.moveTo(cx, cy + dir * tri);
   ctx.lineTo(cx - tri * 0.9, cy - dir * tri * 0.6);
@@ -516,12 +523,14 @@ export function drawMapCanvas(
   // each small die as dpr rises and grey out a dense map on a high-DPI screen.
   const devicePx = 1 / (ppm * dpr);
 
-  // A kerf narrower than one device pixel cannot be drawn, and neither can a die's
-  // edges at that scale: anti-aliased, the gap's and the edges' partial coverage
-  // beats against the pixel grid into light bands across a dense wafer. So the
-  // dies are then drawn edge to edge across their full pitch, snapped to whole
-  // device pixels — neighbours share every edge — and without outlines. Zoomed in
-  // until the kerf is a pixel or more, they are drawn as before.
+  // A kerf narrower than one device pixel cannot be drawn as it is, and neither can
+  // a die's edges at that scale: anti-aliased, the gap's and the edges' partial
+  // coverage beats against the pixel grid into light bands across a dense wafer.
+  // So the dies are then snapped to whole device pixels, without outlines: a die of
+  // at least SNAP_GAP_MIN_PITCH pixels keeps a kerf of exactly one pixel, the same
+  // for every die (a separator that cannot beat), and a smaller one is drawn edge to
+  // edge across its pitch. Zoomed in until the kerf is a pixel or more, the dies
+  // are drawn as before.
   const snapDies = view.rectangles.length > 0 && view.dieGap * ppm * dpr < 1;
 
   // Batch rectangles by fill color — one beginPath/fill per unique color instead of per die.
@@ -540,7 +549,8 @@ export function drawMapCanvas(
     // fill, and paths of 256 take 43 ms. Chrome is unaffected (78 → 69 ms).
     // Snapped: device-pixel coordinates under an identity transform. A die's edges
     // are its pitch's, rounded, so two neighbours round one shared edge to one pixel
-    // boundary; a die narrower than a pixel still gets one.
+    // boundary; its right and bottom edges then give up the one-pixel kerf when the
+    // pitch is wide enough to keep it. A die narrower than a pixel still gets one.
     const scale = ppm * dpr, ox = originX * dpr, oy = originY * dpr, g = view.dieGap / 2;
     if (snapDies) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); }
     for (const [fill, group] of byColor) {
@@ -552,8 +562,9 @@ export function drawMapCanvas(
           const r = group[j];
           if (snapDies) {
             const hw = r.width / 2 + g, hh = r.height / 2 + g;
-            const x0 = Math.round(ox + (r.x - hw) * scale), x1 = Math.max(x0 + 1, Math.round(ox + (r.x + hw) * scale));
-            const y0 = Math.round(oy - (r.y + hh) * scale), y1 = Math.max(y0 + 1, Math.round(oy - (r.y - hh) * scale));
+            const kx = 2 * hw * scale >= SNAP_GAP_MIN_PITCH ? 1 : 0, ky = 2 * hh * scale >= SNAP_GAP_MIN_PITCH ? 1 : 0;
+            const x0 = Math.round(ox + (r.x - hw) * scale), x1 = Math.max(x0 + 1, Math.round(ox + (r.x + hw) * scale) - kx);
+            const y0 = Math.round(oy - (r.y + hh) * scale), y1 = Math.max(y0 + 1, Math.round(oy - (r.y - hh) * scale) - ky);
             ctx.rect(x0, y0, x1 - x0, y1 - y0);
           } else {
             ctx.rect(r.x - r.width / 2, r.y - r.height / 2, r.width, r.height);

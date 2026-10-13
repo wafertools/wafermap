@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fmt, fmtColorbarAxis } from '../dist/packages/renderer/fmt.js';
+import { fmt, fmtColorbarAxis, fmtExact } from '../dist/packages/renderer/fmt.js';
 
 test('fmt — non-finite values', () => {
   assert.equal(fmt(Infinity), 'Infinity');
@@ -130,4 +130,14 @@ test('fmtColorbarAxis — engineering E-15 label for tiny values', () => {
 test('fmtColorbarAxis — engineering no exponent suffix for normal range', () => {
   const { axisLabel } = fmtColorbarAxis(50, 'X', undefined, 'engineering');
   assert.equal(axisLabel, 'X');
+});
+
+// STDF stores limits and results as float32: 1.6 arrives as 1.600000023841858.
+test('fmtExact: a float32 in its shortest exact digits, anything else as it is', () => {
+  assert.equal(fmtExact(Math.fround(1.6)), '1.6');
+  assert.equal(fmtExact(Math.fround(2.0087667)), '2.0087667');
+  assert.equal(fmtExact(Math.fround(-1e-9)), '-1e-9');
+  assert.equal(fmtExact(5), '5');
+  assert.equal(fmtExact(0.1 + 0.2), String(0.1 + 0.2), 'not a float32: unchanged');
+  assert.equal(fmtExact(NaN), 'NaN');
 });

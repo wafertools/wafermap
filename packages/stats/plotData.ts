@@ -28,6 +28,7 @@ import { yieldCounts } from './yield.js';
 import { sameTestName } from './sweep.js';
 import { sameField, plotIssue, isField } from './plotSpec.js';
 import type { PlotSpec, PlotField, PlotAxis, PlotAggregate, PlotBuiltin } from './plotSpec.js';
+import { fmtExact } from '../renderer/fmt.js';
 
 /** One wafer of the population. The same shape a drilldown source's items have. */
 export interface PlotItem {
@@ -592,7 +593,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     if (xc.kind === 'numeric' && xc.level === 'die' && !isCoordinate) return fail(`${xc.label} is continuous, so a ${mark} cannot have one ${mark === 'bar' ? 'bar' : 'box'} per value; use a scatter or line, or choose a categorical X such as wafer, ring or bin`);
     const labelsOf: (string | undefined)[] = xc.cat
       ? catAt(xc)
-      : Array.from(numAt(xc), v => (Number.isFinite(v) ? String(v) : undefined));
+      : Array.from(numAt(xc), v => (Number.isFinite(v) ? fmtExact(v) : undefined));
     const catSeen = new Map<string, number>();
     const order: string[] = [];
     for (let u = 0; u < nUnits; u++) { const t = labelsOf[u]; if (t !== undefined && !catSeen.has(t)) { catSeen.set(t, 0); order.push(t); } }

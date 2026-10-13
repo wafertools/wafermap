@@ -166,11 +166,15 @@ buildWaferMap({
                   // centre. Not needed for sparse full-extent data. Does NOT change
                   // die.x/die.y labels.
                   // When omitted, the centre is inferred as the data midpoint (full-wafer assumption).
+                  // Without a diameter, a centre more than the dies' own span outside their
+                  // bounding box (20+ dies) is ignored and reported as 'implausible-center'.
   notch?:         { type: 'top' | 'bottom' | 'left' | 'right' }
                   // physical orientation mark direction; standard dimensions derived from diameter:
                   //   ≤ 100 mm → 32.5 mm orientation flat  (SEMI M1)
                   //   ≤ 150 mm → 57.5 mm orientation flat  (SEMI M1)
                   //   > 150 mm → V-notch ~3.5 mm wide, 1.25 mm deep  (SEMI M1)
+                  // With no die size (a diameter in die pitches) the side is kept and
+                  // nothing is cut into the outline: wafer.notch.length is 0.
   orientation?:   0 | 90 | 180 | 270  // degrees CW to rotate the die grid on screen; default 0 (see note below)
   edgeExclusion?: number         // exclusion band width in mm measured inward from the wafer edge; dies in this band are dimmed
                                  // how these dies affect yield is controlled by the top-level edgeDieYieldMode option (§4.1.11)
@@ -240,7 +244,8 @@ is present the top-level `results` field is ignored.
     | 'min'        // minimum value across lot → testValues[0]
     | 'max'        // maximum value across lot → testValues[0]
     | 'count'      // number of wafers that provided a value at this position → testValues[0]
-    | 'countBin'   // how many wafers had targetBin at this position → testValues[0]
+    | 'countBin'   // how many wafers had targetBin at this position → testValues[0];
+                   // a countBin or percent stack has no yield and is analysed on the count
     | 'mode'       // most frequent bin across wafers → hbin
     | 'percent'    // percentage of wafers that had targetBin → testValues[0] in [0,100]
   targetBin?: number   // bin value to count or measure; required for 'countBin' and 'percent'
@@ -380,7 +385,7 @@ The admitted def joins `result.testDefs` carrying `derived: true` **and its `exp
 | HTML reports | In the findings table | A key line under it naming each expression — a printed report has no hover |
 | CSV exports | None — plain names | A trailing **Derived from** column holding the expression, added only when a row is derived. Where tests are columns (die list, correlation), the header or a per-side column says what it was derived from |
 
-A host listing tests in its own UI marks them the same way with the exported `DERIVED_MARK` (`'†'`) and `DERIVED_KEY` (`'Derived, not measured'`) — never its own copy of the glyph or the words.
+A host listing tests in its own UI marks them the same way with the exported `DERIVED_MARK` (`'†'`) and `DERIVED_KEY` (`'Derived, not measured'`) — never its own copy of the glyph or the words. It shows a test's limits with `fmtExact(v)`: a float32 value (STDF stores limits that way) in its shortest exact digits, `1.6` rather than `1.600000023841858`, any other number as it is — the same text the library's own messages use.
 
 The structured form travels alongside: `TestDef.derived`/`expression` (§4.1.8), `StatsFinding.variable.derived`/`expression`, and `derived`/`expression` on `functionalYield` rows — so a host rendering its own view never has to parse the glyph back out.
 

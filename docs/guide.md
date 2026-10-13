@@ -189,7 +189,9 @@ const result = buildWaferMap({
 ```
 
 The notch renders as a V-notch on 200 mm+ wafers and as a flat on smaller wafers —
-you don't need to specify which.
+you don't need to specify which. With no die size the wafer is measured in die pitches,
+where a millimetre flat or notch has no size: the outline is drawn without one and the
+marker beside the wafer shows the side.
 
 ### When you don't know the geometry
 
@@ -242,7 +244,10 @@ const result = buildWaferMap({
 ```
 
 `waferConfig.center` anchors placement to the real centre. It does not change the
-public `die.x`/`die.y` labels — those stay the original prober coordinates.
+public `die.x`/`die.y` labels — those stay the original prober coordinates. Without a
+`diameter`, a centre far outside the dies (more than their own span beyond their bounding
+box) cannot be the wafer's: it is ignored, the centre is inferred from the dies, and an
+`'implausible-center'` warning names it. Give `diameter` as well if it is real.
 
 When the library detects likely-partial coverage with no `center`, it adds a
 structured `WaferWarning` to `result.warnings` (code `'partial-coverage'`) and sets

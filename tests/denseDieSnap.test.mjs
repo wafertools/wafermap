@@ -50,6 +50,19 @@ test('dense dies: snapped to whole device pixels, edge to edge, no outlines', ()
   }
 });
 
+test('snapped dies of 4+ device px keep an exact one-pixel kerf', () => {
+  // r=25 on a 400 px canvas: a pitch of ~6 device px with a sub-pixel kerf. The map
+  // renders more than once in the harness, so repeated rectangles are counted once.
+  const { log } = draw(25);
+  const seen = new Set();
+  const dieRects = log.rects.filter(r => r.identity && !seen.has(`${r.x},${r.y}`) && seen.add(`${r.x},${r.y}`));
+  assert.ok(dieRects.length > 0, 'snapped');
+  const byRow = new Map();
+  for (const r of dieRects) { if (!byRow.has(r.y)) byRow.set(r.y, []); byRow.get(r.y).push(r); }
+  const row = [...byRow.values()].sort((a, b) => b.length - a.length)[0].sort((a, b) => a.x - b.x);
+  for (let i = 1; i < row.length; i++) assert.equal(row[i].x - (row[i - 1].x + row[i - 1].w), 1, 'a one-pixel kerf');
+});
+
 test('sparse dies: drawn with their kerf and outlines, as before', () => {
   const { log } = draw(8);
   assert.ok(!log.rects.some(r => r.identity && r.w > 4), 'no device-space die fills');

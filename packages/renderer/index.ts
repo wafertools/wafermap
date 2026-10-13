@@ -26,3 +26,6 @@ export { binColorsForMaps } from './binColors.js';
 // (tsmap's test selector) — so it marks them exactly as the library does,
 // rather than keeping a copy of the glyph and the words that can drift.
 export { DERIVED_MARK, DERIVED_KEY } from './testLabel.js';
+// A stored number in its fewest exact digits, for a host that shows test limits in
+// its own UI (tsmap's test selector) — the same text the library's own warnings use.
+export { fmtExact } from './fmt.js';

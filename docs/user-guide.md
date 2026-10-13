@@ -150,7 +150,9 @@ become available:
   for above the high limit** — so they stand out without leaving the distribution. The
   triangle is drawn black or white per die for contrast against its own colour, so
   it stays visible under any colour scheme, and its shape (not colour) carries the
-  below/above-limit meaning.
+  below/above-limit meaning. On dies too small to carry one (under 5 pixels, as on a dense
+  wafer zoomed out) the triangles are left off and the colour bar says **▽△ limit marks: zoom
+  in**; zoom in and they appear.
 - **Limit pass/fail**: when active, dies within the test limits are shown in
   a pass colour and dies outside them are highlighted — **blue for below the
   low limit**, **red for above the high limit**. Both flags apply

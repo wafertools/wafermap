@@ -17,6 +17,8 @@ const SNAPSHOTS = {
     // Added in 0.30.3 so a host marks derived tests in its own UI exactly as the
     // library does (tsmap's test selector).
     'DERIVED_KEY', 'DERIVED_MARK',
+    // Added in the next release so a host shows test limits in their stored digits (tsmap's test selector).
+    'fmtExact',
     'analyzeWaferLot', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'buildWaferMap',
     'diePassStatus', 'facetValueOf', 'FACET_NONE_VALUE', 'filterFindings',
     'getDieKey', 'getReticleCell', 'getReticleShot', 'getTestPassStatus', 'hasPosition', 'isYieldEligibleDie',
@@ -38,6 +40,7 @@ const SNAPSHOTS = {
     'binColorsForMaps',
     // Added in 0.30.3 — see the root entry above.
     'DERIVED_KEY', 'DERIVED_MARK',
+    'fmtExact',
     'buildWaferMap', 'getDieKey', 'getTestPassStatus',
     'listBinColorSchemes', 'listValueColorSchemes', 'registerBinColorScheme', 'registerValueColorScheme',
     'resolveValueColorFn',
