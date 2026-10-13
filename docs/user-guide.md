@@ -513,6 +513,12 @@ important. *Notable* findings are statistically significant with a meaningful
 effect but not as extreme. *Info* findings pass the significance threshold at
 lower strength and are worth reviewing but may reflect smaller or noisier patterns.
 
+**Test-value findings** (a region reading high or low on a test) take the longest to compute, so
+they are included automatically only when the data is small enough to take about a second. On
+more data the panel says they are not included, with the number of tests and dies and roughly
+how long they would take, and an **Analyse** button that adds them. For a lot, one click analyses
+every wafer. Findings about tests failing their limits are included either way.
+
 <div data-wmap-demo="findings" class="wmap-demo"></div>
 
 *Findings panel open showing a detected edge-ring pattern. Click any row to

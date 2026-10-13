@@ -29,9 +29,13 @@ import { classifyChanged, COLOR_KEYS, findingBin, findingPlotMode } from './rend
 import { findingPatternKey } from '../stats/filterFindings.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
-import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest, getDieTestValue } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest, getDieTestValue, isBuiltMap } from '../renderer/buildWaferMap.js';
+import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
+import { lotTestValueStatus } from '../stats/testValueBudget.js';
+import { testValueNotice } from './testValueOffer.js';
+import { axisPrefsFromOptions, optionsFromAxisPrefs, CHART_PREF_KEYS } from './chartPrefs.js';
 import { collectWarnings, buildWarningsMenuEl, severityOf, type WarningsOptions, type WaferWarning } from './warnings.js';
 import { asList, compareNatural, arrayEqual, toggleHighlight } from '../core/utils.js';
 import { buildCompactMap, compactLayoutOffered, type CompactMap } from '../core/compact.js';
@@ -204,6 +208,13 @@ export interface GalleryOptions {
   /** Precomputed lot-level stats summary. Enables the summary panel toggle button in the control bar. */
   lotStatsSummary?:        LotStatsSummary;
   /**
+   * Called after the gallery re-analyses the lot itself: when the reader asks, from the lot Findings section, for the
+   * test-value analysis the summaries record as not run (`stats.testValueAnalysis`). `summaries` holds each item's
+   * new summary in item order, `lotStatsSummary` the lot's; the gallery already shows them. Keep them so the host's
+   * own copies (reports, logs) match.
+   */
+  onStatsSummaryChange?: (change: { summaries: StatsSummary[]; lotStatsSummary: LotStatsSummary }) => void;
+  /**
    * Options for the always-available Summary panel alongside the gallery
    * grid — a "Lot" tab with full lot-level stats (metadata, yield, bin
    * breakdown, ring/quadrant yield, test values, findings) and a combined
@@ -217,9 +228,12 @@ export interface GalleryOptions {
   /**
    * A row at the top of the Findings section stating that a category of finding
    * is not present, and optionally offering to compute it — see
-   * {@link FindingsNotice}. wmap never raises this itself: only the host knows
-   * what analysis it chose to skip and what running it would cost. Replaceable
-   * afterwards via the controller's `setFindingsNotice`.
+   * {@link FindingsNotice}. Replaces the built-in offer of the skipped
+   * test-value analysis while set.
+   *
+   * @deprecated The renderers offer the skipped test-value analysis themselves
+   * (from `stats.testValueAnalysis`) and report the re-run through
+   * `onStatsSummaryChange`. See API_REMOVALS.md.
    */
   findingsNotice?: FindingsNotice;
   /**
@@ -295,7 +309,9 @@ export interface GalleryController {
   setLotStatsSummary(summary: LotStatsSummary | undefined): void;
   /**
    * Replace the lot Findings-section notice (see `FindingsNotice`). Pass
-   * `undefined` to clear it once the offered analysis has been run.
+   * `undefined` to clear it, which brings back the built-in offer.
+   *
+   * @deprecated With `findingsNotice`. See API_REMOVALS.md.
    */
   setFindingsNotice(notice: FindingsNotice | undefined): void;
   /**
@@ -824,8 +840,57 @@ export function renderWaferGallery(
   const onWindowBlur = () => hideTooltip();
   window.addEventListener('blur', onWindowBlur);
 
-  // Host-supplied row at the top of the lot Findings section — see FindingsNotice.
-  let currentFindingsNotice: FindingsNotice | undefined = options.findingsNotice;
+  // Host-supplied row at the top of the lot Findings section — see FindingsNotice (deprecated).
+  let hostFindingsNotice: FindingsNotice | undefined = options.findingsNotice;
+  // The lot Findings section's own offer of a test-value analysis that did not
+  // run (`testValueNotice`), lot-wide: one decision and one run for every wafer.
+  // A notice the host still passes takes its place.
+  let analysingTestValues: AbortController | null = null;
+  /** The items as built maps, when every item is one: only those can be analysed again. */
+  function analysableItems(): WaferMapDisplayItem[] | null {
+    const items = originalItems;
+    return items.length > 0 && items.every(it => it != null && isBuiltMap(it)) ? items : null;
+  }
+  function lotTestValueStatusNow() {
+    return currentLotStats?.stats.testValueAnalysis
+      ?? lotTestValueStatus(originalItems.flatMap(it => (it?.statsSummary ? [it.statsSummary] : [])));
+  }
+  const findingsNotice = (): FindingsNotice | undefined => hostFindingsNotice
+    ?? (analysableItems() ? testValueNotice(lotTestValueStatusNow(), originalItems.length, analysingTestValues !== null, analyseTestValues) : undefined);
+  function analyseTestValues(): void {
+    const items = analysableItems();
+    if (analysingTestValues || !items) return;
+    const run = new AbortController();
+    analysingTestValues = run;
+    renderGallerySummaryPanel();
+    const analysisOptions = currentLotStats?.analysisOptions ?? items[0].statsSummary?.analysisOptions ?? {};
+    // Loaded when asked for: the lot analysis is not part of the gallery's first download.
+    void import('../stats/analyzeWaferLot.js')
+      .then(({ analyzeWaferLotAsync }) =>
+        analyzeWaferLotAsync(items as WaferMapResult[], { ...analysisOptions, enableTestValueAnalysis: true, signal: run.signal }))
+      .then((lot) => {
+        if (run.signal.aborted) return;
+        analysingTestValues = null;
+        const summaries = lot.perWafer.map(w => w.summary);
+        // In place: each item and its card take the new summary, so nothing is rebuilt.
+        originalItems = originalItems.map((it, i) => (it ? { ...it, statsSummary: summaries[i] } : it));
+        if (!STACKED_MODES.has(sharedOpts.plotMode!)) {
+          currentItems = currentItems.map((it, i) => (it ? { ...it, statsSummary: summaries[i] } : it));
+          cardControllers.forEach((ctrl, i) => ctrl?.setStatsSummary(summaries[i]));
+        }
+        currentLotStats = lot;
+        refreshGalleryWarnings();
+        renderGallerySummaryPanel();
+        refreshLotSummaryButton();
+        options.onStatsSummaryChange?.({ summaries, lotStatsSummary: lot });
+      })
+      .catch((err) => {
+        if (run.signal.aborted) return;
+        analysingTestValues = null;
+        renderGallerySummaryPanel();
+        throw err;
+      });
+  }
 
   function applyFindingHighlight(indices: number[]): void {
     findingHighlightIndices = new Set(indices);
@@ -1357,7 +1422,7 @@ export function renderWaferGallery(
         activeFindingId: activeLotFindingId,
         warnings: (options.warnings?.display ?? true) ? currentWarnings : [],
         findingsFilter: lotFindingsFilter,
-        findingsNotice: currentFindingsNotice,
+        findingsNotice: findingsNotice(),
         onFindingsFilterChange: renderGallerySummaryPanel,
         onSaveText: exportHooks.onSaveText,
         onFindingClick: (finding, row) => {
@@ -2385,6 +2450,13 @@ export function renderWaferGallery(
     if (insightsTab) return Promise.resolve(insightsTab);
     insightsLoad ??= import('./insightsTab.js').then(({ createInsightsTab }) => {
       insightsTab = createInsightsTab({
+      // The charts' axis settings are preferences: start from them, and report a reader's change.
+      initialAxisPrefs: axisPrefsFromOptions(sharedOpts),
+      onAxisPrefsChange: (prefs) => {
+        sharedOpts = { ...sharedOpts, ...optionsFromAxisPrefs(prefs) };
+        const changed = [...CHART_PREF_KEYS] as (keyof WaferViewOptions)[];
+        options.onViewOptionsChange?.(toPublicViewOptions(sharedOpts), changed, classifyChanged(changed));
+      },
       attributes: options.attributes,
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
@@ -3323,6 +3395,14 @@ export function renderWaferGallery(
     // What the caller asked to change — reported to onViewOptionsChange as-is,
     // before `partial` gains the derived `binColors` below.
     const requested = Object.keys(partial) as (keyof WaferViewOptions)[];
+    // The charts' axis settings reach an open Insights tab, and rebuild no card.
+    if (requested.length > 0 && requested.every(k => (CHART_PREF_KEYS as readonly string[]).includes(k))) {
+      sharedOpts = { ...sharedOpts, ...partial };
+      insightsTab?.setAxisPrefs(axisPrefsFromOptions(sharedOpts));
+      if (fireCallback) options.onViewOptionsChange?.(toPublicViewOptions(sharedOpts), requested, classifyChanged(requested));
+      return;
+    }
+    if (CHART_PREF_KEYS.some(k => k in partial)) insightsTab?.setAxisPrefs(axisPrefsFromOptions({ ...sharedOpts, ...partial }));
     const prevMode = sharedOpts.plotMode;
     const prevLegendBlocked = perCardLegendBlockedReason() !== null;
     sharedOpts = { ...sharedOpts, ...partial };
@@ -3600,6 +3680,7 @@ export function renderWaferGallery(
       showTooltip:     true,
       padding:         cardPadding,
       statsSummary:    item.statsSummary,
+      testValueOffer:  findingsNotice,
       onSaveImage:     options.onSaveImage,
       onSaveText:      options.onSaveText,
       downloadFilename: options.downloadFilename,
@@ -4117,6 +4198,7 @@ export function renderWaferGallery(
       showTooltip:     true,
       padding:         cardPadding,
       statsSummary:    item.statsSummary,
+      testValueOffer:  findingsNotice,
       onSaveImage:     options.onSaveImage,
       onSaveText:      options.onSaveText,
       downloadFilename: options.downloadFilename,
@@ -4293,7 +4375,7 @@ export function renderWaferGallery(
     },
 
     setFindingsNotice(notice: FindingsNotice | undefined): void {
-      currentFindingsNotice = notice;
+      hostFindingsNotice = notice;
       renderGallerySummaryPanel();
     },
 
@@ -4307,7 +4389,7 @@ export function renderWaferGallery(
 
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {
       currentLotStats = summary;
-      // Lot analysis raises its own advisories (the test-count cap among them),
+      // Lot analysis raises its own advisories (an option correction, say),
       // so a summary arriving late can introduce warnings the bar has not shown.
       refreshGalleryWarnings();
       if (gallerySummaryPanelEl) renderGallerySummaryPanel();
@@ -4318,6 +4400,7 @@ export function renderWaferGallery(
 
     destroy(): void {
       plotStore.flush();
+      analysingTestValues?.abort();
       buildGeneration++; // cancel any pending factory resolvers
       printWindow.removeEventListener('beforeprint', drawAllCards);
       // Same reason as the queued resize frame below: a staged lot-panel render

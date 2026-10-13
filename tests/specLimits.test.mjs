@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/packages/renderer/buildWaferMap.js';
 import { buildView } from './fixtures/buildViewStated.mjs';
 import { analyzeWaferMap } from '../dist/packages/stats/analyzeWaferMap.js';
+import { overBudgetResults } from './fixtures/overBudget.mjs';
 
 // Use a standard 300 mm wafer, 10 mm dies, so (0,0) is safely in the centre.
 const waferConfig = { diameter: 300 };
@@ -350,53 +351,60 @@ test('testSpecYield — one-sided limit (limitHigh only)', () => {
   assert.equal(entry.failHighDies, 1);
 });
 
-// ── stats.warnings — test count cap ──────────────────────────────────────────
+// ── test-value budget ('auto') ───────────────────────────────────────────────
 
-test('stats.warnings — populated when >250 tests present without testNumbers filter', () => {
-  const testValues = {};
-  for (let i = 0; i < 251; i++) testValues[i] = Math.random();
-  const input = buildWaferMap({
-    results: [{ x: 0, y: 0, hbin: 1, testValues }, { x: 1, y: 0, hbin: 1, testValues }],
-    waferConfig, dieConfig,
-  });
-  const summary = analyzeWaferMap(input, { enableTestValueAnalysis: true });
-  assert.ok(summary.stats.warnings?.length, 'should have at least one warning');
-  // Structured WaferWarning, not a bare string — branch on `code`, which is
-  // stable, rather than on prose that may be reworded.
-  const w = summary.stats.warnings[0];
-  assert.equal(w.code, 'test-count-capped');
-  assert.equal(typeof w.message, 'string');
-  assert.equal(w.severity, 'warning');
-});
-
-test('stats.warnings — undefined when testNumbers filter provided', () => {
-  const testValues = {};
-  for (let i = 0; i < 101; i++) testValues[i] = Math.random();
-  const input = buildWaferMap({
-    results: [{ x: 0, y: 0, hbin: 1, testValues }, { x: 1, y: 0, hbin: 1, testValues }],
-    waferConfig, dieConfig,
-  });
-  const summary = analyzeWaferMap(input, { testNumbers: [0, 1, 2] });
+test("'auto' over the budget skips the analysis, records it, and raises no warning", () => {
+  const summary = analyzeWaferMap(buildWaferMap({ results: overBudgetResults() }));
+  const tv = summary.stats.testValueAnalysis;
+  assert.deepEqual({ state: tv.state, tests: tv.tests, dies: tv.dies, values: tv.values },
+    { state: 'skipped', tests: 251, dies: 10_000, values: 2_510_000 });
+  assert.ok(tv.estimateMs > 1000, 'the estimate is the slower engine\'s, over a second');
+  assert.equal(summary.stats.perTestStats, undefined);
+  assert.ok(!summary.findings.some(f => f.variable.measure === 'mean'));
+  // A skipped optional analysis is an offer, not a fault.
   assert.equal(summary.stats.warnings, undefined);
 });
 
-test('stats.warnings — cap warning from computePerTestStats reaches stats.warnings (H4)', () => {
-  // The cheap perTestStats path discovers test numbers and can raise the >250-test
-  // cap warning. Regression: that warning was previously dropped because
-  // stats.warnings was assigned before this path ran. No findings pass here, so
-  // warnings starts empty — exactly the case where the old code skipped assignment.
-  const testValues = {};
-  for (let i = 0; i < 251; i++) testValues[i] = Math.random();
-  const input = buildWaferMap({
-    results: [{ x: 0, y: 0, hbin: 1, testValues }, { x: 1, y: 0, hbin: 1, testValues }],
-    waferConfig, dieConfig,
-  });
-  const summary = analyzeWaferMap(input, { computePerTestStats: true });
-  assert.ok(summary.stats.warnings?.length, 'cap warning should reach stats.warnings');
-  assert.equal(summary.stats.warnings[0].code, 'test-count-capped');
-  // The outcome is "no test findings at all", not "some tests skipped" — the
-  // message has to say so, because nothing else will.
-  assert.match(summary.stats.warnings[0].message, /no test findings|skipped/i);
+test('the budget is dies × tests: many tests on a small wafer are analysed, the same tests on a large one are not', () => {
+  // 302 tests on 3,001 dies (906,302 values) is inside the budget; 251 tests on 10,000 dies is over it.
+  const small = [];
+  for (let i = 0; i < 3001; i++) {
+    const testValues = {};
+    for (let t = 0; t < 302; t++) testValues[1000 + t] = ((i * 7 + t * 3) % 17) / 17;
+    small.push({ x: i % 55, y: Math.floor(i / 55), hbin: 1, testValues });
+  }
+  const analysed = analyzeWaferMap(buildWaferMap({ results: small }));
+  assert.equal(analysed.stats.testValueAnalysis.state, 'done');
+  assert.equal(analysed.stats.perTestStats?.length, 302);
+  assert.equal(analyzeWaferMap(buildWaferMap({ results: overBudgetResults() })).stats.testValueAnalysis.state, 'skipped');
+});
+
+test('true runs the analysis whatever the size, and false runs none of it', () => {
+  const map = buildWaferMap({ results: overBudgetResults() });
+  const on = analyzeWaferMap(map, { enableTestValueAnalysis: true });
+  assert.equal(on.stats.testValueAnalysis.state, 'done');
+  assert.equal(on.stats.perTestStats?.length, 251);
+  const off = analyzeWaferMap(map, { enableTestValueAnalysis: false });
+  assert.equal(off.stats.testValueAnalysis.state, 'off');
+  assert.equal(off.stats.perTestStats, undefined);
+});
+
+test('computePerTestStats is never budgeted: asking for it is choosing its cost', () => {
+  const summary = analyzeWaferMap(buildWaferMap({ results: overBudgetResults() }), { computePerTestStats: true });
+  assert.equal(summary.stats.testValueAnalysis.state, 'skipped');
+  assert.equal(summary.stats.perTestStats?.length, 251);
+});
+
+test('naming fewer tests shrinks the analysis under the budget', () => {
+  const summary = analyzeWaferMap(buildWaferMap({ results: overBudgetResults() }), { testNumbers: [1000, 1001, 1002] });
+  assert.equal(summary.stats.testValueAnalysis.state, 'done');
+  assert.equal(summary.stats.testValueAnalysis.tests, 3);
+  assert.equal(summary.stats.perTestStats?.length, 3);
+});
+
+test('a summary records the options it was analysed with', () => {
+  const summary = analyzeWaferMap(buildWaferMap({ results: overBudgetResults(3) }), { sectorCount: 16, testNumbers: [1000] });
+  assert.deepEqual(summary.analysisOptions, { sectorCount: 16, testNumbers: [1000] });
 });
 
 // ── colorbarRangeMode ─────────────────────────────────────────────────────────

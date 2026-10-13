@@ -140,15 +140,15 @@ Rings and quadrants are always built. The **row** toggles control which variable
 
 #### Which test-value setting to use
 
-The **test-value row is off by default** because it is the expensive one — it runs a Welch comparison for every test across every region, scaling with regions × tests × dies. Leaving it off costs you **nothing on yield or bins**; you lose only the parametric (measured-value) findings. Choose based on what you need:
+The **test-value row** is the expensive one: it runs a Welch comparison for every test across every region, scaling with dies × tests. By default (`enableTestValueAnalysis: 'auto'`) it runs when the analysis reads at most 1,500,000 values, summed over a lot's wafers, and is otherwise skipped and offered to the reader in the Findings section ([§7.3.1](../api/stats.md#731-choosing-what-to-analyse-cost-and-who-decides)). Skipping it costs **nothing on yield or bins**; you lose only the parametric (measured-value) findings. To decide it yourself:
 
 | You want…                                                                 | Pass                                | Relative cost |
 |---------------------------------------------------------------------------|-------------------------------------|---------------|
-| Yield, bin, and spatial (ring/quadrant/sector/cluster) findings only      | *(nothing — this is the default)*   | baseline      |
-| …plus per-test descriptive stats (mean, stddev, min, max, median, Q1, Q3) for box plots / histograms | `computePerTestStats: true`         | ~5× baseline  |
-| …plus "this test's value differs significantly in this region" findings (and spec-limit region findings) | `enableTestValueAnalysis: true`     | ~12× baseline |
+| Yield, bin, and spatial (ring/quadrant/sector/cluster) findings only      | `enableTestValueAnalysis: false`    | baseline      |
+| …plus per-test descriptive stats (mean, stddev, min, max, median, Q1, Q3) for box plots / histograms | `enableTestValueAnalysis: false, computePerTestStats: true` | ~5× baseline  |
+| …plus "this test's value differs significantly in this region" findings (and spec-limit region findings), whatever the size | `enableTestValueAnalysis: true`     | ~12× baseline |
 
-`enableTestValueAnalysis` also produces the per-test descriptive stats, so you never need both. The cost multipliers are illustrative (measured at ~2.8k dies × 200 tests); the absolute numbers scale with your test count.
+The test-value analysis also produces the per-test descriptive stats, so you never need both. The cost multipliers are illustrative (measured at ~2.8k dies × 200 tests); the absolute numbers scale with your test count.
 
 **→ [Demo: Summary panel](../examples/statistics.html#summary-panel)** uses `computePerTestStats: true` to populate the per-test value section of the panel.  
 See also: **[Demo: Standalone stacked map with spatial analysis](../examples/statistics.html#lot-stack)**, which uses `enableTestValueAnalysis: true` to surface regional test-value findings on a lot-averaged map.
@@ -274,7 +274,10 @@ For running the stats engine in Node.js without a browser, see the
 **→ [Demo: Statistical findings](../examples/statistics.html#findings)**
 
 
-![Findings panel open with first finding selected](../images/guide-findings-panel.png)
+![Findings panel open with the first finding selected](../images/guide-findings-panel.png)
+
+*The Findings panel lists the regional test-value findings (here, Ioff reading low across rings 1–3)
+alongside the cluster and edge-arc findings, most severe first. Click a row to show it on the map.*
 
 ## Summary panel
 

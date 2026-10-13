@@ -310,11 +310,11 @@ test('the lot report carries per-wafer findings, and states how many wafers had 
   assert.match(html, /\d of 4 wafers have per-wafer findings/);
 });
 
-// Past the analysis test cap (250) no wafer carries `perTestStats`, so the lot's
+// When the test-value analysis did not run, no wafer carries `perTestStats`, so the lot's
 // Test Values table comes from the pooled pass the panel already ran (cached),
 // with its quartiles — not from one value read per die per test (lot25_stress:
 // 750 ms of the report). The figures are the same either way.
-test('renderLotSummaryReportHtml — a lot past the test cap describes each test from the pooled values', () => {
+test('renderLotSummaryReportHtml — a lot without per-test statistics describes each test from the pooled values', () => {
   const nTests = 260;
   const testDefs = Array.from({ length: nTests }, (_, i) => ({ testNumber: i + 1, name: `T${i + 1}` }));
   const items = [0, 1].map(w => {
@@ -326,7 +326,7 @@ test('renderLotSummaryReportHtml — a lot past the test cap describes each test
     }
     return buildWaferMap({ results, testDefs });
   });
-  const html = renderLotSummaryReportHtml({ items, testDefs });
+  const html = renderLotSummaryReportHtml({ items, testDefs, analyzeOptions: { enableTestValueAnalysis: false } });
   assert.ok(!html.includes('Quartiles are not shown'), 'not the per-wafer pooling');
   // T1 over both wafers: 0..35 and 100..135, plus 1. Median of the 72 values is the
   // midpoint of 36 and 101 (the 36th and 37th order statistics).

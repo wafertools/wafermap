@@ -15,3 +15,21 @@ export function formatFindingTooltip(finding: StatsFinding): string {
   const note = derivedTestNote(finding.variable);
   return note ? `${finding.summary}\n${note}` : finding.summary;
 }
+
+/**
+ * What a finding measured, for a column headed "Metric": the variable's label,
+ * and for a test which statistic of it. A test's mean and its limit fail rate
+ * share a label, and without the word a rate reads as a shift in the values.
+ */
+export function findingMetricLabel(finding: Pick<StatsFinding, 'variable'>): string {
+  const { kind, label, measure } = finding.variable;
+  if (kind !== 'test') return label;
+  return measure === 'limitFailRate' ? `${label} limit fail rate` : `${label} mean`;
+}
+
+/** True when the finding compares a proportion (a fraction of dies), so its `absoluteDelta` is a fraction. */
+export function isProportionFinding(finding: Pick<StatsFinding, 'variable'>): boolean {
+  const { kind, measure } = finding.variable;
+  return kind === 'yield' || kind === 'hardBin' || kind === 'softBin' || kind === 'functionalTest'
+    || (kind === 'test' && measure === 'limitFailRate');
+}

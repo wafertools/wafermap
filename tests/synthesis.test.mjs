@@ -3,6 +3,7 @@
 // when nothing is — a good lot must read as a good lot.
 
 import test from 'node:test';
+import { overBudgetResults } from './fixtures/overBudget.mjs';
 import assert from 'node:assert/strict';
 import { buildWaferMap, analyzeWaferMap, analyzeWaferLot } from '../dist/index.js';
 import { buildSynthesis, synthesisText, synthesisRowShare } from '../dist/packages/stats/synthesis.js';
@@ -247,9 +248,9 @@ test('a report with several sections has a contents line whose links land on tho
   for (const id of targets) assert.ok(html.includes(`<section class="report-section`) && html.includes(`id="${id}"`), `${id} is a section`);
 });
 
-test('yields are drawn with a bar and the figure, and only a shortfall is tinted', () => {
+test('yields are drawn with the figure beside a bar, and only a shortfall is tinted', () => {
   const html = renderLotReportHtml([1, 2, 3, 4, 5].map(tag => wafer({ region: 'quadrant', tag })));
-  assert.match(html, /<td class="barcell"><span class="cellbar"><i style="width:[\d.]+%"><\/i><span>[\d.]+%<\/span><\/span><\/td>/);
+  assert.match(html, /<td class="barcell"><span class="cellbar"><span class="cellbar-value">[\d.]+%<\/span><span class="cellbar-track" aria-hidden="true"><i style="width:[\d.]+%"><\/i><\/span><\/span><\/td>/);
   // a region well below the lot is tinted; no cell above it is
   assert.match(html, /<td class="numeric low-[123]">−[\d.]+<\/td>/);
   assert.ok(!/<td class="numeric low-[123]">\+/.test(html), 'a figure above the reference is never tinted');
@@ -501,4 +502,63 @@ test('when nothing costs a yield point but a finding is unusual, the sentence do
   assert.equal(s.items.length, 0);
   assert.doesNotMatch(s.nothing, /Nothing stands out/);
   assert.match(s.nothing, /^No region, fail bin or wafer costs as much as 1\.0 yield points, though 1 finding below is marked unusual\.$/);
+});
+
+test('over the test-value budget, "Compared" says the tests were checked against their limits only', () => {
+  const map = buildWaferMap({ results: overBudgetResults(260), passBins: [1], ringCount: 4 });
+  const skipped = buildSynthesis(analyzeWaferMap(map), { passBins: [1] });
+  assert.match(skipped.checked, /260 tests \(against their limits only\)/);
+  const ran = buildSynthesis(analyzeWaferMap(map, { testNumbers: [1000, 1001] }), { passBins: [1] });
+  assert.doesNotMatch(ran.checked, /limits only/);
+  // Off: not even the limits were checked, so no tests are claimed.
+  const off = buildSynthesis(analyzeWaferMap(map, { enableTestValueAnalysis: false }), { passBins: [1] });
+  assert.doesNotMatch(off.checked, /tests/);
+});
+
+test('every report keeps its in-page links inside the report, live or not', () => {
+  // Shown in an <iframe srcdoc>, a document's base URL is the host page's, so a bare
+  // href="#sec-3" loads the host app into the frame. The report scrolls to its own targets.
+  const maps = [1, 2, 3, 4, 5].map(tag => wafer({ region: 'quadrant', tag }));
+  for (const html of [renderLotReportHtml(maps), renderWaferReportHtml(maps[0], analyzeWaferMap(maps[0])), renderLotReportHtml(maps, undefined, { live: true })]) {
+    assert.match(html, /a\[href\^="#"\]/);
+    assert.match(html, /report-back/);
+  }
+});
+
+test('a jump inside an embedded report can be undone with Back or Alt+Left', async () => {
+  const { JSDOM } = await import('jsdom');
+  const m = wafer({ region: 'quadrant', tag: 1 });
+  const html = renderWaferReportHtml(m, analyzeWaferMap(m));
+  let scrollY = 0;
+  const dom = new JSDOM(html, {
+    url: 'about:srcdoc',
+    runScripts: 'dangerously',
+    beforeParse(window) {
+      Object.defineProperty(window, 'scrollY', { get: () => scrollY });
+      window.scrollTo = (_x, y) => { scrollY = y; };
+      window.Element.prototype.scrollIntoView = function () { scrollY = 900; };
+    },
+  });
+  const { document } = dom.window;
+  const back = document.querySelector('.report-back');
+  const link = document.querySelector('a[href^="#"]');
+  assert.ok(back && link);
+  assert.equal(back.hidden, true, 'no Back before a jump');
+
+  scrollY = 120;
+  link.click();
+  assert.equal(scrollY, 900);
+  assert.equal(dom.window.location.href, 'about:srcdoc', 'the frame stays on the report');
+  assert.equal(back.hidden, false);
+  assert.ok(document.querySelector('.report-jumped'), 'the target is marked');
+
+  back.click();
+  assert.equal(scrollY, 120, 'Back returns to where the reader was');
+  assert.equal(back.hidden, true);
+  assert.equal(document.activeElement, link, 'focus returns to the link');
+
+  link.click();
+  document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }));
+  assert.equal(scrollY, 120, 'Alt+Left does the same');
+  dom.window.close();
 });

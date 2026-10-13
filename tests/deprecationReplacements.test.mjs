@@ -54,7 +54,8 @@ test('capability: one wafer has one subgroup, so Cp equals Pp; the five-number c
 });
 
 test('capability is gated like perTestStats', () => {
-  assert.equal(analyzeWaferMap(wafer('W1', 0)).stats.capability, undefined);
+  assert.equal(analyzeWaferMap(wafer('W1', 0), { enableTestValueAnalysis: false }).stats.capability, undefined);
+  assert.ok(analyzeWaferMap(wafer('W1', 0), { enableTestValueAnalysis: false, computePerTestStats: true }).stats.capability);
 });
 
 test('lot capability pools within-wafer spread across wafers, so Cp and Pp differ', () => {
@@ -79,7 +80,7 @@ test('lot capability pooled from the wafer summaries equals capability computed 
 
 test('lot capability is absent unless every wafer has capability', () => {
   const maps = [wafer('W1', 0), wafer('W2', 3)];
-  const summaries = [analyzeWaferMap(maps[0], { computePerTestStats: true }), analyzeWaferMap(maps[1])];
+  const summaries = [analyzeWaferMap(maps[0], { computePerTestStats: true }), analyzeWaferMap(maps[1], { enableTestValueAnalysis: false })];
   assert.equal(analyzeWaferLot(maps, { perWaferSummaries: summaries }).stats.capability, undefined);
 });
 

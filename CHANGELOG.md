@@ -24,8 +24,64 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Breaking
+
+- **Rotation, mirroring, the compact layout and log scale are display state, not preferences.** `rotation`, `flipX`, `flipY`,
+  `compact` and `logScale` move from `WaferPreferences` to `WaferDisplayState`, and `onViewOptionsChange` reports a change to
+  them as `'state'`. Each describes the data on screen (orientation relative to that data, a layout for multi-project wafers,
+  the test's own scale), so a host keeping preferences between sessions no longer carries them to a lot they do not fit.
+  `showLegend`, already reported as state, moves with them: whether a map's legend can safely be off depends on the view.
+  The flat `WaferViewOptions` is unchanged.
+- **Test-value analysis runs by default when it fits a budget, and the renderers offer it when it does not.**
+  `enableTestValueAnalysis` takes `true | false | 'auto'`, and the default is now `'auto'` (it was `false`): the regional
+  test-value comparisons and per-test statistics run when the analysis reads at most 1,500,000 values (dies × parametric
+  tests: 150 tests on 10,000 dies, 500 on 3,000), summed over the wafers for `analyzeWaferLot` so a lot decides once. Over
+  the budget they are skipped and limit-failure findings still run. A host that relied on the old default gets these
+  findings, and their cost, on small data; pass `false` to keep them off. `true` now runs the analysis whatever its size (it
+  was capped at 250 discovered tests), and `computePerTestStats` is no longer capped.
+- **`test-count-capped` is no longer raised.** A skipped analysis is recorded in `stats.testValueAnalysis` instead, and the
+  Findings section of `renderWaferMap` and `renderWaferGallery` says the test-value findings are not included, with the
+  tests, dies and an estimated time, and an **Analyse** button that re-runs the analysis (for a gallery, the whole lot at
+  once). The code stays in the warning type. The results summary's **Compared** line reads "N tests (against their limits
+  only)" when the analysis was skipped, and names no tests when it was off.
+
+### Added
+
+- **`WAFER_PREFERENCE_KEYS`** from `/render`: the view-option keys that are preferences, for a host to keep exactly those
+  between sessions.
+- **The Insights charts' axis settings are preferences:** `chartAxisIncludesLimits`, `chartClipOutliers` and `chartLimitLines`
+  on the view options start the charts' axis menu, and a reader's change is reported through `onViewOptionsChange` like any
+  preference, without redrawing a map.
+- **`stats.testValueAnalysis`** on `StatsSummary` and `LotStatsSummary`: `state` (`'done'`, `'skipped'` or `'off'`), the
+  tests, dies and values the analysis covers, and an estimated time in the slower browser engine.
+- **`analysisOptions`** on `StatsSummary` and `LotStatsSummary`: the options the summary was analysed with, which the
+  renderers reuse when the reader asks for the skipped analysis.
+- **`analyzeWaferLotAsync(items, options)`**: `analyzeWaferLot` that hands control back to the browser whenever about 100 ms
+  of work has passed, with `onProgress` and an `AbortSignal`, for lots large enough to hang a page.
+- **`onStatsSummaryChange`** on `renderWaferMap` and `renderWaferGallery`: called with the new summary (for a gallery, each
+  item's and the lot's) after the reader runs the skipped test-value analysis from the Findings section.
+
+- **`StatsFinding.variable.measure`** says which statistic a test finding compares: `'mean'` (the values, in the test's unit)
+  or `'limitFailRate'` (the share of dies outside the test's limits, a fraction like a bin rate). Set on every `kind: 'test'`
+  finding, wafer, lot and drift alike. A limit-fail-rate finding carries no `unit`.
+
+### Deprecated
+
+- **`FindingsNotice`, the `findingsNotice` render option and `setFindingsNotice`.** The renderers raise the test-value offer
+  themselves. A notice a host still passes replaces the built-in offer.
+
 ### Changed
 
+- **Report links stay in the report, and bar figures sit beside their bars.** The contents line and the "See" links scroll
+  to their target in every embedding, including the in-app report modal, and briefly outline it. After a jump a **Back**
+  button (or Alt+←) returns to where the reader was; a report open as a page of its own also records each jump in the
+  browser's history. In the bin breakdown and yield tables each figure
+  is printed beside its bar rather than on it, so it reads on any bin colour.
+- **The HTML reports' Findings table names the statistic and states every rate in points.** The Metric column reads
+  "CONT_V_00000 mean" or "CONT_V_00000 limit fail rate", and a limit fail rate's or functional pass rate's delta is in
+  percentage points, as the Summary panel states it. A spatial-pattern row's delta reads "—" (its extent is in the N column).
+  The findings a pattern explains are listed most severe first, in the panel and the reports, and a table with a pattern
+  carries a line saying how the rows are ordered.
 - **A supplied wafer centre far outside the probed dies is ignored, with a warning.** When `waferConfig.center` is given without a
   `diameter` and lies more than the dies' own span outside their bounding box on either axis (with at least 20 dies), the centre is
   inferred from the dies instead and an `implausible-center` warning names the supplied value and the die extent. A wafer is

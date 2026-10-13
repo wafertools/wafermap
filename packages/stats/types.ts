@@ -99,6 +99,14 @@ export interface StatsFinding {
     /** For bin kinds, the bin number this finding is about. */
     bin?: number;
     /**
+     * For `kind: 'test'`, which statistic of the test was compared: `'mean'`
+     * (its values, in the test's unit) or `'limitFailRate'` (the share of dies
+     * outside its limits, a proportion like a bin rate). The two read alike
+     * otherwise — same `index`, same `label` — so a host showing `effect` reads
+     * this to know whether `absoluteDelta` is in `unit` or is a fraction.
+     */
+    measure?: 'mean' | 'limitFailRate';
+    /**
      * Display name, already resolved through any supplied bin/test definitions.
      * For a derived test (`derived`) it starts with `"† "`, as does the test's name
      * inside `summary` — marked at the source, so no reader of a finding can
@@ -106,7 +114,7 @@ export interface StatsFinding {
      * string should show the key ("† Derived, not measured") with it.
      */
     label: string;
-    /** Unit of `effect.absoluteDelta`, when the variable has one. */
+    /** Unit of `effect.absoluteDelta`, when the variable has one (never for a `'limitFailRate'`, which is a fraction). */
     unit?: string;
     /**
      * True when the finding is about a test computed from other tests rather
@@ -131,15 +139,19 @@ export interface StatsFinding {
     /** Which way `left` differs from `right`. */
     direction: 'higher' | 'lower' | 'different';
     /**
-     * Difference in the measured quantity. For proportions (yield, bin rates)
-     * this is a FRACTION, not a percentage: 0.20 is 20 percentage points.
+     * Difference in the measured quantity. For proportions (yield, bin rates,
+     * functional pass rates, a test's `'limitFailRate'`) this is a FRACTION, not
+     * a percentage: 0.20 is 20 percentage points. For a test's `'mean'` it is in
+     * the test's `unit`.
      */
     absoluteDelta?: number;
     /**
-     * `absoluteDelta` as a multiple of the background rate — a RATIO, not a
+     * `absoluteDelta` as a multiple of the background — a RATIO, not a
      * percentage. **1.0 means a doubling**, not "1%" and not "100% of
-     * background left unchanged". Set for proportion findings only. This is the
-     * field most often misread; the gate it feeds is documented in §7.3.2.
+     * background left unchanged". For a proportion, relative to the background
+     * rate (undefined when that rate is 0); for a test's `'mean'`, relative to
+     * the background mean's magnitude. This is the field most often misread;
+     * the gate it feeds is documented in §7.3.2.
      */
     relativeDelta?: number;
     /**
@@ -199,6 +211,28 @@ export interface StatsFinding {
   absorbedIds?: string[];
 }
 
+/**
+ * What became of the test-value analysis (`enableTestValueAnalysis`) and how big
+ * it is: the dies × parametric tests it covers. A surface that shows findings
+ * reads this to say when the test-value findings are missing and what running
+ * them would cost.
+ */
+export interface TestValueAnalysisStatus {
+  /**
+   * `'done'`: it ran. `'skipped'`: `'auto'` and over the budget — limit-failure
+   * findings still ran. `'off'`: the host passed `false`.
+   */
+  state: 'done' | 'skipped' | 'off';
+  /** Parametric tests it covers (the most on any wafer, for a lot). */
+  tests: number;
+  /** Dies with test values (summed over the wafers, for a lot). */
+  dies: number;
+  /** Test values it reads: dies × tests, summed over the wafers for a lot. */
+  values: number;
+  /** Expected time in the slower browser engine (WebKit), in ms. An estimate, for the offer's "about 2 s". */
+  estimateMs: number;
+}
+
 export interface StatsSummary {
   /** Discriminant — always `'wafer'`. Narrow on this to tell a wafer summary from a {@link LotStatsSummary}. */
   level: 'wafer';
@@ -217,6 +251,12 @@ export interface StatsSummary {
   findings: StatsFinding[];
   /** Free-form identity fields from waferConfig.metadata (lot, wafer ID, test date, etc.). */
   wafer?: Record<string, unknown>;
+  /**
+   * The options this summary was analysed with, as passed (`perWaferSummaries`
+   * aside). The renderers re-run the analysis with them when the reader asks for
+   * the skipped test-value analysis, so the re-run matches the host's choices.
+   */
+  analysisOptions?: AnalyzeWaferMapOptions;
   /** Engine-computed analysis stats for this wafer. */
   stats: {
     totalDies: number;
@@ -240,14 +280,19 @@ export interface StatsSummary {
     hardBinCounts?: Record<number, number>;
     softBinCounts?: Record<number, number>;
     /**
+     * Whether the test-value analysis ran, and its size — see
+     * {@link TestValueAnalysisStatus}. Absent when the wafer has no parametric
+     * test values.
+     */
+    testValueAnalysis?: TestValueAnalysisStatus;
+    /**
      * Structured advisories raised during analysis — the same `WaferWarning`
      * shape used by `WaferMapResult.warnings`, so a host has one warning
      * vocabulary to handle rather than two. Branch on `warning.code`.
      *
-     * The one raised today is `'test-count-capped'`: more tests were found than
-     * the analysis cap allows, so test-value analysis was skipped and no test
-     * findings exist. That is a silent absence — nothing throws — so check this
-     * rather than assuming an empty findings list means "nothing to report".
+     * Raised today: `'analysis-option-corrected'`. A skipped test-value analysis
+     * is not a warning: it is recorded in `testValueAnalysis`, and the renderers
+     * offer to run it (`'test-count-capped'` is no longer raised).
      *
      * `renderWaferMap`/`renderWaferGallery` surface these automatically in the
      * toolbar's warning indicator; a host does not have to render them itself.
@@ -474,9 +519,13 @@ export interface LotStatsSummary {
    * describing the whole batch.
    */
   mixedIdentityFields?: string[];
+  /** The options this lot was analysed with, as passed (`perWaferSummaries` aside). See `StatsSummary.analysisOptions`. */
+  analysisOptions?: AnalyzeWaferMapOptions;
   /** Engine-computed analysis stats for this lot. */
   stats: {
     waferCount: number;
+    /** The lot's test-value analysis: one decision for every wafer, sizes summed over them. */
+    testValueAnalysis?: TestValueAnalysisStatus;
     /**
      * Cp/Cpk/Pp/Ppk over the whole lot, each wafer as a subgroup — so `stdWithin`
      * is the pooled within-wafer stddev and Cp and Pp genuinely differ. Present
@@ -558,32 +607,39 @@ export interface AnalyzeWaferMapOptions {
   /**
    * Full parametric **spatial significance** analysis: Welch comparisons of each
    * test's values between every region (ring/quadrant/reticle/site/sector) and
-   * the rest of the wafer, plus spec-limit region findings. This is the expensive
-   * pass — it scales with (regions × tests × dies) — so it is **off by default**.
-   * Enable it only when you display the resulting regional test-value findings.
+   * the rest of the wafer, with per-test statistics. It scales with dies × tests,
+   * the expensive part of analysis.
    *
-   * For per-test descriptive statistics (mean/stddev/quartiles for box plots)
-   * **without** the spatial comparisons, use {@link computePerTestStats} instead —
-   * it is an order of magnitude cheaper. Enabling `enableTestValueAnalysis` also
-   * produces `perTestStats`, so you do not need both.
+   * - `'auto'` (default): run it when the dies × parametric tests analysed is
+   *   within the test-value budget (1,500,000 values, about a second in the
+   *   slower browser engine) — summed over the wafers for `analyzeWaferLot`, so a
+   *   lot decides once. Over the budget it is skipped and the renderers' Findings
+   *   section offers to run it (see `stats.testValueAnalysis`).
+   * - `true`: run it whatever the size.
+   * - `false`: do not run it, nor the spec-limit and functional pass-rate region
+   *   findings that go with it.
+   *
+   * Limit-failure and functional pass-rate findings run unless this is `false`.
+   * For per-test statistics without the spatial comparisons, use
+   * {@link computePerTestStats}.
    */
-  enableTestValueAnalysis?: boolean;
+  enableTestValueAnalysis?: boolean | 'auto';
   /**
    * Compute per-test descriptive statistics (`count`, `min`, `max`, `mean`,
    * `stddev`, `median`, `q1`, `q3`) into `StatsSummary.stats.perTestStats` —
    * the cheap quartile scan only, **without** the expensive regional Welch
    * comparisons of {@link enableTestValueAnalysis}. Use this for box-plot /
    * histogram panels that need distribution shape but not spatial findings.
-   * Off by default. Implied by `enableTestValueAnalysis`.
+   * Off by default; produced whenever the test-value analysis runs. Not subject to
+   * the test-value budget: asking for it is choosing its cost.
    */
   computePerTestStats?: boolean;
   /** Number of angular sectors for sector analysis. Must be 4, 8 or 16. Default 8. */
   sectorCount?: number;
   /**
    * Restrict test value analysis to a specific subset of test numbers.
-   * When omitted and more than 250 tests are present in the data, test value
-   * analysis is skipped automatically with a console warning — pass this option
-   * to analyse a specific subset in that case.
+   * When omitted, every parametric test with values. Naming fewer tests also
+   * shrinks the analysis, which can bring an `'auto'` run under its budget.
    * Example: `testNumbers: [1050, 1060, 1070]`
    */
   testNumbers?: number[];

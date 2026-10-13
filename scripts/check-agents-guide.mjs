@@ -215,19 +215,22 @@ function rulesText() { return block ? block[1] : guide; }
 
 // ── 3c. Numbers quoted from the source ──────────────────────────────────────
 //
-// The guide states the test-count cap as a literal. A hardcoded number in prose
+// The guide states the test-value budget as a literal. A hardcoded number in prose
 // is the classic stale fact, and this one matters: it is the threshold past which
-// analyzeWaferMap stops returning test findings at all. Pin it to the constant.
+// analyzeWaferMap stops returning test-value findings at all. Pin it to the constant.
 
-const capSrc = resolve(root, 'packages/stats/analyzeWaferMap.ts');
+const capSrc = resolve(root, 'packages/stats/testValueBudget.ts');
 if (existsSync(capSrc)) {
-  const m = readFileSync(capSrc, 'utf8').match(/TEST_COUNT_WARN_THRESHOLD\s*=\s*(\d+)/);
+  const m = readFileSync(capSrc, 'utf8').match(/TEST_VALUE_AUTO_BUDGET\s*=\s*([\d_]+)/);
   if (!m) {
-    fail('could not find TEST_COUNT_WARN_THRESHOLD in packages/stats/analyzeWaferMap.ts — ' +
+    fail('could not find TEST_VALUE_AUTO_BUDGET in packages/stats/testValueBudget.ts — ' +
          'AGENTS.md quotes its value and can no longer be verified');
-  } else if (!new RegExp(`\\b${m[1]}\\b`).test(rulesText())) {
-    fail(`AGENTS.md must state the test-count cap as ${m[1]} (TEST_COUNT_WARN_THRESHOLD) — ` +
-         `the quoted value is stale`);
+  } else {
+    const quoted = Number(m[1].replace(/_/g, '')).toLocaleString('en-GB');
+    if (!rulesText().includes(quoted)) {
+      fail(`AGENTS.md must state the test-value budget as ${quoted} (TEST_VALUE_AUTO_BUDGET) — ` +
+           `the quoted value is stale`);
+    }
   }
 }
 

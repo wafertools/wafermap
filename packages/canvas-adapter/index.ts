@@ -15,6 +15,7 @@ export type { ToCanvasOptions, ViewportTransform } from './toCanvas.js';
 
 export { renderWaferMap } from './renderWaferMap.js';
 export type { RenderOptions, WaferMapController, WaferViewOptions, WaferPreferences, WaferDisplayState } from './renderWaferMap.js';
+export { WAFER_PREFERENCE_KEYS } from './renderWaferMap.js';
 
 export { renderWaferGallery } from './renderWaferGallery.js';
 export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, GalleryController } from './renderWaferGallery.js';

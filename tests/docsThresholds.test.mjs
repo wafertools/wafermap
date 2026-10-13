@@ -112,22 +112,24 @@ test('the docs\' worked example of the relative-effect gate actually passes that
     'the example must fall below the absolute gate, or it does not demonstrate the relative one');
 });
 
-test('docs/api.md quotes the test-count cap the code actually applies', () => {
-  // These two statements sat in the same document contradicting each other —
-  // §7.3 said 100, §7.3.2 said 250 — with only one of them right.
-  const m = /const TEST_COUNT_WARN_THRESHOLD = (\d+);/.exec(source);
-  assert.ok(m, 'TEST_COUNT_WARN_THRESHOLD not found — was it renamed?');
-  const cap = Number(m[1]);
+test('docs/api.md quotes the test-value budget the code actually applies', () => {
+  // These statements once sat in the same document contradicting each other
+  // (§7.3 said 100 tests, §7.3.2 said 250) with only one of them right.
+  const budgetSource = fs.readFileSync(path.join(root, 'packages/stats/testValueBudget.ts'), 'utf8');
+  const m = /const TEST_VALUE_AUTO_BUDGET = ([\d_]+);/.exec(budgetSource);
+  assert.ok(m, 'TEST_VALUE_AUTO_BUDGET not found — was it renamed?');
+  const cap = Number(m[1].replace(/_/g, ''));
+  const num = (s) => Number(s.replace(/,/g, ''));
 
-  const inline = /all tests up to (\d+) — beyond that analysis is skipped/.exec(docs);
-  assert.ok(inline, 'the testNumbers option comment no longer states the cap');
-  assert.equal(Number(inline[1]), cap,
-    `the testNumbers option comment says ${inline[1]}, the code caps at ${cap}`);
+  const inline = /'auto' runs it when the analysis\s*\n\s*\/\/ reads at most ([\d,]+) values/.exec(docs);
+  assert.ok(inline, 'the enableTestValueAnalysis option comment no longer states the budget');
+  assert.equal(num(inline[1]), cap,
+    `the option comment says ${inline[1]}, the code's budget is ${cap}`);
 
-  const prose = /auto-skipped if the data contains more than (\d+) distinct tests/.exec(docs);
-  assert.ok(prose, 'the test-count-capped explanation no longer states the cap');
-  assert.equal(Number(prose[1]), cap,
-    `the test-count-capped explanation says ${prose[1]}, the code caps at ${cap}`);
+  const prose = /skipped when the analysis reads more than ([\d,]+) values/.exec(docs);
+  assert.ok(prose, 'the behavioural note no longer states the budget');
+  assert.equal(num(prose[1]), cap,
+    `the behavioural note says ${prose[1]}, the code's budget is ${cap}`);
 });
 
 test('docs/guide.md quotes the same severity ladder as the code', () => {

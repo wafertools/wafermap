@@ -501,7 +501,7 @@ test('perTestStats screens non-finite readings instead of letting one poison the
     'the five-number summary is still ordered');
 });
 
-test('test-value analysis is off by default — no test findings, no perTestStats', () => {
+test('enableTestValueAnalysis: false — no test findings, no perTestStats', () => {
   const { wafer, dies } = makeBaseDies();
   const enriched = dies.map((die) => {
     const { quadrant } = classifyDie(die, wafer, { ringCount: 3 });
@@ -512,12 +512,13 @@ test('test-value analysis is off by default — no test findings, no perTestStat
     dies: enriched,
     waferConfig: { diameter: 60 },
     testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'A' }],
-  }, { minimumSampleSize: 3, minimumEffectSize: 0.2 });
+  }, { enableTestValueAnalysis: false, minimumSampleSize: 3, minimumEffectSize: 0.2 });
 
   assert.ok(!summary.findings.some(f => f.variable.kind === 'test'),
-    'no test-value findings should be produced by default');
+    'no test-value findings should be produced when it is off');
   assert.equal(summary.stats.perTestStats, undefined,
-    'perTestStats should not be populated by default');
+    'perTestStats should not be populated when it is off');
+  assert.equal(summary.stats.testValueAnalysis.state, 'off');
 });
 
 test('computePerTestStats yields quartiles WITHOUT regional test findings', () => {
@@ -531,7 +532,7 @@ test('computePerTestStats yields quartiles WITHOUT regional test findings', () =
     dies: enriched,
     waferConfig: { diameter: 60 },
     testDefs: [{ testNumber: 1050, name: 'Idsat', unit: 'A' }],
-  }, { computePerTestStats: true, minimumSampleSize: 3, minimumEffectSize: 0.2 });
+  }, { enableTestValueAnalysis: false, computePerTestStats: true, minimumSampleSize: 3, minimumEffectSize: 0.2 });
 
   assert.ok(summary.stats.perTestStats?.length, 'perTestStats should be populated');
   assert.ok(!summary.findings.some(f => f.variable.kind === 'test'),

@@ -231,7 +231,8 @@
       // Vth has limitHigh 0.57 V in TEST_DEFS — dies above it act as the failure
       // proxy for cluster/edge-arc detection on the aggregated map.
       // enableTestValueAnalysis runs the regional Welch comparisons on test
-      // values; it is off by default because it scales with regions × tests × dies.
+      // values. Its default, 'auto', runs them within a budget (they scale with
+      // dies × tests); true runs them whatever the size.
       const summary = analyzeWaferMap(result, {
         enableTestValueAnalysis: true,
         // Restrict to Vth for a focused demo; drop testNumbers to analyse all tests.

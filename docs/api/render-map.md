@@ -12,13 +12,13 @@ hover — wafermap-specific controls always in the same place.
 renderWaferMap(container: HTMLElement, result: RenderableWaferMap, options?: RenderOptions): WaferMapController
 ```
 
-> **`options` is optional, and mostly stays that way.** `RenderOptions` has 23
+> **`options` is optional, and mostly stays that way.** `RenderOptions` has 24
 > top-level fields and this section documents all of them, but the call above
 > works with none: you get the toolbar, plot modes, colour schemes, zoom and pan,
 > tooltips, die selection and PNG export by default.
 >
 > For calibration, **tsmap** — a full desktop application on this library — passes
-> **7**: `viewOptions` (initial plot mode and colour scheme), `summaryPanel`,
+> **8**: `viewOptions` (initial plot mode and colour scheme), `summaryPanel`,
 > `insights`, `downloadFilename`, `userGuideExtension` and `showHelpButton`. Those
 > six, plus `onSaveImage`/`onSaveText` if you want exports routed through your own
 > save dialog, cover the overwhelming majority of integrations.
@@ -127,19 +127,26 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `showAxes` | `boolean` | zoom | Draw the die-coordinate axis labels along the bottom and left edges. Unset, they appear while the map is zoomed; `true` shows them always, `false` never. The Overlays menu's **Axis labels** row sets it. Showing them reserves room for the labels, so the map is a little smaller. |
 | `compact` | `boolean` | `false` | Draw the dies on a compact grid with the empty rows and columns removed and each group of dies outlined, instead of at their physical positions. For multi-project wafers, where each reticle holds only a few of your dies. The toolbar offers it when the occupied columns and rows repeat at a regular pitch (or at the `reticleConfig` width and height, or a multiple of it); setting it here applies it regardless. Only the layout changes: every die is still drawn and counted, and hover text and axis labels give original die coordinates. The wafer outline, rings, quadrants and reticle grid are not drawn in this layout; the XY indicator is. A gallery builds one layout from all its wafers. |
 | `legendPosition` | `'default' \| 'compact' \| 'left' \| 'top' \| 'bottom' \| 'floating'` | `'default'` | Bin legend position. `'default'` auto-adapts: compact below 280 px, floating below 180 px |
+| `chartAxisIncludesLimits` | `boolean` | per chart | Insights charts: widen a value axis to take in the test limits. Unset, each chart decides from its own data; the charts' axis menu sets it |
+| `chartClipOutliers` | `boolean` | `false` | Insights charts: leave outliers off a value axis so the bulk of the data fills it |
+| `chartLimitLines` | `'test' \| 'spec' \| 'both' \| 'none'` | `'both'` | Insights charts: which limit lines to draw |
 
 #### Persisting user preferences
 
 `WaferViewOptions` is the intersection of two named sub-types:
-- **`WaferPreferences`** — stable settings worth saving (bin and value colour schemes, the bin-definition colour toggle, rotation, overlays, legend position, log scale, colorbar range mode)
-- **`WaferDisplayState`** — transient session state (plot mode, active test, active metadata key, value range, highlight bin)
+- **`WaferPreferences`** — how the reader likes to see maps in general, safe to carry from one lot to the next: bin and value colour schemes, the bin-definition colour toggle, overlays, axis labels, legend position, number format, failing-die hatching, colorbar range mode, and the Insights charts' axis settings. Their keys are exported as `WAFER_PREFERENCE_KEYS`.
+- **`WaferDisplayState`** — this view of this data: plot mode, active test and metadata key, value range, highlights, and the settings that depend on the data shown. Rotation and mirroring are relative to the data's own orientation, the compact layout suits a multi-project wafer, and log scale follows the test; carried to another lot, each would describe it wrongly.
 
-The `onViewOptionsChange` callback receives a `category` hint (`'preference' | 'state' | 'mixed'`) so you can decide what to persist without filtering keys manually:
+`onViewOptionsChange` receives a `category` hint (`'preference' | 'state' | 'mixed'`). To keep preferences between sessions, save the preference keys of every change, including a mixed one, and pass them back as `viewOptions`:
 
 ```ts
+import { WAFER_PREFERENCE_KEYS } from '@wafertools/wafermap/render';
+
 renderWaferMap(container, result, {
-  onViewOptionsChange: (opts, changed, category) => {
-    if (category === 'preference') saveToLocalStorage(opts);
+  viewOptions: { ...loadSaved() },
+  onViewOptionsChange: (opts, changed) => {
+    const prefs = changed.filter(k => WAFER_PREFERENCE_KEYS.includes(k));
+    if (prefs.length) save(Object.fromEntries(prefs.map(k => [k, opts[k]])));
   },
 });
 ```
@@ -217,10 +224,13 @@ Plus:
                                             // expand modal would be redundant
   statsSummary?:           StatsSummary  // precomputed wafer-level stats — adds a Summary toggle button to the toolbar
   summaryPanel?:           SummaryPanelOptions  // Summary panel placement and open/closed initial state
-  findingsNotice?:         FindingsNotice  // a row at the top of the Summary panel's Findings saying a category of finding is not present, and
-                                            // optionally offering to compute it: { message, detail?, actionLabel?, onAction? }. wmap never raises
-                                            // one itself, since only the host knows what analysis it skipped and what running it costs.
-                                            // Replace or clear it later with the controller's setFindingsNotice(notice | undefined).
+  onStatsSummaryChange?:   (summary: StatsSummary) => void
+                                            // called after the map re-analyses its wafer because the reader asked, from the
+                                            // Findings section, for the test-value analysis the summary records as skipped or off
+                                            // (stats.testValueAnalysis). The map already shows it; keep it so your copies match
+  findingsNotice?:         FindingsNotice  // DEPRECATED (0.36.0): a row at the top of the Findings section,
+                                            // { message, detail?, actionLabel?, onAction? }; while set it replaces the built-in
+                                            // offer of the skipped test-value analysis. setFindingsNotice likewise.
   insights?:               InsightsOptions  // adds a Map | Insights switch that swaps the map for this wafer's own
                                             // chart suite (Overview, Distributions, Correlation) — default disabled. See §5.9.
   attributes?:             Record<string, WaferAttributeDef>  // your names for wafer attributes: label, facet?, date?: what Group by offers and the strip, Wafers table and reports call each
@@ -732,7 +742,7 @@ Choose the right update method:
   clearSelection(): void
   resetZoom(): void                                  // return to fitted view
   setStatsSummary(summary: StatsSummary | undefined): void  // update the Summary panel at runtime
-  setFindingsNotice(notice: FindingsNotice | undefined): void  // replace or clear the findings notice row
+  setFindingsNotice(notice: FindingsNotice | undefined): void  // DEPRECATED: replace or clear the findings notice row
   closeSummaryPanel(): void  // close the Summary panel if open (e.g. on loading a new file); the user reopens it from the toolbar
   getBinColors(): BinColors  // the bin colours this map draws, with the palette currently chosen — for a host surface (§10.6)
 

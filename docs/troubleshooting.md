@@ -96,30 +96,31 @@ const result = buildWaferMap({
 
 ---
 
-## No statistical findings appear, and nothing errors
+## No test-value findings appear, and nothing errors
 
-**Cause:** `analyzeWaferMap` skips test-value analysis entirely when the die data
-contains more than 250 distinct tests. It returns **no test findings at all** rather
-than a trimmed set, and nothing throws — so an empty findings list looks identical to
-"this wafer is unremarkable". This bites when a data source hands you a full
-parametric test program and only a handful of tests are ever displayed.
+**Cause:** with the default `enableTestValueAnalysis: 'auto'`, `analyzeWaferMap` skips the
+test-value analysis when it would read more than 1,500,000 values (dies × parametric tests:
+150 tests on a 10,000-die wafer), summed over the wafers of a lot. Skipped means **no regional
+test-value findings or per-test statistics at all** rather than a trimmed set (limit-failure
+findings still appear), and nothing throws.
 
-**Diagnosis:** check the warning, don't infer it from the silence.
+**Diagnosis:** the summary records it.
 
 ```ts
-const summary = analyzeWaferMap(result, { enableTestValueAnalysis: true });
-const capped = summary.stats.warnings?.find(w => w.code === 'test-count-capped');
-if (capped) console.warn(capped.message);
+const summary = analyzeWaferMap(result);
+const tv = summary.stats.testValueAnalysis;
+if (tv?.state === 'skipped') console.log(`${tv.tests} tests × ${tv.dies} dies, about ${tv.estimateMs} ms`);
 ```
 
-From 0.22.0 the renderers show this themselves — a ⚠ appears in the toolbar and names
-the reason, so you do not have to have thought to check.
+The renderers show this themselves: their Findings section says the test-value findings are
+not included and offers an **Analyse** button, and `onStatsSummaryChange` hands you the new
+summary when the reader uses it.
 
-**Fix:** scope the analysis to the tests you actually display.
+**Fix:** run it regardless (`enableTestValueAnalysis: true`), or scope it to the tests you
+actually display, which also brings it under the budget:
 
 ```ts
 const summary = analyzeWaferMap(result, {
-  enableTestValueAnalysis: true,
   testNumbers: [1050, 1060, 1070],   // only these are analysed
 });
 ```

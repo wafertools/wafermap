@@ -31,7 +31,7 @@ import {
   findingsTableHtml,
   findingAnchor,
   synthesisSectionHtml,
-  LIVE_FINDINGS_SCRIPT,
+  reportScripts,
   barCell,
   deltaCell,
   withSectionNav,
@@ -411,7 +411,7 @@ ${reportStyles()}
   ${withSectionNav(sections)}
   <p class="footer">Generated ${escHtml(now)}</p>
 </main>
-${params.live ? LIVE_FINDINGS_SCRIPT : ''}
+${reportScripts(params.live)}
 </body>
 </html>`;
 }
@@ -958,7 +958,7 @@ ${reportStyles()}
 </head>
 <body>
 ${reportMain(title, sections, now)}
-${params.live ? LIVE_FINDINGS_SCRIPT : ''}
+${reportScripts(params.live)}
 </body>
 </html>`;
   }
@@ -1004,7 +1004,7 @@ ${reportStyles()}
 ${banner}
 </div>
 ${sectionsHtml}
-${params.live ? LIVE_FINDINGS_SCRIPT : ''}
+${reportScripts(params.live)}
 </body>
 </html>`;
 }

@@ -141,7 +141,7 @@ export const SHORT_LABEL: Record<string, string> = {
   'diameter-exceeds-die-extent':   'Diameter exceeds die extent',
   'implausible-center':            'Wafer centre ignored',
   'edge-exclusion-exceeds-radius': 'Edge exclusion exceeds radius',
-  'test-count-capped':             'Test analysis skipped',
+  'test-count-capped':             'Test-value comparisons skipped',
   'test-def-collision':            'Test definitions disagree',
   'analysis-option-corrected':     'Analysis option corrected',
   'bin-colors-shared':             'Bins share a colour',

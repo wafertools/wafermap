@@ -217,11 +217,12 @@
         <div class="canvas-badge">H — analysis advisory (warning)</div>
         <div id="map-h"></div>
         <div class="card-caption">
-          <strong>300 tests per die, above the analysis cap.</strong>
-          <code>analyzeWaferMap</code> computed <strong>no test findings at all</strong> — a silent
-          absence, since nothing throws and the map renders fine. Severity <strong>warning</strong>
-          (⚠ amber): what is drawn is correct, a feature just produced nothing. Geometry advisories
-          are <strong>error</strong> (⛔ red) instead, because the dies themselves may be misplaced.
+          <strong><code>sectorCount: 5</code>, as an untyped caller might pass.</strong>
+          <code>analyzeWaferMap</code> accepts 4, 8 or 16 sectors, so it ran with 8 and says so —
+          otherwise the sector findings would quietly not be the ones asked for. Severity
+          <strong>warning</strong> (⚠ amber): what is drawn is correct, an option was corrected.
+          Geometry advisories are <strong>error</strong> (⛔ red) instead, because the dies themselves
+          may be misplaced.
           <div class="ok-note" id="note-h"></div>
         </div>
       </div>
@@ -348,17 +349,15 @@
 
     // ── Warnings the library surfaces itself ──────────────────────────────────
 
-    // H — more tests than analyzeWaferMap will analyse. It returns NO test
-    // findings rather than a trimmed set, and records why in stats.warnings.
-    // Nothing throws, so without the indicator this is invisible.
+    // H — an analysis option out of range. analyzeWaferMap runs with the
+    // corrected value and records the correction in stats.warnings. Nothing
+    // throws, so without the indicator the substitution is invisible.
     {
       const results = [];
       for (let x = -7; x <= 7; x++) {
         for (let y = -7; y <= 7; y++) {
           if (Math.hypot(x, y) > 7) continue;
-          const testValues = {};
-          for (let t = 0; t < 300; t++) testValues[1000 + t] = Math.random();
-          results.push({ x, y, hbin: (x + y) % 4 === 0 ? 2 : 1, testValues });
+          results.push({ x, y, hbin: (x + y) % 4 === 0 ? 2 : 1 });
         }
       }
       const result = buildWaferMap({
@@ -366,7 +365,7 @@
         waferConfig: { diameter: 200, notch: { type: 'bottom' } },
         dieConfig:   { width: 12, height: 12 },
       });
-      const summary = analyzeWaferMap(result, { computePerTestStats: true });
+      const summary = analyzeWaferMap(result, { sectorCount: 5 });
       renderWaferMap(document.getElementById('map-h'), result, { ...opts, statsSummary: summary });
 
       const w = summary.stats.warnings?.[0];

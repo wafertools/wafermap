@@ -2,6 +2,7 @@
   "types": {
     ".": [
       "Affine",
+      "AnalyzeWaferLotAsyncOptions",
       "AnalyzeWaferLotInput",
       "AnalyzeWaferMapInput",
       "AnalyzeWaferMapOptions",
@@ -56,6 +57,7 @@
       "TestDef",
       "TestDefConflict",
       "TestDefConflictKind",
+      "TestValueAnalysisStatus",
       "TestVerdictYield",
       "ValueColorScheme",
       "Wafer",
@@ -110,6 +112,7 @@
       "YieldSummary"
     ],
     "./stats": [
+      "AnalyzeWaferLotAsyncOptions",
       "AnalyzeWaferLotInput",
       "AnalyzeWaferMapInput",
       "AnalyzeWaferMapOptions",
@@ -145,6 +148,7 @@
       "TestCapability",
       "TestDefConflict",
       "TestDefConflictKind",
+      "TestValueAnalysisStatus",
       "TestVerdictYield",
       "WaferAttributeDef",
       "WaferWarning"
@@ -352,6 +356,7 @@
       "onSaveImage",
       "onSaveText",
       "onSelect",
+      "onStatsSummaryChange",
       "onViewOptionsChange",
       "padding",
       "showAxes",
@@ -381,6 +386,7 @@
       "onItemsResolved",
       "onSaveImage",
       "onSaveText",
+      "onStatsSummaryChange",
       "onViewOptionsChange",
       "perCardLegend",
       "showHelpButton",

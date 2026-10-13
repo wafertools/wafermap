@@ -1,12 +1,13 @@
 import type { Die } from '../core/dies.js';
 import { normalizeInput } from './normalizeInput.js';
+import { autoDecision, testValueStatus } from './testValueBudget.js';
 import { computeCapability, computeTestFlagYield, computeRegionYield } from './summaryFigures.js';
 import { binPassSets } from '../renderer/binColors.js';
 import { diePassStatus, isYieldEligibleDie, getDieKey, isPositionedDie, positionKey } from '../core/dies.js';
 import { dieHasValues, testsPresent, testValue } from '../core/dieTable.js';
 import { stackBinsAreData } from '../core/aggregates.js';
 import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
-import type { BinDef, TestDef, WaferWarning } from '../renderer/buildWaferMap.js';
+import type { BinDef, TestDef, WaferWarning, WaferMapResult } from '../renderer/buildWaferMap.js';
 import { markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 import type {
   AnalyzeWaferMapInput,
@@ -14,7 +15,8 @@ import type {
   StatsFinding,
   StatsSeverity,
   StatsSummary,
-  HighlightTarget } from './types.js';
+  HighlightTarget,
+  TestValueAnalysisStatus } from './types.js';
 import {
   buildQuadrantRegions, buildReticlePositionRegions, buildRingRegions, buildSectorRegions, buildTestSiteRegions,
   sectorCompassNames, areQuadrantsAdjacent, parseRegionKey, QUADRANT_CYCLE, regionAngleBins,
@@ -159,11 +161,10 @@ const DEFAULT_OPTIONS: Omit<ResolvedOptions, 'passBins' | 'ringCount'> = {
   minimumEffectSize: 0.20,
   minimumRelativeEffect: 1.0,
   minimumSampleSize: 5,        // internal, not in public AnalyzeWaferMapOptions
-  // Off by default: the regional Welch pass is the expensive part of analysis
-  // (scales with regions × tests × dies). Callers that display regional
-  // test-value findings opt in explicitly. For cheap per-test quartiles without
-  // the spatial comparisons, use computePerTestStats instead.
-  enableTestValueAnalysis: false,
+  // Run when it fits the test-value budget (TEST_VALUE_AUTO_BUDGET): the regional
+  // Welch pass is the expensive part of analysis (dies × tests), so above the
+  // budget it is skipped, recorded in stats.testValueAnalysis, and offered.
+  enableTestValueAnalysis: 'auto',
   computePerTestStats: false,
   sectorCount: 8,
   minimumClusterSize: 5,     // overwritten by adaptOptions()
@@ -1208,13 +1209,10 @@ function welchPValue(leftValues: number[], rightValues: number[]): { pValue: num
   );
 }
 
-const TEST_COUNT_WARN_THRESHOLD = 250;
-
 /**
- * Discover the test numbers present in the die data, or echo back an explicit
- * caller-supplied subset. Shared by the cheap perTestStats pass and the regional
- * findings pass so the auto-cap behaviour is defined in exactly one place.
- * Stops scanning once the cap is exceeded and returns a warning instead.
+ * The parametric test numbers to analyse: the caller's `testNumbers`, or every
+ * test with values in the die data. Shared by the cheap perTestStats pass, the
+ * regional findings pass and the budget decision, so all three cover the same tests.
  *
  * Functional tests (`testType: 'F'` in `testDefs`) are excluded from the
  * result — both discovered and explicitly requested — because every consumer
@@ -1225,30 +1223,32 @@ function discoverTestNumbers(
   dies: Die[],
   explicit: number[] | undefined,
   testDefs: TestDef[] | undefined,
-): { testNumbers: number[]; warning?: WaferWarning } {
+): number[] {
   const parametricOnly = (numbers: number[]): number[] =>
     numbers.filter(tn => isParametricTest(testDefs?.find(td => td.testNumber === tn)));
-  if (explicit) return { testNumbers: parametricOnly(explicit.slice().sort((a, b) => a - b)) };
+  if (explicit) return parametricOnly(explicit.slice().sort((a, b) => a - b));
+  // Column by column for built dies, not a key walk per die.
+  return parametricOnly(testsPresent(dies, 'values'));
+}
 
-  // Column by column for built dies, not a key walk per die: this runs once
-  // per region family, over every die of the wafer.
-  const present = testsPresent(dies, 'values');
-  const capped = present.length > TEST_COUNT_WARN_THRESHOLD;
+/**
+ * The size of one built wafer's test-value analysis under `options`: the tests it
+ * would cover and the dies it reads, counted as `analyzeWaferMap` counts them. For
+ * `analyzeWaferLot`, which takes the `'auto'` decision over the whole lot.
+ */
+export function testValueSize(result: WaferMapResult, options: AnalyzeWaferMapOptions): { tests: number; dies: number } {
+  const dies = result.dies.filter(isEligibleDie);
+  return { tests: discoverTestNumbers(dies, options.testNumbers, result.testDefs).length, dies: dies.length };
+}
 
-  if (capped) {
-    // Deliberately explicit that the OUTCOME is "no test findings at all", not
-    // "some tests were skipped". The failure is silent — findings are simply
-    // absent — so the message has to say so, since nothing else will.
-    const message =
-      `Test-value analysis was skipped: more than ${TEST_COUNT_WARN_THRESHOLD} tests were found ` +
-      `in the die data, so no test findings were computed. Pass testNumbers: [...] to ` +
-      `analyse specific tests.`;
-    console.warn(`[wafermap] analyzeWaferMap: ${message}`);
-    return {
-      testNumbers: [],
-      warning: { code: 'test-count-capped', message, severity: 'warning' } };
-  }
-  return { testNumbers: parametricOnly(present) };
+/** The options a summary records (`analysisOptions`): the public ones that were passed. */
+export function recordedOptions(options: AnalyzeWaferMapOptions): AnalyzeWaferMapOptions {
+  const out: AnalyzeWaferMapOptions = {};
+  if (options.enableTestValueAnalysis !== undefined) out.enableTestValueAnalysis = options.enableTestValueAnalysis;
+  if (options.computePerTestStats !== undefined) out.computePerTestStats = options.computePerTestStats;
+  if (options.sectorCount !== undefined) out.sectorCount = options.sectorCount;
+  if (options.testNumbers !== undefined) out.testNumbers = [...options.testNumbers];
+  return out;
 }
 
 /**
@@ -1275,12 +1275,10 @@ function discoverTestNumbers(
 function buildTestValueFindings(
   dies: Die[],
   regionFamily: StatsRegion[],
+  activeTestNumbers: number[],
   defs: TestDef[] | undefined,
   options: ResolvedOptions,
-): { findings: RawFinding[]; warning?: WaferWarning; activeTestNumbers?: number[] } {
-  const discovered = discoverTestNumbers(dies, options.testNumbers, defs);
-  if (discovered.warning) return { findings: [], warning: discovered.warning };
-  const activeTestNumbers = discovered.testNumbers;
+): RawFinding[] {
 
   // Assign each die to its region index once (−1 = not in this family).
   // By position key, from the regions' own dies (parallel to their `dieKeys`).
@@ -1354,6 +1352,7 @@ function buildTestValueFindings(
         severity: 'info',
         variable: {
           kind: 'test',
+          measure: 'mean',
           index: testNumber,
           label,
           unit,
@@ -1394,16 +1393,14 @@ function buildTestValueFindings(
 
   const kept = confirmRegionalFindings(significant, regionalComparisonKey, (finding, without) =>
     retestMeanWithout(finding, without, options));
-  return {
-    activeTestNumbers,
-    findings: significant
-      .filter((finding) => kept.has(finding))
-      .map((finding) => ({
-        ...finding,
-        severity: severityForScore(
-          finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
-          finding.effect.effectSize ?? 0,
-        ) })) };
+  return significant
+    .filter((finding) => kept.has(finding))
+    .map((finding) => ({
+      ...finding,
+      severity: severityForScore(
+        finding.stats.adjustedPValue ?? finding.stats.pValue ?? 1,
+        finding.effect.effectSize ?? 0,
+      ) }));
 }
 
 function buildSpecLimitFindings(
@@ -1462,9 +1459,9 @@ function buildSpecLimitFindings(
           severity: 'info',
           variable: {
             kind: 'test',
+            measure: 'limitFailRate',
             index: tn,
             label: markedTestLabel(td, tn),
-            unit: td.unit,
             ...derivedFields(td) },
           comparison: {
             family: region.family,
@@ -1528,7 +1525,7 @@ function poolOf(kind: RawFinding['variable']['kind'], ctx: MergeContext): readon
 
 /** A test's limit fail rate, as opposed to its mean: both are `variable.kind` 'test'. */
 function isLimitFail(f: RawFinding): boolean {
-  return f.id.startsWith('specLimit:');
+  return f.variable.measure === 'limitFailRate';
 }
 
 /** Region keys this finding covers (e.g. `["ring:1","ring:2"]`); empty for non-region targets. */
@@ -2198,12 +2195,25 @@ export function analyzeWaferMap(
   input: AnalyzeWaferMapInput,
   options: AnalyzeWaferMapOptions = {},
 ): StatsSummary {
+  return analyzeWaferMapDecided(input, options);
+}
+
+/**
+ * `analyzeWaferMap` with the `'auto'` test-value decision already taken — by
+ * `analyzeWaferLot`, over the whole lot, so each wafer follows it rather than its
+ * own size. Internal.
+ */
+export function analyzeWaferMapDecided(
+  input: AnalyzeWaferMapInput,
+  options: AnalyzeWaferMapOptions = {},
+  lotDecision?: 'done' | 'skipped',
+): StatsSummary {
   const outer = collecting, outerFacts = collectedFacts;
   const mine: RegionCandidate[] = [];
   collecting = mine;
   collectedFacts = undefined;
   try {
-    const summary = analyzeWaferMapUncollected(input, options);
+    const summary = analyzeWaferMapUncollected(input, options, lotDecision);
     regionCandidates.set(summary, { candidates: mine, facts: collectedFacts });
     return summary;
   } finally {
@@ -2215,6 +2225,7 @@ export function analyzeWaferMap(
 function analyzeWaferMapUncollected(
   input: AnalyzeWaferMapInput,
   options: AnalyzeWaferMapOptions,
+  lotDecision?: 'done' | 'skipped',
 ): StatsSummary {
   const { resolved: optionResolved, warnings: optionWarnings } = resolveOptions(options);
   const result = normalizeInput(input);
@@ -2244,6 +2255,13 @@ function analyzeWaferMapUncollected(
   const positionedEligibleDies = eligibleDies.filter(isPositionedDie);
   const resolved = adaptOptions(baseResolved, eligibleDies.length);
   resolved.softPassBins = binPassSets(eligibleDies, resolved.passBins).soft;
+  // The tests the value analysis covers, and whether it runs: `'auto'` over this
+  // wafer's values, unless a lot decided for all its wafers at once.
+  const valueTests = discoverTestNumbers(eligibleDies, resolved.testNumbers, result.testDefs);
+  const testValueMode = resolved.enableTestValueAnalysis;
+  const testValueState: TestValueAnalysisStatus['state'] = testValueMode === false ? 'off'
+    : testValueMode === true ? 'done'
+    : lotDecision ?? autoDecision(valueTests.length * eligibleDies.length);
   const includedDies = result.dies.filter((die) => isYieldEligibleDie(die));
   // Ring/quadrant/reticle-position/sector are spatial — an unpositioned die
   // has no ring/quadrant/etc. by definition, so it's excluded from every one
@@ -2256,7 +2274,7 @@ function analyzeWaferMapUncollected(
   // Regions exist only for the findings below; with no bins and no value analysis
   // (a count-stacked card, say) none of them can produce one, so none are built.
   const needsRegions = (hasHbinData && eligibleDies.some(die => die.hbin !== undefined))
-    || softEligible.length > 0 || resolved.enableTestValueAnalysis;
+    || softEligible.length > 0 || testValueMode !== false;
   const ringRegions = needsRegions ? buildRingRegions(positionedIncludedDies, result.wafer, resolved.ringCount) : [];
   const quadrantRegions = needsRegions ? buildQuadrantRegions(positionedIncludedDies, result.wafer, resolved.ringCount) : [];
   const reticlePositionRegions = needsRegions ? buildReticlePositionRegions(positionedIncludedDies, result.reticleConfig) : [];
@@ -2299,16 +2317,13 @@ function analyzeWaferMapUncollected(
   }
   const warnings: WaferWarning[] = [...optionWarnings];
   let activeTestNumbers: number[] | undefined;
-  if (resolved.enableTestValueAnalysis) {
-    const ring     = buildTestValueFindings(eligibleDies, ringRegions, result.testDefs, resolved);
-    // ── set below; the cheap perTestStats pass reuses ring.activeTestNumbers ──
-    const quad     = buildTestValueFindings(eligibleDies, quadrantRegions, result.testDefs, resolved);
-    const reticle  = buildTestValueFindings(eligibleDies, reticlePositionRegions, result.testDefs, resolved);
-    const testSite = buildTestValueFindings(eligibleDies, testSiteRegions, result.testDefs, resolved);
-    const sector   = buildTestValueFindings(eligibleDies, sectorRegions, result.testDefs, resolved);
-    findings.push(...ring.findings, ...quad.findings, ...reticle.findings, ...testSite.findings, ...sector.findings);
-    if (ring.warning) warnings.push(ring.warning);
-    activeTestNumbers = ring.activeTestNumbers;
+  if (testValueMode !== false) {
+    if (testValueState === 'done') {
+      for (const family of [ringRegions, quadrantRegions, reticlePositionRegions, testSiteRegions, sectorRegions]) {
+        findings.push(...buildTestValueFindings(eligibleDies, family, valueTests, result.testDefs, resolved));
+      }
+      activeTestNumbers = valueTests;
+    }
 
     rateFindings.push(...buildSpecLimitFindings(
       eligibleDies,
@@ -2437,14 +2452,10 @@ function analyzeWaferMapUncollected(
   if (Object.keys(failures).length) stats.testFailures = failures;
   if (spatialPattern) stats.spatialPattern = spatialPattern;
   // Per-test descriptive stats (quartiles for box plots). Produced when the full
-  // test-value analysis ran (reusing its discovered test numbers) OR when the
-  // caller asked for the cheap computePerTestStats pass on its own. This may push
-  // a cap warning, so it must run BEFORE stats.warnings is assigned below.
-  if (activeTestNumbers === undefined && resolved.computePerTestStats) {
-    const discovered = discoverTestNumbers(eligibleDies, resolved.testNumbers, result.testDefs);
-    if (discovered.warning) warnings.push(discovered.warning);
-    activeTestNumbers = discovered.testNumbers;
-  }
+  // test-value analysis ran OR when the caller asked for the cheap
+  // computePerTestStats pass on its own (never budgeted: asking is choosing).
+  if (activeTestNumbers === undefined && resolved.computePerTestStats) activeTestNumbers = valueTests;
+  if (valueTests.length) stats.testValueAnalysis = testValueStatus(testValueState, valueTests.length, eligibleDies.length);
   if (activeTestNumbers?.length) {
     const perTestStats = computePerTestStats(result.dies, activeTestNumbers, result.testDefs, resolved.minimumSampleSize);
     if (perTestStats) stats.perTestStats = perTestStats;
@@ -2456,8 +2467,6 @@ function analyzeWaferMapUncollected(
   const regionYield = computeRegionYield(
     [{ dies: result.dies, wafer: result.wafer, passBins: resolved.passBins, ringCount: resolved.ringCount }]);
   if (regionYield) stats.regionYield = regionYield;
-  // Assign warnings last so cap warnings raised by the cheap perTestStats path
-  // above are not lost (they are pushed after the earlier assignment point).
   if (warnings.length > 0) stats.warnings = warnings;
 
   // Runs last, over the complete list: the spatial-pattern pass above also
@@ -2471,5 +2480,6 @@ function analyzeWaferMapUncollected(
     hasNotableFindings: findings.some((finding) => finding.severity === 'notable' || finding.severity === 'unusual'),
     findings,
     wafer: result.wafer.metadata ?? undefined,
+    analysisOptions: recordedOptions(options),
     stats };
 }

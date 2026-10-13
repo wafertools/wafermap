@@ -140,6 +140,10 @@ export interface InsightsOptions {
 }
 
 export interface InsightsTabDeps {
+  /** The charts' axis settings to start from: the host's `chart*` preferences (see `axisPrefsFromOptions`). */
+  initialAxisPrefs?: AxisPrefs;
+  /** Called when the reader changes an axis setting, so the renderer can report it as a preference. */
+  onAxisPrefsChange?: (prefs: AxisPrefs) => void;
   /** The host's own wafer attributes (`attributes` on the render options): what Group by offers and calls each, the plot fields, the Wafers table's columns and the strip. Over the defaults. */
   attributes?: Record<string, FacetCuration>;
   /** Current gallery/single-wafer items — read fresh each render (a gallery's list can still be building). `null` entries (not-yet-built cards) are skipped. */
@@ -243,6 +247,8 @@ export interface InsightsTabHandle {
   render: () => void;
   /** Tears down every live panel's observers and removes `el`. */
   destroy: () => void;
+  /** Adopt axis settings set from outside (the host's `setOptions`), in every chart. */
+  setAxisPrefs: (prefs: AxisPrefs) => void;
 }
 
 type Item = FacetItem & {
@@ -430,7 +436,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // `includeLimits: undefined` is not "off" — it means each panel derives the
   // default from its own data (shouldIncludeLimitsByDefault). It only becomes a
   // boolean once the user actually picks, and then it sticks across tests.
-  let axisPrefs: AxisPrefs = { includeLimits: undefined, clipOutliers: false, limits: 'both' };
+  let axisPrefs: AxisPrefs = deps.initialAxisPrefs ?? { includeLimits: undefined, clipOutliers: false, limits: 'both' };
   // Every panel that follows `axisPrefs`, by section — the distribution panels
   // and the correlation section's scatter both draw limit lines, and the
   // "Limits:" choice made in either must reach the other. A section registers
@@ -440,9 +446,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   /** Adopt `prefs` everywhere except `from`, which has already applied the
    *  change and rebuilt — re-entering its own rebuild would discard the
    *  interaction in progress. */
-  const broadcastAxisPrefs = (prefs: AxisPrefs, from: AxisPrefsPanel | null) => {
+  const broadcastAxisPrefs = (prefs: AxisPrefs, from: AxisPrefsPanel | null, fromHost = false) => {
     axisPrefs = prefs;
     for (const panels of axisPrefsPanels.values()) for (const p of panels) if (p !== from) p.setAxisPrefs(prefs);
+    // A reader's change is a preference the host may keep; one the host set is not reported back.
+    if (!fromHost) deps.onAxisPrefsChange?.(prefs);
   };
 
   /**
@@ -1659,5 +1667,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       plotStore.flush();
       rootEl.remove();
     },
+    setAxisPrefs: (prefs) => broadcastAxisPrefs(prefs, null, true),
   };
 }

@@ -621,9 +621,9 @@ export interface WaferWarning {
    *   reach the dies from it would draw a wafer many times the die extent. Typical
    *   source: a placeholder centre in a tester's WCR record. Supply
    *   `waferConfig.diameter` too if the centre is real.
-   * - `'test-count-capped'` — raised by `analyzeWaferMap`: more tests were found in
-   *   the die data than the analysis cap allows, so test-value analysis was skipped
-   *   entirely and NO test findings were produced. Pass `testNumbers` to scope it.
+   * - `'test-count-capped'` — no longer raised. A skipped test-value analysis is
+   *   recorded in `StatsSummary.stats.testValueAnalysis` and offered in the
+   *   renderers' Findings section instead.
    * - `'analysis-option-corrected'` — raised by `analyzeWaferMap` (or `buildWaferMap`, for `ringCount`): a numeric option
    *   was outside the range that can produce a meaningful analysis and was clamped.
    *   The message names each correction. Only reachable from untyped callers now

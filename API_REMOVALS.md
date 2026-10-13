@@ -48,6 +48,7 @@ asks why something went, and before restoring, deprecating or removing anything.
 | `WaferMapController.getActiveLegend` | Redesign if requested |
 | `WaferPreferences.ringCount` (interactive ring count) | Redesign if requested |
 | `DieListDisplayOptions.csvFilename` | Keep removed: superseded, as the library names every saved file (0.30.1) |
+| `FindingsNotice`, `findingsNotice` (both renderers), `setFindingsNotice` (both controllers) | Deprecated (0.36.0): superseded, as the renderers offer the skipped test-value analysis themselves |
 | `RenderOptions.onExpand` | Redesign if requested |
 | `RenderOptions.showPlotModeSelector`, `GalleryOptions.showPlotModeSelector` | Restore on request |
 | `WaferMapController.setHelpButtonVisible` | Restore on request |
@@ -297,6 +298,19 @@ asks why something went, and before restoring, deprecating or removing anything.
   collisions, so don't restore it. A host receives the generated name as `suggestedName` in
   `onSaveText` and can save under any name it likes. From 0.31.0, `downloadFilename` becomes a
   prefix applied to every export, CSVs included.
+
+### `FindingsNotice`, `RenderOptions.findingsNotice`, `GalleryOptions.findingsNotice`, `setFindingsNotice`
+
+- **What it did:** let a host put a row at the top of the Findings section saying a category of
+  finding was missing, with an optional action button. Added in 0.27.0 for tsmap, which used it to
+  offer the regional test-value analysis it had skipped for cost.
+- **Why deprecated:** the decision it carried moved into the library. `enableTestValueAnalysis`
+  defaults to `'auto'` with one budget, the summary records what happened
+  (`stats.testValueAnalysis`), and both renderers show the offer and re-run the analysis
+  themselves (`onStatsSummaryChange` reports the result). A host-built notice would be a second
+  offer of the same analysis with its own idea of the cost: two rules for one decision.
+- **Deprecated in 0.36.0, still honoured:** a notice a host passes replaces the built-in offer.
+  Remove in the next minor release that removes deprecations.
 
 ## Keep removed: unsafe
 

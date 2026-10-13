@@ -28,9 +28,9 @@ on a full production-density wafer. There's exactly one feature worth
 knowing about before you flip it on for every wafer in a large lot:
 automatic spatial finding detection (`enableTestValueAnalysis`), which is
 the most powerful option (it finds statistical anomalies for you) and also
-the priciest — about 30ms on the largest wafer we tested, but the one to
-reach for deliberately rather than as a default, because it scales with the
-whole lot. Everything
+the priciest — about 30ms on the largest wafer we tested, but it scales with
+the whole lot. Its default, `'auto'`, runs it only within a budget and offers
+it to the reader above that (see "Deciding for the user"). Everything
 else — the Summary panel, distribution charts, all of the Insights tab — is
 cheap enough to enable freely. Two Insights panels even get *faster* for
 free if the Summary panel already ran first.
@@ -44,8 +44,8 @@ number repeated in six places is a number that will be wrong in five of them.
 
 | Entry point | gzipped | When it is downloaded |
 | --- | --- | --- |
-| `@wafertools/wafermap` — the data and stats layer, no DOM | **~70 KB** | Always, if you import it |
-| `@wafertools/wafermap/render` — the interactive renderer | **~164 KB** | Always, if you render |
+| `@wafertools/wafermap` — the data and stats layer, no DOM | **~73 KB** | Always, if you import it |
+| `@wafertools/wafermap/render` — the interactive renderer | **~166 KB** | Always, if you render |
 | Insights chart suite | +~55 KB | On first open, only if `insights` is left on (the default) |
 | In-app user guide | +~50 KB | On first open of the guide |
 | Summary report builders | +~10 KB | When a report is opened from the Summary panel or the gallery |
@@ -80,16 +80,17 @@ scripts/check-bundle-size.mjs` prints the per-chunk breakdown.
 | Option | What you get | Where it shows up |
 |---|---|---|
 | *(none — just `buildWaferMap` + `renderWaferMap`)* | The interactive map itself | Always |
-| `analyzeWaferMap()` — no extra flags | Yield %, bin breakdown, ring/quadrant yield (`stats.regionYield`), pass rates by spec, verdict and functional test, basic findings | Summary panel, Insights → Overview |
+| `analyzeWaferMap({ enableTestValueAnalysis: false })` | Yield %, bin breakdown, ring/quadrant yield (`stats.regionYield`), pass rates by spec, verdict and functional test, basic findings | Summary panel, Insights → Overview |
 | `analyzeWaferMap({ computePerTestStats: true })` | Per-test five-number summaries (min/Q1/median/Q3/max) and Cp/Cpk/Pp/Ppk (`stats.capability`) | Insights → Distributions |
-| `analyzeWaferMap({ enableTestValueAnalysis: true })` | Automatic spatial statistical findings — flags regions where a test's values differ significantly (Welch's t-test per region) | Summary panel's findings list |
+| `analyzeWaferMap()` — the default, `'auto'` | Automatic spatial statistical findings — flags regions where a test's values differ significantly (Welch's t-test per region) — when within the budget; otherwise offered in the Findings section. `true` runs it at any size | Summary panel's findings list |
 | Insights tab (on by default) | Process capability, distributions, correlation charts | Insights tab (the Maps | Insights switch) |
 | `analyzeWaferLot(..., { perWaferSummaries })` | Lot-level findings + reuses per-wafer stats you already computed | Gallery's lot Summary panel |
 
-`computePerTestStats` and `enableTestValueAnalysis` are **alternatives**, not
-a ladder — pick the cheaper one unless you specifically need automatic
-spatial finding detection. `enableTestValueAnalysis` computes distributions
-internally too, so you don't need both.
+`computePerTestStats` and the test-value analysis are **alternatives**, not
+a ladder: the test-value analysis computes distributions internally too, so
+you don't need both. With the default `enableTestValueAnalysis: 'auto'` the
+library runs it within its budget; pass `false` and `computePerTestStats: true`
+if you want only the distributions.
 
 ---
 
@@ -100,7 +101,7 @@ a subset of DC/AC parametrics from a production test program, not a toy
 single-test example. `buildWaferMap` (drawing the map) is included as a
 reference point — it's mandatory, everything else is opt-in on top of it.
 
-| Wafer size | `buildWaferMap` | `analyzeWaferMap()` (Summary panel) | `+ computePerTestStats` | `+ enableTestValueAnalysis` |
+| Wafer size | `buildWaferMap` | `analyzeWaferMap`, test values off (Summary panel) | `+ computePerTestStats` | `+ test-value analysis` |
 |---|---|---|---|---|
 | Small (~150 dies) | 2.2ms | 2.5ms *(+113%)* | 2.7ms *(+122%)* | 5.2ms *(+232%)* |
 | Medium (~1,000 dies) | 9.9ms | 4.5ms *(+45%)* | 6.0ms *(+61%)* | 9.7ms *(+98%)* |
@@ -160,45 +161,30 @@ freeze.
 ## Deciding for the user, and when not to
 
 `enableTestValueAnalysis` used to leave integrators with two bad options: leave
-it off — safe, but the findings are then invisible and most users never learn
-they exist — or turn it on for everybody and make large lots feel broken. Both
-were common, and both were wrong for someone.
+it off (safe, but the findings are then invisible and most users never learn
+they exist) or turn it on for everybody and make large lots feel broken.
 
-Since 0.27.0 there is a third: **run it when it is cheap, and offer it when it
-is not.** `FindingsNotice` (§5.4 of the API reference) draws a row at the top of
-the Summary panel's Findings section, so the offer appears where the reader is
-already looking rather than in a menu they have no reason to open:
+The library now decides, the same way in every app. The default, `'auto'`,
+**runs it when it is cheap and offers it when it is not**: up to 1,500,000 test
+values (dies × tests, summed over a lot's wafers, about a second in the slower
+engine) it runs; above that it is skipped, the summary records it
+(`stats.testValueAnalysis`, with the size and an estimated time), and the
+renderers' Findings section says so with an **Analyse** button. The offer
+appears where the reader is already looking rather than in a menu they have no
+reason to open, and it states the price, because an unpriced button on a lot
+where the answer takes half a minute is worse than no button.
 
 ```ts
-const estimateMs = waferCount * diesPerWafer * testCount * 0.7 / 1000;
-const runIt = estimateMs <= 1000;          // your budget, your call
-
-const summary = analyzeWaferMap(result, { enableTestValueAnalysis: runIt });
-
-renderWaferMap(container, result, {
-  statsSummary: summary,
-  findingsNotice: runIt ? undefined : {
-    message: 'Test-value findings are not included.',
-    detail:  `Regional analysis of ${testCount} tests across ${waferCount} wafers — about ${Math.round(estimateMs / 1000)}s.`,
-    actionLabel: 'Analyse',
-    onAction: () => rerunWith({ enableTestValueAnalysis: true }),
-  },
+const lot = await analyzeWaferLotAsync(results);      // one decision for the whole lot
+renderWaferGallery(container, items, {
+  lotStatsSummary: lot,
+  // The reader pressed Analyse: the gallery re-ran the lot and already shows it.
+  onStatsSummaryChange: ({ summaries, lotStatsSummary }) => keep(summaries, lotStatsSummary),
 });
 ```
 
-Two things make this work, and both are easy to get wrong:
-
-- **State the price in `detail`.** An unpriced "Analyse" button on a lot where
-  the answer takes half a minute is worse than no button — the user clicks it
-  once, waits, and never trusts it again.
-- **Let the user's choice stick.** Once they have decided either way, stop
-  applying the budget on their behalf; a control that silently re-decides on the
-  next load is not a control.
-
-wmap never raises the notice itself. Only the host knows what it chose not to
-compute and what recomputing would cost.
-
----
+Pass `true` to run it whatever the size, or `false` to leave it (and the
+limit-failure region findings) out.
 
 ## Only pass the tests you'll actually use
 
@@ -307,7 +293,7 @@ optimization worth taking, not a fix for a real bottleneck.
 | A simple embedded viewer, no stats UI | Nothing extra — just `buildWaferMap` + `renderWaferMap` | No reason to compute analysis nobody sees |
 | A viewer with yield/bin summary | `analyzeWaferMap()`, no extra flags | Fast, powers the whole Summary panel |
 | …plus distribution/box-plot charts | `+ computePerTestStats: true` | Still fast; unlocks Insights → Distributions |
-| A QA/engineering tool that should flag anomalies automatically | `+ enableTestValueAnalysis: true` when the estimate is small, else a `findingsNotice` offering it | The only option that finds spatial patterns for you automatically. Cheap per wafer, seconds per lot — so decide per lot rather than once for the whole app (see "The number that matters is the lot") |
+| A QA/engineering tool that should flag anomalies automatically | The default (`'auto'`), with `analyzeWaferLotAsync` for lots | The only option that finds spatial patterns for you automatically. Cheap per wafer, seconds per lot, so the library decides per lot and offers it above the budget (see "The number that matters is the lot") |
 | A lot gallery (many wafers) | Always pass `perWaferSummaries` to `analyzeWaferLot` | Free reuse of work you already did |
 | A lot gallery large enough to stage visibly | Pass factories, and hold your own indicator to `onItemsResolved` | The cards stream in one per task instead of blocking; `onItemResolved` sizes and advances a bar, and the Summary panel keeps filling in for seconds after the last card ([guide](guide/recipes.md#keep-a-gallery-responsive-when-building-many-maps)) |
 | Very large lots using `enableTestValueAnalysis` on every wafer | Run analysis in a [Web Worker](guide/layouts.md#processing-large-datasets-with-a-web-worker) via `createWafermapWorker` | Keeps the main thread free while the heavier pass runs, even though each individual call is fast |

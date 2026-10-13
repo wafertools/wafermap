@@ -1,6 +1,7 @@
 export * from './types.js';
 export { analyzeWaferMap } from './analyzeWaferMap.js';
-export { analyzeWaferLot } from './analyzeWaferLot.js';
+export { analyzeWaferLot, analyzeWaferLotAsync } from './analyzeWaferLot.js';
+export type { AnalyzeWaferLotAsyncOptions } from './analyzeWaferLot.js';
 export { filterFindings, visibleFindings } from './filterFindings.js';
 export type { FindingsFilter } from './filterFindings.js';
 export type { PatternLabel, PatternClassification, PatternFeatures } from './patternClassification.js';

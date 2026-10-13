@@ -2,13 +2,15 @@ import { waferDisplayLabel } from '../core/waferLabel.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { requireRingCount } from '../core/ringCount.js';
 import {
-  analyzeWaferMap, candidatesOf, describeRegional, resolveOptions, adjustPValues,
+  analyzeWaferMapDecided, candidatesOf, describeRegional, resolveOptions, adjustPValues,
+  testValueSize, recordedOptions,
   twoProportionZ, welchOfSums, rateRelativeEffect, passesRateGate,
   severityForFinding, severityForScore, collapseRedundantFindings,
   findContiguousRuns, mergedRegionLabel, type MeanStats,
   type RegionCandidate, type ResolvedOptions, type RedundancyFacts, type WaferComparisons,
 } from './analyzeWaferMap.js';
 import { normalizeInput } from './normalizeInput.js';
+import { autoDecision, lotTestValueStatus } from './testValueBudget.js';
 import { poolCapability, poolRegionYield, poolPassRates } from './summaryFigures.js';
 import { mergeTestDefs } from './mergeTestDefs.js';
 import { findingPatternKey } from './filterFindings.js';
@@ -27,6 +29,7 @@ import type {
   StatsFinding,
   StatsSeverity,
   StatsSummary,
+  TestValueAnalysisStatus,
 } from './types.js';
 
 /** From this many wafers, Tukey's fences; below it, Dixon's Q test. With few
@@ -666,6 +669,18 @@ function buildYieldOutlierFindings(perWafer: LotStatsSummary['perWafer'], popula
   return findings;
 }
 
+/**
+ * The `'auto'` test-value decision for a whole lot: over the values of every
+ * wafer together, so a lot of wafers each under the budget does not run for the
+ * sum of them. `undefined` when the option is not `'auto'` (each wafer follows it).
+ */
+function lotTestValueDecision(results: WaferMapResult[], options: AnalyzeWaferMapOptions): 'done' | 'skipped' | undefined {
+  if ((options.enableTestValueAnalysis ?? 'auto') !== 'auto') return undefined;
+  let values = 0;
+  for (const result of results) { const { tests, dies } = testValueSize(result, options); values += tests * dies; }
+  return autoDecision(values);
+}
+
 export function analyzeWaferLot(
   items: AnalyzeWaferLotInput,
   options: AnalyzeWaferMapOptions & { perWaferSummaries?: StatsSummary[] } = {},
@@ -673,14 +688,15 @@ export function analyzeWaferLot(
   // Built once here, so the lot figures below and each wafer's own analysis read
   // the same dies without building a raw input twice.
   const results = items.map(normalizeInput);
+  const decision = lotTestValueDecision(results, options);
   const perWafer = results.map((result, waferIndex) => ({
     waferIndex,
-    summary: options.perWaferSummaries?.[waferIndex] ?? analyzeWaferMap(result, options),
+    summary: options.perWaferSummaries?.[waferIndex] ?? analyzeWaferMapDecided(result, options, decision),
   }));
   // A summary that has been through a structured clone (a host's worker, say)
   // no longer carries its comparisons; that wafer is analysed again for them.
   const comparisons = perWafer.map(({ waferIndex, summary }) =>
-    candidatesOf(summary) ?? candidatesOf(analyzeWaferMap(results[waferIndex], options))!);
+    candidatesOf(summary) ?? candidatesOf(analyzeWaferMapDecided(results[waferIndex], options, decision))!);
   const waferCandidates = comparisons.map((w, waferIndex) =>
     ({ waferIndex, byKey: new Map(w.candidates.map(c => [c.key, c])) }));
   const resolved = resolveOptions(options).resolved;
@@ -756,7 +772,12 @@ export function analyzeWaferLot(
     findings,
     lot: Object.keys(lotIdentity).length > 0 ? lotIdentity : undefined,
     ...(mixedIdentityFields.length > 0 ? { mixedIdentityFields } : {}),
-    stats: { waferCount: items.length, ...lotFigures(results, perWafer.map(w => w.summary)) },
+    analysisOptions: recordedOptions(options),
+    stats: {
+      waferCount: items.length,
+      ...lotFigures(results, perWafer.map(w => w.summary)),
+      ...optionalStatus(lotTestValueStatus(perWafer.map(w => w.summary))),
+    },
     lotYieldSeries,
     perWafer,
     ...(perWaferTestStatsRaw.length > 0 ? { perWaferTestStats: perWaferTestStatsRaw } : {}),
@@ -776,4 +797,45 @@ function lotFigures(results: WaferMapResult[], summaries: StatsSummary[]): Parti
   const regionYield = poolRegionYield(summaries, results.map(r => r.ringCount));
   if (regionYield) out.regionYield = regionYield;
   return out;
+}
+
+const optionalStatus = (status: TestValueAnalysisStatus | undefined) => (status ? { testValueAnalysis: status } : {});
+
+/** Options of {@link analyzeWaferLotAsync}: the lot's, with progress and cancellation. */
+export interface AnalyzeWaferLotAsyncOptions extends AnalyzeWaferMapOptions {
+  perWaferSummaries?: StatsSummary[];
+  /** Called after each wafer is analysed, then once more with `done === total` before the lot-level pass. */
+  onProgress?: (done: number, total: number) => void;
+  /** Abort to stop between wafers; the promise rejects with the signal's reason. */
+  signal?: AbortSignal;
+}
+
+/** A pause that lets the browser paint and handle input; `setTimeout`, so it also works outside a browser. */
+const yieldToHost = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+/**
+ * `analyzeWaferLot` that hands control back to the browser between wafers, so a
+ * large lot does not hang the page while it is analysed — the same result, one
+ * test-value decision for the whole lot. It yields whenever about 100 ms of work
+ * has passed (a pause costs a frame; one per wafer would add a third to a big lot)
+ * and before the lot-level pass.
+ */
+export async function analyzeWaferLotAsync(
+  items: AnalyzeWaferLotInput,
+  options: AnalyzeWaferLotAsyncOptions = {},
+): Promise<LotStatsSummary> {
+  const { onProgress, signal, ...lotOptions } = options;
+  const results = items.map(normalizeInput);
+  const decision = lotTestValueDecision(results, lotOptions);
+  const summaries: StatsSummary[] = [];
+  let lastYield = Date.now();
+  for (let i = 0; i < results.length; i++) {
+    signal?.throwIfAborted();
+    summaries.push(lotOptions.perWaferSummaries?.[i] ?? analyzeWaferMapDecided(results[i], lotOptions, decision));
+    onProgress?.(i + 1, results.length);
+    if (Date.now() - lastYield > 100) { await yieldToHost(); lastYield = Date.now(); }
+  }
+  await yieldToHost();
+  signal?.throwIfAborted();
+  return analyzeWaferLot(results, { ...lotOptions, perWaferSummaries: summaries });
 }

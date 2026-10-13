@@ -92,7 +92,10 @@ function staticClosure(start, seen = new Set()) {
   }
   return seen;
 }
-const entryOut = Object.keys(outputs).find(k => outputs[k].entryPoint !== undefined);
+// The stdin entry above, by name: every dynamic-import target is an entry point
+// too, and taking the first one found picked whichever esbuild listed first.
+const entryOut = Object.keys(outputs).find(k => outputs[k].entryPoint === '<stdin>');
+if (!entryOut) throw new Error('check-bundle-size: the stdin entry is missing from the metafile');
 const entryStatic = staticClosure(entryOut);
 /** A lazy feature's outputs: its own static closure, less what the entry already loads. */
 function featureOutputs(nameFragment) {

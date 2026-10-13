@@ -6,6 +6,30 @@ release first. Each release's full list of changes is in the
 each removal, and whether it could come back, are in
 [API_REMOVALS.md](https://github.com/wafertools/wafermap/blob/main/API_REMOVALS.md).
 
+## Next release
+
+### Test-value analysis runs by default when it fits a budget
+
+`enableTestValueAnalysis` defaults to `'auto'` (it was `false`). Within 1,500,000 test values
+(dies × tests, summed over a lot's wafers) `analyzeWaferMap` and `analyzeWaferLot` now return the
+regional test-value findings and per-test statistics without being asked; above it they skip them,
+record it in `stats.testValueAnalysis`, and the renderers offer the analysis to the reader. To keep
+the old behaviour, pass `enableTestValueAnalysis: false`. `true` is no longer capped at 250 tests.
+
+### Rotation, mirroring, compact layout and log scale are not preferences
+
+`rotation`, `flipX`, `flipY`, `compact` and `logScale` moved from `WaferPreferences` to `WaferDisplayState`
+(`WaferViewOptions` still has them all), and a change to them is reported as `'state'`. If you saved them
+as preferences, stop: each describes the data on screen. Save the keys in `WAFER_PREFERENCE_KEYS` instead.
+
+### `test-count-capped` is not raised
+
+Code that looked for that warning should read `summary.stats.testValueAnalysis?.state === 'skipped'`.
+If you passed a `findingsNotice` to offer the analysis yourself, remove it: the renderers show their
+own offer (a notice you pass still replaces it), and `onStatsSummaryChange` gives you the summary
+after the reader runs it. For a big lot in a browser, `analyzeWaferLotAsync` keeps the page
+responsive while it analyses.
+
 ## 0.34.0
 
 ### Pass bins and ring count have no defaults after the build

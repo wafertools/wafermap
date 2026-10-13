@@ -106,7 +106,7 @@ export function buildDriftFindings(perWafer: PerWafer, significanceLevel: number
       severity,
       variable: c.kind === 'yield'
         ? { kind: 'yield', label: 'Yield' }
-        : { kind: 'test', index: c.testNumber, label: c.label },
+        : { kind: 'test', measure: 'mean', index: c.testNumber, label: c.label },
       comparison: { family: 'wafer', left: 'Wafers in input order', right: 'a constant level' },
       effect: {
         direction: rising ? 'higher' : 'lower',

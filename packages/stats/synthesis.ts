@@ -569,7 +569,11 @@ function checkedLine(summary: StatsSummary | LotStatsSummary, shown: Set<string>
   const hbins = summary.level === 'wafer'
     ? summary.stats.hardBinsConsidered.length
     : new Set(summary.perWafer.flatMap(w => w.summary.stats.hardBinsConsidered)).size;
-  if (tests > 0) parts.push(plural(tests, 'test'));
+  // When the test-value analysis was skipped only the limit checks ran over the
+  // tests, and when it was off not even those, so the count must not read as
+  // "every test's values were compared".
+  const state = summary.stats.testValueAnalysis?.state;
+  if (tests > 0 && state !== 'off') parts.push(plural(tests, 'test') + (state === 'skipped' ? ' (against their limits only)' : ''));
   if (hbins > 0) parts.push(plural(hbins, 'hard bin'));
   parts.push('the ring, quadrant and sector regions');
   if (summary.level === 'lot' && summary.stats.waferCount >= 3) {

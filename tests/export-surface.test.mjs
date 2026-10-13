@@ -19,7 +19,7 @@ const SNAPSHOTS = {
     'DERIVED_KEY', 'DERIVED_MARK',
     // Added in the next release so a host shows test limits in their stored digits (tsmap's test selector).
     'fmtExact',
-    'analyzeWaferLot', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'buildWaferMap',
+    'analyzeWaferLot', 'analyzeWaferLotAsync', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'buildWaferMap',
     'diePassStatus', 'facetValueOf', 'FACET_NONE_VALUE', 'filterFindings',
     'getDieKey', 'getReticleCell', 'getReticleShot', 'getTestPassStatus', 'hasPosition', 'isYieldEligibleDie',
     'listBinColorSchemes', 'listValueColorSchemes', 'mergeTestDefs', 'metadataDisplayValue',
@@ -48,7 +48,7 @@ const SNAPSHOTS = {
   './stats': [
     // Added in 0.30.1 as replacements for deprecated exports (API_REMOVALS.md, Part 2).
     'renderLotReportHtml', 'renderWaferReportHtml',
-    'analyzeWaferLot', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'facetValueOf', 'FACET_NONE_VALUE',
+    'analyzeWaferLot', 'analyzeWaferLotAsync', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'facetValueOf', 'FACET_NONE_VALUE',
     'filterFindings', 'mergeTestDefs', 'setReportOpener', 'visibleFindings',
     'readPlotsFile', 'writePlotsFile',
   ],
@@ -63,6 +63,10 @@ const SNAPSHOTS = {
     // set the library would have shown, rather than re-deriving it from two
     // separate sources and getting the de-duplication subtly different.
     'collectWarnings', 'severityOf',
+    // Which view options are preferences, so a host keeps exactly those between
+    // sessions by wmap's own classification instead of a hand-kept list that
+    // drifts (tsmap's kept four colour keys and missed the rest).
+    'WAFER_PREFERENCE_KEYS',
     // The toolbar's own icon set — exposed so a host rendering its own chrome
     // alongside wmap's can match wmap's iconography instead of copy-pasting
     // SVGs that silently drift on the next redesign.

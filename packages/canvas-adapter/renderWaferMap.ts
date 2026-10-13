@@ -5,7 +5,7 @@ import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitl
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, PATH_SHAPES, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
-import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest, isBuiltMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
@@ -15,6 +15,8 @@ import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
 import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
+import { testValueNotice } from './testValueOffer.js';
+import { axisPrefsFromOptions, optionsFromAxisPrefs, CHART_PREF_KEYS } from './chartPrefs.js';
 import {
   createSummaryPanelEl, wrapWithSummaryPanel, renderWaferSummaryContentSteps } from './summaryPanel.js';
 import { runChunked, type ChunkedRun } from './chunked.js';
@@ -73,10 +75,6 @@ export interface WaferPreferences {
    * The toolbar offers the toggle only when some definition carries a colour.
    */
   useDefinedBinColors?:    boolean;
-  /** Interactive rotation in degrees (0 | 90 | 180 | 270). */
-  rotation?:               0 | 90 | 180 | 270;
-  flipX?:                  boolean;
-  flipY?:                  boolean;
   showDieLabels?:          boolean;
   showRingBoundaries?:     boolean;
   showQuadrantBoundaries?: boolean;
@@ -89,16 +87,6 @@ export interface WaferPreferences {
    * so the map is a little smaller.
    */
   showAxes?:               boolean;
-  /**
-   * Draw the dies on a compact grid with the empty rows and columns removed and each group of
-   * dies outlined, instead of at their physical positions. Default false. The toolbar offers
-   * the toggle when the occupied rows and columns repeat at a regular pitch (a multi-project
-   * wafer), or at the supplied `reticleConfig` width and height; setting it here applies it
-   * regardless. Only the layout changes: every die is still drawn and counted, and axis labels
-   * stay original die coordinates. The wafer outline, rings, quadrants, reticle grid and XY
-   * indicator are not drawn in this layout.
-   */
-  compact?:                boolean;
   /** Legend position for bin modes. Default 'default'. */
   legendPosition?:         'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
   /**
@@ -110,6 +98,45 @@ export interface WaferPreferences {
    * place it is set (it used to have four).
    */
   fallbackFormat?:         'si' | 'engineering';
+  /**
+   * Hatch dies whose bin is not a pass bin, giving pass/fail a channel that is
+   * not hue. Default false. Bin modes only — in value mode the spec markers
+   * already serve this role.
+   */
+  markFailingDies?:        boolean;
+  /**
+   * Controls the default colorbar range when the active testDef has spec limits.
+   * `'spec'` (default): colorbar spans [limitLow, limitHigh]; out-of-spec dies show fail colors.
+   * `'data'`: colorbar spans actual data min/max; out-of-spec coloring still applies.
+   */
+  colorbarRangeMode?:      'spec' | 'data';
+  /**
+   * Insights charts: widen a value axis to take in the test limits. Unset, each chart decides
+   * from its own data; the charts' axis menu sets it, and it then holds across tests.
+   */
+  chartAxisIncludesLimits?: boolean;
+  /** Insights charts: leave outliers off a value axis so the bulk of the data fills it. Default false. */
+  chartClipOutliers?:      boolean;
+  /** Insights charts: which limit lines to draw — test limits, spec limits, both or none. Default `'both'`. */
+  chartLimitLines?:        'test' | 'spec' | 'both' | 'none';
+}
+
+/**
+ * Display state — describes this view of this data, not worth persisting.
+ * Changes as the user navigates tests and modes, or depends on the data shown:
+ * carried to another lot, it would describe that lot wrongly.
+ */
+export interface WaferDisplayState {
+  plotMode?:     PlotMode;
+  /**
+   * Interactive rotation in degrees (0 | 90 | 180 | 270), on top of the data's own orientation.
+   * State, not a preference: it is relative to this data, and the only sign of it is the lit
+   * Orientation button, so carried to another lot it would show that lot's defects on the wrong side.
+   */
+  rotation?:               0 | 90 | 180 | 270;
+  /** Interactive mirroring, with `rotation`. */
+  flipX?:                  boolean;
+  flipY?:                  boolean;
   /**
    * Draw this map's own legend block — the categorical bin legend, the spec/
    * pass-fail legend, or the value colorbar, whichever the plot mode calls for.
@@ -124,34 +151,28 @@ export interface WaferPreferences {
    * targets that toggle `highlightBin` for this map — so only turn it off where
    * an equivalent control is still reachable, and never where the map's scale
    * is its own (a data-ranged colorbar). `renderWaferGallery` owns that rule.
+   * State, not a preference: whether it is safe off depends on the view.
    */
   showLegend?:             boolean;
   /**
-   * Hatch dies whose bin is not a pass bin, giving pass/fail a channel that is
-   * not hue. Default false. Bin modes only — in value mode the spec markers
-   * already serve this role.
+   * Draw the dies on a compact grid with the empty rows and columns removed and each group of
+   * dies outlined, instead of at their physical positions. Default false. The toolbar offers
+   * the toggle when the occupied rows and columns repeat at a regular pitch (a multi-project
+   * wafer), or at the supplied `reticleConfig` width and height; setting it here applies it
+   * regardless. Only the layout changes: every die is still drawn and counted, and axis labels
+   * stay original die coordinates. The wafer outline, rings, quadrants, reticle grid and XY
+   * indicator are not drawn in this layout. State, not a preference: it suits a multi-project
+   * wafer, and carried to an ordinary one it would drop the outline, rings and quadrants.
    */
-  markFailingDies?:        boolean;
+  compact?:                boolean;
   /**
    * When true, apply log₁₀ scale to value normalization and the colorbar.
    * Overrides the per-test TestDef.logScale default.
-   * Falls back to linear when vMin ≤ 0.
+   * Falls back to linear when vMin ≤ 0. Choosing a test resets it to that test's own default,
+   * so it is per test, not a preference.
    */
   logScale?:               boolean;
-  /**
-   * Controls the default colorbar range when the active testDef has spec limits.
-   * `'spec'` (default): colorbar spans [limitLow, limitHigh]; out-of-spec dies show fail colors.
-   * `'data'`: colorbar spans actual data min/max; out-of-spec coloring still applies.
-   */
-  colorbarRangeMode?:      'spec' | 'data';
-}
 
-/**
- * Transient display state — describes the current view session, not worth persisting.
- * Changes frequently as the user navigates tests and modes.
- */
-export interface WaferDisplayState {
-  plotMode?:     PlotMode;
   /**
    * Requested pass/fail display for `value` mode — `'spec'` (spec-limit judgement),
    * `'test'` (the tester's recorded verdict from `die.testPass`), or `'off'` (gradient).
@@ -271,6 +292,12 @@ export interface RenderOptions extends ForwardedDrawOptions {
   /** Optional precomputed wafer-level stats summary. Enables the summary panel toggle button in the toolbar. */
   statsSummary?: StatsSummary;
   /**
+   * Called with the new summary after the map re-analyses its wafer itself: when the reader asks, from the Findings
+   * section, for the test-value analysis the summary records as not run (`stats.testValueAnalysis`). The map already
+   * shows the new summary; keep it so the host's own copies (a report, a lot view, a log) match.
+   */
+  onStatsSummaryChange?: (summary: StatsSummary) => void;
+  /**
    * A prefix for every file the map saves — PNGs and CSVs alike. The lot,
    * wafer and content follow it (`<prefix>_W05_hard-bin.png`), except any the
    * prefix already names. See docs/api/render-map.md §5.4.5.
@@ -306,9 +333,12 @@ export interface RenderOptions extends ForwardedDrawOptions {
   /**
    * A row at the top of the Findings section stating that a category of finding
    * is not present, and optionally offering to compute it — see
-   * {@link FindingsNotice}. wmap never raises this itself: only the host knows
-   * what analysis it chose to skip and what running it would cost. Replaceable
-   * afterwards via the controller's `setFindingsNotice`.
+   * {@link FindingsNotice}. Replaces the built-in offer of the skipped
+   * test-value analysis while set.
+   *
+   * @deprecated The renderers offer the skipped test-value analysis themselves
+   * (from `stats.testValueAnalysis`) and report the re-run through
+   * `onStatsSummaryChange`. See API_REMOVALS.md.
    */
   findingsNotice?: FindingsNotice;
   /**
@@ -404,8 +434,9 @@ export interface WaferMapController {
   /** Programmatically set the selected dies (renders highlight overlay). */
   /**
    * Replace the Findings-section notice (see `FindingsNotice`). Pass `undefined`
-   * to clear it — which is what a host does once it has run the analysis the
-   * notice was offering.
+   * to clear it, which brings back the built-in offer.
+   *
+   * @deprecated With `findingsNotice`. See API_REMOVALS.md.
    */
   setFindingsNotice(notice: FindingsNotice | undefined): void;
   setSelection(dies: Die[]): void;
@@ -443,12 +474,22 @@ export interface WaferMapController {
   destroy(): void;
 }
 
-// Keys that belong to WaferPreferences — used to classify onViewOptionsChange events.
-const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>([
-  'binColorScheme', 'valueColorScheme', 'reverseValueScheme', 'useDefinedBinColors', 'rotation', 'flipX', 'flipY',
-  'showDieLabels', 'showRingBoundaries', 'showQuadrantBoundaries', 'showReticle', 'showXYIndicator', 'compact', 'showAxes',
-  'legendPosition', 'logScale', 'colorbarRangeMode', 'markFailingDies', 'fallbackFormat',
-]);
+/**
+ * The keys of {@link WaferPreferences}: the view options that describe how the reader likes to see
+ * maps in general, and so are safe to carry from one lot to the next. `onViewOptionsChange` classifies
+ * by this list; a host that keeps preferences between sessions saves these keys and no others, so a
+ * setting that describes the data on screen (orientation, the compact layout, log scale) never
+ * follows the reader to a lot it does not fit.
+ */
+// A record over every key of the type, so the list below cannot leave one out.
+const PREFERENCE_KEY_SET: Record<keyof WaferPreferences, true> = {
+  binColorScheme: true, valueColorScheme: true, reverseValueScheme: true, useDefinedBinColors: true,
+  showDieLabels: true, showRingBoundaries: true, showQuadrantBoundaries: true, showReticle: true, showXYIndicator: true,
+  showAxes: true, legendPosition: true, colorbarRangeMode: true, markFailingDies: true, fallbackFormat: true,
+  chartAxisIncludesLimits: true, chartClipOutliers: true, chartLimitLines: true,
+};
+export const WAFER_PREFERENCE_KEYS = Object.keys(PREFERENCE_KEY_SET) as readonly (keyof WaferPreferences)[];
+const PREFERENCE_KEYS = new Set<keyof WaferViewOptions>(WAFER_PREFERENCE_KEYS);
 
 /** Options that change die colours without changing what the view contains —
  *  any of them means every colour-bearing surface (panels, footer) redraws. */
@@ -535,6 +576,11 @@ export interface CardRenderOptions extends Omit<RenderOptions, 'viewOptions'> {
   chromeInset?: string;
   /** Replaces the expand action for both the expand button and the E key. */
   onExpand?: () => void;
+  /**
+   * The offer of the test-value analysis, in place of this map's own: the gallery's, which runs it for the whole
+   * lot (one decision for every wafer), where the map's own would run this wafer alone.
+   */
+  testValueOffer?: () => FindingsNotice | undefined;
   /**
    * A host that owns a wider selection than this map's (the gallery, selecting the same die positions
    * on every wafer) supplies the drilldown population and context here. Returns `undefined` to fall back
@@ -1236,6 +1282,14 @@ export function renderWaferMapCard(
     if (insightsTab) return Promise.resolve(insightsTab);
     insightsLoad ??= import('./insightsTab.js').then(({ createInsightsTab }) => {
       insightsTab = createInsightsTab({
+      // The charts' axis settings are preferences: start from them, and report a reader's change
+      // without redrawing the map (nothing on it depends on them).
+      initialAxisPrefs: axisPrefsFromOptions(viewOpts),
+      onAxisPrefsChange: (prefs) => {
+        viewOpts = { ...viewOpts, ...optionsFromAxisPrefs(prefs) };
+        const changed = [...CHART_PREF_KEYS] as (keyof WaferViewOptions)[];
+        onViewOptionsChange?.(viewOpts, changed, classifyChanged(changed));
+      },
       attributes: options.attributes,
       getItems: () => [{
         wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
@@ -1629,7 +1683,70 @@ export function renderWaferMapCard(
   // via `options.findingsNotice` and replaceable through the controller, since
   // what it says (and whether it is needed) changes once the host runs the
   // analysis it is offering.
-  let currentFindingsNotice: FindingsNotice | undefined = options.findingsNotice;
+  /** Show `summary` everywhere the map shows its analysis: warnings, the Summary panel (mounting it if late). */
+  function applyStatsSummary(summary: StatsSummary | undefined): void {
+    currentStatsSummary = summary;
+    // Analysis raises its own advisories (an option correction, say), so a
+    // summary arriving late can introduce warnings that were not present when
+    // the toolbar was built. Rebuild it rather than leaving them unreachable.
+    refreshWarnings();
+    syncWarningButton();
+    if (summaryPanelEl) {
+      renderSummaryPanel();
+    } else if (autoSummaryPanelEl) {
+      renderAutoSummaryPanel();
+    } else if (summary && !summaryPanelOpts?.placement) {
+      // Late-mount: statsSummary provided after initial render with no placement option.
+      const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
+      autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument, onFindingMenu);
+      autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
+      const parent = canvasWrap.parentElement;
+      const next = canvasWrap.nextSibling;
+      autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
+      parent?.insertBefore(autoSummaryPanelWrapper, next);
+      renderAutoSummaryPanel();
+      syncPanelsBehindInsights();
+    }
+    refreshSummaryButton();
+  }
+
+  /** Re-render whichever Summary panel this map owns. */
+  function refreshSummaryPanels(): void {
+    if (summaryPanelEl) renderSummaryPanel();
+    else if (autoSummaryPanelEl) renderAutoSummaryPanel();
+  }
+
+  let hostFindingsNotice: FindingsNotice | undefined = options.findingsNotice;
+  // The Findings section's own offer of a test-value analysis that did not run
+  // (`testValueNotice`). A notice the host still passes (deprecated) takes its place.
+  let analysingTestValues = false;
+  // Only a built map can be analysed again; a hand-built one gets no offer.
+  const findingsNotice = (): FindingsNotice | undefined => hostFindingsNotice
+    ?? (options.testValueOffer ? options.testValueOffer() : undefined)
+    ?? (!options.testValueOffer && isBuiltMap(currentResult) ? testValueNotice(currentStatsSummary?.stats.testValueAnalysis, 1, analysingTestValues, analyseTestValues) : undefined);
+  function analyseTestValues(): void {
+    const summary = currentStatsSummary;
+    const built = currentResult;
+    if (analysingTestValues || !summary || !isBuiltMap(built)) return;
+    analysingTestValues = true;
+    refreshSummaryPanels();
+    // Two frames, so "Analysing test values…" is painted before the work blocks,
+    // or a short timer, whichever comes first: a hidden or covered window runs no
+    // frames, and the work must not wait for it to be shown again.
+    const frame = ownerDocument.defaultView?.requestAnimationFrame?.bind(ownerDocument.defaultView)
+      ?? ((cb: () => void) => setTimeout(cb, 16));
+    let started = false;
+    const run = (): void => {
+      if (started || destroyed) return;
+      started = true;
+      const next = analyzeWaferMap(built, { ...summary.analysisOptions, enableTestValueAnalysis: true });
+      analysingTestValues = false;
+      applyStatsSummary(next);
+      options.onStatsSummaryChange?.(next);
+    };
+    frame(() => frame(run));
+    setTimeout(run, 120);
+  }
   let findingsFilter: FindingsFilter = {};
   // Auto-mounted panel: created when statsSummary is provided but no explicit summaryPanel option.
   let autoSummaryPanelEl: HTMLDivElement | null = null;
@@ -1690,7 +1807,7 @@ export function renderWaferMapCard(
       fallbackFormat: viewOpts.fallbackFormat,
       activeFindingId: summaryActiveFindingId,
       findingsFilter,
-      findingsNotice: currentFindingsNotice,
+      findingsNotice: findingsNotice(),
       onFindingsFilterChange: renderSummaryPanel,
       onSaveText: exportHooks.onSaveText,
       metadataFields,
@@ -2439,6 +2556,10 @@ export function renderWaferMapCard(
     }
     const prevMode = viewOpts.plotMode;
     viewOpts = { ...viewOpts, ...partial };
+    // The charts' axis settings reach an open Insights tab, and redraw no map.
+    if (CHART_PREF_KEYS.some(k => k in partial)) insightsTab?.setAxisPrefs(axisPrefsFromOptions(viewOpts));
+    const keys = Object.keys(partial);
+    if (keys.length > 0 && keys.every(k => (CHART_PREF_KEYS as readonly string[]).includes(k))) return;
     // The layout's extent is nothing like the wafer's, so a zoom made on one means nothing on the other.
     if ('compact' in partial || 'compactMap' in partial) { fittedViewport = null; viewport = null; }
     if (partial.plotMode !== undefined && partial.plotMode !== prevMode) {
@@ -3502,36 +3623,14 @@ export function renderWaferMapCard(
     },
 
     setFindingsNotice(notice: FindingsNotice | undefined): void {
-      currentFindingsNotice = notice;
-      if (summaryPanelEl) renderSummaryPanel();
-      else if (autoSummaryPanelEl) renderAutoSummaryPanel();
+      hostFindingsNotice = notice;
+      refreshSummaryPanels();
     },
 
     setStatsSummary(summary: StatsSummary | undefined): void {
-      currentStatsSummary = summary;
-      // Analysis raises its own advisories (e.g. the test-count cap), so a
-      // summary arriving late can introduce warnings that were not present when
-      // the toolbar was built. Rebuild it rather than leaving them unreachable.
-      refreshWarnings();
-      syncWarningButton();
-      if (summaryPanelEl) {
-        renderSummaryPanel();
-      } else if (autoSummaryPanelEl) {
-        renderAutoSummaryPanel();
-      } else if (summary && !summaryPanelOpts?.placement) {
-        // Late-mount: statsSummary provided after initial render with no placement option.
-        const openOnMount = summaryPanelOpts?.defaultOpen ?? !showToolbar;
-        autoSummaryPanelEl = createSummaryPanelEl('right', chromeInset, ownerDocument, onFindingMenu);
-        autoSummaryPanelEl.style.display = openOnMount ? 'block' : 'none';
-        const parent = canvasWrap.parentElement;
-        const next = canvasWrap.nextSibling;
-        autoSummaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, autoSummaryPanelEl, 'right');
-        parent?.insertBefore(autoSummaryPanelWrapper, next);
-        renderAutoSummaryPanel();
-        syncPanelsBehindInsights();
-      }
-      refreshSummaryButton();
+      applyStatsSummary(summary);
     },
+
 
     closeSummaryPanel(): void {
       setSummaryPanelOpen(false);

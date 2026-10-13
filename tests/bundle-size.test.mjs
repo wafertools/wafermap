@@ -119,7 +119,9 @@ const THRESHOLDS = {
   // donut by its radial fail rates) took the data layer to ~72.1 KB locally; the budget keeps ~1.5% over that.
   // Raised deliberately from 73_200: the correlation test budget (a candidate pick before the pairwise pass), the
   // retest fast path, the per-wafer pass-rate tally cache and the stack-bins rule took it to ~73.3 KB; ~1.5% over.
-  'wafermap (root)':            74_400,   // gzipped bytes — measured ~73.3 KB
+  // Raised deliberately from 74_400: the reports' in-page link handling (scroll, Back, Alt+←, target mark), the
+  // findings' measure labels and the bar-cell layout took it to ~74.9 KB; ~1.5% over.
+  'wafermap (root)':            76_000,   // gzipped bytes — measured ~74.9 KB
   // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
   // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
   // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.
@@ -131,7 +133,9 @@ const THRESHOLDS = {
   // the Findings section's labelled expander took the initial chunk to ~142.5 KB locally; the budget keeps ~1% over that.
   // Raised deliberately from 144_000: hiding the docked Summary panel behind Insights, the tiny-die limit-mark note,
   // count-stack card analysis and the per-test pass-rate tally cache took the initial chunk to ~144.0 KB; ~1% over.
-  'wafermap/render (initial)':  145_500,  // gzipped bytes — measured ~144.0 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
+  // Raised deliberately from 145_500: the Findings section's own test-value offer and re-run, and the Insights chart
+  // settings reported as preferences, took the initial chunk to ~145.8 KB; ~1% over.
+  'wafermap/render (initial)':  147_200,  // gzipped bytes — measured ~145.8 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
 };
 
 async function bundleGzipped(entryPoint, plugins = []) {
@@ -211,6 +215,21 @@ const stubReport = {
   },
 };
 
+// The lot analysis the gallery loads when the reader asks for the test-value
+// analysis (`import()` in renderWaferGallery). Stubbed for that dynamic import
+// only: a static import of it would be a real initial cost and must still count.
+const stubLotAnalysisOnDemand = {
+  name: 'stub-lot-analysis-on-demand',
+  setup(b) {
+    b.onResolve({ filter: /\/analyzeWaferLot\.js$/ }, (args) =>
+      args.kind === 'dynamic-import' ? { path: 'lot', namespace: 'lot' } : undefined);
+    b.onLoad({ filter: /.*/, namespace: 'lot' }, () => ({
+      contents: 'export const analyzeWaferLotAsync = async () => undefined;',
+      loader: 'js',
+    }));
+  },
+};
+
 const stubGuide = {
   name: 'stub-guide',
   setup(b) {
@@ -231,7 +250,7 @@ test('wafermap (root) bundle size is within threshold', async () => {
 });
 
 test('wafermap/render initial chunk size is within threshold', async () => {
-  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubDataTab, stubReport]);
+  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubDataTab, stubReport, stubLotAnalysisOnDemand]);
   assert.ok(
     gz <= THRESHOLDS['wafermap/render (initial)'],
     `wafermap/render initial chunk too large: ${gz} bytes gzipped (threshold ${THRESHOLDS['wafermap/render (initial)']}). Check for new static imports of heavy modules.`,

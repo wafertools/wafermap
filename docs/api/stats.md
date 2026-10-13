@@ -77,6 +77,24 @@ console.log(lotSummary.findings);
 renderWaferGallery(container, items, { lotStatsSummary: lotSummary });
 ```
 
+With the default `enableTestValueAnalysis: 'auto'`, the lot takes one decision for every wafer, over the
+values of all of them together (§7.3).
+
+#### `analyzeWaferLotAsync(items, options?)`
+
+```ts
+analyzeWaferLotAsync(items, options?: AnalyzeWaferLotAsyncOptions): Promise<LotStatsSummary>
+// AnalyzeWaferLotAsyncOptions = AnalyzeWaferMapOptions & {
+//   perWaferSummaries?: StatsSummary[]
+//   onProgress?: (done: number, total: number) => void   // after each wafer, then once with done === total
+//   signal?: AbortSignal                                  // stop between wafers; the promise rejects
+// }
+```
+
+The same result as `analyzeWaferLot`, analysed wafer by wafer with a pause whenever about 100 ms of work has
+passed, so a large lot does not hang the page. Use it in a browser for any lot big enough to take more than
+a moment; the gallery uses it when the reader asks for the skipped test-value analysis.
+
 ### 7.3 `AnalyzeWaferMapOptions`
 
 Both `analyzeWaferMap` and `analyzeWaferLot` accept these options, and most analyses work well with the defaults. Ring count is not one of them: it is set once on `buildWaferMap` (`ringCount`) and read from the result, so ring boundaries on the map and ring findings always agree.
@@ -84,21 +102,21 @@ Both `analyzeWaferMap` and `analyzeWaferLot` accept these options, and most anal
 ```ts
 {
   // ── Cost switches — every other analysis always runs ──────────────────────
-  enableTestValueAnalysis?:       boolean  // default FALSE — expensive regional Welch pass on test values
-                                           // (scales with regions × tests × dies). Opt in only when you
-                                           // display the regional test-value findings. Implies perTestStats.
-                                           // See the Performance guide for measured costs: performance.md
+  enableTestValueAnalysis?: boolean | 'auto'
+                                           // default 'auto' — the regional Welch pass on test values
+                                           // (scales with dies × tests). 'auto' runs it when the analysis
+                                           // reads at most 1,500,000 values, summed over a lot's wafers;
+                                           // true runs it whatever the size; false runs neither it nor the
+                                           // limit-failure and functional region findings. What happened is
+                                           // in stats.testValueAnalysis (§7.4). Implies perTestStats.
+                                           // Measured costs: performance.md
   computePerTestStats?:           boolean  // default false — cheap per-test quartile scan into perTestStats
                                            // (mean/stddev/median/q1/q3) WITHOUT the regional Welch pass.
-                                           // Use this for box-plot / histogram panels. Implied by
-                                           // enableTestValueAnalysis.
+                                           // Use this for box-plot / histogram panels. Never budgeted.
 
   // ── Test-value scope ──────────────────────────────────────────────────────
   testNumbers?:   number[]  // restrict test-value analysis to these test numbers;
-                            // when omitted: all tests up to 250 — beyond that analysis is skipped
-                            // and a 'test-count-capped' WaferWarning appears in
-                            // summary.stats.warnings[] (§4.2.2) and in the map's
-                            // warning indicator
+                            // when omitted: every parametric test with values
 
   // ── Angular analysis ──────────────────────────────────────────────────────
   sectorCount?:             number  // sectors for angular analysis: 4 | 8 | 16 (default 8)
@@ -131,37 +149,26 @@ since a fine banding is still gated by the minimum region size.
 
 ### 7.3.1 Choosing what to analyse — cost, and who decides
 
-Every analysis runs except two, which cost real time and are yours to decide:
+Every analysis runs except two, which cost real time:
 
-| Option | Cost | Decide it |
+| Option | Cost | Default |
 |---|---|---|
-| `computePerTestStats` | cheap — a quartile scan | Once, for your whole app. On if you show distribution or box-plot charts. |
-| `enableTestValueAnalysis` | **~0.3µs per (wafer × die × test)** in Chrome, **~0.65µs** in WebKit | **Per lot, not once.** Milliseconds on one wafer; seconds on a lot. |
+| `computePerTestStats` | cheap — a quartile scan | Off. Turn it on if you show distribution or box-plot charts without the test-value analysis. |
+| `enableTestValueAnalysis` | **~0.3µs per (wafer × die × test)** in Chrome, **~0.65µs** in WebKit | `'auto'`: the library decides, per lot. |
 
-`enableTestValueAnalysis` is off by default because it is the only option whose
-cost changes kind with lot size — see [Performance](../performance.md#the-number-that-matters-is-the-lot-not-the-wafer)
-for measured figures. Being off by default is *not* a recommendation to leave it
-off: it produces the regional test-value findings, and an integrator who never
-enables it ships a Findings list that silently omits a whole category.
+`enableTestValueAnalysis` is the only option whose cost changes kind with lot size: milliseconds
+on one wafer, seconds on a lot (measured figures in
+[Performance](../performance.md#the-number-that-matters-is-the-lot-not-the-wafer)). So the library
+decides it with one rule: with the default `'auto'` it runs when the analysis reads at most
+1,500,000 values (about a second in WebKit), summed over a lot's wafers so the lot decides once.
+Above that it is skipped and recorded in `stats.testValueAnalysis`, and the renderers' Findings
+section states what is missing, with the size and an estimated time, and an **Analyse** button.
+The absence is visible where the findings are, and the reader, not only the integrator, can choose
+to pay for it. When they do, `onStatsSummaryChange` hands you the new summary.
 
-Estimate before you decide:
-
-```ts
-const estimateMs = waferCount * diesPerWafer * testCount * 0.7 / 1000;
-```
-
-The coefficient is sized for WebKit (Safari, and the desktop webviews on Linux
-and macOS), the slower engine here; Chrome runs the analysis in about half that.
-Below roughly a second, just run it — the user will not notice it against the
-parse and render that just happened, and asking is pure friction. Above that,
-run the analysis without it and pass a [`FindingsNotice`](render-map.md#54-renderoptions) so
-the Findings panel states what is missing and what computing it would cost. That
-way the absence is visible where the findings are, rather than depending on the
-user discovering a control elsewhere.
-
-> **Do not** leave `enableTestValueAnalysis` on unconditionally for a lot
-> viewer. A 25-wafer lot with a few hundred tests takes tens of seconds, with no
-> progress indication, and reads as a hang.
+Pass `true` to run it whatever the size (an engineering tool that should always find spatial
+patterns), or `false` to leave it out. For a lot in a browser, `analyzeWaferLotAsync` keeps the
+page responsive while it runs.
 
 ### 7.3.2 Statistical rules & thresholds
 
@@ -230,7 +237,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
 **Behavioural notes:**
 
 - Reticle-position analysis is enabled by default but only runs when a `reticleConfig` is present in the view.
-- Test-value analysis is auto-skipped if the data contains more than 250 distinct tests unless `testNumbers` is provided. **The result is no test findings at all, not a trimmed set** — nothing throws, so an empty findings list is indistinguishable from "nothing to report" unless you check. A `WaferWarning` with code `'test-count-capped'` appears in `summary.stats.warnings[]` (§4.2.2), is shown by the renderers' warning indicator, and is also logged via `console.warn`.
+- With `enableTestValueAnalysis: 'auto'` (the default), test-value analysis is skipped when the analysis reads more than 1,500,000 values (dies × parametric tests: 150 tests on a 10,000-die wafer, 500 on a 3,000-die one), summed over the wafers for `analyzeWaferLot` and `analyzeWaferLotAsync`, so a lot decides once. **Skipped means no regional test-value findings or per-test statistics at all, not a trimmed set** (limit-failure findings still appear). It is recorded in `summary.stats.testValueAnalysis` (`state: 'skipped'`, with the tests, dies, values and an estimated time), and the renderers' Findings section offers to run it; when the reader does, the renderer re-analyses and calls `onStatsSummaryChange` with the new summary.
 
 ### 7.4 `StatsSummary`
 
@@ -241,6 +248,8 @@ Either the rate criterion or the size criterion can trigger the severity level; 
   findings: StatsFinding[]             // sorted by severity: 'unusual' first, then 'notable', then 'info'
                                        // findings[0] is always the highest-severity finding; no manual sort needed
   wafer?: Record<string, unknown>      // identity fields from waferConfig.metadata (lot, wafer ID, test date, etc.)
+  analysisOptions?: AnalyzeWaferMapOptions  // the options it was analysed with, as passed; the renderers re-run
+                                       // the skipped test-value analysis with them (LotStatsSummary has it too)
   // Note: this `stats` block is analysis metadata; StatsFinding also has its own
   // nested `stats` object (pValue, sampleSizeLeft, etc.) — two distinct sub-objects.
   stats: {
@@ -260,7 +269,12 @@ Either the rate criterion or the size criterion can trigger the severity level; 
     warnings?:            WaferWarning[]  // structured advisories — §4.2.2. Same shape as
                                           // WaferMapResult.warnings, so a host has ONE warning
                                           // vocabulary. Branch on warning.code, e.g.
-                                          // 'test-count-capped'. Was string[] before 0.22.0.
+                                          // 'analysis-option-corrected'. Was string[] before 0.22.0.
+    testValueAnalysis?: {                 // what became of the test-value analysis; absent with no test values
+      state: 'done' | 'skipped' | 'off'   // skipped: 'auto' over the budget; off: enableTestValueAnalysis false
+      tests: number; dies: number; values: number  // values = dies × tests
+      estimateMs: number                  // expected time in the slower engine (WebKit)
+    }
     isLotStack?:          boolean      // true when this summary was produced from lot-aggregated (lotStack) data
     aggregationMethod?:   string       // aggregation method used, e.g. 'mean', 'countBin' (present only when isLotStack is true)
     testSpecYield?: Array<{            // one entry per testDef that has at least one limit; absent when no testDefs with limits
@@ -468,8 +482,11 @@ A host whose opener saves or logs a report and still wants to show it can call `
     kind:   'yield' | 'hardBin' | 'softBin' | 'test' | 'functionalTest' | 'spatialPattern'
     index?: number          // test number — the key from testValues (for 'test' kind)
     bin?:   number          // bin value (for 'hardBin'/'softBin' kind)
+    measure?: 'mean' | 'limitFailRate'
+                            // for 'test' kind: which statistic was compared — the values' mean, or the share
+                            // of dies outside the test's limits (a proportion, like a bin rate)
     label:  string          // human-readable name; starts "† " for a derived test, as does its name in `summary`
-    unit?:  string
+    unit?:  string          // unit of absoluteDelta; absent for every proportion, a limit fail rate included
     derived?:    true       // the finding is about a derived test (TestDef.derived) — the structured form of the †
     expression?: string     // what that test was computed from, verbatim
   }
@@ -483,8 +500,8 @@ A host whose opener saves or logs a report and still wants to show it can call `
   }
   effect: {
     direction:      'higher' | 'lower' | 'different'
-    absoluteDelta?: number
-    relativeDelta?: number
+    absoluteDelta?: number  // a fraction for a proportion (0.2 = 20 pp); the test's unit for a mean
+    relativeDelta?: number  // a ratio to the background (1.0 = doubled); undefined when the background rate is 0
     effectSize?:    number
   }
   stats: {                   // per-finding test statistics (distinct from StatsSummary.stats)

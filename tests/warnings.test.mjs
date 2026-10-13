@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { overBudgetResults } from './fixtures/overBudget.mjs';
 import { collectWarnings, severityOf } from '../dist/packages/canvas-adapter/warnings.js';
 import { buildWaferMap } from '../dist/index.js';
 import { STANDARD_WAFER_DIAMETERS_MM } from '../dist/packages/renderer/buildWaferMap.js';
@@ -164,35 +165,11 @@ test('warnings with no message are dropped rather than rendered blank', () => {
   assert.deepEqual(collected.map(w => w.code), ['y']);
 });
 
-test('the test-count cap is a structured warning, not a bare string', () => {
-  // Above the cap, analyzeWaferMap returns NO test findings at all. That silence
-  // is the whole reason this has to be surfaced.
-  const results = [];
-  for (let x = -6; x <= 6; x++) {
-    for (let y = -6; y <= 6; y++) {
-      if (Math.hypot(x, y) > 6) continue;
-      const testValues = {};
-      for (let t = 0; t < 300; t++) testValues[1000 + t] = Math.random();
-      results.push({ x, y, hbin: 1, testValues });
-    }
-  }
-  const result  = buildWaferMap({ results, waferConfig: { diameter: 200 }, dieConfig: { width: 10, height: 10 }, passBins: [1] });
-  const summary = analyzeWaferMap(result, { computePerTestStats: true });
-
-  const warnings = summary.stats.warnings ?? [];
-  assert.ok(warnings.length > 0, 'exceeding the test cap must raise a warning');
-
-  const capped = warnings.find(w => w.code === 'test-count-capped');
-  assert.ok(capped, `expected a 'test-count-capped' warning, got ${JSON.stringify(warnings)}`);
-  assert.equal(typeof capped.message, 'string');
-  assert.notEqual(typeof capped, 'string', 'warnings are structured objects now, not strings');
-
-  // The message must say the outcome is "no findings", not merely "many tests" —
-  // an agent or engineer reading it should not have to infer the consequence.
-  assert.match(capped.message, /no test findings|skipped/i);
-
-  // And it must be collectable alongside geometry advisories.
-  assert.ok(collectWarnings({ statsSummary: summary }).some(w => w.code === 'test-count-capped'));
+test('a skipped test-value analysis is not a warning: the summary records it for the renderers to offer', () => {
+  const summary = analyzeWaferMap(buildWaferMap({ results: overBudgetResults(300), passBins: [1] }));
+  assert.equal(summary.stats.warnings, undefined);
+  assert.ok(!collectWarnings({ statsSummary: summary }).some(w => w.code === 'test-count-capped'));
+  assert.equal(summary.stats.testValueAnalysis.state, 'skipped');
 });
 
 test('collectWarnings merges every source into one list', () => {

@@ -183,15 +183,18 @@ it is handed, because it has no way to know which tests anyone will look at.
   parse and build only the chosen tests. A scan that reads test identity without
   reading every value is dramatically cheaper than a full load, and it is what makes
   a large file feel instant.
-- **Above 250 discovered tests, `analyzeWaferMap` gives up on test-value analysis
-  entirely** — it returns no test findings rather than a trimmed set, and records a
-  `WaferWarning` with code `'test-count-capped'` in `stats.warnings`. Silence is not
-  success here: an empty findings list is indistinguishable from "nothing to report"
-  unless you check. Pass `testNumbers: [...]` to scope the analysis explicitly.
+- **By default (`enableTestValueAnalysis: 'auto'`), above 1,500,000 test values
+  (dies × parametric tests, summed over a lot's wafers, e.g. 150 tests on 10,000 dies)
+  `analyzeWaferMap` skips test-value analysis entirely** — no regional test-value findings
+  or per-test statistics rather than a trimmed set (limit-failure findings still run) —
+  and records it in `stats.testValueAnalysis` (`state: 'skipped'`). Read that rather than
+  assuming a findings list without test-value findings means "nothing to report". The
+  renderers offer the analysis to the reader; `true` runs it regardless, and
+  `testNumbers: [...]` scopes it.
 - **Reach for options deliberately.** Plain `analyzeWaferMap()` is cheap;
-  `computePerTestStats` is modest; `enableTestValueAnalysis` is the expensive one
-  (roughly 10× the base analysis on a large wafer) and exists to find spatial
-  patterns automatically — do not enable it by default just because it sounds good.
+  `computePerTestStats` is modest; the test-value analysis is the expensive one
+  (roughly 10× the base analysis on a large wafer). Its default, `'auto'`, runs it only
+  within the budget above; pass `true` only when you mean to pay for it on any size.
 - **A Web Worker buys responsiveness, not speed.** `createWafermapWorker` moves a
   result's test values to the page without copying them, but still copies the dies and the
   input, so total time goes *up*. Use it when a build would otherwise visibly freeze the

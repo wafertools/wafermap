@@ -80,7 +80,7 @@ export function findingPatternKey(f: StatsFinding): string {
 
 /** A findings list as the reader sees it: patterns with the findings they explain, then the rest grouped by region. */
 export interface ArrangedFindings {
-  /** Spatial-pattern findings, each with the findings in the list it names as supporting detail. */
+  /** Spatial-pattern findings, each with the findings in the list it names as supporting detail, most severe first. */
   patterns: Array<{ finding: StatsFinding; children: StatsFinding[] }>;
   /** Everything else grouped by region (`family` and `left`), the most severe group first and within it too. */
   groups: Array<{ family: string; left: string; worst: StatsSeverity; findings: StatsFinding[] }>;
@@ -103,9 +103,12 @@ export function arrangeFindings(findings: readonly StatsFinding[]): ArrangedFind
     ...patternFindings.flatMap((f) => f.relatedIds ?? []),
     ...findings.flatMap((f) => f.absorbedIds ?? []),
   ]);
+  const bySeverity = (a: StatsFinding, b: StatsFinding) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
+  // Children most severe first, like the groups: in analysis order an unusual
+  // finding sat below minor ones and read as less important.
   const patterns = patternFindings.map((finding) => ({
     finding,
-    children: findings.filter((f) => finding.relatedIds?.includes(f.id)),
+    children: findings.filter((f) => finding.relatedIds?.includes(f.id)).sort(bySeverity),
   }));
 
   const byRegion = new Map<string, StatsFinding[]>();
@@ -115,7 +118,7 @@ export function arrangeFindings(findings: readonly StatsFinding[]): ArrangedFind
     byRegion.set(key, [...(byRegion.get(key) ?? []), f]);
   }
   const groups = [...byRegion.entries()].map(([key, members]) => {
-    const sorted = [...members].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+    const sorted = [...members].sort(bySeverity);
     const [family, left] = key.split('\0');
     return { family, left, worst: sorted[0].severity, findings: sorted };
   });

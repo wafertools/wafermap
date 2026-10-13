@@ -1,6 +1,6 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
 import { SYNTHESIS_ALSO_HEADING, synthesisMoreTests, synthesisRowShare, type Synthesis, type SynthesisTarget } from './synthesis.js';
-import { formatFindingTooltip } from './findingText.js';
+import { formatFindingTooltip, findingMetricLabel, isProportionFinding } from './findingText.js';
 import { arrangeFindings } from './filterFindings.js';
 import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, impactShortWord, shortfallColor, shortfallStep, formatPoints, barPercent, type MeterTier } from './presentation.js';
 
@@ -121,13 +121,14 @@ export function renderSeverityMeter(severity: StatsSeverity): string {
 export const severityTier = (severity: StatsSeverity): MeterTier => SEVERITY_MARK[severity].tier;
 
 /**
- * A value with a bar behind it, for scanning a column of yields or shares. The figure is always
+ * A value with a bar beside it, for scanning a column of yields or shares. The figure is always
  * printed; the bar is a second way to read it, scaled 0–100 (so a yield bar is never stretched
- * to its own column's range).
+ * to its own column's range). The figure sits beside the bar, never on it: a bar takes the bin's
+ * own colour, and no one ink reads on every colour a bin can have.
  */
 export function barCell(percent: number, text: string, className = '', color?: string): TableCell {
   const fill = color ? `;background:${escHtml(color)}` : '';
-  return { html: `<span class="cellbar"><i style="width:${barPercent(percent).toFixed(1)}%${fill}"></i><span>${escHtml(text)}</span></span>`, className: ['barcell', className].filter(Boolean).join(' ') };
+  return { html: `<span class="cellbar"><span class="cellbar-value">${escHtml(text)}</span><span class="cellbar-track" aria-hidden="true"><i style="width:${barPercent(percent).toFixed(1)}%${fill}"></i></span></span>`, className: ['barcell', className].filter(Boolean).join(' ') };
 }
 
 /** A signed difference in yield points, tinted by `shortfallStep` (only a shortfall of a point or more). */
@@ -157,10 +158,15 @@ export function withSectionNav(sectionsHtml: string, scope = ''): string {
 }
 
 export function formatFindingDelta(finding: Pick<StatsFinding, 'effect' | 'variable'>): string {
+  // A spatial pattern is a shape, not a difference between two populations: its
+  // extent is in the coverage column.
+  if (finding.variable.kind === 'spatialPattern') return '—';
   const delta = finding.effect.absoluteDelta ?? 0;
   const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
 
-  if (finding.variable.kind === 'yield' || finding.variable.kind === 'hardBin' || finding.variable.kind === 'softBin') {
+  // Every rate in points, as the panel states it: a ratio of two rates
+  // ("+401%") reads as a shift in the test's values.
+  if (isProportionFinding(finding)) {
     return `${sign}${Math.abs(delta * 100).toFixed(1)} pp`;
   }
 
@@ -213,6 +219,9 @@ export function findingAnchor(id: string, scope = ''): string {
  * one document cannot share one. Only for the page's one table per summary — a per-wafer table
  * repeats ids that another wafer's table also carries — so it is left out there.
  */
+/** Said under a findings table that has a pattern, since the indent alone does not say what the order is. */
+const FINDINGS_ORDER_NOTE = 'Indented rows are the findings a pattern explains, most severe first. The other findings follow, grouped by region, most severe first.';
+
 export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number, anchorScope?: string, live = false): string {
   // The panel's arrangement: each pattern with the findings it explains beneath it, then the rest
   // by region, most severe first. The same finding sits in the same place on both surfaces.
@@ -225,7 +234,7 @@ export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number
     ? ordered.map(({ f, nested }) => `<tr class="tier-${severityTier(f.severity)}${nested ? ' nested' : ''}${live ? ' live' : ''}"${anchorScope !== undefined ? ` id="${findingAnchor(f.id, anchorScope)}"` : ''}${live ? ` data-finding="${escHtml(f.id)}"` : ''} title="${escHtml(formatFindingTooltip(f))}${live ? '\nClick to show it on the map' : ''}">
       <td class="tight">${renderSeverityMeter(f.severity)}</td>
       <td class="tight">${escHtml(f.comparison.left)}</td>
-      <td>${escHtml(plainBinTerms(f.variable.label))}</td>
+      <td>${escHtml(plainBinTerms(findingMetricLabel(f)))}</td>
       <td class="numeric">${escHtml(formatFindingDelta(f))}</td>
       <td class="numeric">${escHtml(formatFindingCoverage(f, totalWafers))}</td>
     </tr>`).join('\n')
@@ -244,7 +253,7 @@ export function findingsTableHtml(findings: StatsFinding[], totalWafers?: number
   <tbody>
     ${rows}
   </tbody>
-</table>${derivedFindingsKeyHtml(findings)}`;
+</table>${arranged.patterns.length ? `<p class="report-note">${escHtml(FINDINGS_ORDER_NOTE)}</p>` : ''}${derivedFindingsKeyHtml(findings)}`;
 }
 
 /**
@@ -287,6 +296,66 @@ ${smaller.map((it) => `<li>${renderMeter(it.impact, impactShortWord(it.impact))}
  * holds the report, which selects that finding on the map. Inert when the report is opened on its own
  * (no parent window) or where scripts are blocked, and the rows stay a plain table either way.
  */
+/**
+ * Keeps the report's own links (the contents line, the synthesis's "See" links) inside the
+ * report, and gives the reader a way back. Shown in an `<iframe srcdoc>`, as the in-app modal
+ * does, a document's base URL is the host page's, so `href="#sec-3"` resolves to the host's
+ * address and the frame loads the host app; and such a frame has no history of its own. So the
+ * report scrolls to the target itself and keeps the places it jumped from: a Back button (and
+ * Alt+←) returns to the last one. As a page of its own it also records each jump in the
+ * browser's history, so the browser's Back does the same.
+ */
+const IN_PAGE_LINKS_SCRIPT = `<script>
+(function () {
+  var embedded = location.href === 'about:srcdoc';
+  var stack = [];
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'report-back';
+  btn.textContent = '\u2190 Back';
+  btn.title = 'Back to where you were (Alt+\u2190)';
+  btn.hidden = true;
+  document.body.appendChild(btn);
+  function restore() {
+    var from = stack.pop();
+    if (!from) return;
+    window.scrollTo(0, from.y);
+    if (from.link) from.link.focus({ preventScroll: true });
+    btn.hidden = stack.length === 0;
+  }
+  function goBack() { if (stack.length) { if (embedded) restore(); else history.back(); } }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a) return;
+    var id = decodeURIComponent(a.getAttribute('href').slice(1));
+    var target = document.getElementById(id);
+    if (!target) return;
+    e.preventDefault();
+    stack.push({ y: window.scrollY, link: a });
+    if (!embedded) history.pushState({ wmapReportJump: stack.length }, '', '#' + id);
+    target.scrollIntoView({ block: 'start' });
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    target.focus({ preventScroll: true });
+    // Marked for a moment: near the end of the page the target cannot reach the top, and
+    // without the mark nothing says which row the link meant.
+    target.classList.remove('report-jumped');
+    void target.offsetWidth;
+    target.classList.add('report-jumped');
+    btn.hidden = false;
+  });
+  btn.addEventListener('click', goBack);
+  document.addEventListener('keydown', function (e) {
+    if (e.altKey && e.key === 'ArrowLeft' && stack.length) { e.preventDefault(); goBack(); }
+  });
+  window.addEventListener('popstate', function () { if (stack.length) restore(); });
+})();
+</script>`;
+
+/** The scripts at the foot of every report document: in-page links, and for a `live` report the finding clicks. */
+export function reportScripts(live: boolean | undefined): string {
+  return live ? `${IN_PAGE_LINKS_SCRIPT}\n${LIVE_FINDINGS_SCRIPT}` : IN_PAGE_LINKS_SCRIPT;
+}
+
 export const LIVE_FINDINGS_SCRIPT = `<script>
 document.addEventListener('click', function (e) {
   var row = e.target.closest && e.target.closest('[data-finding]');
@@ -588,19 +657,35 @@ export function reportStyles(): string {
   .report-toc a { color: var(--report-muted); text-decoration: none; }
   .report-toc a:hover { color: var(--report-text); text-decoration: underline; }
 
-  /* The value is always printed; the bar behind it is for scanning a column. */
+  /* Shown after an in-page jump; returns to where the reader was. */
+  .report-back {
+    position: fixed; right: 16px; bottom: 16px; z-index: 10;
+    font: 600 13px var(--report-font); color: var(--report-link);
+    background: #fff; border: 1px solid var(--report-line-strong); border-radius: 4px;
+    padding: 6px 12px; cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+  .report-back:hover { background: var(--report-surface); }
+  .report-back:focus-visible { outline: 2px solid var(--report-link); outline-offset: 2px; }
+  .report-back[hidden] { display: none; }
+  [tabindex="-1"]:focus { outline: none; }
+  .report-jumped { animation: report-jumped 2s ease-out; }
+  @keyframes report-jumped {
+    0%, 60% { outline: 2px solid var(--report-link); outline-offset: -2px; }
+    100% { outline: 2px solid transparent; outline-offset: -2px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .report-jumped { animation-duration: 0.01s; animation-delay: 1.5s; animation-fill-mode: backwards; } }
+
+  /* The value is always printed; the bar beside it is for scanning a column. */
   table.report-table td.barcell { min-width: 150px; }
-  .cellbar { position: relative; display: block; }
+  .cellbar { display: flex; align-items: center; gap: 8px; }
+  .cellbar-value { flex: none; min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
+  .cellbar-track { flex: 1; height: 12px; }
   .cellbar i {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    height: 12px;
-    transform: translateY(-50%);
+    display: block;
+    height: 100%;
     background: var(--report-bar);
     border-radius: 0 2px 2px 0;
   }
-  .cellbar span { position: relative; padding-left: 4px; }
 
   /* Shortfall below the reference, light to strong. Full ink on every tint (see the tier tokens). */
   table.report-table td.low-1 { background: var(--report-low-1); }
@@ -668,6 +753,7 @@ export function reportStyles(): string {
     }
 
     .report-toc { display: none; }
+    .report-back { display: none; }
 
     section.report-section,
     tr {

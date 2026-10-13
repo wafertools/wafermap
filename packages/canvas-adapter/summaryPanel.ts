@@ -2519,10 +2519,13 @@ function buildFindingsFilterRow(allFindings: StatsFinding[], filter: FindingsFil
  * that — the reader has no reason to go looking. The notice belongs where the
  * gap is.
  *
- * wmap does not decide when to show this. The host knows what it did and did
- * not compute, and what recomputing would cost; it passes a notice or it does
- * not. Keep `detail` honest about that cost — an unpriced "Analyse" button on a
- * lot where the answer takes half a minute is worse than no button.
+ * The renderers build one themselves for a skipped test-value analysis
+ * (`testValueOffer.ts`), priced from what the summary records: an unpriced
+ * "Analyse" button on a lot where the answer takes half a minute is worse than
+ * no button.
+ *
+ * @deprecated The renderers raise their own notice for the skipped test-value
+ * analysis. Kept so a host's notice still replaces it; see API_REMOVALS.md.
  */
 export interface FindingsNotice {
   /** What is missing, stated plainly. Not a question, not an exhortation. */
