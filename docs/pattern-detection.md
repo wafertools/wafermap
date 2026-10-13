@@ -126,8 +126,10 @@ statistical findings — cluster, edge-arc, ring, and sector analyses — run
 separately and will surface both signals. For example, a wafer with both an
 edge-ring and a scratch will show one spatial-pattern headline ("Edge-ring" or
 "Scratch", whichever dominates) but will also carry a cluster finding for the
-scratch and ring findings for the edge loading. The full picture is in the
-findings list, not just the headline.
+scratch and ring findings for the edge loading. Clusters are also looked for in
+each failing hard bin on its own, so a spot of one bin that touches other
+failures (an edge ring of another bin, say) is still reported as that bin's
+cluster. The full picture is in the findings list, not just the headline.
 
 **The label is a prompt, not a diagnosis.** The classifier has no knowledge of
 your process, equipment, or lot history. A detected edge-ring finding means

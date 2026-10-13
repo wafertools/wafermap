@@ -42,6 +42,11 @@ Scripts are in `scripts/`:
 | `run-benchmark-combined.mjs` | Combined classifier + regional detection rates |
 | `run-benchmark-fp.mjs` | FP rate on WM-811K "Random"/"none" wafers |
 | `run-benchmark-synthetic-fp.mjs` | FP rate on synthetic i.i.d. random wafers |
+| `run-benchmark-multibin-fp.mjs` | FP rate of clusters on random wafers with several fail bins |
+| `run-benchmark-multibin-recall.mjs` | Recall of one bin's spot among other bins' failures |
+
+WM-811K maps and the synthetic sweep have one fail bin, so they do not exercise the clusters of one bin; the
+two multi-bin scripts do.
 
 Dataset source: the public WM-811K pickle (`LSWMD.pkl`), converted to
 `tests/fixtures/wm811k-benchmark.npz` via `scripts/prepare-benchmark.py`.
@@ -180,6 +185,32 @@ failures always form some clump that a rate test calls significant. (Before 2026
 rate against its neighbourhood, and the 10% cell was 34.1%.) The wafer's fails are now scattered at random
 over the same dies up to 99 times, and a group is reported only when the largest group random placement makes is rarely
 as large. The shuffles are seeded from the layout and the fail count, and the wafers of a lot share them.
+
+Clusters are also looked for in each failing hard bin on its own. Over every fail bin together, a spot of one bin
+joins the fails of other bins round it (a spot touching an edge ring is one edge arc with it), and at a fail rate of a
+quarter or more the wafer's fails join up into a few large groups. One bin alone keeps the spot apart, against that
+bin's own background. A bin is tested when it has at least the minimum cluster size of dies and at most 80% of the
+failing dies (a bin that is nearly all the fails is the run over every fail bin again); up to eight bins, the largest
+first, are tested, and they share the significance level. Only interior clusters are reported this way: edge arcs come
+from the run over every fail bin, and a bin's cluster that is most of a cluster from that run is left to it.
+
+### Several fail bins (2026-10-13)
+
+On random wafers with failures split over four fail bins (50/25/15/10%), 300 wafers a cell over grids of 20×20 to
+100×100 and fail rates of 2–40%, a cluster of one bin is raised on at most 2.3% of wafers (most cells 0–0.7%), beside
+0–4.3% for the clusters and edge arcs of every fail bin together.
+
+A spot of one bin planted at random on a 40×40 wafer (100 wafers a cell) is located as follows: by the clusters of
+every fail bin together, and with the clusters of one bin as well.
+
+| Other failures | Spot of 8 or more dies, every bin together | With clusters of one bin |
+|---|---|---|
+| 5–10% random | 49–100% | 68–100% |
+| 20–30% random | 0–67% | 50–96% |
+| An edge ring of another bin, 5–30% random | 0–97% | 44–98% |
+
+Spots of 4–6 dies are found on 2–93% of wafers, falling as the background rises; at a 20% background or more the
+failures of every bin together join up round the spot and it is found almost only by its own bin.
 
 ---
 

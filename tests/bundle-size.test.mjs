@@ -121,7 +121,9 @@ const THRESHOLDS = {
   // retest fast path, the per-wafer pass-rate tally cache and the stack-bins rule took it to ~73.3 KB; ~1.5% over.
   // Raised deliberately from 74_400: the reports' in-page link handling (scroll, Back, Alt+←, target mark), the
   // findings' measure labels and the bar-cell layout took it to ~74.9 KB; ~1.5% over.
-  'wafermap (root)':            76_000,   // gzipped bytes — measured ~74.9 KB
+  // Raised deliberately from 76_000: clusters of one hard bin, with the findings they explain grouped under them in
+  // the findings list and the results summary, took it to ~76.2 KB; ~1.5% over.
+  'wafermap (root)':            77_400,   // gzipped bytes — measured ~76.2 KB
   // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
   // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
   // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.

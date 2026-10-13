@@ -2036,14 +2036,13 @@ export function buildFindingsSection(
   // region. What a pattern or another finding claims is not repeated among the groups (see
   // `arrangeFindings`); all of it is still in `summary.findings` for a host reading them programmatically.
   const arranged = arrangeFindings(findings);
-  const patternFindings = arranged.patterns.map(p => p.finding);
   const groups = arranged.groups.map(g => ({ ...g, key: `${g.family}\0${g.left}` }));
   // Every finding this section actually shows — the grouped rows, and the
   // related findings nested under each spatial pattern — so the `†` key
   // appears exactly when a marked finding is on screen.
   const shownFindings = (): StatsFinding[] => [
     ...groups.flatMap(g => g.findings),
-    ...patternFindings.flatMap(pf => findings.filter(f => pf.relatedIds?.includes(f.id))),
+    ...arranged.patterns.flatMap(p => p.children),
   ];
 
   // Helper: build a clickable finding row button. `groupLeft` is the group
@@ -2086,11 +2085,10 @@ export function buildFindingsSection(
   let firstItem = true;
 
   // Render spatial-pattern findings as collapsible parents
-  for (const pf of patternFindings) {
+  for (const { finding: pf, children } of arranged.patterns) {
     if (!firstItem) content.appendChild(el('div', { height: '1px', background: CLR.separator, margin: '4px 0' }));
     firstItem = false;
 
-    const children = findings.filter(f => pf.relatedIds?.includes(f.id));
     const hasChildren = children.length > 0;
 
     const parentWrap = el('div', { marginBottom: hasChildren ? '2px' : '4px' });

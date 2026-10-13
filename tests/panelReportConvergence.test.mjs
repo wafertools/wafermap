@@ -148,6 +148,39 @@ test('a pattern leads with the findings it explains beneath it, then groups by r
   ]);
 });
 
+test('a finding another absorbed is not shown under a pattern either', () => {
+  const list = [
+    finding('y', 'ring', 'Ring 4', 'info', { absorbedIds: ['pass'] }),
+    finding('pass', 'ring', 'Ring 4', 'info'),
+    finding('p', 'spatial-pattern', 'Edge-ring', 'notable', { relatedIds: ['y', 'pass'] }),
+  ];
+  assert.deepEqual(arrangeFindings(list).patterns[0].children.map(c => c.id), ['y']);
+});
+
+test('a cluster leads a group of the region findings it explains, whatever their severity', () => {
+  const list = [
+    finding('sw', 'sector', 'Sector SW', 'unusual'),
+    finding('sw-yield', 'sector', 'Sector SW', 'notable'),
+    finding('q', 'quadrant', 'SW', 'info'),
+    finding('c', 'cluster', 'Cluster at (1, 2)', 'notable', { relatedIds: ['sw', 'q'] }),
+  ];
+  assert.deepEqual(arrangeFindings(list).groups.map(g => [g.left, g.worst, g.findings.map(f => f.id)]), [
+    ['Cluster at (1, 2)', 'unusual', ['c', 'sw', 'q']],
+    ['Sector SW', 'notable', ['sw-yield']],
+  ]);
+});
+
+test('a cluster a pattern explains brings the findings it explains under the pattern', () => {
+  const list = [
+    finding('r1', 'ring', 'Ring 1 (core)', 'info'),
+    finding('c', 'cluster', 'Cluster at (0, 0)', 'unusual', { relatedIds: ['r1'] }),
+    finding('p', 'spatial-pattern', 'Center cluster', 'notable', { relatedIds: ['c'] }),
+  ];
+  const arranged = arrangeFindings(list);
+  assert.deepEqual(arranged.patterns[0].children.map(c => c.id), ['c', 'r1']);
+  assert.deepEqual(arranged.groups, []);
+});
+
 test('the report table nests what a pattern explains and keeps the panel\'s order', () => {
   const list = [
     finding('a', 'quadrant', 'NE', 'info'),

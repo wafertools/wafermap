@@ -551,9 +551,9 @@ export function patternFailVerdict(die: { hbin?: number; sbin?: number }, passSe
  * the clusters of a centre cluster or a scratch. One rule for the wafer's
  * pattern and the lot's.
  *
- * `rings` are the ring numbers a ring finding covers (none for other families);
- * edge patterns explain the outer ring, a centre cluster the core ring, a donut
- * the rings between.
+ * `rings` are the ring numbers a ring finding covers, or a cluster's dies lie in
+ * (none for other families); edge patterns explain the outer ring, a centre
+ * cluster the core ring and a cluster that reaches it, a donut the rings between.
  */
 export function patternExplains(pattern: PatternLabel, family: string, rings: number[], ringCount: number): boolean {
   const families: Partial<Record<PatternLabel, string[]>> = {
@@ -565,6 +565,7 @@ export function patternExplains(pattern: PatternLabel, family: string, rings: nu
     'near-full':  ['ring'],
   };
   if (!families[pattern]?.includes(family)) return false;
+  if (family === 'cluster') return pattern !== 'center' || rings.length === 0 || rings.includes(1);
   if (family !== 'ring' || rings.length === 0) return true;
   const includesEdge = rings.includes(ringCount);
   const includesCore = rings.includes(1);

@@ -134,6 +134,90 @@ test('cluster detection — cluster findings have correct finding structure', ()
   }
 });
 
+// A wafer whose dies fail by rule: `binAt(i, j, rMm, angle)` returns the die's hard bin.
+function makeBinResults(binAt) {
+  const results = [];
+  const pitchX = 8, pitchY = 12, waferRadius = 150;
+  const iMax = Math.ceil(waferRadius / pitchX);
+  const jMax = Math.ceil(waferRadius / pitchY);
+  const halfDiag = Math.hypot(pitchX / 2, pitchY / 2);
+  for (let i = -iMax; i <= iMax; i++) {
+    for (let j = -jMax; j <= jMax; j++) {
+      const rMm = Math.hypot(i * pitchX, j * pitchY);
+      if (rMm + halfDiag > waferRadius) continue;
+      results.push({ x: i, y: j, hbin: binAt(i, j, rMm, Math.atan2(j * pitchY, i * pitchX)) });
+    }
+  }
+  return results;
+}
+
+const inDisc = (i, j, ci, cj, radius) => Math.hypot((i - ci) * 8, (j - cj) * 12) < radius * 12;
+
+test('cluster detection — a bin spot touching another bin’s edge arc is reported as that bin’s cluster', () => {
+  const sw = -3 * Math.PI / 4;
+  const results = makeBinResults((i, j, rMm, angle) => {
+    if (inDisc(i, j, -9.5, -6.4, 2)) return 4;
+    const off = Math.abs(((angle - sw + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+    return rMm > 0.85 * 150 && off < 0.8 ? 2 : 1;
+  });
+  const summary = analyzeWaferMap(buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE }), { enableTestValueAnalysis: false });
+  const spots = summary.findings.filter(f => f.comparison.family === 'cluster' && f.variable.kind === 'hardBin');
+  assert.equal(spots.length, 1, 'expected one hard-bin cluster');
+  const [spot] = spots;
+  assert.equal(spot.variable.bin, 4);
+  assert.equal(spot.effect.direction, 'higher');
+  assert.ok(spot.effect.absoluteDelta > 0);
+  assert.ok(spot.summary.startsWith('HBin 4 cluster at'), spot.summary);
+  assert.ok(spot.comparison.left.startsWith('Cluster at'), spot.comparison.left);
+  const fours = new Set(results.filter(r => r.hbin === 4).map(r => `${r.x},${r.y}`));
+  assert.deepEqual(new Set(spot.highlight.dieKeys), fours, 'the cluster is the bin 4 dies, not the arc they touch');
+  assert.ok(!summary.findings.some(f => f.comparison.family === 'edge-arc' && f.variable.kind === 'hardBin'),
+    'edge arcs come from the run over every fail bin only');
+});
+
+test('cluster detection — a bin cluster lists the region rises of its bin it makes up, and the pattern does not', () => {
+  const sw = -3 * Math.PI / 4;
+  const results = makeBinResults((i, j, rMm, angle) => {
+    if (inDisc(i, j, -9.5, -6.4, 2)) return 4;
+    const off = Math.abs(((angle - sw + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+    return rMm > 0.85 * 150 && off < 0.8 ? 2 : 1;
+  });
+  const summary = analyzeWaferMap(buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE }), { enableTestValueAnalysis: false });
+  const spot = summary.findings.find(f => f.comparison.family === 'cluster' && f.variable.kind === 'hardBin');
+  assert.ok(spot?.relatedIds?.length, 'the cluster names the region rows it explains');
+  const byId = new Map(summary.findings.map(f => [f.id, f]));
+  for (const id of spot.relatedIds) {
+    const r = byId.get(id);
+    assert.ok(['ring', 'quadrant', 'sector'].includes(r.comparison.family), r.id);
+    assert.equal(r.variable.bin, 4);
+    assert.equal(r.severity, 'info', 'a row the cluster restates does not count twice');
+  }
+  const claimedByPattern = summary.findings.filter(f => f.comparison.family === 'spatial-pattern').flatMap(f => f.relatedIds ?? []);
+  assert.ok(spot.relatedIds.every(id => !claimedByPattern.includes(id)));
+});
+
+test('cluster detection — a bin cluster already found over every fail bin is not repeated', () => {
+  const results = makeBinResults((i, j) => inDisc(i, j, -8, 5, 2) ? 2 : inDisc(i, j, 8, -5, 2) ? 4 : 1);
+  const summary = analyzeWaferMap(buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE }), { enableTestValueAnalysis: false });
+  const clusters = summary.findings.filter(f => f.comparison.family === 'cluster');
+  assert.equal(clusters.length, 2);
+  assert.ok(clusters.every(f => f.variable.kind === 'yield'));
+});
+
+test('cluster detection — a bin with fewer dies than the minimum cluster size is not tested on its own', () => {
+  const sw = -3 * Math.PI / 4;
+  const results = makeBinResults((i, j, rMm, angle) => {
+    if (inDisc(i, j, -9.5, -6.4, 0.9)) return 4;
+    const off = Math.abs(((angle - sw + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+    return rMm > 0.85 * 150 && off < 0.8 ? 2 : 1;
+  });
+  // The minimum is max(5, 0.3% of the dies): 5 on this wafer.
+  const fours = results.filter(r => r.hbin === 4).length;
+  assert.ok(fours > 0 && fours < 5, `${fours} bin 4 dies`);
+  const summary = analyzeWaferMap(buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE }), { enableTestValueAnalysis: false });
+  assert.ok(!summary.findings.some(f => f.variable.kind === 'hardBin' && f.comparison.family === 'cluster'));
+});
+
 test('sector analysis — sector findings are well-formed (a merged run of adjacent sectors is "Sectors A–B")', () => {
   const result = buildWaferMap({ results: makeClusterResults(), waferConfig: WAFER, dieConfig: DIE });
   const summary = analyzeWaferMap(result, {

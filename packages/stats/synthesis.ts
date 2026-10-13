@@ -178,20 +178,44 @@ function subjectOf(f: StatsFinding): string {
   return f.comparison.family === 'quadrant' && !/quadrant/i.test(left) ? `${left} quadrant` : left;
 }
 
-/** Union-find over candidate indices. */
+/** One bin's cluster: a few dies of one bin, inside a ring and a quadrant at once. */
+const isBinCluster = (f: StatsFinding): boolean => f.comparison.family === 'cluster' && isBin(f);
+
+/**
+ * Union-find over candidate indices: findings sharing dies are one item. One bin's cluster lies inside a ring and
+ * a quadrant at once, so it never joins two items into one: it goes with the finding it shares most dies with, when
+ * it is at least half of that finding's loss and of its bin or the pass rate, and otherwise stands as its own item.
+ */
 function groupBySharedDies(candidates: StatsFinding[]): number[][] {
   const parent = candidates.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   const sets = candidates.map(dieKeySet);
-  for (let a = 0; a < candidates.length; a++) {
-    for (let b = a + 1; b < candidates.length; b++) {
-      const small = sets[a].size <= sets[b].size ? sets[a] : sets[b];
-      const large = small === sets[a] ? sets[b] : sets[a];
-      if (small.size === 0) continue;
-      let shared = 0;
-      for (const k of small) if (large.has(k)) shared++;
-      if (shared >= SHARED_DIES * small.size) parent[find(a)] = find(b);
+  const sharedDies = (a: number, b: number): number => {
+    const small = sets[a].size <= sets[b].size ? sets[a] : sets[b];
+    const large = small === sets[a] ? sets[b] : sets[a];
+    let shared = 0;
+    for (const k of small) if (large.has(k)) shared++;
+    return shared;
+  };
+  const binClusters = candidates.map((_, i) => i).filter(i => isBinCluster(candidates[i]));
+  const rest = candidates.map((_, i) => i).filter(i => !isBinCluster(candidates[i]));
+  for (let a = 0; a < rest.length; a++) {
+    for (let b = a + 1; b < rest.length; b++) {
+      const small = Math.min(sets[rest[a]].size, sets[rest[b]].size);
+      if (small > 0 && sharedDies(rest[a], rest[b]) >= SHARED_DIES * small) parent[find(rest[a])] = find(rest[b]);
     }
+  }
+  for (const c of binClusters) {
+    let best = -1, bestShared = 0;
+    for (const r of rest) {
+      // Its own bin's findings, or the pass rate's; another bin's rise is another cause.
+      if (isBin(candidates[r]) && candidates[r].variable.bin !== candidates[c].variable.bin) continue;
+      const shared = sharedDies(c, r);
+      if (shared > bestShared && shared >= SHARED_DIES * sets[c].size && shared >= SHARED_DIES * diesLostBy(candidates[r])) {
+        best = r; bestShared = shared;
+      }
+    }
+    if (best >= 0) parent[c] = find(best);
   }
   const groups = new Map<number, number[]>();
   candidates.forEach((_, i) => {
@@ -655,7 +679,8 @@ export function buildSynthesis(input: StatsSummary | LotStatsSummary, ctx: Synth
     const on = seen !== undefined && waferCount ? ` on ${seen}/${waferCount} wafers` : '';
     item.text = `${pattern.variable.label} pattern${on}. ${item.text}`;
     item.chips.unshift({ label: `${pattern.variable.label} pattern`, target: findingTarget(pattern) });
-    item.findingIds.unshift(pattern.id, ...[...members].filter(id => !item.findingIds.includes(id)));
+    // A finding the pattern explains that another item already holds stays with that item.
+    item.findingIds.unshift(pattern.id, ...[...members].filter(id => !items.some(it => it.findingIds.includes(id))));
   }
 
   const total = analysedDies(summary);

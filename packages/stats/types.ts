@@ -191,10 +191,13 @@ export interface StatsFinding {
    */
   highlight: HighlightTarget;
   /**
-   * IDs of other findings that describe the same signal at a finer level of
-   * detail. Note these do NOT all resolve to entries in `findings`: when a run
-   * of per-region findings is merged into one (e.g. `Rings 3–4`), this is the
-   * audit trail of the constituents it REPLACED, and those no longer exist.
+   * IDs of other findings that describe the same signal, which reading surfaces
+   * show under this one: on a spatial pattern, the ring, quadrant, sector, arc
+   * and cluster findings it explains; on a cluster of one hard bin, the rises in
+   * that bin in a ring, quadrant or sector that the cluster makes up. Note these
+   * do NOT all resolve to entries in `findings`: when a run of per-region
+   * findings is merged into one (e.g. `Rings 3–4`), this is the audit trail of
+   * the constituents it REPLACED, and those no longer exist.
    */
   relatedIds?: string[];
   /**

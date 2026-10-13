@@ -4,6 +4,7 @@ import { autoDecision, testValueStatus } from './testValueBudget.js';
 import { computeCapability, computeTestFlagYield, computeRegionYield } from './summaryFigures.js';
 import { binPassSets } from '../renderer/binColors.js';
 import { diePassStatus, isYieldEligibleDie, getDieKey, isPositionedDie, positionKey } from '../core/dies.js';
+import type { PositionedDie } from '../core/dies.js';
 import { dieHasValues, testsPresent, testValue } from '../core/dieTable.js';
 import { stackBinsAreData } from '../core/aggregates.js';
 import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
@@ -30,6 +31,7 @@ import { requireRingCount } from '../core/ringCount.js';
 import { benjaminiHochberg, fisherExact, fiveNumberSummary, sampleVariance, zPValue } from './math.js';
 import { mean, maxOf } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
+import { ringOf } from '../core/classify.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -181,7 +183,7 @@ const DEFAULT_OPTIONS: Omit<ResolvedOptions, 'passBins' | 'ringCount'> = {
  */
 function adaptOptions(base: ResolvedOptions, dieCount: number): ResolvedOptions {
   const adapted = { ...base };
-  // minimumClusterSize: ~0.3% of wafer die count, floored at 3.
+  // minimumClusterSize: ~0.3% of wafer die count, floored at 5.
   // A 5-die cluster is meaningful on a small wafer but noise on a 2500-die wafer.
   // Safe to adapt because cluster findings go through a separate code path
   // and do not affect the regional analysis Bonferroni denominator.
@@ -215,6 +217,100 @@ function makeClusterFailurePredicate(
     }
     return false;
   };
+}
+
+/** Per-bin cluster runs: at most this many fail bins, the largest first. */
+const MAX_CLUSTER_BINS = 8;
+/** A bin with more than this share of the failing dies is left to the run over every fail bin, which it nearly is. */
+const MAX_CLUSTER_BIN_SHARE = 0.8;
+/**
+ * A bin's cluster is already located by a cluster over every fail bin when this share of its dies are in
+ * it and it is at least {@link LOCATED_SIZE} of that cluster's size. A bin's spot inside a wafer-sized
+ * group of joined-up fails is not located by it.
+ */
+const LOCATED_BY_CLUSTER = 0.8;
+const LOCATED_SIZE = 0.5;
+
+/**
+ * Clusters of one hard bin. Over every fail bin together, a bin's group joins the fails of other bins
+ * round it (a spot touching an edge ring becomes one edge arc) and, at a high fail rate, the whole
+ * wafer's fails join up; one bin alone keeps its group apart. A bin's group already inside a cluster
+ * over every fail bin is left to that cluster. A bin is tested when it has enough dies
+ * to make a cluster at all (`minimumClusterSize`); the bins tested share the significance level.
+ */
+function buildBinClusterFindings(
+  dies: PositionedDie[],
+  wafer: WaferMapResult['wafer'],
+  defs: BinDef[] | undefined,
+  options: ResolvedOptions,
+  pooled: readonly StatsFinding[],
+): StatsFinding[] {
+  const passSet = new Set(options.passBins);
+  const counts = new Map<number, number>();
+  let failing = 0;
+  for (const d of dies) {
+    const bin = d.hbin ?? d.sbin;
+    if (bin !== undefined && passSet.has(bin)) continue;
+    failing++;
+    if (d.hbin !== undefined) counts.set(d.hbin, (counts.get(d.hbin) ?? 0) + 1);
+  }
+  const bins = [...counts]
+    .filter(([, n]) => n >= options.minimumClusterSize && n <= MAX_CLUSTER_BIN_SHARE * failing)
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+    .slice(0, MAX_CLUSTER_BINS)
+    .map(([bin]) => bin);
+  if (!bins.length) return [];
+
+  const pooledClusters = pooled.filter(f => f.comparison.family === 'cluster').map(findingDieKeys);
+  const findings: StatsFinding[] = [];
+  for (const bin of bins) {
+    const found = buildClusterFindings(dies, wafer, {
+      ...options,
+      significanceLevel: options.significanceLevel / bins.length,
+      isFailingDie: d => d.hbin === bin,
+      bin: { bin, label: labelForBin(bin, defs, 'HBin') } });
+    findings.push(...found.filter(f => !pooledClusters.some(keys => locatedBy(findingDieKeys(f), keys))));
+  }
+  return findings;
+}
+
+/** A bin's cluster explains a region's rise in that bin when it is at least this share of the region's excess dies of it. */
+const EXPLAINS_REGION = 0.5;
+
+/**
+ * Lists under each cluster of one bin (`relatedIds`) the region findings of that bin it explains: a rise in the
+ * bin in a ring, quadrant or sector that the cluster's dies make up at least half of. Those findings are the same
+ * spot seen through a coarser region, and read below it rather than ahead of it; like the rows a pattern claims,
+ * they are marked info.
+ */
+function claimForBinClusters(findings: StatsFinding[]): void {
+  const regions = findings.filter(f => (f.comparison.family === 'ring' || f.comparison.family === 'quadrant' || f.comparison.family === 'sector')
+    && f.variable.kind === 'hardBin' && f.effect.direction === 'higher');
+  for (const c of findings) {
+    if (c.comparison.family !== 'cluster' || c.variable.kind !== 'hardBin') continue;
+    const dies = findingDieKeys(c);
+    const ids = regions.filter(r => {
+      if (r.variable.bin !== c.variable.bin) return false;
+      const excess = (r.effect.absoluteDelta ?? 0) * r.stats.sampleSizeLeft;
+      let inside = 0;
+      for (const k of findingDieKeys(r)) if (dies.has(k)) inside++;
+      return excess > 0 && inside >= EXPLAINS_REGION * excess;
+    });
+    // As under a pattern (`claimForPattern`): the rows restate the cluster, so they do not count twice towards
+    // the badge and `hasNotableFindings`.
+    if (c.severity !== 'info') for (const r of ids) r.severity = 'info';
+    if (ids.length) c.relatedIds = ids.map(r => r.id);
+  }
+}
+
+function findingDieKeys(f: StatsFinding): Set<string> {
+  return new Set('dieKeys' in f.highlight ? f.highlight.dieKeys ?? [] : []);
+}
+
+function locatedBy(dies: Set<string>, within: Set<string>): boolean {
+  let shared = 0;
+  for (const k of dies) if (within.has(k)) shared++;
+  return shared >= LOCATED_BY_CLUSTER * dies.size && dies.size >= LOCATED_SIZE * within.size;
 }
 
 function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | null): StatsSummary['stats'] {
@@ -745,7 +841,7 @@ export function claimForPattern<F extends StatsFinding>(
   const ids: string[] = [];
   for (const f of candidates) {
     const family = f.comparison.family;
-    const rings = family === 'ring' ? ringsOf(f) : [];
+    const rings = family === 'ring' || family === 'cluster' ? ringsOf(f) : [];
     if (!patterns.some(p => patternExplains(p, family, rings, ringCount))) continue;
     ids.push(f.id);
     if (severity !== 'info' && (family === 'ring' || family === 'quadrant' || family === 'sector')) f.severity = 'info';
@@ -2347,9 +2443,11 @@ function analyzeWaferMapUncollected(
   {
     const failPredicate = makeClusterFailurePredicate(isLotStack, hasHbinData, result.testDefs);
     if (!isLotStack || hasHbinData || failPredicate !== undefined) {
-      findings.push(...buildClusterFindings(positionedEligibleDies, result.wafer, {
+      const pooled = buildClusterFindings(positionedEligibleDies, result.wafer, {
         ...resolved,
-        isFailingDie: failPredicate }));
+        isFailingDie: failPredicate });
+      findings.push(...pooled);
+      if (hasHbinData) findings.push(...buildBinClusterFindings(positionedEligibleDies, result.wafer, result.hbinDefs, resolved, pooled));
     }
   }
   // Collapse runs of adjacent same-signal ring/quadrant/sector findings into one
@@ -2371,6 +2469,7 @@ function analyzeWaferMapUncollected(
     testDefs: result.testDefs });
   findings.length = 0;
   findings.push(...mergedFindings);
+  claimForBinClusters(findings);
 
   // Kept for stats.spatialPattern, for every wafer the classifier could measure —
   // including 'random' and 'none', which raise no finding below.
@@ -2403,8 +2502,15 @@ function analyzeWaferMapUncollected(
       // The findings this pattern explains are listed under it (`relatedIds`).
       // Ring rows are matched on their ring numbers from highlight.regionKeys
       // (robust to merged labels like "Rings 3–4").
-      const relatedIds = claimForPattern([patternResult.pattern], severity, findings,
-        f => regionKeysOf(f as RawFinding).map(k => parseRegionKey(k).ring).filter((r): r is number => r !== undefined),
+      const { center, radius } = result.wafer;
+      const ringByKey = new Map(positionedEligibleDies.map(d =>
+        [getDieKey(d), ringOf(d.physX - center.x, d.physY - center.y, radius, resolved.ringCount)]));
+      // A region row a cluster of its bin explains stays with the cluster: the spot is more specific than the pattern.
+      const clusterClaimed = new Set(findings.flatMap(c => c.comparison.family === 'cluster' ? c.relatedIds ?? [] : []));
+      const relatedIds = claimForPattern([patternResult.pattern], severity, findings.filter(f => !clusterClaimed.has(f.id)),
+        f => f.comparison.family === 'cluster'
+          ? [...new Set(f.highlight.kind === 'dies' ? f.highlight.dieKeys.map(k => ringByKey.get(k) ?? 0) : [])]
+          : regionKeysOf(f as RawFinding).map(k => parseRegionKey(k).ring).filter((r): r is number => r !== undefined),
         resolved.ringCount);
 
       findings.push({

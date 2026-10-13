@@ -24,6 +24,32 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **Clusters of one hard bin.** `analyzeWaferMap` also looks for clusters in each failing hard bin on its own, besides
+  the clusters of every fail bin together. A spot of one bin next to other bins' fails (a spot touching an edge ring) is
+  reported as that bin's cluster, where the run over every fail bin finds one group with the fails round it. A bin is
+  tested when it has at least the minimum cluster size of dies (`max(5, 0.3%` of the dies`)`) and at most 80% of the
+  failing dies; up to eight bins, the largest first, share the significance level. The finding has
+  `comparison.family: 'cluster'`, `variable.kind: 'hardBin'` with its bin, and a rise in that bin as its effect; its
+  summary reads "HBin 4 (Spot) cluster at (x, y): …". A bin's cluster that is most of a cluster over every fail bin is
+  left to that cluster. Interior clusters only: edge arcs stay with the run over every fail bin.
+
+### Changed
+
+- **A cluster of one bin lists the region findings it explains.** A rise in its bin in a ring, quadrant or sector that
+  the cluster's dies make up at least half of is named in the cluster's `relatedIds` and marked info, as a pattern's are.
+  The Summary panel and the reports show them under the cluster, which leads its own group, so a spot reads once,
+  first, and its coarser regions follow it. A pattern does not claim those rows.
+- **A row another absorbed as a restatement is not shown under a pattern either** (a soft-bin twin, or the single pass
+  bin beside the yield row); it was hidden only from the region groups. The Summary panel takes a pattern's rows from
+  `arrangeFindings`, as the reports do.
+- **A centre-cluster pattern lists only the clusters that reach the core ring** under it (`relatedIds`), as it does
+  ring findings.
+- **The results summary keeps one bin's cluster with one item.** It goes with the finding of its bin, or the pass rate,
+  that it shares most dies with and makes up at least half the loss of, and does not join two items into one. A
+  pattern's item takes only the findings it explains that no other item holds.
+
 ## [0.36.0] — 2026-10-13
 
 ### Breaking

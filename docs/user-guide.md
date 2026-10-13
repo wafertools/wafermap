@@ -528,6 +528,9 @@ highlight the affected dies on the map.*
 
 *A failure cluster finding: the rest of the wafer is faded, so the affected dies stand out, with an outline round them.*
 
+Clusters are looked for in the failing dies together and in each failing hard bin on its own, so a spot of one bin
+next to other failures (a spot touching a failing edge, say) is still reported as that bin's cluster.
+
 ### Finding types
 
 | Type                 | What it indicates                                                                                   |
@@ -547,7 +550,9 @@ configuration.
 When a spatial pattern classification is detected alongside supporting regional
 findings (ring, quadrant, sector), the panel groups them together — the pattern
 classification is the primary finding and the regional findings provide
-supporting detail.
+supporting detail. A cluster of one bin does the same for that bin: the rise in
+the bin in the quadrant, sector or ring around it is listed under the cluster,
+which says where the failures are.
 
 ---
 

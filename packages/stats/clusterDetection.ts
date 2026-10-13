@@ -168,6 +168,12 @@ interface ClusterOptions {
   ringCount: number;
   /** Optional override for the failure predicate. Default: hard bin, then soft bin, not in passBins. */
   isFailingDie?: (die: Die) => boolean;
+  /**
+   * The hard bin `isFailingDie` selects, when the run is for one bin. Its groups are reported as that
+   * bin's clusters (a rise in the bin, not a fall in yield), and edge arcs are left to the run over
+   * every fail bin, which the edge patterns already account for.
+   */
+  bin?: { bin: number; label: string };
 }
 
 export function buildClusterFindings(
@@ -289,9 +295,11 @@ export function buildClusterFindings(
     // the arc cluster inward, pulling the centroid below the ring boundary.
     const outerCount = component.filter(d => ringOf(d.physX - cx, d.physY - cy, r, ringCount) === ringCount).length;
     const isEdgeArc = outerCount > k / 2 && spanDeg < 120;
+    if (isEdgeArc && options.bin) continue;
 
     const family = isEdgeArc ? 'edge-arc' as const : 'cluster' as const;
     const bearing = compassBearing(centPhysX - cx, centPhysY - cy);
+    const bin = options.bin;
     const leftLabel = isEdgeArc
       ? `Edge arc ~${bearing}`
       : `Cluster at (${closestDie.x}, ${closestDie.y})`;
@@ -301,12 +309,17 @@ export function buildClusterFindings(
     const dieKeys = component.map(d => getDieKey(d));
 
     findings.push({
-      id: `${family}:${closestDie.x},${closestDie.y}`,
+      id: bin ? `${family}:hardBin:${bin.bin}:${closestDie.x},${closestDie.y}` : `${family}:${closestDie.x},${closestDie.y}`,
       level: 'wafer',
       severity,
-      variable: { kind: 'yield', label: 'Yield' },
+      variable: bin ? { kind: 'hardBin', bin: bin.bin, label: bin.label } : { kind: 'yield', label: 'Yield' },
       comparison: { family, left: leftLabel, right: 'Rest of wafer' },
-      effect: {
+      effect: bin ? {
+        direction: 'higher',
+        absoluteDelta: delta,
+        relativeDelta,
+        effectSize: delta,
+      } : {
         direction: 'lower',
         absoluteDelta: -delta,
         relativeDelta: relativeDelta !== undefined ? -relativeDelta : undefined,
@@ -321,6 +334,8 @@ export function buildClusterFindings(
       },
       summary: isEdgeArc
         ? `Edge arc near ${bearing}: ${k} contiguous failing dies (${(clusterRate * 100).toFixed(0)}% vs ${(pBg * 100).toFixed(0)}% background)`
+        : bin
+        ? `${bin.label} cluster at (${closestDie.x}, ${closestDie.y}): ${k} contiguous dies (${(clusterRate * 100).toFixed(0)}% vs ${(pBg * 100).toFixed(0)}% background)`
         : `Failure cluster at (${closestDie.x}, ${closestDie.y}): ${k} contiguous failing dies (${(clusterRate * 100).toFixed(0)}% vs ${(pBg * 100).toFixed(0)}% background)`,
       highlight: { kind: 'dies', dieKeys },
     });
