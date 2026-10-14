@@ -38,7 +38,8 @@ under `### Breaking`.
 ### Changed
 
 - **A cluster of one bin lists the region findings it explains.** A rise in its bin in a ring, quadrant or sector that
-  the cluster's dies make up at least half of is named in the cluster's `relatedIds` and marked info, as a pattern's are.
+  the cluster's dies make up at least half of, and that is no more severe than the cluster, is named in the cluster's
+  `relatedIds` and marked info, as a pattern's are; a more severe row stands on its own.
   The Summary panel and the reports show them under the cluster, which leads its own group, so a spot reads once,
   first, and its coarser regions follow it. A pattern does not claim those rows.
 - **A row another absorbed as a restatement is not shown under a pattern either** (a soft-bin twin, or the single pass
@@ -49,6 +50,23 @@ under `### Breaking`.
 - **The results summary keeps one bin's cluster with one item.** It goes with the finding of its bin, or the pass rate,
   that it shares most dies with and makes up at least half the loss of, and does not join two items into one. A
   pattern's item takes only the findings it explains that no other item holds.
+
+### Fixed
+
+- **Cluster and edge-arc detection leave out dies with no bin.** A die with neither a hard nor a soft bin is no data
+  there, as it is in the yield: neither a failure nor part of the background, so a block of unbinned dies is not
+  reported as a failure cluster. Wafers whose dies all carry a bin are analysed as before.
+- **The Findings section's Analyse runs only on the data it was offered for.** In `renderWaferGallery`, `setItems`
+  and `setLotStatsSummary` cancel a test-value analysis in progress, and its result is neither shown nor reported
+  through `onStatsSummaryChange`. In `renderWaferMap`, a result arriving after `setResult` or `setStatsSummary` is
+  dropped the same way. A run that fails puts the Analyse offer back.
+- **A cluster of one bin has a Findings group of its own** even when another bin's cluster, or a cluster of every fail
+  bin, carries the same "Cluster at (x, y)" label; the groups `arrangeFindings` returns carry a `key` that tells them apart.
+- **The correlation matrix chooses its tests from an even spread of the dies on a very large program.** Above 300
+  tests, the tests with the most dies outside their limits (then the widest spread) are scored on at most 25,000,000
+  values, so a program of 15,000 tests is ranked on about 1,700 dies rather than reading every die of the sample.
+- **Analysis of a program with thousands of tests reads its test definitions once per call**, by number, where each
+  test searched the list.
 
 ## [0.36.0] — 2026-10-13
 

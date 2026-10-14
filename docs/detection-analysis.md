@@ -192,7 +192,10 @@ quarter or more the wafer's fails join up into a few large groups. One bin alone
 bin's own background. A bin is tested when it has at least the minimum cluster size of dies and at most 80% of the
 failing dies (a bin that is nearly all the fails is the run over every fail bin again); up to eight bins, the largest
 first, are tested, and they share the significance level. Only interior clusters are reported this way: edge arcs come
-from the run over every fail bin, and a bin's cluster that is most of a cluster from that run is left to it.
+from the run over every fail bin, and a bin's cluster that is most of a cluster from that run is left to it. Edge arcs
+of one bin were tried and left out (2026-10-14): they found more spots near the edge, but on the bin-rich showcase a
+diffuse edge loss and a Vmin/Fmax tilt each read as several arcs, even judged against the bin's own outer-ring rate.
+In both runs a die with no bin is no data: neither a failure nor part of the background.
 
 ### Several fail bins (2026-10-13)
 

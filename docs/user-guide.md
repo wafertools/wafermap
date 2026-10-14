@@ -552,7 +552,8 @@ findings (ring, quadrant, sector), the panel groups them together — the patter
 classification is the primary finding and the regional findings provide
 supporting detail. A cluster of one bin does the same for that bin: the rise in
 the bin in the quadrant, sector or ring around it is listed under the cluster,
-which says where the failures are.
+which says where the failures are. A region row that is more severe than
+the cluster is listed on its own.
 
 ---
 

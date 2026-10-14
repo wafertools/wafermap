@@ -1435,7 +1435,7 @@ export function renderWaferMapCard(
   /**
    * The docked Summary panel is hidden while Insights is open, for the same reason
    * canvasWrap is: it is canvasWrap's sibling, not its child, so the rule above does
-   * not reach it, and its sticky title row (`z-index: 1`) painted over the chart
+   * not reach it, and its sticky title row (`z-index: 1`) would paint over the chart
    * suite while the rest of the panel sat beneath it. Called again wherever a panel
    * is created, since one can mount while Insights is already open.
    */
@@ -1739,8 +1739,18 @@ export function renderWaferMapCard(
     const run = (): void => {
       if (started || destroyed) return;
       started = true;
-      const next = analyzeWaferMap(built, { ...summary.analysisOptions, enableTestValueAnalysis: true });
+      let next: StatsSummary;
+      try {
+        next = analyzeWaferMap(built, { ...summary.analysisOptions, enableTestValueAnalysis: true });
+      } catch (err) {
+        // A failed run puts the offer back, so it can be tried again.
+        analysingTestValues = false;
+        refreshSummaryPanels();
+        throw err;
+      }
       analysingTestValues = false;
+      // The host replaced the data or its summary while this ran: the result describes neither.
+      if (currentResult !== built || currentStatsSummary !== summary) { refreshSummaryPanels(); return; }
       applyStatsSummary(next);
       options.onStatsSummaryChange?.(next);
     };

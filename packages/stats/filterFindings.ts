@@ -84,12 +84,24 @@ export interface ArrangedFindings {
   patterns: Array<{ finding: StatsFinding; children: StatsFinding[] }>;
   /**
    * Everything else grouped by region (`family` and `left`), the most severe group first and within it too. A cluster
-   * of one bin leads a group of its own with the region findings of that bin it explains after it.
+   * of one bin leads a group of its own with the region findings of that bin it explains after it. `key` tells the
+   * groups apart: a cluster of one bin is keyed by its bin too, since another bin's cluster, or one over every fail
+   * bin, can have the same `left`.
    */
-  groups: Array<{ family: string; left: string; worst: StatsSeverity; findings: StatsFinding[] }>;
+  groups: Array<{ key: string; family: string; left: string; worst: StatsSeverity; findings: StatsFinding[] }>;
 }
 
-const SEVERITY_ORDER: Record<StatsSeverity, number> = { unusual: 0, notable: 1, info: 2 };
+/**
+ * A cluster of one hard bin, found in that fail bin alone (`analyzeWaferMap`'s per-bin run). It lists the region
+ * rises of its bin it explains (`relatedIds`), leads its own group, and in the results summary joins one item at
+ * most. The one test for it, read by the analysis, the arrangement and the summary alike.
+ */
+export function isOneBinCluster(f: Pick<StatsFinding, 'comparison' | 'variable'>): boolean {
+  return f.comparison.family === 'cluster' && f.variable.kind === 'hardBin';
+}
+
+/** Most severe first: the order every findings list is arranged in, and how two findings' severities compare. */
+export const SEVERITY_ORDER: Record<StatsSeverity, number> = { unusual: 0, notable: 1, info: 2 };
 
 /**
  * The one arrangement of a findings list, read by the Summary panel and both HTML reports, so a
@@ -109,12 +121,12 @@ export function arrangeFindings(findings: readonly StatsFinding[]): ArrangedFind
   // Each finding a cluster explains, by the cluster that leads it; the first cluster to name it keeps it.
   const leadOf = new Map<string, StatsFinding>();
   for (const c of shown) {
-    if (c.comparison.family !== 'cluster') continue;
+    if (!isOneBinCluster(c)) continue;
     for (const id of c.relatedIds ?? []) if (!underPattern.has(id) && !leadOf.has(id)) leadOf.set(id, c);
   }
   const bySeverity = (a: StatsFinding, b: StatsFinding) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
-  // Children most severe first, like the groups: in analysis order an unusual
-  // finding sat below minor ones and read as less important. A cluster the pattern
+  // Children most severe first, like the groups: analysis order can put an unusual
+  // finding below minor ones, where it reads as less important. A cluster the pattern
   // explains brings the findings it explains with it.
   const patterns = patternFindings.map((finding) => {
     const own = shown.filter((f) => finding.relatedIds?.includes(f.id));
@@ -123,7 +135,7 @@ export function arrangeFindings(findings: readonly StatsFinding[]): ArrangedFind
   });
 
   const byRegion = new Map<string, StatsFinding[]>();
-  const keyOf = (f: StatsFinding) => `${f.comparison.family}\0${f.comparison.left}`;
+  const keyOf = (f: StatsFinding) => `${f.comparison.family}\0${f.comparison.left}${isOneBinCluster(f) ? `\0${f.variable.bin}` : ''}`;
   for (const f of shown) {
     if (f.comparison.family === 'spatial-pattern' || underPattern.has(f.id)) continue;
     const lead = leadOf.get(f.id);
@@ -136,7 +148,7 @@ export function arrangeFindings(findings: readonly StatsFinding[]): ArrangedFind
     const sorted = [...members].sort((a, b) =>
       Number(leadOf.has(a.id)) - Number(leadOf.has(b.id)) || bySeverity(a, b));
     const [family, left] = key.split('\0');
-    return { family, left, worst: [...members].sort(bySeverity)[0].severity, findings: sorted };
+    return { key, family, left, worst: [...members].sort(bySeverity)[0].severity, findings: sorted };
   });
   groups.sort((a, b) => SEVERITY_ORDER[a.worst] - SEVERITY_ORDER[b.worst]);
   return { patterns, groups };

@@ -132,9 +132,9 @@ function strideIndices(length: number, budget: number): number[] {
  * Tests entering the pairwise pass of `buildCorrelationMatrix`.
  *
  * The pass is quadratic in tests: 6 accumulators per pair and one cell per ordered
- * pair. A real test program reaches thousands of parametric tests — at 2,002 the
- * matrix took 38 s to build, at 15,000 (112M pairs, ~5 GB of accumulators) it never
- * finished. The panel shows at most 100 tests (20 by default), the strongest pairs
+ * pair. A real test program reaches thousands of parametric tests: unbounded, 2,002
+ * tests take 38 s to pair, and 15,000 (112M pairs, ~5 GB of accumulators) do not
+ * finish. The panel shows at most 100 tests (20 by default), the strongest pairs
  * first, so the candidates are chosen before pairing instead of after.
  *
  * 300 tests is 44,850 pairs: about a second and a half on a 3,000-die wafer.
@@ -149,6 +149,13 @@ export const CORRELATION_TEST_BUDGET = 300;
  * 12 s in a browser.
  */
 export const CORRELATION_WORK_BUDGET = 250_000_000;
+
+/**
+ * Test values (tests × dies) the choice of tests (`selectCorrelationTests`) reads, when there are more tests than
+ * `CORRELATION_TEST_BUDGET`. Past it the tests are scored on an even spread of the dies: 15,000 tests are scored on
+ * about 1,700 dies, enough to rank them by fails and spread, where every die of the sample would be 375M reads.
+ */
+export const CORRELATION_SCORE_BUDGET = 25_000_000;
 
 /** The sentence a panel puts next to a matrix built from a sample of the dies or the tests. */
 export function correlationSampleNote(m: Pick<CorrelationMatrix, 'sample' | 'testSample'>): string | undefined {
@@ -227,7 +234,11 @@ export function buildCorrelationMatrix(dies: Die[], testDefs: TestDef[]): Correl
 
   const testSampling = allTests.length > CORRELATION_TEST_BUDGET;
   const tests = testSampling
-    ? selectCorrelationTests(allTests, new Map(testDefs.flatMap(d => d.testNumber === undefined ? [] : [[d.testNumber, d] as const])), picked, CORRELATION_TEST_BUDGET)
+    ? selectCorrelationTests(allTests, new Map(testDefs.flatMap(d => d.testNumber === undefined ? [] : [[d.testNumber, d] as const])),
+      picked.length * allTests.length > CORRELATION_SCORE_BUDGET
+        ? strideIndices(picked.length, Math.max(1, Math.floor(CORRELATION_SCORE_BUDGET / allTests.length))).map(i => picked[i])
+        : picked,
+      CORRELATION_TEST_BUDGET)
     : allTests;
 
   // The pair pass reads at most CORRELATION_WORK_BUDGET pair updates: past it, an

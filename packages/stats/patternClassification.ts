@@ -1,4 +1,5 @@
 import type { PositionedDie } from '../core/dies.js';
+import { diePassStatus } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import { findConnectedComponents } from './connectedComponents.js';
 import { clamp01 } from '../core/utils.js';
@@ -541,8 +542,8 @@ export const PATTERN_LABELS: Record<PatternLabel, string> = {
  * bin — no data, neither passing nor failing.
  */
 export function patternFailVerdict(die: { hbin?: number; sbin?: number }, passSet: ReadonlySet<number>): boolean | undefined {
-  const bin = die.hbin ?? die.sbin;
-  return bin === undefined ? undefined : !passSet.has(bin);
+  const pass = diePassStatus(die, passSet);
+  return pass === undefined ? undefined : !pass;
 }
 
 /**

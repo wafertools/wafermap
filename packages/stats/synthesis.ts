@@ -11,6 +11,7 @@
 import { maxOf, minOf } from '../core/utils.js';
 import { isPassBin, passBinsLabel } from '../core/passBins.js';
 import { DRIFT_MIN_WAFERS } from './lotDrift.js';
+import { isOneBinCluster } from './filterFindings.js';
 import { plainBinTerms } from '../renderer/fmt.js';
 import type { LotStatsSummary, StatsFinding, StatsSeverity, StatsSummary } from './types.js';
 
@@ -179,7 +180,7 @@ function subjectOf(f: StatsFinding): string {
 }
 
 /** One bin's cluster: a few dies of one bin, inside a ring and a quadrant at once. */
-const isBinCluster = (f: StatsFinding): boolean => f.comparison.family === 'cluster' && isBin(f);
+const isBinCluster = isOneBinCluster;
 
 /**
  * Union-find over candidate indices: findings sharing dies are one item. One bin's cluster lies inside a ring and

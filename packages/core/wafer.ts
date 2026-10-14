@@ -26,8 +26,8 @@ export interface WaferSpec {
   /**
    * What `diameter` is measured in. `'normalized'` (die pitches, when no physical
    * size is known) keeps the orientation mark's direction but gives it length 0:
-   * the SEMI flat and notch sizes are millimetres, and a millimetre table applied
-   * to a pitch count cut a third of a small wafer off. Default `'mm'`.
+   * the SEMI flat and notch sizes are millimetres, and applied to a pitch count
+   * they would cut deep into a small wafer. Default `'mm'`.
    */
   units?: 'mm' | 'normalized';
   center?: { x: number; y: number };

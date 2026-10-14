@@ -131,6 +131,9 @@ const finding = (id, family, left, severity, extra = {}) => ({
   stats: { method: 'x', sampleSizeLeft: 10, sampleSizeRight: 90 }, summary: id, highlight: { kind: 'region', regionFamily: 'ring', regionKeys: [] }, ...extra,
 });
 
+/** A cluster of one hard bin (`isOneBinSpot`): the clusters that list the region rows they explain. */
+const BIN_4 = { kind: 'hardBin', bin: 4, label: 'HBin 4' };
+
 test('a pattern leads with the findings it explains beneath it, then groups by region, most severe first', () => {
   const list = [
     finding('a', 'quadrant', 'NE', 'info'),
@@ -162,7 +165,7 @@ test('a cluster leads a group of the region findings it explains, whatever their
     finding('sw', 'sector', 'Sector SW', 'unusual'),
     finding('sw-yield', 'sector', 'Sector SW', 'notable'),
     finding('q', 'quadrant', 'SW', 'info'),
-    finding('c', 'cluster', 'Cluster at (1, 2)', 'notable', { relatedIds: ['sw', 'q'] }),
+    finding('c', 'cluster', 'Cluster at (1, 2)', 'notable', { relatedIds: ['sw', 'q'], variable: BIN_4 }),
   ];
   assert.deepEqual(arrangeFindings(list).groups.map(g => [g.left, g.worst, g.findings.map(f => f.id)]), [
     ['Cluster at (1, 2)', 'unusual', ['c', 'sw', 'q']],
@@ -170,10 +173,22 @@ test('a cluster leads a group of the region findings it explains, whatever their
   ]);
 });
 
+test('a cluster of one bin and another cluster with the same label are two groups', () => {
+  const list = [
+    finding('pooled', 'cluster', 'Cluster at (1, 2)', 'notable'),
+    finding('c4', 'cluster', 'Cluster at (1, 2)', 'notable', { relatedIds: ['q4'], variable: BIN_4 }),
+    finding('c5', 'cluster', 'Cluster at (1, 2)', 'notable', { variable: { ...BIN_4, bin: 5, label: 'HBin 5' } }),
+    finding('q4', 'quadrant', 'SW', 'info', { variable: BIN_4 }),
+  ];
+  const groups = arrangeFindings(list).groups;
+  assert.deepEqual(groups.map(g => g.findings.map(f => f.id)), [['pooled'], ['c4', 'q4'], ['c5']]);
+  assert.equal(new Set(groups.map(g => g.key)).size, 3, 'each group has its own key');
+});
+
 test('a cluster a pattern explains brings the findings it explains under the pattern', () => {
   const list = [
     finding('r1', 'ring', 'Ring 1 (core)', 'info'),
-    finding('c', 'cluster', 'Cluster at (0, 0)', 'unusual', { relatedIds: ['r1'] }),
+    finding('c', 'cluster', 'Cluster at (0, 0)', 'unusual', { relatedIds: ['r1'], variable: BIN_4 }),
     finding('p', 'spatial-pattern', 'Center cluster', 'notable', { relatedIds: ['c'] }),
   ];
   const arranged = arrangeFindings(list);

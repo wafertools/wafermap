@@ -32,6 +32,7 @@ import { benjaminiHochberg, fisherExact, fiveNumberSummary, sampleVariance, zPVa
 import { mean, maxOf } from '../core/utils.js';
 import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 import { ringOf } from '../core/classify.js';
+import { SEVERITY_ORDER, isOneBinCluster } from './filterFindings.js';
 
 interface EligibleDie extends Die {
   hbin?: number;
@@ -235,8 +236,10 @@ const LOCATED_SIZE = 0.5;
  * Clusters of one hard bin. Over every fail bin together, a bin's group joins the fails of other bins
  * round it (a spot touching an edge ring becomes one edge arc) and, at a high fail rate, the whole
  * wafer's fails join up; one bin alone keeps its group apart. A bin's group already inside a cluster
- * over every fail bin is left to that cluster. A bin is tested when it has enough dies
- * to make a cluster at all (`minimumClusterSize`); the bins tested share the significance level.
+ * over every fail bin is left to that cluster. Edge arcs of one bin are not reported: on a diffuse edge
+ * loss or a tilt toward the edge, a stretch of the bin's own edge reads as an arc, and its ring and
+ * sector rows already say where the bin rises. A bin is tested when it has enough dies to make a
+ * cluster at all (`minimumClusterSize`); the bins tested share the significance level.
  */
 function buildBinClusterFindings(
   dies: PositionedDie[],
@@ -245,12 +248,13 @@ function buildBinClusterFindings(
   options: ResolvedOptions,
   pooled: readonly StatsFinding[],
 ): StatsFinding[] {
+  // The dies the run over every fail bin judges: a die with no bin is no data, in neither.
   const passSet = new Set(options.passBins);
+  const judged = dies.filter(d => diePassStatus(d, passSet) !== undefined);
   const counts = new Map<number, number>();
   let failing = 0;
-  for (const d of dies) {
-    const bin = d.hbin ?? d.sbin;
-    if (bin !== undefined && passSet.has(bin)) continue;
+  for (const d of judged) {
+    if (diePassStatus(d, passSet)) continue;
     failing++;
     if (d.hbin !== undefined) counts.set(d.hbin, (counts.get(d.hbin) ?? 0) + 1);
   }
@@ -264,7 +268,7 @@ function buildBinClusterFindings(
   const pooledClusters = pooled.filter(f => f.comparison.family === 'cluster').map(findingDieKeys);
   const findings: StatsFinding[] = [];
   for (const bin of bins) {
-    const found = buildClusterFindings(dies, wafer, {
+    const found = buildClusterFindings(judged, wafer, {
       ...options,
       significanceLevel: options.significanceLevel / bins.length,
       isFailingDie: d => d.hbin === bin,
@@ -279,18 +283,19 @@ const EXPLAINS_REGION = 0.5;
 
 /**
  * Lists under each cluster of one bin (`relatedIds`) the region findings of that bin it explains: a rise in the
- * bin in a ring, quadrant or sector that the cluster's dies make up at least half of. Those findings are the same
- * spot seen through a coarser region, and read below it rather than ahead of it; like the rows a pattern claims,
- * they are marked info.
+ * bin in a ring, quadrant or sector that the cluster's dies make up at least half of, and no more severe than the
+ * cluster. Those findings are the same spot seen through a coarser region, and read below it rather than ahead of
+ * it; like the rows a pattern claims, they are marked info. A region row more severe than the cluster carries the
+ * stronger evidence, so it stands on its own.
  */
-function claimForBinClusters(findings: StatsFinding[]): void {
+export function claimForBinClusters(findings: StatsFinding[]): void {
   const regions = findings.filter(f => (f.comparison.family === 'ring' || f.comparison.family === 'quadrant' || f.comparison.family === 'sector')
     && f.variable.kind === 'hardBin' && f.effect.direction === 'higher');
   for (const c of findings) {
-    if (c.comparison.family !== 'cluster' || c.variable.kind !== 'hardBin') continue;
+    if (!isOneBinCluster(c)) continue;
     const dies = findingDieKeys(c);
     const ids = regions.filter(r => {
-      if (r.variable.bin !== c.variable.bin) return false;
+      if (r.variable.bin !== c.variable.bin || SEVERITY_ORDER[r.severity] < SEVERITY_ORDER[c.severity]) return false;
       const excess = (r.effect.absoluteDelta ?? 0) * r.stats.sampleSizeLeft;
       let inside = 0;
       for (const k of findingDieKeys(r)) if (dies.has(k)) inside++;
@@ -1320,8 +1325,12 @@ function discoverTestNumbers(
   explicit: number[] | undefined,
   testDefs: TestDef[] | undefined,
 ): number[] {
+  // By number, once: a program can carry thousands of tests, and a search of the
+  // defs per test is quadratic in them. The first def for a number wins, as `find` would.
+  const defByNumber = new Map<number, TestDef>();
+  for (const td of testDefs ?? []) if (!defByNumber.has(td.testNumber)) defByNumber.set(td.testNumber, td);
   const parametricOnly = (numbers: number[]): number[] =>
-    numbers.filter(tn => isParametricTest(testDefs?.find(td => td.testNumber === tn)));
+    numbers.filter(tn => isParametricTest(defByNumber.get(tn)));
   if (explicit) return parametricOnly(explicit.slice().sort((a, b) => a - b));
   // Column by column for built dies, not a key walk per die.
   return parametricOnly(testsPresent(dies, 'values'));
@@ -2340,7 +2349,7 @@ function analyzeWaferMapUncollected(
   // Bins are data on a wafer and on a 'mode' stack (each position's most frequent
   // bin). A bin-occurrence stack ('countBin', 'percent') stamps the counted bin on
   // every die so the map can name it; its data is the count in test 0. Read as bins,
-  // a bin on 5% of a lot's dies came out as "near-full — 100% of dies failing".
+  // a bin on 5% of a lot's dies would be every die failing, a near-full pattern.
   const binsAreData = stackBinsAreData(isLotStack, stackMethod);
   const hasHbinData = binsAreData;
   const eligibleDies = result.dies.filter((die): die is EligibleDie => isEligibleDie(die));
@@ -2506,7 +2515,7 @@ function analyzeWaferMapUncollected(
       const ringByKey = new Map(positionedEligibleDies.map(d =>
         [getDieKey(d), ringOf(d.physX - center.x, d.physY - center.y, radius, resolved.ringCount)]));
       // A region row a cluster of its bin explains stays with the cluster: the spot is more specific than the pattern.
-      const clusterClaimed = new Set(findings.flatMap(c => c.comparison.family === 'cluster' ? c.relatedIds ?? [] : []));
+      const clusterClaimed = new Set(findings.flatMap(c => isOneBinCluster(c) ? c.relatedIds ?? [] : []));
       const relatedIds = claimForPattern([patternResult.pattern], severity, findings.filter(f => !clusterClaimed.has(f.id)),
         f => f.comparison.family === 'cluster'
           ? [...new Set(f.highlight.kind === 'dies' ? f.highlight.dieKeys.map(k => ringByKey.get(k) ?? 0) : [])]

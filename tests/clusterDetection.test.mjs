@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
-import { analyzeWaferMap } from '../dist/packages/stats/analyzeWaferMap.js';
+import { analyzeWaferMap, claimForBinClusters } from '../dist/packages/stats/analyzeWaferMap.js';
 
 const WAFER = { diameter: 300 };
 const DIE   = { width: 8, height: 12 };
@@ -216,6 +216,43 @@ test('cluster detection — a bin with fewer dies than the minimum cluster size 
   assert.ok(fours > 0 && fours < 5, `${fours} bin 4 dies`);
   const summary = analyzeWaferMap(buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE }), { enableTestValueAnalysis: false });
   assert.ok(!summary.findings.some(f => f.variable.kind === 'hardBin' && f.comparison.family === 'cluster'));
+});
+
+test('cluster detection — dies with no bin are no data, not a failure cluster', () => {
+  // Bin 1 everywhere but a disc of dies with test values and no bin.
+  const results = makeBinResults((i, j) => (inDisc(i, j, 6, 4, 3) ? undefined : 1))
+    .map(r => (r.hbin === undefined ? { x: r.x, y: r.y, testValues: { 100: 1 } } : r));
+  assert.ok(results.filter(r => r.hbin === undefined).length >= 20);
+  const summary = analyzeWaferMap(buildWaferMap({ results, waferConfig: WAFER, dieConfig: DIE }), { enableTestValueAnalysis: false });
+  assert.ok(!summary.findings.some(f => f.comparison.family === 'cluster' || f.comparison.family === 'edge-arc'),
+    summary.findings.map(f => f.summary).join('\n'));
+});
+
+test('cluster detection — a bin cluster does not claim a region row more severe than itself', () => {
+  const finding = (id, family, severity, dieKeys, extra = {}) => ({
+    id, level: 'wafer', severity,
+    variable: { kind: 'hardBin', bin: 4, label: 'HBin 4' },
+    comparison: { family, left: id, right: 'Rest of wafer' },
+    effect: { direction: 'higher', absoluteDelta: 0.5 },
+    stats: { sampleSizeLeft: 10, sampleSizeRight: 90 },
+    summary: id, highlight: { kind: 'dies', dieKeys }, ...extra,
+  });
+  const spot = ['0,0', '1,0', '0,1', '1,1', '2,1'];
+  const region = [...spot, '3,0', '3,1', '4,0', '4,1', '5,0'];
+  const cluster = finding('cluster:hardBin:4:0,0', 'cluster', 'notable', spot);
+  const weaker = finding('ring:4:bin4', 'ring', 'notable', region);
+  const stronger = finding('quadrant:SW:bin4', 'quadrant', 'unusual', region);
+  claimForBinClusters([cluster, weaker, stronger]);
+  assert.deepEqual(cluster.relatedIds, ['ring:4:bin4']);
+  assert.equal(weaker.severity, 'info', 'a row the cluster restates does not count twice');
+  assert.equal(stronger.severity, 'unusual', 'the stronger row stands on its own');
+
+  // An info cluster claims only info rows, so a notable row is neither demoted nor hidden from a pattern's claim.
+  const infoCluster = finding('cluster:hardBin:4:1,1', 'cluster', 'info', spot);
+  const notable = finding('ring:4:bin4b', 'ring', 'notable', region);
+  claimForBinClusters([infoCluster, notable]);
+  assert.equal(infoCluster.relatedIds, undefined);
+  assert.equal(notable.severity, 'notable');
 });
 
 test('sector analysis — sector findings are well-formed (a merged run of adjacent sectors is "Sectors A–B")', () => {

@@ -2036,7 +2036,7 @@ export function buildFindingsSection(
   // region. What a pattern or another finding claims is not repeated among the groups (see
   // `arrangeFindings`); all of it is still in `summary.findings` for a host reading them programmatically.
   const arranged = arrangeFindings(findings);
-  const groups = arranged.groups.map(g => ({ ...g, key: `${g.family}\0${g.left}` }));
+  const groups = arranged.groups;
   // Every finding this section actually shows — the grouped rows, and the
   // related findings nested under each spatial pattern — so the `†` key
   // appears exactly when a marked finding is on screen.

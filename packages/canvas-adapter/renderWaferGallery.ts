@@ -891,6 +891,11 @@ export function renderWaferGallery(
         throw err;
       });
   }
+  /** Drops a run in progress: what it analyses is being replaced, so its result would describe something else. */
+  function cancelTestValueRun(): void {
+    analysingTestValues?.abort();
+    analysingTestValues = null;
+  }
 
   function applyFindingHighlight(indices: number[]): void {
     findingHighlightIndices = new Set(indices);
@@ -3260,7 +3265,7 @@ export function renderWaferGallery(
     // not on the bin every die carries so the hover can name it (stackBinsAreData).
     // The card is not a built map, so the analysis rebuilds it and would not know it
     // is a stack: the stamped bins are left out of its input instead. Read as bins,
-    // a bin on 5% of the dies came out as "near-full — 100% of dies failing".
+    // a bin on 5% of the dies would be every die failing, a near-full pattern.
     function analyzeCountStack(dies: Die[], countName: string): import('../stats/types.js').StatsSummary {
       const counted = dies.map(d => ({ ...d, hbin: undefined, sbin: undefined }));
       return analyzeWaferMap(
@@ -4347,6 +4352,8 @@ export function renderWaferGallery(
 
   return {
     setItems(newItems: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): void {
+      // A test-value run in progress analyses the items being replaced.
+      cancelTestValueRun();
       originalItems = newItems.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
       const mode = sharedOpts.plotMode!;
       if (STACKED_MODES.has(mode)) {
@@ -4388,6 +4395,8 @@ export function renderWaferGallery(
     },
 
     setLotStatsSummary(summary: LotStatsSummary | undefined): void {
+      // The host's summary replaces the lot a run in progress would write.
+      cancelTestValueRun();
       currentLotStats = summary;
       // Lot analysis raises its own advisories (an option correction, say),
       // so a summary arriving late can introduce warnings the bar has not shown.
@@ -4400,7 +4409,7 @@ export function renderWaferGallery(
 
     destroy(): void {
       plotStore.flush();
-      analysingTestValues?.abort();
+      cancelTestValueRun();
       buildGeneration++; // cancel any pending factory resolvers
       printWindow.removeEventListener('beforeprint', drawAllCards);
       // Same reason as the queued resize frame below: a staged lot-panel render

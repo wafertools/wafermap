@@ -4,7 +4,7 @@ import type { StatsFinding, StatsSeverity } from './types.js';
 import { seededRandom } from './math.js';
 import { ringOf } from '../core/classify.js';
 import { compassBucket, sectorCompassNames } from './regions.js';
-import { getDieKey, gridKey } from '../core/dies.js';
+import { diePassStatus, getDieKey, gridKey } from '../core/dies.js';
 import { findConnectedComponents, LargestComponentSizer } from './connectedComponents.js';
 
 /** An edge arc's bearing, on the 16-point compass the sectors use. */
@@ -184,14 +184,13 @@ export function buildClusterFindings(
   const { passBins, significanceLevel, minimumEffectSize, minimumRelativeEffect, minimumSampleSize, minimumClusterSize, ringCount } = options;
   const passSet = new Set(passBins);
 
+  // By bin (the default), a die with no bin is no data: neither a fail nor part of the background.
+  // A caller's own predicate judges every die it is given.
+  if (!options.isFailingDie) dies = dies.filter(d => diePassStatus(d, passSet) !== undefined);
   // Caller passes pre-filtered eligible dies; enforce minimum sample size.
   if (dies.length < minimumSampleSize) return [];
 
-  const defaultIsFailingDie = (d: Die) => {
-    const bin = d.hbin ?? d.sbin;
-    return bin === undefined || !passSet.has(bin);
-  };
-  const isFailingFn = options.isFailingDie ?? defaultIsFailingDie;
+  const isFailingFn = options.isFailingDie ?? ((d: Die) => diePassStatus(d, passSet) === false);
   const failing = dies.filter(isFailingFn);
   const pBg = failing.length / dies.length;
   // No group can stand out from a background with no fails, or (with a positive

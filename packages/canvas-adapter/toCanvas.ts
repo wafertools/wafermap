@@ -23,7 +23,7 @@ import { hitGridDims } from './hitGrid.js';
  * Smallest die, in CSS pixels, that carries an out-of-spec ▽/△ mark. The mark has a
  * floor size (2.5 px half-width plus its halo) so it stays visible zoomed out; below
  * this the marks are larger than the dies, cover their neighbours and cannot be told
- * apart, and on a 100k-die wafer drawing them cost over a second per paint. The map
+ * apart, and on a 100k-die wafer drawing them costs over a second per paint. The map
  * leaves them off and the colorbar says "zoom in".
  */
 const MIN_MARKED_DIE_PX = 5;
