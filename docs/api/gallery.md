@@ -166,7 +166,7 @@ to be pre-built.
                                             // { enabled: false } to hide it. §5.4.4
   insights?:               InsightsOptions   // adds a Maps | Insights switch that swaps the grid for a lot-wide chart
                                             // suite (Overview, Distributions, Correlation, with a "Group by" control)
-                                            // — default disabled. See §6.10.
+                                            // — on by default; { enabled: false } removes it. See §6.10.
   attributes?:             Record<string, WaferAttributeDef>  // your names for wafer attributes: label, facet?, date?: what Group by offers and the strip, Wafers table and reports call each
   warnings?:               WarningsOptions   // built-in surfacing of the library's own advisories — ON by default.
                                             // Collected across every card and de-duplicated, so a problem affecting

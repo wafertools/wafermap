@@ -27,7 +27,7 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§21 — Mixed-pattern wafer data (MixedWM38)</span>
+    <span class="demo-title">Mixed-pattern wafer data (MixedWM38)</span>
     <span class="demo-desc">
       38 wafer maps · 38 defect classes including compound patterns · statistical findings
     </span>
@@ -42,9 +42,13 @@
     <br><br>
     One wafer per class is loaded directly into <code>buildWaferMap</code> and
     <code>analyzeWaferMap</code> with no special configuration.
-    Card labels show the MixedWM38 class name and how many statistical findings the library detected.
-    Click <strong>↗</strong> on any card to open a full interactive view with the findings panel.
-    Compound patterns often produce findings from multiple spatial families simultaneously.
+    Each card names the dataset's class, then what <code>analyzeWaferMap</code> found on it: the kinds
+    of findings it raised (ring, quadrant, sector, cluster, edge arc) and, when one shape dominates, the
+    spatial pattern it classified. A compound map is reported the way wafermap reports any wafer, as
+    several findings, each with the dies it covers: expand a card and click one to see them. The pattern
+    classifier names a single shape, so on a compound map it describes the dominant part at most;
+    <a href="https://wafertools.github.io/wafermap/detection-analysis/">Detection Analysis</a> measures
+    it on the single-pattern WM-811K set it is designed for.
   </div>
 
   <div class="demo-content">
@@ -69,14 +73,25 @@
     }
     const fixture = await resp.json();
 
+    const FAMILY_NAMES = {
+      'ring': 'ring', 'quadrant': 'quadrant', 'sector': 'sector',
+      'cluster': 'cluster', 'edge-arc': 'edge arc',
+    };
+    const PATTERN_NAMES = {
+      'center': 'center cluster', 'donut': 'donut', 'edge-local': 'edge location',
+      'edge-ring': 'edge ring', 'near-full': 'near-full', 'scratch': 'scratch',
+    };
+
     const items = fixture.map(sample => () => {
       const result  = buildWaferMap({ results: sample.results, passBins: [1] });
       const summary = analyzeWaferMap(result);
-      const nFindings = summary.findings.length;
-      const suffix = nFindings ? ` · ${nFindings} finding${nFindings > 1 ? 's' : ''}` : ' · no findings';
+      const kinds = new Set(summary.findings.map(f => f.comparison.family));
+      const found = Object.keys(FAMILY_NAMES).filter(k => kinds.has(k)).map(k => FAMILY_NAMES[k]);
+      const shape = PATTERN_NAMES[summary.stats.spatialPattern?.pattern];
+      if (shape && kinds.has('spatial-pattern')) found.unshift(`${shape} pattern`);
       return {
         ...result,
-        label:        `${sample.className}${suffix}`,
+        label:        `${sample.className} → ${found.length ? found.join(', ') : 'no findings'}`,
         statsSummary: summary,
         viewOptions: { plotMode: 'hardBin' },
       };

@@ -48,3 +48,21 @@ test('the limits of the definitions the caller passed are left alone', () => {
   stack('stddev');
   assert.equal(JSON.stringify(TEST_DEFS), before);
 });
+
+// A value stack's dies carry one template wafer's bins, not the stack's (stackBinsAreData).
+// Nothing may be counted from them: no bin tallies, no "binned as passing", no bin or
+// region-yield section in the report.
+test('a mean stack counts no bins and calls no failure binned as passing', async () => {
+  const { buildSynthesis } = await import('../dist/packages/stats/synthesis.js');
+  const { renderWaferReportHtml } = await import('../dist/packages/stats/index.js');
+  const { result, summary } = stack('mean');
+  assert.equal(summary.stats.hardBinCounts, undefined);
+  assert.deepEqual(summary.stats.hardBinsConsidered, []);
+  for (const [tn, f] of Object.entries(summary.stats.testFailures ?? {})) {
+    assert.equal(f.lostDies, f.dieKeys.length, `test ${tn}: every failure counts`);
+  }
+  const text = JSON.stringify(buildSynthesis(summary));
+  assert.doesNotMatch(text, /binned as passing/);
+  const html = renderWaferReportHtml(result, summary);
+  assert.doesNotMatch(html, /Hard Bin Breakdown|Ring Yield|Pass dies/);
+});

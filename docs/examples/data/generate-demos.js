@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Generates the 4 showcase demo JSON files.
+// Generates the 4 showcase demo CSV files and their .meta.json sidecars.
 // Run: node docs/examples/data/generate-demos.js
-// Output: edge-ring.json, parametric.json, cluster.json, high-yield.json
+// Output: edge-ring.csv, parametric.csv, cluster.csv, high-yield.csv
 //
 // All files share the same column schema:
-//   lot, wafer, x, y, hbin, sbin, leakage, voltage, frequency
+//   lot, wafer, x, y, hbin, sbin, iddq, vref, fmax
 // so a single hardcoded mapping in showcase.html covers all scenarios.
 
 import { writeFileSync } from 'fs';
@@ -80,8 +80,54 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const r2 = v => Math.round(v * 100) / 100;
 const r3 = v => Math.round(v * 1000) / 1000;
 
+// ── Test flow and binning ─────────────────────────────────────────────────
+// Every die runs the same test flow, and its bins come from its test results
+// in flow order, the way a test program bins: the first test a die fails
+// decides its bin. A spatial pattern therefore reaches the bins through the
+// tests — an edge die with high Iddq is binned Iddq because its Iddq is high —
+// so the bin map, the test-value maps and the Summary panel all agree.
+//
+//   1  Continuity  pass/fail probe contact (a defect, not a column)  → bin 2
+//   2  Iddq        quiescent supply current, µA, high limit          → bin 3
+//   3  Vref        bandgap reference output, V, two-sided            → bin 4
+//   4  Fmax        maximum operating frequency, MHz, low limit       → bin 5
+const LIMITS = {
+  iddqHigh: 5.0,
+  vrefLow:  1.70, vrefHigh: 1.88,
+  fmaxLow:  2025,
+};
+
+/** Hard and soft bin from one die's results, in test-flow order. */
+function binDie({ open, short, iddq, vref, fmax }) {
+  if (open)                   return { hbin: 2, sbin: 20 };
+  if (short)                  return { hbin: 2, sbin: 21 };
+  if (iddq > LIMITS.iddqHigh) return { hbin: 3, sbin: 30 };
+  if (vref < LIMITS.vrefLow)  return { hbin: 4, sbin: 40 };
+  if (vref > LIMITS.vrefHigh) return { hbin: 4, sbin: 41 };
+  if (fmax < LIMITS.fmaxLow)  return { hbin: 5, sbin: 50 };
+  return { hbin: 1, sbin: 10 };
+}
+
+/**
+ * A die hit by a physical defect (a particle, edge chipping, film damage)
+ * fails in one of the ways a real defect shows up at test: an open contact,
+ * a short, or excess supply current. Returns the overrides for that die.
+ */
+function defect(rng, iddq) {
+  const k = rng();
+  if (k < 0.25) return { open: true };
+  if (k < 0.35) return { short: true };
+  return { iddq: Math.max(iddq, LIMITS.iddqHigh * (1.15 + rng() * 2.5)) };
+}
+
+function row(lot, wafer, x, y, die) {
+  const { hbin, sbin } = binDie(die);
+  return { lot, wafer, x, y, hbin, sbin,
+    iddq: r2(die.iddq), vref: r3(die.vref), fmax: r2(die.fmax) };
+}
+
 // ── Scenario 1: edge-ring ──────────────────────────────────────────────────
-// Clean centre, progressive yield loss near edge. 8 wafers.
+// Clean centre, progressive yield loss near the edge. 8 wafers.
 function buildEdgeRing() {
   const rng = seededRng(0xABCD1234);
   const dies = waferDies();
@@ -90,37 +136,27 @@ function buildEdgeRing() {
   for (let w = 1; w <= 8; w++) {
     const wid = `W0${w}`;
     for (const { x, y, r } of dies) {
-      // Edge stress: probability of fail increases sharply near edge
+      // Edge stress: probability of a defect rises sharply over the outer dies,
+      // and the surviving edge dies run slower and leakier.
       const edgeFactor = Math.max(0, (r - (WAFER_RADIUS - EDGE_BAND)) / EDGE_BAND);
       const failProb = edgeFactor * edgeFactor * 0.85 + rng() * 0.01;
 
-      let hbin, sbin;
-      const roll = rng();
-      if (roll < failProb) {
-        // Edge-ring failure modes: bin 2 = oxide stress, bin 3 = metal thinning
-        const subRoll = rng();
-        hbin = subRoll < 0.6 ? 2 : 3;
-        sbin = hbin === 2 ? (rng() < 0.5 ? 21 : 22) : 31;
-      } else {
-        hbin = 1;
-        sbin = rng() < 0.92 ? 10 : 11;
-      }
-
-      // Test values — good centre, degraded at edge
-      const stress = 1 + edgeFactor * 1.2;
-      const leakage  = r2(clamp(normal(rng, 2.5 * stress, 0.4 * stress), 0.3, 18));
-      const voltage  = r2(clamp(normal(rng, 1.8 - edgeFactor * 0.15, 0.04), 1.5, 2.1));
-      const frequency = r2(clamp(normal(rng, 2100 - edgeFactor * 120, 30), 1750, 2250));
-
-      rows.push({ lot: 'EDGE-LOT-01', wafer: wid, x, y, hbin, sbin,
-        leakage, voltage, frequency });
+      let die = {
+        iddq: clamp(normal(rng, 2.4 * (1 + edgeFactor * 0.5), 0.3), 0.5, 40),
+        vref: clamp(normal(rng, 1.790 - edgeFactor * 0.02, 0.015), 1.6, 2.0),
+        fmax: clamp(normal(rng, 2110 - edgeFactor * 70, 20), 1800, 2250),
+      };
+      if (rng() < failProb) die = { ...die, ...defect(rng, die.iddq) };
+      rows.push(row('EDGE-LOT-01', wid, x, y, die));
     }
   }
   return rows;
 }
 
 // ── Scenario 2: parametric ────────────────────────────────────────────────
-// Good yield with interesting parametric patterns (gradient + hotspot). 6 wafers.
+// Iddq rising with radius plus one hotspot per wafer, and a left-to-right Vref
+// gradient. The yield loss is the Iddq limit, so the bin map follows the
+// value map. 6 wafers.
 function buildParametric() {
   const rng = seededRng(0xDEADBEEF);
   const dies = waferDies();
@@ -128,44 +164,38 @@ function buildParametric() {
 
   for (let w = 1; w <= 6; w++) {
     const wid = `W0${w}`;
-    // Wafer-to-wafer process drift in leakage
+    // Wafer-to-wafer process drift in Iddq
     const wDrift = rng() * 0.8 - 0.4;
     // One hotspot per wafer at a random position
     const hx = Math.round((rng() - 0.5) * 10);
     const hy = Math.round((rng() - 0.5) * 10);
 
     for (const { x, y } of dies) {
-      // Radial gradient (higher leakage toward edge)
+      // Radial gradient (higher Iddq toward the edge)
       const r = Math.sqrt(x * x + y * y);
       const gradient = r * 0.12;
 
       // Hotspot contribution (Gaussian bump)
       const dx = x - hx, dy = y - hy;
-      const dist2 = dx * dx + dy * dy;
-      const hotspot = Math.exp(-dist2 / 4) * 3.5;
+      const hotspot = Math.exp(-(dx * dx + dy * dy) / 4) * 3.5;
 
-      // Leakage: log-normally distributed
+      // Iddq: log-normally distributed
       const meanLog = Math.log(2.0 + gradient + hotspot + wDrift);
-      const logVal  = normal(rng, meanLog, 0.18);
-      const leakage = r2(clamp(Math.exp(logVal), 0.1, 80));
-
-      // Voltage: slight x-gradient (process non-uniformity)
-      const voltage  = r2(clamp(normal(rng, 1.8 + x * 0.005, 0.025), 1.62, 1.98));
-      const frequency = r2(clamp(normal(rng, 2100, 25), 1980, 2220));
-
-      // Fail where leakage exceeds spec — thresholds tuned to actual data range
-      const hbin = leakage > 6.5 ? 3 : leakage > 5.0 ? 2 : 1;
-      const sbin = hbin === 1 ? 10 : hbin === 2 ? 21 : 31;
-
-      rows.push({ lot: 'PARAM-LOT-02', wafer: wid, x, y, hbin, sbin,
-        leakage, voltage, frequency });
+      const die = {
+        iddq: clamp(Math.exp(normal(rng, meanLog, 0.18)), 0.1, 80),
+        // Vref: slight x-gradient (process non-uniformity) that reaches the
+        // high limit at the right-hand edge
+        vref: clamp(normal(rng, 1.800 + x * 0.0035, 0.015), 1.6, 2.0),
+        fmax: clamp(normal(rng, 2110, 20), 1950, 2250),
+      };
+      rows.push(row('PARAM-LOT-02', wid, x, y, die));
     }
   }
   return rows;
 }
 
 // ── Scenario 3: cluster ───────────────────────────────────────────────────
-// High baseline yield, but 2–3 defect clusters per wafer. 7 wafers.
+// High baseline yield, but 2–3 particle clusters per wafer. 7 wafers.
 function buildCluster() {
   const rng = seededRng(0x13579BDF);
   const dies = waferDies();
@@ -188,7 +218,7 @@ function buildCluster() {
     }
 
     for (const { x, y } of dies) {
-      // Probability of failure determined by proximity to any cluster
+      // Probability of a defect determined by proximity to any cluster
       let clusterP = 0;
       for (const { cx, cy, r2: cr2 } of clusters) {
         const d2 = (x - cx) ** 2 + (y - cy) ** 2;
@@ -196,28 +226,20 @@ function buildCluster() {
       }
       const failProb = clusterP + rng() * 0.01;
 
-      let hbin, sbin;
-      if (rng() < failProb) {
-        hbin = rng() < 0.7 ? 2 : 3;
-        sbin = hbin === 2 ? (rng() < 0.5 ? 21 : 23) : 32;
-      } else {
-        hbin = 1;
-        sbin = rng() < 0.95 ? 10 : 11;
-      }
-
-      const leakage  = r2(clamp(normal(rng, 2.8, 0.35), 0.4, 12));
-      const voltage  = r2(clamp(normal(rng, 1.8, 0.03), 1.65, 1.95));
-      const frequency = r2(clamp(normal(rng, 2100, 22), 2010, 2190));
-
-      rows.push({ lot: 'CLUST-LOT-03', wafer: wid, x, y, hbin, sbin,
-        leakage, voltage, frequency });
+      let die = {
+        iddq: clamp(normal(rng, 2.5, 0.3), 0.5, 40),
+        vref: clamp(normal(rng, 1.790, 0.015), 1.6, 2.0),
+        fmax: clamp(normal(rng, 2110, 20), 1950, 2250),
+      };
+      if (rng() < failProb) die = { ...die, ...defect(rng, die.iddq) };
+      rows.push(row('CLUST-LOT-03', wid, x, y, die));
     }
   }
   return rows;
 }
 
 // ── Scenario 4: high-yield ────────────────────────────────────────────────
-// Mature process, very high yield, nice distributions. 10 wafers.
+// Mature process, very high yield, tight distributions. 10 wafers.
 function buildHighYield() {
   const rng = seededRng(0xF0F0F0F0);
   const dies = waferDies();
@@ -229,22 +251,20 @@ function buildHighYield() {
 
     for (const { x, y } of dies) {
       const failProb = 0.008 + rng() * 0.004;
-      const hbin = rng() < failProb ? 2 : 1;
-      const sbin = hbin === 1 ? 10 : 21;
-
-      const leakage  = r3(clamp(normal(rng, 2.2 + wOffset, 0.2), 1.2, 4.5));
-      const voltage  = r3(clamp(normal(rng, 1.800 + wOffset * 0.01, 0.018), 1.72, 1.88));
-      const frequency = r2(clamp(normal(rng, 2100 + wOffset * 5, 18), 2035, 2165));
-
-      rows.push({ lot: 'HY-LOT-04', wafer: wid, x, y, hbin, sbin,
-        leakage, voltage, frequency });
+      let die = {
+        iddq: clamp(normal(rng, 2.2 + wOffset, 0.2), 1.2, 40),
+        vref: clamp(normal(rng, 1.790 + wOffset * 0.01, 0.012), 1.6, 2.0),
+        fmax: clamp(normal(rng, 2110 + wOffset * 5, 16), 1950, 2250),
+      };
+      if (rng() < failProb) die = { ...die, ...defect(rng, die.iddq) };
+      rows.push(row('HY-LOT-04', wid, x, y, die));
     }
   }
   return rows;
 }
 
 // ── Write files as CSV ─────────────────────────────────────────────────────
-const COLS = ['lot','wafer','x','y','hbin','sbin','leakage','voltage','frequency'];
+const COLS = ['lot','wafer','x','y','hbin','sbin','iddq','vref','fmax'];
 
 function toCsv(rows) {
   const lines = [COLS.join(',')];
@@ -277,28 +297,26 @@ const META = {
   passBins: [1],
   hbinDefs: [
     { bin: 1, name: 'Pass' },
-    { bin: 2, name: 'Leakage' },
-    { bin: 3, name: 'Edge Ring' },
-    { bin: 4, name: 'Cluster Defect' },
-    { bin: 5, name: 'Vth Shift' },
+    { bin: 2, name: 'Continuity' },
+    { bin: 3, name: 'Iddq' },
+    { bin: 4, name: 'Vref' },
+    { bin: 5, name: 'Fmax' },
   ],
   sbinDefs: [
-    { bin: 1,  name: 'Pass' },
-    { bin: 21, name: 'Leakage - Gate' },
-    { bin: 31, name: 'Edge - Chipping' },
-    { bin: 32, name: 'Edge - Film' },
-    { bin: 41, name: 'Cluster - Particle' },
-    { bin: 51, name: 'Vth - Hi' },
+    { bin: 10, name: 'Pass' },
+    { bin: 20, name: 'Continuity - Open' },
+    { bin: 21, name: 'Continuity - Short' },
+    { bin: 30, name: 'Iddq - High' },
+    { bin: 40, name: 'Vref - Low' },
+    { bin: 41, name: 'Vref - High' },
+    { bin: 50, name: 'Fmax - Slow' },
   ],
-  // Test numbers match showcase.html's DEMO_MAPPING.
-  // Set from the pooled distributions these builders produce (leakage p97 4.95,
-  // voltage p3 1.70 / p97 1.87, frequency p3 2025), so roughly 2–4% of dies fall
-  // out of spec on each test — visible on the map without swamping it, and
-  // enough for the pass-rate pareto to rank the three tests differently.
+  // Test numbers match showcase.html's DEMO_MAPPING; the limits are the ones
+  // binDie applies, so a die outside a limit is always binned for it.
   testDefs: [
-    { testNumber: 1001, name: 'Leakage',   unit: 'µA',  limitHigh: 5.0 },
-    { testNumber: 1002, name: 'Voltage',   unit: 'V',   limitLow: 1.70, limitHigh: 1.88 },
-    { testNumber: 1003, name: 'Frequency', unit: 'MHz', limitLow: 2025 },
+    { testNumber: 1001, name: 'Iddq', unit: 'µA',  limitHigh: LIMITS.iddqHigh },
+    { testNumber: 1002, name: 'Vref', unit: 'V',   limitLow: LIMITS.vrefLow, limitHigh: LIMITS.vrefHigh },
+    { testNumber: 1003, name: 'Fmax', unit: 'MHz', limitLow: LIMITS.fmaxLow },
   ],
 };
 

@@ -64,7 +64,7 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§4 — Geometry and inference</span>
+    <span class="demo-title">Geometry and inference</span>
     <span class="demo-desc">How much geometry you supply, and what the library infers when you don't</span>
   </header>
 
@@ -149,9 +149,9 @@
         <strong>F</strong> — supplying <code>waferConfig.center</code> (the prober coordinate of the wafer centre) anchors it correctly.
         <strong>G</strong> — <em>sparse</em> data is different: positions are missing but the extent still reaches the wafer edge, so centre and diameter resolve without a hint.
         <br>
-        The notes under each card read <code>result.warnings</code> directly. <strong>Hover card E</strong> and
-        you will also see the library's own ⚠ indicator in its toolbar — it raises <code>partial-coverage</code> and now
-        says so on screen, without the page doing anything (see the next section).
+        The notes under each card read <code>result.warnings</code> directly. <strong>Card E</strong> also
+        shows the library's own red ⛔ indicator in its toolbar: it raises <code>partial-coverage</code> and says so on
+        screen, without the page doing anything (see the next section).
       </small>
     </p>
 
@@ -202,7 +202,7 @@
       <small>
         Bad geometry is only worth detecting if somebody is told. The library raises structured
         advisories — <code>result.warnings</code> from inference, <code>summary.stats.warnings</code>
-        from analysis — and now shows them itself: a <strong>⚠ indicator appears in the toolbar</strong>
+        from analysis — and shows them itself: a <strong>warnings indicator (red ⛔ or amber ⚠) appears in the toolbar</strong>
         only when there is something to say. It is not a toast; these are persistent conditions about
         whether the map can be trusted, so the explanation stays retrievable.
         <strong>H</strong> — an analysis advisory (amber ⚠). <strong>I</strong> — the opt-out for apps

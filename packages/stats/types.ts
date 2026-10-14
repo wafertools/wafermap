@@ -279,6 +279,8 @@ export interface StatsSummary {
      * counts a bin-breakdown display should show. Consumed by
      * `buildBinParetoData`/`buildBinClusterData` and the summary panel's bin
      * section when supplied, instead of each independently re-walking dies.
+     * Absent on a value stack (any `lotStack` method but `'mode'`), whose dies
+     * carry one wafer's bins rather than the stack's.
      */
     hardBinCounts?: Record<number, number>;
     softBinCounts?: Record<number, number>;
@@ -326,8 +328,8 @@ export interface StatsSummary {
      * `testSpecYield` counts in `failLowDies + failHighDies`), failing for a functional test
      * (`functionalYield`'s `failDies`). `dieKeys` are `getDieKey` strings; `lostDies` is how many of
      * them also fail the wafer's yield (not in a pass bin, or with no bin to judge by), so a test's
-     * failures on dies binned as passing are told apart from the yield it costs. Only tests with a
-     * failing die are present.
+     * failures on dies binned as passing are told apart from the yield it costs. On a value stack,
+     * which has no yield, every failing die counts. Only tests with a failing die are present.
      */
     testFailures?: Record<number, { dieKeys: string[]; lostDies: number }>;
     /**

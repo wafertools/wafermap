@@ -19,64 +19,68 @@
     },
     {
       "bin": 2,
-      "name": "Leakage"
+      "name": "Continuity"
     },
     {
       "bin": 3,
-      "name": "Edge Ring"
+      "name": "Iddq"
     },
     {
       "bin": 4,
-      "name": "Cluster Defect"
+      "name": "Vref"
     },
     {
       "bin": 5,
-      "name": "Vth Shift"
+      "name": "Fmax"
     }
   ],
   "sbinDefs": [
     {
-      "bin": 1,
+      "bin": 10,
       "name": "Pass"
     },
     {
+      "bin": 20,
+      "name": "Continuity - Open"
+    },
+    {
       "bin": 21,
-      "name": "Leakage - Gate"
+      "name": "Continuity - Short"
     },
     {
-      "bin": 31,
-      "name": "Edge - Chipping"
+      "bin": 30,
+      "name": "Iddq - High"
     },
     {
-      "bin": 32,
-      "name": "Edge - Film"
+      "bin": 40,
+      "name": "Vref - Low"
     },
     {
       "bin": 41,
-      "name": "Cluster - Particle"
+      "name": "Vref - High"
     },
     {
-      "bin": 51,
-      "name": "Vth - Hi"
+      "bin": 50,
+      "name": "Fmax - Slow"
     }
   ],
   "testDefs": [
     {
       "testNumber": 1001,
-      "name": "Leakage",
+      "name": "Iddq",
       "unit": "µA",
       "limitHigh": 5
     },
     {
       "testNumber": 1002,
-      "name": "Voltage",
+      "name": "Vref",
       "unit": "V",
       "limitLow": 1.7,
       "limitHigh": 1.88
     },
     {
       "testNumber": 1003,
-      "name": "Frequency",
+      "name": "Fmax",
       "unit": "MHz",
       "limitLow": 2025
     }

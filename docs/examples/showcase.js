@@ -1,5 +1,5 @@
 // showcase.js — app scaffolding for showcase.html
-// CSV parsing, column detection, mapping UI, phase switching, help popout.
+// CSV parsing, column detection, mapping UI, phase switching.
 // Does not import from wafermap — all library calls live in showcase.html.
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -653,19 +653,6 @@ export function initShowcase(renderGallery) {
     if (l) l.style.display = 'none';
     showPhase('phase-mapping');
   });
-
-  const helpPopout  = document.getElementById('help-popout');
-  const helpOverlay = document.getElementById('help-overlay');
-  document.getElementById('btn-help').addEventListener('click', () => {
-    helpPopout.classList.add('open');
-    helpOverlay.classList.add('open');
-  });
-  const closeHelp = () => {
-    helpPopout.classList.remove('open');
-    helpOverlay.classList.remove('open');
-  };
-  document.getElementById('help-close').addEventListener('click', closeHelp);
-  helpOverlay.addEventListener('click', closeHelp);
 
   // Long-format confirmation modal
   const modal        = document.getElementById('longfmt-modal');

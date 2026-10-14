@@ -40,6 +40,7 @@
     .chart-index ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
     .chart-index li strong { font-weight: 600; }
     .chart-index .look { color: var(--muted); }
+    .demo-intro .clicks { margin: 4px 0 0; padding-left: 20px; }
   </style>
 </head>
 <body class="demo-page">
@@ -53,17 +54,28 @@
 
   <div class="demo-intro">
     Everything below is drawn by the library from the same data the map already has.
-    There is no charting call to make and no second library to add: pass
-    <code>insights: { enabled: true }</code> and a <strong>Maps | Insights</strong>
-    switch appears, opening a view holding eleven chart panels across three views, and the same numbers as tables in a fourth. This page
-    opens on that tab — <code>defaultOpen: true</code> — because the charts are the
-    subject here rather than the map.
+    There is no charting call to make and no second library to add: every map and gallery
+    has a <strong>Maps | Insights</strong> switch (<code>insights: { enabled: false }</code>
+    removes it), opening eleven chart panels across three views, and the same numbers as
+    tables in a fourth. This page opens on that tab, with
+    <code>insights: { defaultOpen: true }</code>, because the charts are the subject here
+    rather than the map.
+    <br><br>
+    <strong>Click things.</strong> The charts are linked to each other and to the maps, and that
+    is most of their value:
+    <ul class="clicks">
+      <li>a wafer's bar, box or point opens that wafer's map, on the test the chart is about; right-click it to chart that wafer alone</li>
+      <li>a test in <em>Process capability</em> moves the box plot, histogram and trend to that test</li>
+      <li>a cell of the correlation matrix plots that pair in the scatter; drag a rectangle over the scatter to chart and tabulate the dies inside it</li>
+      <li>a bin in the pareto, a test in the pass-rate chart, a bar of the histogram, or a ring or quadrant of the yield diagrams opens the same menu on the dies it counts</li>
+      <li>a row of the <em>Dies</em> table rings that die on its wafer's map</li>
+    </ul>
     <br><br>
     The lot is eight wafers split across two process corners (<strong>POR</strong> and
     <strong>Hi-dose</strong>, a ~50&nbsp;mV Vth offset), with three parametric tests
     that carry real spec limits, a functional continuity test, and a radial process
     gradient. That is deliberate: each chart below needs something true in the data or
-    it is only a picture of noise. Use <strong>Group by → processSplit</strong> in the
+    it is only a picture of noise. Use <strong>Group by → Process Split</strong> in the
     Insights toolbar to separate the two corners.
   </div>
 
@@ -76,8 +88,8 @@
           <span class="look">The pass bins are named in the title, not assumed.</span></li>
         <li><strong>Hard bin pareto</strong> — failing bins ranked by count, with a soft-bin toggle.
           <span class="look">Names come from <code>hbinDefs</code>, not bin numbers.</span></li>
-        <li><strong>Parametric pass rate · spec limits</strong> — pass rate per test against its limits.
-          <span class="look">Ranks which test is costing you most.</span></li>
+        <li><strong>Parametric pass rate</strong> — pass rate per test, judged by its limits, by the tester's own flag, or as a functional test.
+          <span class="look">Ranks which test is costing you most, and says how many dies the limits and the tester judged differently.</span></li>
         <li><strong>Ring yield</strong> &amp; <strong>Quadrant yield</strong> — yield per region on a wafer-shaped diagram, labelled in place.
           <span class="look">Look for the edge ring falling away from the core.</span></li>
       </ul>
@@ -87,7 +99,7 @@
       <p>The shape of each measurement, not just its map colour.</p>
       <ul>
         <li><strong>Value histogram</strong> — one test's distribution with its limits marked.
-          <span class="look">Vth is bimodal: that is the two splits.</span></li>
+          <span class="look">Vth is broad because it pools the two splits; Group by → Process Split draws them as two distributions about 50&nbsp;mV apart.</span></li>
         <li><strong>Test value distribution</strong> — box plots per test or per wafer.
           <span class="look">Compare spread across the lot.</span></li>
         <li><strong>Process capability</strong> — Cp/Cpk against the spec limits.
@@ -101,7 +113,7 @@
       <p>Which measurements move together — the question a wafer map cannot answer.</p>
       <ul>
         <li><strong>Test correlation matrix</strong> — pairwise r across every test.
-          <span class="look">Idsat and Vth are coupled by the same process gradient.</span></li>
+          <span class="look">Idsat and Vth are coupled by the same process gradient: a moderate negative r.</span></li>
         <li><strong>Test scatter</strong> — any two tests against each other, with limits.
           <span class="look">Pick the pair the matrix flagged.</span></li>
       </ul>

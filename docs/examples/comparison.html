@@ -273,7 +273,7 @@
   <div class="panel">
     <div class="panel-header">
       <span class="lib-name">@wafertools/wafermap</span>
-      <span class="lib-size">~154 KB gzip (core), +54 KB Insights, +48 KB guide — both lazy</span>
+      <span class="lib-size">~169 KB gzip (core); Insights and the guide load on first use</span>
     </div>
     <div class="render-area" id="wmap-area">
       <div id="wmap-container" style="width:100%;height:100%;"></div>
@@ -295,7 +295,7 @@
     <div class="panel-footer" id="wmap-footer">
       <code>buildWaferMap({ results })</code> then <code>renderWaferMap(el, result)</code>
       <span class="note">Showing to-scale wafer boundary, bottom notch, XY axis indicator and ring overlays — plus a graduated colorbar with LSL/USL spec markers (out-of-spec dies flagged with ▽/△ markers) in Test&nbsp;values mode. None of these exist in the Plotly panel.</span>
-      <span class="note">The <strong>built-in toolbar</strong> (top-right of the canvas) lets you configure plot mode, colour scheme, overlays, legend, rotate/flip and more live — no code changes.</span>
+      <span class="note">The <strong>built-in toolbar</strong> (above the map) lets you configure plot mode, colour scheme, overlays, legend, rotate/flip and more live — no code changes.</span>
     </div>
   </div>
 
@@ -427,7 +427,7 @@
       <tr class="group"><td colspan="3">Interactivity</td></tr>
       <tr>
         <td>In-map toolbar (end-user configurable)</td>
-        <td class="yes">✓ Native<span class="note">Always-visible toolbar (top-right). Does everything Plotly's modebar does — zoom, pan, box-select, save image — <strong>plus</strong> live wafer config: plot mode &amp; test, colour scheme, overlays (rings, quadrants, axes, reticle, spec pass/fail), legend position, rotate/flip — all with no code</span></td>
+        <td class="yes">✓ Native<span class="note">Always-visible toolbar above the map. Does everything Plotly's modebar does — zoom, pan, box-select, save image — <strong>plus</strong> live wafer config: plot mode &amp; test, colour scheme, overlays (rings, quadrants, axes, reticle, spec pass/fail), legend position, rotate/flip — all with no code</span></td>
         <td class="part">△ Modebar only<span class="note">Zoom, pan, select, export. Colours, overlays and layout require code changes and a re-render</span></td>
       </tr>
       <tr>
@@ -481,7 +481,7 @@
       <tr class="group"><td colspan="3">Integration</td></tr>
       <tr>
         <td>Library size (gzip)</td>
-        <td class="yes">~154 KB (core)<span class="note">+~54 KB lazy-loaded on first Insights open, +~48 KB if the in-app guide is opened — neither is downloaded otherwise</span></td>
+        <td class="yes">~169 KB (core)<span class="note">Insights, the in-app guide and the reports are separate chunks, fetched on first use and never otherwise — <a href="https://wafertools.github.io/wafermap/performance/#download-size">measured sizes</a></span></td>
         <td class="part">~1.3 MB (full bundle)<span class="note">~350 KB with plotly-basic (no WebGL, so no scattergl)</span></td>
       </tr>
       <tr>

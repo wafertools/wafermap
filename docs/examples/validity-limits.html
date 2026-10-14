@@ -101,10 +101,11 @@
 
     let ctrl, active = 1050, mode = 'validity';
 
-    function fmt(v) {
+    function fmt(v, unit = '') {
       if (v == null) return '—';
       const a = Math.abs(v);
-      return a >= 1 ? `${v.toPrecision(3)}` : a >= 1e-3 ? `${(v * 1e3).toPrecision(3)} m` : a >= 1e-6 ? `${(v * 1e6).toPrecision(3)} µ` : v.toExponential(2);
+      return a >= 1 ? `${v.toPrecision(3)} ${unit}` : a >= 1e-3 ? `${(v * 1e3).toPrecision(3)} m${unit}`
+        : a >= 1e-6 ? `${(v * 1e6).toPrecision(3)} µ${unit}` : `${v.toExponential(2)} ${unit}`;
     }
 
     function render() {
@@ -124,10 +125,11 @@
         : `<span class="empty">Nothing excluded (<code>result.valueFilter</code> is undefined)</span>`;
 
       const vals = result.dies.map(d => d.testValues?.[active]).filter(v => v != null);
+      const unit = testDefs.find(d => d.testNumber === active)?.unit ?? '';
       const mean = vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
       const sd = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / Math.max(vals.length - 1, 1));
       document.getElementById('stat-box').innerHTML =
-        `N: <strong>${vals.length}</strong><br>Max: <strong>${fmt(Math.max(...vals))}</strong><br>Mean: <strong>${fmt(mean)}</strong><br>σ: <strong>${fmt(sd)}</strong>`;
+        `N: <strong>${vals.length}</strong><br>Max: <strong>${fmt(Math.max(...vals), unit)}</strong><br>Mean: <strong>${fmt(mean, unit)}</strong><br>σ: <strong>${fmt(sd, unit)}</strong>`;
       document.getElementById('yield-box').innerHTML =
         `Yield (pass bin 1): <strong>${result.yield.yieldPercent.toFixed(1)}%</strong><br>` +
         `<span style="color:var(--muted)">Bins are the tester's own: this figure is the same in every mode.</span>`;

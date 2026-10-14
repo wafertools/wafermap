@@ -5,6 +5,7 @@ import type { WaferMetadata } from '../core/metadata.js';
 import { binPassSets, binPassSetsByWafer, mergeBinDefs, resolveBinColors, resolveBinColorsByWafer, type BinColors, type BinPassGroup } from '../renderer/binColors.js';
 import { commonPassBins, itemPassBins, passBinsLabel } from '../core/passBins.js';
 import { itemRingCount } from '../core/ringCount.js';
+import { stackBinsAreData } from '../core/aggregates.js';
 import { isParametricTest, isBuiltMap, type BinDef, type TestDef, type YieldSummary, type WaferMapResult } from '../renderer/buildWaferMap.js';
 import { buildRingRegions, buildQuadrantRegions, buildRegionYieldData } from './regions.js';
 import type { StatsFinding, StatsSummary, LotStatsSummary, AnalyzeWaferMapOptions } from './types.js';
@@ -366,7 +367,13 @@ export function renderSummaryReportHtml(
   // non-spatial and already includes coordinate-less dies with bin data, while
   // dataCoverage.totalDies is scoped to positioned dies only — which is the right
   // denominator for "Filled dies" and the wrong one for everything else.
-  const summaryMetrics = [
+  // A value stack's dies carry one wafer's bins, not the stack's (stackBinsAreData): it has no yield,
+  // pass/fail counts, bin breakdown or region yield, only its dies and their values.
+  const binsAreData = stackBinsAreData(statsSummary?.stats.isLotStack, statsSummary?.stats.aggregationMethod);
+  const summaryMetrics = !binsAreData ? [
+    { label: 'Dies', value: String(dies.length) },
+    { label: 'Filled dies', value: String(dataCoverage.filledDies), hint: `${pct(dataCoverage.filledDies, dataCoverage.totalDies)} fill` },
+  ] : [
     { label: 'Total dies', value: String(yieldSummary.totalDies) },
     { label: 'Filled dies', value: String(dataCoverage.filledDies), hint: `${pct(dataCoverage.filledDies, dataCoverage.totalDies)} fill` },
     { label: 'Pass dies', value: String(yieldSummary.passDies) },
@@ -384,9 +391,9 @@ export function renderSummaryReportHtml(
       renderMetricGrid(summaryMetrics),
     ].filter(Boolean).join('\n')),
     statsSummary ? synthesisSection(statsSummary, passBins, '', testSectionMap(testDefs, '', !!testsHtml, !!functionalHtml)) : '',
-    binSection(dies, hbinDefs, sbinDefs, { hard: statsSummary?.stats.hardBinCounts, soft: statsSummary?.stats.softBinCounts }, passBins, binColorsFor),
-    regionYieldSection('Ring Yield', ringRegions, dies, passBins),
-    regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins),
+    binsAreData ? binSection(dies, hbinDefs, sbinDefs, { hard: statsSummary?.stats.hardBinCounts, soft: statsSummary?.stats.softBinCounts }, passBins, binColorsFor) : '',
+    binsAreData ? regionYieldSection('Ring Yield', ringRegions, dies, passBins) : '',
+    binsAreData ? regionYieldSection('Quadrant Yield', quadrantRegions, dies, passBins) : '',
     testsHtml,
     functionalHtml,
     capabilitySection([{ dies }], testDefs),

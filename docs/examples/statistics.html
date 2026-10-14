@@ -36,7 +36,7 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§10–13, §20 — Statistics, findings and lot views</span>
+    <span class="demo-title">Statistics, findings and lot views</span>
     <!-- Rewritten on every scope change to name the exact calls and options in
          force, so what is on screen is never ambiguous. -->
     <span class="demo-desc" id="banner"></span>
@@ -57,10 +57,12 @@
     gradient that drives ring and sector findings. Click any finding to highlight the
     affected dies.
     <br>
-    <strong>Lot gallery</strong> — <code>analyzeWaferLot</code> surfaces patterns that
-    repeat across wafers and flags yield outliers. W01, W03 and W05 share the same
-    edge-ring failure (detected as a repeated lot pattern); W06 has stacked failures
-    and is flagged an outlier.
+    <strong>Lot gallery</strong> — <code>analyzeWaferLot</code> reports a pattern that
+    repeats across wafers once, saying how many wafers it is on, rather than once per
+    wafer. Every wafer here loses yield at its edge, worst on W01, W03, W05 and W06, which
+    carry an extra edge failure; W04 has a cluster and an edge arc of its own, and W06 adds
+    a cluster and a centre defect, which puts it at the bottom of the
+    <strong>Wafer yield</strong> list.
     <br>
     <strong>Lot stack</strong> — <code>buildWaferMap({ lotStack })</code> aggregates the
     lot into one map, then <code>analyzeWaferMap</code> runs on the aggregate. Use this
@@ -155,15 +157,16 @@
     function lot() {
       if (lotCache) return lotCache;
 
-      // W01/W03/W05 share the same edge-ring failure → repeated lot pattern.
-      // W06 stacks edge + cluster + centre failures → low-yield outlier.
+      // Every wafer has the natural edge roll-off; W01/W03/W05/W06 add an edge
+      // failure on top, so the edge finding is reported once for the lot.
+      // W06 also stacks a cluster and a centre defect → the lowest yield.
       const waferSpecs = [
         { seed:  7, edgeFail: true                          },  // W01 — repeated edge pattern
         { seed: 11                                          },  // W02 — normal
         { seed: 17, edgeFail: true                          },  // W03 — repeated edge pattern
         { seed: 23, cluster: true, edgeArc: true            },  // W04 — cluster + edge arc
         { seed: 31, edgeFail: true                          },  // W05 — repeated edge pattern
-        { seed: 37, edgeFail: true, cluster: true, center: true }, // W06 — low-yield outlier
+        { seed: 37, edgeFail: true, cluster: true, center: true }, // W06 — lowest yield
       ];
 
       const results = waferSpecs.map((spec, i) =>
@@ -266,7 +269,7 @@
 
         // statsSummary is what turns on the Summary panel and its findings.
         // `defaultOpen` decides whether it is already showing on load or waits
-        // for the toolbar's notebook button; `placement` (default 'right')
+        // for the Summary button; `placement` (default 'right')
         // decides which side it docks to.
         renderWaferMap(host, result, {
           viewOptions:  { plotMode: 'hardBin' },

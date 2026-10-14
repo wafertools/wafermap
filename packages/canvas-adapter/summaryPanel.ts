@@ -18,6 +18,7 @@ import { excludedCounts, testValue } from '../core/dieTable.js';
 import { limitSetName } from '../renderer/valueFilter.js';
 import { waferDisplayLabel } from '../core/waferLabel.js';
 import { itemRingCount } from '../core/ringCount.js';
+import { stackBinsAreData } from '../core/aggregates.js';
 import { commonPassBins, itemPassBins, passBinsLabel, requirePassBins } from '../core/passBins.js';
 import { isParametricTest, type BinDef, type TestDef, type YieldSummary, type MetadataFieldDef } from '../renderer/buildWaferMap.js';
 import { testLabel, markedTestLabel, unmarkedLabel, derivedFields, derivedKeyText, derivedCsvCell, isDerivedTest, DERIVED_CSV_HEADER } from '../renderer/testLabel.js';
@@ -3198,18 +3199,22 @@ export function* renderWaferSummaryContentSteps(
     yield;
   }
 
-  append(buildBinBreakdownSection({
-    dies, hbinDefs, sbinDefs, binColors,
-    hardCounts: statsSummary?.stats.hardBinCounts,
-    softCounts: statsSummary?.stats.softBinCounts,
-    plotMode, passBins, panel,
-  }));
-  yield;
+  // A value stack's dies carry one wafer's bins, not the stack's (stackBinsAreData): a bin breakdown
+  // or a region yield counted from them would describe that wafer under the stack's name.
+  if (stackBinsAreData(lotStackStats !== undefined, lotStackStats?.aggregationMethod)) {
+    append(buildBinBreakdownSection({
+      dies, hbinDefs, sbinDefs, binColors,
+      hardCounts: statsSummary?.stats.hardBinCounts,
+      softCounts: statsSummary?.stats.softBinCounts,
+      plotMode, passBins, panel,
+    }));
+    yield;
 
-  append(buildRegionYieldPanelSection({
-    diesByWafer: [dies], allWafers: [wafer], ringCount, passBins, panel,
-  }));
-  yield;
+    append(buildRegionYieldPanelSection({
+      diesByWafer: [dies], allWafers: [wafer], ringCount, passBins, panel,
+    }));
+    yield;
+  }
 
   const csvIdentity: CsvExportContext | undefined = wafer.metadata ? { waferMetadata: wafer.metadata } : undefined;
   append(yield* buildTestSectionSteps(dies, testDefs, fallbackFormat, statsSummary?.stats, onSaveText, csvIdentity, [{ dies }], panel, 'compact'));

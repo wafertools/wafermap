@@ -39,9 +39,11 @@ function renderMarkdown(manifest) {
   const out = [];
   out.push('# Examples');
   out.push('');
-  out.push('**For:** developers. Each example demonstrates live what the matching [Developer Guide](../guide.md) section explains — the guide is the narrative, these are the working code.');
-  out.push('');
   out.push('Live interactive demos. Each opens a standalone page rendered in the browser.');
+  out.push('');
+  out.push('**Deciding whether wafermap fits?** Start with the first two sections: what an engineer gets from a map built with it, most of which needs no code beyond the render call. **Building with it?** The *Building it* sections each demonstrate live what the matching [Developer Guide](../guide.md) section explains: the guide is the narrative, these are the working code.');
+  out.push('');
+  out.push(`**Just want to open your own files?** [tsmap](https://wafertools.github.io/tsmap/) is a finished application built on this library, and it [runs in your browser](https://wafertools.github.io/tsmap/app/) with nothing uploaded.`);
   out.push('');
   // Plain markdown, deliberately: the `admonition` extension is not enabled in
   // zensical.toml, so `!!! tip` blocks render as literal code blocks.

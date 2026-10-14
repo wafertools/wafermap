@@ -232,7 +232,7 @@ Plus:
                                             // { message, detail?, actionLabel?, onAction? }; while set it replaces the built-in
                                             // offer of the skipped test-value analysis. setFindingsNotice likewise.
   insights?:               InsightsOptions  // adds a Map | Insights switch that swaps the map for this wafer's own
-                                            // chart suite (Overview, Distributions, Correlation) — default disabled. See §5.9.
+                                            // chart suite (Overview, Distributions, Correlation) — on with a toolbar; { enabled: false } removes it. See §5.9.
   attributes?:             Record<string, WaferAttributeDef>  // your names for wafer attributes: label, facet?, date?: what Group by offers and the strip, Wafers table and reports call each
   warnings?:               WarningsOptions  // built-in surfacing of the library's own advisories — ON by default.
                                             // { display?: boolean; onWarning?: (w: WaferWarning[]) => void }

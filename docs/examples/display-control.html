@@ -77,7 +77,7 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§8, §16 — Controlling the display</span>
+    <span class="demo-title">Controlling the display</span>
     <span class="demo-desc">
       setOptions · onViewOptionsChange · registerBinColorScheme · registerValueColorScheme · toolbar ↔ external controls stay in sync
     </span>
@@ -182,8 +182,9 @@
             <code>registerValueColorScheme('teal-rose', { forValue })</code>
             <br><br>
             A bin palette is two lists: <code>pass</code> colours for passing bins and <code>fail</code>
-            colours for the rest, each handed out most-populous bin first — the library decides which
-            bins pass (from <code>passBins</code>), never the bin number.
+            colours for the rest. The bin number picks the colour within its list (bin 1 the first pass
+            colour, bin 2 the first fail colour, and on from there), so a bin keeps its colour in every
+            lot; whether a bin passes comes from <code>passBins</code>, never from its number.
             <code>forValue(t)</code> interpolates a colour for value and stacked modes, t ∈ [0, 1].
             Schemes are global, persist for the life of the page, and appear in the matching
             toolbar palette menu automatically.

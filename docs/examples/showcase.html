@@ -20,13 +20,17 @@
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
     <span class="demo-title">Showcase</span>
-    <span class="demo-desc">yield patterns · spatial anomalies · parametric distributions · stacked lot views</span>
+    <span class="demo-desc">four lots · what an engineer gets from wafermap with no extra code</span>
   </header>
 
   <div class="demo-intro">
-    Visualise semiconductor test data instantly — yield patterns, spatial anomalies, parametric
-    distributions, and stacked lot views. Load your own CSV or JSON below, or explore the demo
-    scenarios now.
+    Four synthetic lots, each with a different problem in it. Pick one, then follow its
+    <strong>Try this</strong> steps: they walk through what an engineer does with a lot, from
+    the headline to the dies behind it. Everything on the page is drawn by
+    <code>renderWaferGallery</code> from die results and an <code>analyzeWaferLot</code> summary,
+    with no other charting code. To open your own STDF, ATDF, CSV or Parquet files without
+    writing any code, use <a href="https://wafertools.github.io/tsmap/app/">tsmap in your browser</a>:
+    it is built on this library, and your files stay on your machine.
   </div>
 
   <!-- ── Demo scenario selector ──────────────────────────────────────────── -->
@@ -35,11 +39,18 @@
     <button class="scenario-pill" data-demo="parametric">Parametric map</button>
     <button class="scenario-pill" data-demo="cluster">Cluster defects</button>
     <button class="scenario-pill" data-demo="high-yield">High yield lot</button>
-    <button class="scenario-pill scenario-pill-own" data-demo="own" id="pill-own">Load your own &#8595;</button>
+    <button class="scenario-pill scenario-pill-own" data-demo="own" id="pill-own">Load your own CSV &#8595;</button>
   </div>
 
   <!-- ── Scenario description banner ────────────────────────────────────── -->
-  <div class="scenario-banner" id="scenario-banner"></div>
+  <div class="scenario-banner" id="scenario-banner">
+    <p class="scenario-story" id="scenario-story"></p>
+    <details class="try-steps" id="try-steps" open>
+      <summary>Try this</summary>
+      <ol id="try-list"></ol>
+    </details>
+  </div>
+  <div class="spotlight" id="spotlight" aria-hidden="true"></div>
 
   <div class="phase-host">
 
@@ -57,6 +68,11 @@
         <button class="btn-primary" id="btn-browse">Browse file&hellip;</button>
       </div>
       <div class="upload-limit">Maximum file size: 20 MB &nbsp;&middot;&nbsp; Rows beyond 500,000 are skipped</div>
+      <div class="upload-tsmap">
+        Have STDF, ATDF or Parquet, or a larger file? Open it in
+        <a href="https://wafertools.github.io/tsmap/app/">tsmap in your browser</a>.
+        Files are read on your machine and never uploaded.
+      </div>
       <div class="upload-error" id="upload-error"></div>
     </div>
     <input type="file" id="file-input" accept=".csv,.json">
@@ -101,7 +117,7 @@
     <div class="maps-bar">
       <button class="btn-secondary" id="btn-back-mapping" style="display:none">&#8592; Back</button>
       <span class="maps-data-strip" id="maps-data-strip"></span>
-      <button class="help-btn" id="btn-help">? Toolbar guide</button>
+      <button class="help-btn" id="btn-help">? User guide</button>
     </div>
     <div class="lot-info-bar" id="lot-info-bar" style="display:none"></div>
     <div class="truncation-banner" id="truncation-banner" style="display:none"></div>
@@ -128,54 +144,6 @@
     </div>
   </div>
 
-  <!-- ── Help popout ────────────────────────────────────────────────────── -->
-  <div class="help-overlay" id="help-overlay"></div>
-  <div class="help-popout" id="help-popout">
-    <div class="help-heading">
-      Toolbar guide
-      <button class="help-close" id="help-close">&times;</button>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">Plot mode</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/mode.svg" width="16" height="16"></div><div class="help-row-text"><strong>Plot mode</strong>Switch between hard bin, soft bin, test value, and stacked lot views. Only modes valid for your data are shown.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/aggr.svg" width="16" height="16"></div><div class="help-row-text"><strong>Aggregation</strong>In stacked mode, choose how values are combined across wafers: mean, median, min, max, std dev, count, or bin occurrence.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/specRange.svg" width="16" height="16"></div><div class="help-row-text"><strong>Colorbar range</strong>In test value mode, toggle whether the colorbar spans the data range or the spec limits.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/logScale.svg" width="16" height="16"></div><div class="help-row-text"><strong>Log scale</strong>Apply a logarithmic colour scale — useful for leakage currents and other exponentially distributed parameters.</div></div>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">View controls</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/zoomMode.svg" width="16" height="16"></div><div class="help-row-text"><strong>Zoom mode</strong>Drag to draw a zoom rectangle. Scroll wheel zooms at the cursor. Double-click resets.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/pan.svg" width="16" height="16"></div><div class="help-row-text"><strong>Pan mode</strong>Drag to move the view.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/reset.svg" width="16" height="16"></div><div class="help-row-text"><strong>Reset zoom</strong>Return to the default full-wafer view. Also triggered by double-clicking the canvas.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/orient.svg" width="16" height="16"></div><div class="help-row-text"><strong>Orientation</strong>Dropdown menu: rotate 90° clockwise, flip horizontal, or flip vertical. All coordinates shown are always original die grid positions.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/columns.svg" width="16" height="16"></div><div class="help-row-text"><strong>Columns</strong>Fix the gallery to 1–5 columns, or choose Auto to let the gallery size cards based on die pitch so all available space is used.</div></div>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">Overlays</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/overlays.svg" width="16" height="16"></div><div class="help-row-text"><strong>Overlays</strong>Dropdown menu: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticle data is present), XY axis indicator. Multiple overlays can be active at once.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/legend.svg" width="16" height="16"></div><div class="help-row-text"><strong>Legend style</strong>Dropdown menu: reposition the bin colour legend (default, compact, left, top, bottom, floating).</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/palette.svg" width="16" height="16"></div><div class="help-row-text"><strong>Colour scheme</strong>Switch between colour palettes for test value and stacked modes.</div></div>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">Analysis</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/findings.svg" width="16" height="16"></div><div class="help-row-text"><strong>Summary panel</strong>Open yield stats, bin breakdown, and spatial findings (ring, quadrant, cluster anomalies) for this wafer. In the gallery bar, opens the lot-level findings panel.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/boxSelect.svg" width="16" height="16"></div><div class="help-row-text"><strong>Select dies</strong>Drag to select a region of dies. Ctrl+click to add individual dies. Selected dies are shown in the tooltip.</div></div>
-    </div>
-
-    <div class="help-section">
-      <div class="help-section-title">Export</div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/download.svg" width="16" height="16"></div><div class="help-row-text"><strong>Download PNG</strong>Save the current wafer view as a PNG image.</div></div>
-      <div class="help-row"><div class="help-icon"><img src="../images/icons/downloadAll.svg" width="16" height="16"></div><div class="help-row-text"><strong>Download all</strong>Save a composite PNG of the entire gallery.</div></div>
-    </div>
-  </div>
-
-  <!-- ── Feature tour tooltips ─────────────────────────────────────────── -->
-  <div id="tour-overlay" class="tour-overlay" style="display:none"></div>
-  <div id="tour-container" style="display:none"></div>
 
   </div><!-- /.phase-host -->
 
@@ -196,39 +164,141 @@
       wafer: 'wafer', lot: 'lot',
       testname: null, testvalue: null,
       tests: [
-        { col: 'leakage',   name: 'Leakage (µA)',  testNumber: 1001 },
-        { col: 'voltage',   name: 'Voltage (V)',    testNumber: 1002 },
-        { col: 'frequency', name: 'Frequency (MHz)',testNumber: 1003 },
+        { col: 'iddq', name: 'Iddq', testNumber: 1001 },
+        { col: 'vref', name: 'Vref', testNumber: 1002 },
+        { col: 'fmax', name: 'Fmax', testNumber: 1003 },
       ],
       meta: [], splitBy: [],
+    };
+
+    // Each scenario is a lot with one problem in it, and a short path through
+    // what an engineer does about it. A step's `target` finds the control it
+    // talks about, for its "Show me" button; a step without one has no button.
+    const T = {
+      standOut:    () => byText('*', /^What stands out$/i),
+      findings:    () => byText('*', /^Findings \(\d+\)/i),
+      selectEvery: () => visible('button[aria-label^="Select the same dies on every wafer"]'),
+      plotMode:    () => visible('[data-wmap-toolbar="gallery"] button[aria-label="Plot mode"]'),
+      overlays:    () => visible('[data-wmap-toolbar="gallery"] button[aria-label="Overlays"]'),
+      insights:    () => visible('[data-wmap-view="insights"]'),
+      report:      () => byText('button', /^Summary report$/),
+      dataTables:  () => byText('button', /^Data tables$/),
+      lotLegend:   () => visible('[data-wmap-tip^="Right-click: charts and tables"]'),
+      expand:      () => visible('[data-wmap-expand-btn="1"]'),
     };
 
     const DEMO_SCENARIOS = {
       'edge-ring': {
         file: 'data/edge-ring.csv',
-        passBins: [1],
         plotMode: 'hardBin',
-        description: 'Yield loss concentrated at the wafer edge — a classic edge-ring pattern. The summary panel on the right shows per-wafer yield and spatial findings. Click any wafer\'s expand button to zoom in on the edge dies.',
+        story: '<strong>Edge ring.</strong> Eight wafers that lose dies over their outer rows, where dies fail continuity or draw too much Iddq. The questions are how much it costs and whether it is on every wafer.',
+        steps: [
+          { text: 'Read <strong>What stands out</strong> in the Summary panel: the edge ring, the wafers it is on and the bins that make up its loss. Click its row to show those dies on every wafer.', target: T.standOut },
+          { text: 'Turn on <strong>Select on every wafer</strong>, then drag a box across the edge of any wafer. The same die positions are selected on all eight.', target: T.selectEvery },
+          { text: '<strong>Right-click</strong> a selected die and choose <strong>Value histogram</strong>: Iddq of just those dies across the lot, with the population stated. <strong>Dies</strong> in the same menu gives the table, with Export CSV.' },
+          { text: 'Set <strong>Plot mode → Stacked Hard Bins</strong> to see the ring as one lot map, each position coloured by how many wafers failed there.', target: T.plotMode },
+          { text: 'Open <strong>Summary report</strong> for a printable report that starts with the same headline, then the bins, regions, tests and findings.', target: T.report },
+        ],
       },
       'parametric': {
         file: 'data/parametric.csv',
-        passBins: [1],
         plotMode: 'value',
-        description: 'Leakage current mapped spatially across a 6-wafer lot — showing a radial gradient and a per-wafer hotspot. Switch to <em>Test value</em> mode in the toolbar if not already active, then try log scale to reveal the full dynamic range.',
+        story: '<strong>Parametric.</strong> Six wafers that lose yield to a measurement rather than a defect: Iddq rises toward the edge and in one hotspot per wafer, and Vref drifts from left to right.',
+        steps: [
+          { text: 'The maps show Iddq. Dies above its limit carry a △ mark over their colour, so the distribution stays readable. <strong>Overlays → Limit pass/fail</strong> turns it into a pass/fail map instead.', target: T.overlays },
+          { text: 'Switch <strong>Plot mode</strong> to Vref: a left-to-right gradient that reaches its high limit at the right-hand edge of every wafer.', target: T.plotMode },
+          { text: 'Open <strong>Insights → Distributions</strong> and click a test in <strong>Process capability</strong>: the box plot, histogram and wafer-to-wafer trend all move to that test.', target: T.insights },
+          { text: 'In <strong>Correlation</strong>, click a cell of the matrix to plot that pair, then drag a rectangle over the outlying dies in the scatter to chart and tabulate just those dies.' },
+          { text: 'Back on the maps, set <strong>Plot mode → Hard Bin</strong> and click a bin in the legend above the cards to show only that bin on every wafer. Ctrl/Cmd-click adds another; right-click a bin for charts of its dies.', target: T.lotLegend },
+        ],
       },
       'cluster': {
         file: 'data/cluster.csv',
-        passBins: [1],
         plotMode: 'hardBin',
-        description: 'Random defect clusters at different positions on each wafer. The summary panel shows lot-level cluster anomaly scores — click a finding to highlight the affected dies on the map.',
+        story: '<strong>Particle clusters.</strong> Seven wafers, each with two or three tight groups of failing dies near the centre, at a different place on each wafer: a recurring centre pattern, not one bad spot.',
+        steps: [
+          { text: 'In the Summary panel\'s <strong>Findings</strong>, click the centre-cluster pattern. The rest of each wafer fades and the clustered dies are outlined, and <strong>Show supporting findings</strong> lists the regional findings it explains.', target: T.findings },
+          { text: '<strong>Right-click</strong> an outlined die. The menu opens on the finding\'s dies on every wafer; <strong>Only this wafer</strong> narrows it to one.' },
+          { text: 'Choose <strong>Dies</strong> from that menu for a table of exactly those dies, sortable by any column, with Export CSV and Copy.' },
+          { text: 'Expand any wafer to open it in its own window with the full single-map toolbar, zoom and PNG export.', target: T.expand },
+        ],
       },
       'high-yield': {
         file: 'data/high-yield.csv',
-        passBins: [1],
         plotMode: 'hardBin',
-        description: 'A mature, high-yield process across 10 wafers. Explore the per-wafer yield chart and bin breakdown in the summary panel, or switch to <em>Test value</em> mode to see how tight the parametric distributions are.',
+        story: '<strong>High yield.</strong> Ten wafers from a mature process with about 1% random fails. Nothing is wrong, and the useful answer is to say so quickly.',
+        steps: [
+          { text: '<strong>What stands out</strong> says that nothing does: no region, wafer or test costs as much as a yield point.', target: T.standOut },
+          { text: 'Open <strong>Insights</strong>. <strong>Yield by wafer</strong> shows the spread; click a bar to open that wafer\'s map, or right-click it to chart that wafer.', target: T.insights },
+          { text: 'On the <strong>Plot</strong> tab, press <strong>Add examples</strong> for one plot of each type. A plot is a recipe your application keeps, so it is drawn again on the next lot.' },
+          { text: 'The <strong>Data</strong> tab has the lot as tables (statistics, wafers, dies) with Export CSV. <strong>Data tables</strong> in the Summary panel opens the same tables without leaving the maps.', target: T.dataTables },
+        ],
       },
     };
+
+    // ── Finding the controls a step talks about ─────────────────────────────
+    function visible(selector) {
+      for (const el of document.querySelectorAll(selector)) {
+        if (el.getClientRects().length) return el;
+      }
+      return null;
+    }
+    function byText(selector, re) {
+      for (const el of document.querySelectorAll(`#gallery-container ${selector}`)) {
+        if (el.children.length > 2 || !el.getClientRects().length) continue;
+        if (re.test(el.textContent.trim())) return el;
+      }
+      return null;
+    }
+
+    // ── Try this steps ──────────────────────────────────────────────────────
+    function renderSteps(scenario) {
+      const list = document.getElementById('try-list');
+      list.innerHTML = '';
+      for (const step of scenario.steps) {
+        const li = document.createElement('li');
+        const text = document.createElement('span');
+        text.innerHTML = step.text;
+        li.appendChild(text);
+        if (step.target) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'show-me';
+          btn.textContent = 'Show me';
+          btn.addEventListener('click', () => {
+            const el = step.target();
+            if (!el) {
+              btn.textContent = 'Not on screen';
+              setTimeout(() => { btn.textContent = 'Show me'; }, 1500);
+              return;
+            }
+            spotlight(el);
+          });
+          li.appendChild(btn);
+        }
+        list.appendChild(li);
+      }
+    }
+
+    // A ring drawn round the control without blocking the page: the point of a
+    // step is to go and use the control, so nothing may sit on top of it.
+    let spotlightTimer = null;
+    function spotlight(el) {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const ring = document.getElementById('spotlight');
+      requestAnimationFrame(() => {
+        const r = el.getBoundingClientRect();
+        Object.assign(ring.style, {
+          left: `${r.left - 4}px`, top: `${r.top - 4}px`,
+          width: `${r.width + 8}px`, height: `${r.height + 8}px`,
+        });
+        ring.classList.remove('on');
+        void ring.offsetWidth;
+        ring.classList.add('on');
+        clearTimeout(spotlightTimer);
+        spotlightTimer = setTimeout(() => ring.classList.remove('on'), 2400);
+      });
+    }
 
     // ── Worker ─────────────────────────────────────────────────────────────
     const worker = createWafermapWorker(
@@ -425,17 +495,10 @@
         },
         ...(lotSummary ? { lotStatsSummary: lotSummary } : {}),
         ...(lotSummary ? { summaryPanel: { defaultOpen: activeDemoKey != null } } : {}),
-        // The index calls this page "all features in one page", and the Insights
-        // tab is the largest of them — box plots, histograms, correlation,
-        // capability, per-test pass rates over the whole lot. It was the one
-        // feature the page did not show.
-        insights: { enabled: true },
         showHelpButton: true,
       });
       setGalleryCtrl(ctrl);
-
-      // Show feature tour on first demo render
-      maybeShowTour();
+      galleryCtrl = ctrl;
     }
 
     async function renderGallery() {
@@ -471,9 +534,9 @@
       }
 
       // Update banner
-      const banner = document.getElementById('scenario-banner');
-      banner.innerHTML = scenario.description;
-      banner.style.display = '';
+      document.getElementById('scenario-story').innerHTML = scenario.story;
+      renderSteps(scenario);
+      document.getElementById('scenario-banner').style.display = 'block';
 
       // Load and render
       const resp = await fetch(scenario.file);
@@ -484,7 +547,7 @@
         .then(r => (r.ok ? r.json() : null))
         .catch(() => null);
       setDemoMapping({ ...DEMO_MAPPING });
-      document.getElementById('pass-bin-input').value = scenario.passBins.join(',');
+      document.getElementById('pass-bin-input').value = (activeDemoMeta?.passBins ?? [1]).join(',');
       loadDemoCsv(text, scenario.file.split('/').pop());
       await renderGallery();
     }
@@ -511,146 +574,9 @@
       });
     }
 
-    // ── Feature tour ───────────────────────────────────────────────────────
-    const TOUR_STORAGE_KEY = 'showcaseTourSeen';
-
-    // localStorage, not sessionStorage: a tour you have already dismissed
-    // reappearing in every new tab is the thing that makes it tedious. Wrapped
-    // because a browser with site data blocked throws on access, and a demo page
-    // must not die for want of a preference.
-    const tourSeen = {
-      get()  { try { return !!localStorage.getItem(TOUR_STORAGE_KEY); } catch { return false; } },
-      set()  { try { localStorage.setItem(TOUR_STORAGE_KEY, '1'); } catch { /* not fatal */ } },
-    };
-
-    function maybeShowTour() {
-      if (tourSeen.get()) return;
-      // Defer slightly so the gallery has fully painted
-      requestAnimationFrame(() => requestAnimationFrame(showTour));
-    }
-
-    function showTour() {
-      const overlay  = document.getElementById('tour-overlay');
-      const tourCont = document.getElementById('tour-container');
-
-      const targets = [
-        {
-          selector: '[data-wmap-toolbar="gallery"] button[aria-label="Plot mode"]',
-          label: 'Plot mode — switch between bin view, parametric heatmap, and stacked lot views',
-        },
-        {
-          selector: '[data-wmap-toolbar="gallery"] button[aria-label="Summary panel"]',
-          label: 'Summary panel — open yield stats, bin breakdown, and spatial anomaly findings',
-        },
-        {
-          selector: '[data-wmap-expand-btn="1"]',
-          label: 'Expand — open a full-screen view of this wafer with zoom, pan, and PNG export',
-        },
-        {
-          selector: '[data-wmap-toolbar="gallery"] button[aria-label="Columns"]',
-          label: 'Columns — adjust how many wafers appear side by side in the gallery',
-        },
-      ];
-
-      // Only keep the targets whose elements exist — verify once at start.
-      const activeTips = targets.filter(t => {
-        const el = document.querySelector(t.selector);
-        return el && el.getBoundingClientRect().width > 0;
-      });
-
-      if (!activeTips.length) return;
-
-      let step = 0;
-      let resizeRaf = null;
-
-      function onResize() {
-        if (resizeRaf) cancelAnimationFrame(resizeRaf);
-        resizeRaf = requestAnimationFrame(renderStep);
-      }
-      window.addEventListener('resize', onResize);
-
-      function onKeyDown(e) {
-        if (e.key === 'Escape') { e.preventDefault(); dismiss(); }
-      }
-      // Escape closes it, as it does every other dismissible overlay. Without
-      // this the only ways out were the Skip button and a click on the backdrop,
-      // neither of which is where a keyboard user looks first.
-      document.addEventListener('keydown', onKeyDown);
-
-      function dismiss() {
-        tourSeen.set();
-        overlay.style.display = 'none';
-        tourCont.style.display = 'none';
-        window.removeEventListener('resize', onResize);
-        document.removeEventListener('keydown', onKeyDown);
-      }
-
-      function renderStep() {
-        tourCont.innerHTML = '';
-        const { selector, label } = activeTips[step];
-        // Re-query live so position is always current after resize
-        const el = document.querySelector(selector);
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-
-        // Highlight ring around the target element
-        const ring = document.createElement('div');
-        ring.className = 'tour-ring';
-        ring.style.left   = `${rect.left - 4}px`;
-        ring.style.top    = `${rect.top - 4}px`;
-        ring.style.width  = `${rect.width + 8}px`;
-        ring.style.height = `${rect.height + 8}px`;
-        tourCont.appendChild(ring);
-
-        // Tip bubble — position below target, clamped to viewport
-        const tip = document.createElement('div');
-        tip.className = 'tour-tip';
-        const TIP_W = 220;
-        const MARGIN = 12;
-        const targetCX = rect.left + rect.width / 2;
-        const clampedLeft = Math.max(TIP_W / 2 + MARGIN, Math.min(targetCX, window.innerWidth - TIP_W / 2 - MARGIN));
-        // Place below if there's room, otherwise above
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const tipTop = spaceBelow > 80 ? rect.bottom + 10 : rect.top - 10;
-        tip.style.left = `${clampedLeft}px`;
-        tip.style.top  = `${tipTop}px`;
-        tip.dataset.above = spaceBelow <= 80 ? '1' : '';
-        // Arrow points at the actual target centre, not the (possibly clamped) tip centre
-        const arrowOffset = targetCX - clampedLeft;
-        const arrowPct = Math.max(10, Math.min(90, 50 + (arrowOffset / TIP_W) * 100));
-        tip.style.setProperty('--arrow-left', `${arrowPct}%`);
-        tip.textContent = label;
-        tourCont.appendChild(tip);
-
-        // Navigation buttons
-        const nav = document.createElement('div');
-        nav.className = 'tour-nav';
-        nav.style.left = `${clampedLeft}px`;
-        nav.style.top  = `${tipTop + 62}px`;
-
-        const skipBtn = document.createElement('button');
-        skipBtn.className = 'tour-skip';
-        skipBtn.textContent = 'Skip (Esc)';
-        skipBtn.addEventListener('click', dismiss);
-
-        const nextBtn = document.createElement('button');
-        nextBtn.className = 'tour-next';
-        const isLast = step === activeTips.length - 1;
-        nextBtn.textContent = isLast ? 'Got it ✓' : `Next (${step + 1}/${activeTips.length})`;
-        nextBtn.addEventListener('click', () => {
-          if (isLast) { dismiss(); } else { step++; renderStep(); }
-        });
-
-        nav.appendChild(skipBtn);
-        nav.appendChild(nextBtn);
-        tourCont.appendChild(nav);
-      }
-
-      overlay.style.display = 'block';
-      tourCont.style.display = 'block';
-      renderStep();
-      overlay.addEventListener('click', dismiss, { once: true });
-    }
+    // The page's help button opens the gallery's own user guide.
+    let galleryCtrl = null;
+    document.getElementById('btn-help').addEventListener('click', () => galleryCtrl?.openUserGuide());
 
     // ── Init ───────────────────────────────────────────────────────────────
     initShowcase(renderGallery);

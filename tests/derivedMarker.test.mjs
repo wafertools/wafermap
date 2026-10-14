@@ -154,6 +154,24 @@ test('a derived functional test is marked in its finding and its pass-rate row',
   assert.equal(row.expression, 'testPass[2000]');
 });
 
+test('a derived parametric test with limits is marked in its limit-yield row', () => {
+  // What stands out names a test that fails its limits from this row, so an
+  // unmarked label is a derived value presented there as measured.
+  const r = rng(5);
+  const results = [];
+  for (let x = -6; x <= 6; x++) for (let y = -6; y <= 6; y++) {
+    if (Math.hypot(x, y) > 6) continue;
+    results.push({ x, y, hbin: 1, testValues: { 1010: 1 + 4 * r() } });
+  }
+  const result = buildWaferMap({
+    results, testDefs: TEST_DEFS,
+    derivedTests: [{ testNumber: 900003, name: 'Leak x2', unit: 'A', expression: 't[1010] * 2', limitHigh: 6 }],
+    dieConfig: { width: 10, height: 10 }, waferConfig: { diameter: 140 },
+  });
+  const row = analyzeWaferMap(result).stats.testSpecYield.find(t => t.testNumber === 900003);
+  assert.equal(row.label, `${DERIVED_MARK} Leak x2`);
+});
+
 test('pooling functional yield across wafers keeps the flag', () => {
   // The pooler rebuilds each row; a rebuilt row that forgets the flag is how a
   // derived verdict reaches the lot table looking measured.

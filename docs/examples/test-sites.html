@@ -17,7 +17,7 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">§15 — Multi-site parallel testing</span>
+    <span class="demo-title">Multi-site parallel testing</span>
     <span class="demo-desc">
       DieResult.siteNum · DieResult.partId · test-site analysis in the stats engine
     </span>
@@ -95,7 +95,7 @@
     import { buildWaferMap }   from 'wafermap';
     import { renderWaferMap }  from 'wafermap/render';
     import { analyzeWaferMap } from 'wafermap/stats';
-    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS } from './data.js';
+    import { makeResults, WAFER_CONFIG, DIE_CONFIG, HBIN_DEFS, SBIN_DEFS, TEST_DEFS } from './data.js';
 
     const SITE_COUNT  = 4;   // 2×2 probe card
     const SITE_LAYOUT = '2 × 2';
@@ -116,6 +116,8 @@
         waferConfig: WAFER_CONFIG,
         dieConfig:   DIE_CONFIG,
         hbinDefs:    HBIN_DEFS,
+        sbinDefs:    SBIN_DEFS,
+        testDefs:    TEST_DEFS,
         passBins:    [1],
       });
 

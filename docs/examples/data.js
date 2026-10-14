@@ -193,17 +193,10 @@ export function makeResults({
       //   high toward the NE (→ USL fails), low toward the SW (→ LSL fails). The
       //   tilt is a single across-wafer gradient, so out-of-spec dies form soft,
       //   irregular corner patches rather than a blob or a hard quadrant block.
-      const vth = 0.490 + t * 0.02 + 0.095 * tilt + (n3 - 0.5) * 0.028 + vthBias;
+      let vth = 0.490 + t * 0.02 + 0.095 * tilt + (n3 - 0.5) * 0.028 + vthBias;
 
       //   Ioff: off-state leakage grows exponentially toward edge
-      const ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
-
-      // Continuity: a functional (pass/fail-only) probe-contact test, no measured
-      // value. Physically motivated: probe-pin contact quality degrades toward the
-      // wafer edge, so pass rate drops there (~97.5% interior, ~80% outer ring).
-      const continuityRoll = rng(i, j, seed + 900);
-      const continuityPassProb = t > 0.82 ? 0.80 : 0.975;
-      const continuityPass = continuityRoll < continuityPassProb;
+      let ioff = 8e-12 * Math.exp(t * 2.1) * (1 + (n1 - 0.5) * 0.4);
 
       // Compute siteNum and partId when requested.
       let siteNum, partId;
@@ -242,11 +235,26 @@ export function makeResults({
       // them the feature has nothing to show.
       const vthGuardLow  = TEST_DEFS_VTH_LIMITS.low  + VTH_GUARD_BAND;
       const vthGuardHigh = TEST_DEFS_VTH_LIMITS.high - VTH_GUARD_BAND;
-      const vthTesterPass = vth >= vthGuardLow && vth <= vthGuardHigh;
+      let vthTesterPass = vth >= vthGuardLow && vth <= vthGuardHigh;
       // Idsat's tester verdict agrees with its limit exactly — one test that
       // diverges and one that does not, so the note reads as a real signal about
       // Vth rather than a blanket property of the dataset.
       const idsatTesterPass = idsat >= IDSAT_LSL;
+
+      // The bin and the tests must tell the same story, as they do on a real
+      // tester: the bin is the test program's verdict on the die's tests.
+      //   Contact Open — Continuity (a functional, pass/fail-only probe-contact
+      //     test with no measured value) failed. It is the only way to that bin.
+      //   Vth - Hi — the tester failed Vth, which it does when Vth is high.
+      //   Leakage — Ioff is above its limit.
+      // The bin is decided first (it carries the spatial patterns above) and the
+      // failing test follows it.
+      const continuityPass = hbin !== 2;
+      if (hbin === 3) {
+        vth = Math.max(vth, vthGuardHigh + 0.004 + n2 * 0.03);
+        vthTesterPass = false;
+      }
+      if (hbin === 4) ioff = Math.max(ioff, IOFF_USL * (1.1 + n3 * 2));
 
       const die = {
         x: i, y: j, hbin, sbin,

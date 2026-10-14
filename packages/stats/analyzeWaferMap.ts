@@ -318,7 +318,11 @@ function locatedBy(dies: Set<string>, within: Set<string>): boolean {
   return shared >= LOCATED_BY_CLUSTER * dies.size && dies.size >= LOCATED_SIZE * within.size;
 }
 
-function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | null): StatsSummary['stats'] {
+function collectStats(
+  dies: Die[], analyzedDies: number, yieldPercent: number | null,
+  /** False on a value stack, whose dies carry one wafer's bins (`stackBinsAreData`): no bins are counted. */
+  binsAreData: boolean,
+): StatsSummary['stats'] {
   const testSet = new Set<number>();
   const hardBinSet = new Set<number>();
   const softBinSet = new Set<number>();
@@ -326,7 +330,7 @@ function collectStats(dies: Die[], analyzedDies: number, yieldPercent: number | 
   const softBinCounts = new Map<number, number>();
 
   for (const tn of testsPresent(dies)) testSet.add(tn);
-  for (const die of dies) {
+  for (const die of binsAreData ? dies : []) {
     if (die.hbin !== undefined) hardBinSet.add(die.hbin);
     if (die.sbin !== undefined) softBinSet.add(die.sbin);
     // Counts (not just "which bins appear") are only meaningful over the
@@ -375,7 +379,7 @@ function computeTestSpecYield(
     }
     result.push({
       testNumber:   tn,
-      label:        td.name,
+      label:        markedTestLabel(td, tn),
       passDies,
       failLowDies,
       failHighDies,
@@ -2546,19 +2550,21 @@ function analyzeWaferMapUncollected(
     return Math.abs((right.effect.absoluteDelta ?? 0)) - Math.abs((left.effect.absoluteDelta ?? 0));
   });
 
-  const stats = collectStats(result.dies, eligibleDies.length, result.yield.yieldPercent);
+  const stats = collectStats(result.dies, eligibleDies.length, result.yield.yieldPercent, binsAreData);
   if (isLotStack) {
     stats.isLotStack = true;
     if (stackMethod) stats.aggregationMethod = stackMethod;
   }
   // Each test's failing dies, and how many of them fail the wafer's yield too: a die outside a test's
   // limits that is binned as passing costs no yield, and the synthesis must not rank it as if it did.
+  // Where the bins are not data there is no yield to judge by, so no failure is said to be binned as
+  // passing: every one counts.
   const passSet = new Set(baseResolved.passBins);
   const failures: NonNullable<StatsSummary['stats']['testFailures']> = {};
   const onFail = (tn: number, die: Die): void => {
     const f = failures[tn] ??= { dieKeys: [], lostDies: 0 };
     f.dieKeys.push(getDieKey(die));
-    if (diePassStatus(die, passSet) !== true) f.lostDies++;
+    if (!binsAreData || diePassStatus(die, passSet) !== true) f.lostDies++;
   };
   const specYield = computeTestSpecYield(result.dies, result.testDefs, onFail);
   if (specYield) stats.testSpecYield = specYield;

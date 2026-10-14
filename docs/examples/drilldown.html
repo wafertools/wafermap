@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Charting a selection — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    /* Page-level scroll, as on statistics.html: the gallery scope is taller
+       than any fixed box would be. */
+    .demo-content { padding: 0; }
+    #stage { width: 100%; }
+    #stage.scope-single { padding: 14px; height: 600px; box-sizing: border-box; }
+    #stage.scope-single > div { width: 100%; height: 100%; }
+    .ways { margin: 6px 0 0; padding-left: 20px; }
+    .ways li { margin: 2px 0; }
+    .ways [data-for] { display: none; }
+    .ways.scope-single [data-for~="single"],
+    .ways.scope-lot    [data-for~="lot"] { display: list-item; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Charting a selection</span>
+    <span class="demo-desc">right-click a population · charts and tables of just those dies · no host code</span>
+  </header>
+
+  <div class="demo-intro">
+    Most questions about a wafer are about some of its dies: the cluster, the edge, one bin,
+    one wafer out of a lot. <strong>Right-click</strong> any of them and a menu offers a value
+    histogram, process capability, your saved plots and sweeps, and the <strong>Dies</strong> and
+    <strong>Test statistics</strong> tables, all drawn from exactly those dies. Every chart states
+    its population ("21 dies selected on W01"), so it cannot be mistaken for the whole wafer.
+    The Menu key, Shift+F10 and the toolbar's <strong>Chart</strong> button open the same menu
+    without a mouse.
+    <br><br>
+    There is nothing to wire: the menu comes with <code>renderWaferMap</code> and
+    <code>renderWaferGallery</code>, and its code is loaded on the first right-click. The only
+    call on this page beyond the render is <code>ctrl.setSelection()</code>, which pre-selects the
+    cluster so there is something to right-click straight away.
+    <ol class="ways scope-single" id="ways">
+      <li data-for="single"><strong>Selected dies.</strong> The dies round the cluster at the lower left are selected. Right-click one of them, or drag a box of your own first. Right-clicking an unselected die selects just that die.</li>
+      <li data-for="single lot"><strong>A finding.</strong> Right-click a finding in the Summary panel: its dies are selected, then the menu opens on them.</li>
+      <li data-for="single lot"><strong>A bin.</strong> Right-click a bin in the legend. The menu opens on that bin's dies, and nothing is selected.</li>
+      <li data-for="single"><strong>The whole wafer.</strong> Clear the selection (Esc), then right-click empty space on the map.</li>
+      <li data-for="lot"><strong>The same dies on every wafer.</strong> Turn on <strong>Select on every wafer</strong> in the toolbar, drag a box on any card, and right-click: the charts and a <strong>Wafers</strong> table cover those positions across the lot.</li>
+      <li data-for="lot"><strong>Whole wafers.</strong> Right-click a card outside its map for that wafer, or Ctrl/Cmd-click several card headers to pick wafers and right-click one of them.</li>
+      <li data-for="lot"><strong>A chart mark.</strong> Under <strong>Insights</strong>, right-click a wafer's bar in <em>Yield by wafer</em>, click a bin in the pareto or a bar of the histogram, or drag a rectangle over the correlation scatter.</li>
+    </ol>
+  </div>
+
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Scope</span>
+      <button class="toggle-btn active" data-scope="single">One wafer</button>
+      <button class="toggle-btn"        data-scope="lot">A lot</button>
+    </div>
+  </div>
+
+  <div class="demo-content">
+    <div id="stage" class="scope-single"></div>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap }                      from 'wafermap';
+    import { renderWaferMap, renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferMap, analyzeWaferLot }   from 'wafermap/stats';
+    import {
+      makeResults, makeWaferConfig, WAFER_CONFIG, DIE_CONFIG,
+      HBIN_DEFS, SBIN_DEFS, TEST_DEFS, FUNCTIONAL_TEST_DEF,
+    } from './data.js';
+
+    const DEFS = {
+      dieConfig: DIE_CONFIG,
+      hbinDefs:  HBIN_DEFS,
+      sbinDefs:  SBIN_DEFS,
+      testDefs:  [...TEST_DEFS, FUNCTIONAL_TEST_DEF],
+      passBins:  [1],
+    };
+
+    const stage = document.getElementById('stage');
+    const ways  = document.getElementById('ways');
+    let ctrl = null;
+
+    function renderSingle() {
+      // A particle cluster at the lower left and a handling arc at the top edge.
+      const result = buildWaferMap({
+        ...DEFS,
+        results:     makeResults({ seed: 1, cluster: true, edgeArc: true }),
+        waferConfig: WAFER_CONFIG,
+      });
+      const summary = analyzeWaferMap(result, { computePerTestStats: true });
+
+      const host = document.createElement('div');
+      stage.appendChild(host);
+      ctrl = renderWaferMap(host, result, {
+        statsSummary: summary,
+        summaryPanel: { defaultOpen: true },
+        showHelpButton: true,
+      });
+
+      // Pre-select the cluster's region, so the first right-click has a
+      // population to open on. A user would draw the box themselves.
+      const cluster = result.dies.filter(d => Math.hypot(d.x + 5, d.y + 3) < 2.5);
+      ctrl.setSelection(cluster);
+    }
+
+    function renderLot() {
+      // Six wafers: three with an edge ring, one with a cluster and an edge arc.
+      const specs = [
+        { seed:  7, edgeFail: true },
+        { seed: 11 },
+        { seed: 17, edgeFail: true },
+        { seed: 23, cluster: true, edgeArc: true },
+        { seed: 31, edgeFail: true },
+        { seed: 37 },
+      ];
+      const results = specs.map((spec, i) => buildWaferMap({
+        ...DEFS,
+        results:     makeResults({ ...spec, waferIndex: i }),
+        waferConfig: makeWaferConfig(i),
+      }));
+      const summaries = results.map(r => analyzeWaferMap(r, { computePerTestStats: true }));
+      const lotSummary = analyzeWaferLot(results, {
+        computePerTestStats: true,
+        perWaferSummaries:   summaries,
+      });
+
+      ctrl = renderWaferGallery(stage, results.map((r, i) => ({
+        ...r,
+        label: r.metadata?.waferId ?? `W${i + 1}`,
+        statsSummary: summaries[i],
+      })), {
+        lotStatsSummary: lotSummary,
+        summaryPanel:    { defaultOpen: true },
+        showHelpButton:  true,
+      });
+    }
+
+    function render(scope) {
+      ctrl?.destroy();
+      ctrl = null;
+      stage.innerHTML = '';
+      stage.className = `scope-${scope}`;
+      ways.className = `ways scope-${scope}`;
+      for (const b of document.querySelectorAll('[data-scope]')) {
+        b.classList.toggle('active', b.dataset.scope === scope);
+      }
+      if (scope === 'single') renderSingle(); else renderLot();
+    }
+
+    for (const b of document.querySelectorAll('[data-scope]')) {
+      b.addEventListener('click', () => render(b.dataset.scope));
+    }
+    render('single');
+  </script>
+</body>
+</html>

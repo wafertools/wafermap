@@ -20,8 +20,8 @@
       "section": "Start here",
       "id": "showcase",
       "file": "showcase.html",
-      "title": "Showcase — the whole library on one page",
-      "blurb": "four real lot scenarios with the summary panel, statistical findings and the Insights charts, over data you can swap for your own — start here if you are deciding whether wafermap fits your problem",
+      "title": "Showcase — four lots, start to finish",
+      "blurb": "four lots, each with a problem in it, and the steps an engineer takes from the headline to the dies behind it: findings, selection across wafers, charts of a selection, Insights and reports — start here if you are deciding whether wafermap fits your problem",
       "dataFiles": [
         "data/cluster.csv",
         "data/edge-ring.csv",
@@ -36,7 +36,204 @@
       ]
     },
     {
-      "section": "Getting started",
+      "section": "Start here",
+      "id": "drilldown",
+      "file": "drilldown.html",
+      "title": "Charting a selection",
+      "blurb": "right-click a cluster, a finding, a bin, a wafer or a chart mark for charts and tables of just those dies, on one wafer or across a lot, with nothing to wire",
+      "guide": {
+        "label": "User guide: Charting dies and wafers",
+        "href": "../user-guide.md#44-charting-dies-and-wafers"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "summary-panel",
+      "file": "statistics.html",
+      "anchor": "#summary-panel",
+      "title": "Summary panel",
+      "blurb": "persistent metadata and stats sidebar docked beside the map",
+      "guide": {
+        "label": "Guide: Summary panel",
+        "href": "../guide/findings.md#summary-panel"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "findings",
+      "file": "statistics.html",
+      "anchor": "#findings",
+      "title": "Statistical findings",
+      "blurb": "ring, quadrant, cluster, edge-arc analysis on a single wafer",
+      "guide": {
+        "label": "Guide: Adding statistical findings",
+        "href": "../guide/findings.md#adding-statistical-findings"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "gallery",
+      "file": "statistics.html",
+      "anchor": "#lot-gallery",
+      "title": "Lot gallery",
+      "blurb": "card grid of multiple wafers with shared controls and stacked modes",
+      "guide": {
+        "label": "Guide: Building a lot gallery",
+        "href": "../guide/galleries.md#building-a-lot-gallery"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "lot-findings",
+      "file": "statistics.html",
+      "anchor": "#lot-findings",
+      "title": "Lot-level findings",
+      "blurb": "cross-wafer trend detection with `analyzeWaferLot`",
+      "guide": {
+        "label": "Guide: Lot-level statistical findings",
+        "href": "../guide/galleries.md#lot-level-statistical-findings"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "lot-stack",
+      "file": "statistics.html",
+      "anchor": "#lot-stack",
+      "title": "Lot-stack spatial analysis",
+      "blurb": "mean/median/stddev maps aggregated across a lot",
+      "guide": {
+        "label": "Guide: Recipes",
+        "href": "../guide/recipes.md#recipes"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "insights",
+      "file": "insights.html",
+      "title": "Insights chart suite",
+      "blurb": "the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add",
+      "guide": {
+        "label": "Guide: The Insights tab",
+        "href": "../guide/galleries.md#the-insights-tab"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "insights-plots",
+      "file": "insights-plots.html",
+      "title": "Plots, tables and attributes",
+      "blurb": "the Plot tab kept by the host with `insights.plots` and `onPlotsChange`, the Data tab, drilldown, and your own names for wafer attributes with `attributes`",
+      "guide": {
+        "label": "Guide: Saved plots, the Data tab and attribute names",
+        "href": "../guide/galleries.md#saved-plots-the-plot-tab-kept-by-the-host"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "validity-limits",
+      "file": "validity-limits.html",
+      "title": "Validity limits",
+      "blurb": "tester clamps and open-circuit readings kept out of the map and statistics with `validLow`/`validHigh` and `valueFilter`, with the excluded values counted",
+      "guide": {
+        "label": "Guide: Validity limits",
+        "href": "../guide/data.md#validity-limits-values-that-are-not-measurements"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "derived-tests",
+      "file": "derived-tests.html",
+      "title": "Derived tests and sweeps",
+      "blurb": "tests computed per die from an expression, and an ordered run of tests read as a response curve with its crossing point and separation measured",
+      "guide": {
+        "label": "API: DerivedTestDef",
+        "href": "../api/core.md#419-derivedtestdef"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "sweeps",
+      "file": "sweeps.html",
+      "title": "Parametric sweeps",
+      "blurb": "five characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention, output drive, and an RRAM resistance distribution whose thresholds are read from the test names onto a log axis — each read as a pair of curves with the crossing and width measured",
+      "guide": {
+        "label": "Guide: Derived tests and sweeps",
+        "href": "../guide/galleries.md#derived-tests-and-sweeps"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "reticle",
+      "file": "reticle.html",
+      "title": "Reticle overlays",
+      "blurb": "photolithography field grid and reticle-position findings",
+      "guide": {
+        "label": "Guide: Reticle overlays",
+        "href": "../guide/layouts.md#reticle-overlays"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "multi-project-wafer",
+      "file": "multi-project-wafer.html",
+      "title": "Multi-project wafers",
+      "blurb": "compact layout for sparse reticles, with original coordinates, axis labels and layout diagnostics",
+      "guide": {
+        "label": "Guide: Compact layout for multi-project wafers",
+        "href": "../guide/layouts.md#compact-layout-for-multi-project-wafers"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "test-sites",
+      "file": "test-sites.html",
+      "title": "Multi-site parallel testing",
+      "blurb": "site-based analysis across a multi-site prober card",
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "real-data",
+      "file": "real-data.html",
+      "title": "Real wafer data (WM-811K)",
+      "blurb": "open dataset with 811 000 wafer records",
+      "guide": {
+        "label": "Guide: Adding statistical findings",
+        "href": "../guide/findings.md#adding-statistical-findings"
+      },
+      "dataFiles": [
+        "wm811k-sample.json"
+      ]
+    },
+    {
+      "section": "What your users get",
+      "id": "mixedwm38",
+      "file": "mixedwm38.html",
+      "title": "Mixed patterns (MixedWM38)",
+      "blurb": "classified failure pattern dataset",
+      "guide": {
+        "label": "Pattern Detection",
+        "href": "../pattern-detection.md"
+      },
+      "dataFiles": [
+        "mixedwm38-sample.json"
+      ]
+    },
+    {
+      "section": "Building it: data in",
       "id": "first-map",
       "file": "first-map.html",
       "title": "Your first wafer map",
@@ -48,7 +245,7 @@
       "dataFiles": []
     },
     {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "csv-data",
       "file": "csv-data.html",
       "title": "Loading CSV data",
@@ -63,7 +260,7 @@
       ]
     },
     {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "geometry",
       "file": "geometry.html",
       "anchor": "#inference",
@@ -76,7 +273,7 @@
       "dataFiles": []
     },
     {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "partial-data",
       "file": "geometry.html",
       "anchor": "#centre-anchoring",
@@ -89,7 +286,7 @@
       "dataFiles": []
     },
     {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "warnings",
       "file": "geometry.html",
       "anchor": "#warnings",
@@ -102,7 +299,7 @@
       "dataFiles": []
     },
     {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "named-bins",
       "file": "named-bins.html",
       "title": "Bins and yield",
@@ -114,7 +311,7 @@
       "dataFiles": []
     },
     {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "test-values",
       "file": "test-values.html",
       "title": "Test values",
@@ -126,19 +323,7 @@
       "dataFiles": []
     },
     {
-      "section": "Getting started",
-      "id": "validity-limits",
-      "file": "validity-limits.html",
-      "title": "Validity limits",
-      "blurb": "tester clamps and open-circuit readings kept out of the map and statistics with `validLow`/`validHigh` and `valueFilter`, with the excluded values counted",
-      "guide": {
-        "label": "Guide: Validity limits",
-        "href": "../guide/data.md#validity-limits-values-that-are-not-measurements"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "bin-colours",
       "file": "bin-colours.html",
       "title": "Bin colours across a full program",
@@ -153,7 +338,7 @@
       ]
     },
     {
-      "section": "Getting started",
+      "section": "Building it: data in",
       "id": "retests",
       "file": "retests.html",
       "title": "Retests",
@@ -165,7 +350,19 @@
       "dataFiles": []
     },
     {
-      "section": "Display and interaction",
+      "section": "Building it: data in",
+      "id": "metadata-mode",
+      "file": "metadata-mode.html",
+      "title": "Metadata / layout mode",
+      "blurb": "generic categorical colouring from `die.metadata`, coexists with test/bin data",
+      "guide": {
+        "label": "Guide: Metadata / layout plot mode",
+        "href": "../guide/data.md#metadata-layout-plot-mode"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "Building it: display, interaction and scale",
       "id": "display-control",
       "file": "display-control.html",
       "title": "Display control",
@@ -177,7 +374,7 @@
       "dataFiles": []
     },
     {
-      "section": "Display and interaction",
+      "section": "Building it: display, interaction and scale",
       "id": "color-schemes",
       "file": "display-control.html",
       "anchor": "#custom-schemes",
@@ -190,7 +387,7 @@
       "dataFiles": []
     },
     {
-      "section": "Display and interaction",
+      "section": "Building it: display, interaction and scale",
       "id": "theming",
       "file": "theming.html",
       "title": "Theming",
@@ -202,7 +399,7 @@
       "dataFiles": []
     },
     {
-      "section": "Display and interaction",
+      "section": "Building it: display, interaction and scale",
       "id": "interaction",
       "file": "interaction.html",
       "title": "Interaction API",
@@ -214,192 +411,7 @@
       "dataFiles": []
     },
     {
-      "section": "Display and interaction",
-      "id": "metadata-mode",
-      "file": "metadata-mode.html",
-      "title": "Metadata / layout mode",
-      "blurb": "generic categorical colouring from `die.metadata`, coexists with test/bin data",
-      "guide": {
-        "label": "Guide: Metadata / layout plot mode",
-        "href": "../guide/data.md#metadata-layout-plot-mode"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Display and interaction",
-      "id": "reticle",
-      "file": "reticle.html",
-      "title": "Reticle overlays",
-      "blurb": "photolithography field grid and reticle-position findings",
-      "guide": {
-        "label": "Guide: Reticle overlays",
-        "href": "../guide/layouts.md#reticle-overlays"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Display and interaction",
-      "id": "multi-project-wafer",
-      "file": "multi-project-wafer.html",
-      "title": "Multi-project wafers",
-      "blurb": "compact layout for sparse reticles, with original coordinates, axis labels and layout diagnostics",
-      "guide": {
-        "label": "Guide: Compact layout for multi-project wafers",
-        "href": "../guide/layouts.md#compact-layout-for-multi-project-wafers"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "summary-panel",
-      "file": "statistics.html",
-      "anchor": "#summary-panel",
-      "title": "Summary panel",
-      "blurb": "persistent metadata and stats sidebar docked beside the map",
-      "guide": {
-        "label": "Guide: Summary panel",
-        "href": "../guide/findings.md#summary-panel"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "findings",
-      "file": "statistics.html",
-      "anchor": "#findings",
-      "title": "Statistical findings",
-      "blurb": "ring, quadrant, cluster, edge-arc analysis on a single wafer",
-      "guide": {
-        "label": "Guide: Adding statistical findings",
-        "href": "../guide/findings.md#adding-statistical-findings"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "gallery",
-      "file": "statistics.html",
-      "anchor": "#lot-gallery",
-      "title": "Lot gallery",
-      "blurb": "card grid of multiple wafers with shared controls and stacked modes",
-      "guide": {
-        "label": "Guide: Building a lot gallery",
-        "href": "../guide/galleries.md#building-a-lot-gallery"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "lot-findings",
-      "file": "statistics.html",
-      "anchor": "#lot-findings",
-      "title": "Lot-level findings",
-      "blurb": "cross-wafer trend detection with `analyzeWaferLot`",
-      "guide": {
-        "label": "Guide: Lot-level statistical findings",
-        "href": "../guide/galleries.md#lot-level-statistical-findings"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "lot-stack",
-      "file": "statistics.html",
-      "anchor": "#lot-stack",
-      "title": "Lot-stack spatial analysis",
-      "blurb": "mean/median/stddev maps aggregated across a lot",
-      "guide": {
-        "label": "Guide: Recipes",
-        "href": "../guide/recipes.md#recipes"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "test-sites",
-      "file": "test-sites.html",
-      "title": "Multi-site parallel testing",
-      "blurb": "site-based analysis across a multi-site prober card",
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "insights",
-      "file": "insights.html",
-      "title": "Insights chart suite",
-      "blurb": "the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add",
-      "guide": {
-        "label": "Guide: The Insights tab",
-        "href": "../guide/galleries.md#the-insights-tab"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "insights-plots",
-      "file": "insights-plots.html",
-      "title": "Plots, tables and attributes",
-      "blurb": "the Plot tab kept by the host with `insights.plots` and `onPlotsChange`, the Data tab, drilldown, and your own names for wafer attributes with `attributes`",
-      "guide": {
-        "label": "Guide: Saved plots, the Data tab and attribute names",
-        "href": "../guide/galleries.md#saved-plots-the-plot-tab-kept-by-the-host"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "derived-tests",
-      "file": "derived-tests.html",
-      "title": "Derived tests and sweeps",
-      "blurb": "tests computed per die from an expression, and an ordered run of tests read as a response curve with its crossing point and separation measured",
-      "guide": {
-        "label": "API: DerivedTestDef",
-        "href": "../api/core.md#419-derivedtestdef"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Galleries and analysis",
-      "id": "sweeps",
-      "file": "sweeps.html",
-      "title": "Parametric sweeps",
-      "blurb": "five characterisation sweeps in their own Insights tab — temperature inversion, DIBL on a log scale via derived tests, data retention, output drive, and an RRAM resistance distribution whose thresholds are read from the test names onto a log axis — each read as a pair of curves with the crossing and width measured",
-      "guide": {
-        "label": "Guide: Derived tests and sweeps",
-        "href": "../guide/galleries.md#derived-tests-and-sweeps"
-      },
-      "dataFiles": []
-    },
-    {
-      "section": "Real data and performance",
-      "id": "real-data",
-      "file": "real-data.html",
-      "title": "Real wafer data (WM-811K)",
-      "blurb": "open dataset with 811 000 wafer records",
-      "guide": {
-        "label": "Guide: Adding statistical findings",
-        "href": "../guide/findings.md#adding-statistical-findings"
-      },
-      "dataFiles": [
-        "wm811k-sample.json"
-      ]
-    },
-    {
-      "section": "Real data and performance",
-      "id": "mixedwm38",
-      "file": "mixedwm38.html",
-      "title": "Mixed patterns (MixedWM38)",
-      "blurb": "classified failure pattern dataset",
-      "guide": {
-        "label": "Pattern Detection",
-        "href": "../pattern-detection.md"
-      },
-      "dataFiles": [
-        "mixedwm38-sample.json"
-      ]
-    },
-    {
-      "section": "Real data and performance",
+      "section": "Building it: display, interaction and scale",
       "id": "worker",
       "file": "worker.html",
       "title": "Web Worker",
@@ -411,7 +423,7 @@
       "dataFiles": []
     },
     {
-      "section": "Real data and performance",
+      "section": "Building it: display, interaction and scale",
       "id": "comparison",
       "file": "comparison.html",
       "title": "wafermap vs Plotly.js",

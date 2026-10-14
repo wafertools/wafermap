@@ -39,7 +39,7 @@ for (const wafer of WAFERS) {
       // Realistic yield loss: mostly clean, worse towards the edge.
       const r = rnd();
       let hbin = 1, sbin = 10;
-      if (r < 0.02 + 0.18 * edgeness ** 3)      { hbin = 2; sbin = 20; }   // edge ring
+      if (r < 0.02 + 0.18 * edgeness ** 3)      { hbin = 2; sbin = 20; }   // contact open, worse at the edge
       else if (r < 0.05 + 0.20 * edgeness ** 3) { hbin = 3; sbin = 40; }
       else if (r < 0.07 + 0.21 * edgeness ** 3) { hbin = 4; sbin = 45; }
       rows.push([
@@ -73,13 +73,13 @@ writeFileSync('docs/data/dummy-fulldata.meta.json', JSON.stringify({
   passBins: [1],
   hbinDefs: [
     { bin: 1, name: 'Pass' },
-    { bin: 2, name: 'Edge Ring' },
+    { bin: 2, name: 'Contact Open' },
     { bin: 3, name: 'Vth Shift' },
     { bin: 4, name: 'Leakage' },
   ],
   sbinDefs: [
     { bin: 10, name: 'Pass' },
-    { bin: 20, name: 'Edge Ring' },
+    { bin: 20, name: 'Contact Open' },
     { bin: 40, name: 'Vth - Hi' },
     { bin: 45, name: 'Leakage - Gate' },
   ],

@@ -67,6 +67,13 @@ under `### Breaking`.
   values, so a program of 15,000 tests is ranked on about 1,700 dies rather than reading every die of the sample.
 - **Analysis of a program with thousands of tests reads its test definitions once per call**, by number, where each
   test searched the list.
+- **A derived test that fails its limits is marked † in the results summary**, as on every other surface:
+  `stats.testSpecYield[].label` carries the mark, as `functionalYield[].label` does.
+- **A value stack counts no bins.** A `lotStack` by mean, median, minimum, maximum, standard deviation or count keeps
+  one wafer's bins on its dies, which describe that wafer and not the stack. Its analysis has no `hardBinCounts`,
+  `softBinCounts` or bins considered, every die outside a test's limits counts towards that test's cost
+  (`testFailures[].lostDies`), so the results summary says no die is binned as passing, and the Summary panel and the
+  wafer report show no bin breakdown, region yield or pass and fail counts for it. A `'mode'` stack is unchanged.
 
 ## [0.36.0] — 2026-10-13
 

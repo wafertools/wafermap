@@ -264,7 +264,9 @@ Either the rate criterion or the size criterion can trigger the severity level; 
     hardBinCounts?:  Record<number, number>  // die count per hard bin, over the yield-eligible population
                                               // (excludes partial/edge-excluded dies) — unlike hardBinsConsidered
                                               // above (which bin codes appear at all), these are the actual
-                                              // counts a bin-breakdown display should show
+                                              // counts a bin-breakdown display should show. Absent, with
+                                              // both bin lists empty, on a value stack (any lotStack method
+                                              // but 'mode'), whose dies carry one wafer's bins
     softBinCounts?:  Record<number, number>  // same, for soft bins
     warnings?:            WaferWarning[]  // structured advisories — §4.2.2. Same shape as
                                           // WaferMapResult.warnings, so a host has ONE warning
@@ -302,7 +304,8 @@ Either the rate criterion or the size criterion can trigger the severity level; 
                                       // testSpecYield's failLowDies + failHighDies) or failing a functional test (failDies).
                                       // Only tests with a failing die; absent when there are none
       dieKeys:  string[]              // getDieKey strings
-      lostDies: number                // of those, the dies that also fail yield (not in a pass bin, or with no bin)
+      lostDies: number                // of those, the dies that also fail yield (not in a pass bin, or with no bin);
+                                      // every one of them on a value stack, which has no yield to judge by
     }>
     perTestStats?: Array<{            // present only when computePerTestStats or enableTestValueAnalysis is set;
                                       // one entry per active test with enough data
