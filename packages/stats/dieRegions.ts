@@ -118,5 +118,3 @@ export const DIE_REGIONS: Record<DieRegionKey, DieRegionDef> = {
 export function availableRegions(ctx: RegionContext, anyPositioned: boolean): DieRegionDef[] {
   return DIE_REGION_KEYS.map(k => DIE_REGIONS[k]).filter(r => r.available(ctx, anyPositioned));
 }
-
-export const isDieRegionKey = (k: string): k is DieRegionKey => (DIE_REGION_KEYS as readonly string[]).includes(k);

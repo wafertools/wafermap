@@ -1,11 +1,6 @@
 // Shared statistical math primitives. Single home for functions that were
 // previously duplicated across analyzeWaferMap.ts and clusterDetection.ts.
 
-/** The error function erf(x), from {@link complementaryErrorFunction}. */
-export function errorFunction(value: number): number {
-  return value < 0 ? -1 + complementaryErrorFunction(-value) : 1 - complementaryErrorFunction(value);
-}
-
 /**
  * The complementary error function erfc(x) = 1 − erf(x), accurate to about 1e-15 relative across the whole
  * range, the far tail included: W. J. Cody's rational approximations (Math. Comp. 23, 1969; the CALERF
@@ -55,11 +50,6 @@ const ERFC_D = [
 ];
 const ERFC_P = [3.05326634961232344e-1, 3.60344899949804439e-1, 1.25781726111229246e-1, 1.60837851487422766e-2, 6.58749161529837803e-4, 1.63153871373020978e-2];
 const ERFC_Q = [2.56852019228982242e00, 1.87295284992346725e00, 5.27905102951428412e-1, 6.05183413124413191e-2, 2.33520497626869185e-3];
-
-/** Standard normal cumulative distribution function Φ(value). */
-export function normalCdf(value: number): number {
-  return 0.5 * complementaryErrorFunction(-value / Math.SQRT2);
-}
 
 /** The standard normal upper tail 1 − Φ(value), accurate where it is small. */
 export function normalUpperTail(value: number): number {

@@ -190,17 +190,3 @@ export function derivedKeyText(
   const items = [...byName].map(([name, expr]) => (expr ? `${name}: ${expr}` : name));
   return `${DERIVED_MARK} ${DERIVED_KEY} — ${items.join('; ')}`;
 }
-
-/**
- * True when any test in this population is derived — the gate for reserving a
- * marker gutter in a view.
- *
- * Reserving it per view rather than per row is what keeps the marker from
- * shifting content relative to itself: every row of a view indents equally, so
- * the markers align in a column instead of leaving a ragged edge, and a
- * population with no derived tests — the common case — is unchanged to the
- * pixel.
- */
-export function hasDerivedTests(defs: readonly TestDef[] | undefined): boolean {
-  return (defs ?? []).some(isDerivedTest);
-}

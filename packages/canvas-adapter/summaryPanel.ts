@@ -953,19 +953,6 @@ export function buildBinBreakdownSection(params: {
   return outer;
 }
 
-/** Aggregate bin counts across all wafers in the lot — no lot-pooled
- *  precomputed bin counts exist (`hardBinCounts`/`softBinCounts` are
- *  per-wafer only), so this scans the pooled `Die[]` directly, same as
- *  `buildBinSection` does when it has no `precomputedCounts`. */
-export function buildLotBinSection(
-  allDies: Die[],
-  binDefs: BinDef[] | undefined,
-  mode: 'hard' | 'soft',
-  binColors?: BinColors,
-): HTMLDivElement | null {
-  return buildBinSection(allDies, binDefs, mode, binColors);
-}
-
 /**
  * Region yield as ONE section with a Ring/Quadrant selector, replacing the two
  * always-on stacked sections (`Ring Yield` + `Quadrant Yield`) this used to render.

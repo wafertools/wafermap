@@ -26,11 +26,10 @@ export const DEPRECATED_REMOVAL_VERSION = '0.32.0';
 export const DEPRECATED_REMOVALS = new Map<string, string>();
 
 /**
- * @internal Every name deprecated through this module, and whether it is a function
- * (which logs a notice) or a value (which cannot). tests/deprecations.test.mjs pins
+ * @internal Every name deprecated through this module. tests/deprecations.test.mjs pins
  * it to the announced list, so a deprecation cannot be added or dropped silently.
  */
-export const DEPRECATED_EXPORTS = new Map<string, 'function' | 'value'>();
+export const DEPRECATED_EXPORTS = new Map<string, 'function'>();
 
 const noticed = new Set<string>();
 
@@ -61,14 +60,4 @@ export function deprecated<F extends (...args: never[]) => unknown>(
     noticeOnce(name, `${name} is deprecated and will be removed in ${removal}. ${advice}`);
     return call(...args);
   }) as unknown as F;
-}
-
-/**
- * @internal Register a deprecated constant. A value cannot log on use, so its
- * `@deprecated` tag and the changelog are the only announcement.
- */
-export function deprecatedValue<T>(value: T, name: string, removal: string = DEPRECATED_REMOVAL_VERSION): T {
-  DEPRECATED_EXPORTS.set(name, 'value');
-  DEPRECATED_REMOVALS.set(name, removal);
-  return value;
 }

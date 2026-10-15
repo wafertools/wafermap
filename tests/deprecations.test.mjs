@@ -55,7 +55,6 @@ const EXPECTED = [];
 const LATER = {};
 const ALL = [...EXPECTED, ...Object.keys(LATER)];
 const removalOf = (name) => LATER[name] ?? REMOVAL;
-const VALUES = [];
 
 // Removed in 0.31.0 (API_REMOVALS.md, Part 2). Restoring one is a decision to
 // record there first, with the reason a host needs it — not a snapshot refresh.
@@ -98,7 +97,6 @@ const KEPT = [
 test('the registry holds exactly the names announced for removal', () => {
   assert.deepEqual([...DEPRECATED_EXPORTS.keys()].sort(), [...ALL].sort());
   for (const name of ALL) assert.equal(DEPRECATED_REMOVALS.get(name), removalOf(name), `${name} is removed in ${removalOf(name)}`);
-  for (const name of VALUES) assert.equal(DEPRECATED_EXPORTS.get(name), 'value', `${name} is a constant`);
 });
 
 test('every deprecated name is still exported, and nothing a host needs was swept up', () => {
@@ -118,7 +116,7 @@ test('the names removed in 0.31.0 stay removed', () => {
 // ── Notices, declarations, and the library's own imports ─────────────────────
 
 test('each deprecated function gives one notice, naming the release that removes it', () => {
-  const functions = ALL.filter(name => !VALUES.includes(name));
+  const functions = ALL;
   for (let i = 0; i < 3; i++) {
     for (const name of functions) {
       for (const entry of exportedFrom(name)) {
