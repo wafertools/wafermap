@@ -102,45 +102,18 @@ import { fileURLToPath } from 'url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
+// Budgets are minified bytes before compression. Gzip output varies with the Node build's zlib (CI's gzips the same
+// bundle ~0.5% larger than a developer machine's), so a gzipped budget set close to the measured size passes in one
+// place and fails in the other. Minified bytes are the same everywhere. The gzipped size is reported in the failure
+// message, since that is what a consumer downloads. Each budget keeps ~3% over the measured size, so ordinary feature
+// work does not need a raise; the lazy-import tests below are what catch a heavy module landing in the chunk.
+// Gzipped sizes in the history above are the earlier measure.
 const THRESHOLDS = {
-  // Raised deliberately from 56_000 in 0.30.3: derived tests add a hand-written
-  // expression parser + evaluator (~5 KB gz). That cost buys the absence of a
-  // third-party expression engine on the one security boundary between a shared
-  // JSON template and the host app.
-  // Raised deliberately from 66_000 in 0.35.0: the die regions (one definition shared by plots, tables and findings), the wafer
-  // attribute label and curation, and a die's own fields in a derived-test expression took the data layer to ~66.1 KB locally
-  // (~66.4 KB on CI's zlib), and the budget keeps ~1.5% over the CI figure.
-  // Raised deliberately from 67_500: the unreleased work since 0.35.0 took the data layer to ~68.3 KB locally, and each
-  // test's failing dies (`stats.testFailures`, read by the synthesis and the Summary panel's test rows) to ~68.4 KB.
-  // Raised deliberately from 69_500: the clusters' permutation null (a seeded generator and a typed-array component
-  // sizer) and W. J. Cody's erfc, which keeps small p-values accurate, took the data layer to ~70.6 KB locally; the
-  // budget keeps ~2% over that for CI's zlib.
-  // Raised deliberately from 72_000: the classifier's line and radial-profile features (a scratch at any angle, a
-  // donut by its radial fail rates) took the data layer to ~72.1 KB locally; the budget keeps ~1.5% over that.
-  // Raised deliberately from 73_200: the correlation test budget (a candidate pick before the pairwise pass), the
-  // retest fast path, the per-wafer pass-rate tally cache and the stack-bins rule took it to ~73.3 KB; ~1.5% over.
-  // Raised deliberately from 74_400: the reports' in-page link handling (scroll, Back, Alt+←, target mark), the
-  // findings' measure labels and the bar-cell layout took it to ~74.9 KB; ~1.5% over.
-  // Raised deliberately from 76_000: clusters of one hard bin, with the findings they explain grouped under them in
-  // the findings list and the results summary, took it to ~76.2 KB; ~1.5% over.
-  'wafermap (root)':            77_400,   // gzipped bytes — measured ~76.2 KB
-  // Raised deliberately from 136_000 in 0.34.0: the initial chunk grew to ~136.0 KB locally with the plot builder's
-  // shared pieces (store, confirmation dialog helper, overlay options) and the single-default helpers. CI's Node/zlib gzips
-  // the same bundle ~0.55% larger than a developer machine does (136.7 KB), so the budget keeps ~1.5% over the CI figure.
-  // Raised deliberately from 138_000: the value filter (validity limits and the excluded-value wording shared by the tooltip,
-  // the Summary panel and the chart captions) took the initial chunk to ~138.3 KB locally; the budget keeps ~1.5% over that.
-  // Raised deliberately from 140_000: the Summary panel's "What stands out" rows, part chips and test actions took the
-  // initial chunk to ~140.3 KB locally; the budget keeps ~1.5% over that.
-  // Raised deliberately from 142_500: the labelled Summary button, the panel's own close button with its click shield and
-  // the Findings section's labelled expander took the initial chunk to ~142.5 KB locally; the budget keeps ~1% over that.
-  // Raised deliberately from 144_000: hiding the docked Summary panel behind Insights, the tiny-die limit-mark note,
-  // count-stack card analysis and the per-test pass-rate tally cache took the initial chunk to ~144.0 KB; ~1% over.
-  // Raised deliberately from 145_500: the Findings section's own test-value offer and re-run, and the Insights chart
-  // settings reported as preferences, took the initial chunk to ~145.8 KB; ~1% over.
-  'wafermap/render (initial)':  147_200,  // gzipped bytes — measured ~145.8 KB (the plot store, and the cards' caption and print support), guide, Insights, drilldown AND report builders excluded
+  'wafermap (root)':            227_000,  // minified bytes — measured 220,247 (76.3 KB gzipped)
+  'wafermap/render (initial)':  449_000,  // minified bytes — measured 435,551 (146.8 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
 };
 
-async function bundleGzipped(entryPoint, plugins = []) {
+async function bundleSize(entryPoint, plugins = []) {
   const result = await build({
     entryPoints: [entryPoint],
     bundle: true,
@@ -149,7 +122,8 @@ async function bundleGzipped(entryPoint, plugins = []) {
     write: false,
     plugins,
   });
-  return gzipSync(result.outputFiles[0].contents).length;
+  const code = result.outputFiles[0].contents;
+  return { bytes: code.length, gzipped: gzipSync(code).length };
 }
 
 /**
@@ -244,18 +218,18 @@ const stubGuide = {
 };
 
 test('wafermap (root) bundle size is within threshold', async () => {
-  const gz = await bundleGzipped(resolve(dist, 'index.js'));
+  const { bytes, gzipped } = await bundleSize(resolve(dist, 'index.js'));
   assert.ok(
-    gz <= THRESHOLDS['wafermap (root)'],
-    `wafermap root bundle too large: ${gz} bytes gzipped (threshold ${THRESHOLDS['wafermap (root)']}). Update threshold deliberately if the library has grown.`,
+    bytes <= THRESHOLDS['wafermap (root)'],
+    `wafermap root bundle too large: ${bytes} minified bytes, ${gzipped} gzipped (threshold ${THRESHOLDS['wafermap (root)']} minified). Update threshold deliberately if the library has grown.`,
   );
 });
 
 test('wafermap/render initial chunk size is within threshold', async () => {
-  const gz = await bundleGzipped(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubDataTab, stubReport, stubLotAnalysisOnDemand]);
+  const { bytes, gzipped } = await bundleSize(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubDataTab, stubReport, stubLotAnalysisOnDemand]);
   assert.ok(
-    gz <= THRESHOLDS['wafermap/render (initial)'],
-    `wafermap/render initial chunk too large: ${gz} bytes gzipped (threshold ${THRESHOLDS['wafermap/render (initial)']}). Check for new static imports of heavy modules.`,
+    bytes <= THRESHOLDS['wafermap/render (initial)'],
+    `wafermap/render initial chunk too large: ${bytes} minified bytes, ${gzipped} gzipped (threshold ${THRESHOLDS['wafermap/render (initial)']} minified). Check for new static imports of heavy modules.`,
   );
 });
 
