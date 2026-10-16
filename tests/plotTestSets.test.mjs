@@ -175,7 +175,7 @@ test('the catalogue offers Test when the lot has tests to make a set of, and not
   const cat = fieldCatalogue(lot(), ctx);
   assert.ok(cat.some(f => sameField(f.field, { builtin: 'test' })));
   assert.deepEqual(defaultPlot(cat, 'd').fields, { x: { test: 1050, name: 'Vth' }, y: { test: 1055, name: 'Vth2' } });
-  for (const p of examplePlots(cat, 3, () => 'e')) for (const f of Object.values(p.fields ?? {})) assert.ok(!sameField(f, { builtin: 'test' }));
+  for (const p of examplePlots(cat, 3, () => 'e')) for (const f of Object.values(p.fields ?? {})) assert.ok(!sameField(f, { builtin: 'test' }) || 'tests' in p.fields.y, 'Test only where the values are a set');
   assert.equal(plotTestNumber(spec('box', { y: set('1055..1060') })), 1055);
 });
 

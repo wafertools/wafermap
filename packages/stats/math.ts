@@ -260,6 +260,15 @@ export function tTwoSided(t: number, df: number): number {
   return incompleteBeta(df / (df + t * t), df / 2, 0.5);
 }
 
+/** The t with two-sided tail `p` on `df` degrees of freedom (2.776 for p 0.05, df 4): bisection on `tTwoSided`. */
+export function tQuantileTwoSided(p: number, df: number): number {
+  if (!(p > 0 && p < 1) || !(df > 0)) return NaN;
+  let lo = 0, hi = 1;
+  while (tTwoSided(hi, df) > p) hi *= 2;
+  for (let i = 0; i < 100; i++) { const mid = (lo + hi) / 2; if (tTwoSided(mid, df) > p) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
 /** Upper tail P(F ≥ f) of the F distribution with (df1, df2) degrees of freedom. */
 export function fUpperTail(f: number, df1: number, df2: number): number {
   if (!(f > 0)) return 1;

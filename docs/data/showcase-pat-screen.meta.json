@@ -1,0 +1,63 @@
+{
+  "waferConfig": {
+    "diameter": 200,
+    "notch": {
+      "type": "bottom"
+    }
+  },
+  "dieConfig": {
+    "width": 4,
+    "height": 4
+  },
+  "passBins": [
+    1
+  ],
+  "sbinDefs": [
+    {
+      "bin": 1,
+      "name": "Pass"
+    },
+    {
+      "bin": 5,
+      "name": "Vth out of limits"
+    },
+    {
+      "bin": 6,
+      "name": "Iddq high"
+    },
+    {
+      "bin": 7,
+      "name": "Idsat / Tpd out of limits"
+    }
+  ],
+  "testDefs": [
+    {
+      "testNumber": 1,
+      "name": "VTH_V",
+      "unit": "V",
+      "limitLow": 0.35,
+      "limitHigh": 0.65
+    },
+    {
+      "testNumber": 2,
+      "name": "IDDQ_UA",
+      "unit": "µA",
+      "limitLow": 0,
+      "limitHigh": 60
+    },
+    {
+      "testNumber": 3,
+      "name": "IDSAT_MA",
+      "unit": "mA",
+      "limitLow": 8,
+      "limitHigh": 14
+    },
+    {
+      "testNumber": 4,
+      "name": "TPD_NS",
+      "unit": "ns",
+      "limitLow": 1,
+      "limitHigh": 2
+    }
+  ]
+}

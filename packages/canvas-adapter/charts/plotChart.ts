@@ -10,7 +10,8 @@
 // drawing nothing.
 
 import { escHtml, maxOf, minOf } from '../../core/utils.js';
-import { fiveNumberSummary, normalQuantile } from '../../stats/math.js';
+import { fiveNumberSummary, normalQuantile, sampleVariance } from '../../stats/math.js';
+import { CONTROL_RULE_TEXT } from '../../stats/control.js';
 import { fmt } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { plotFootnote, plotTestNumber, plotTitle, probabilityPosition, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
@@ -18,7 +19,7 @@ import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
   cardShell, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
-  renderEmptyState, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
+  renderEmptyState, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
   type LimitLine, type SaveImageHandler, type SeriesLegendItem,
 } from './chartShell.js';
 import { categorical } from './palette.js';
@@ -104,6 +105,17 @@ export interface PlotChartHandle {
   /** @internal Show only these colour groups (all when empty): a faceted plot's legend filters every panel. */
   setActiveGroups(groups: ReadonlySet<number>): void;
   destroy(): void;
+}
+
+/**
+ * A value as a heatmap cell or its colour bar shows it: a count as a whole number, a value with no unit (a z-score, a
+ * share) to two decimals, anything else in its unit's own scaling.
+ */
+function cellText(v: number, unit: string | undefined, integer: boolean | undefined): string {
+  if (integer) return Math.round(v).toLocaleString('en-GB');
+  // A value that rounds to zero is zero, whichever side it came from.
+  if (!unit) return `${v <= -0.005 ? '−' : ''}${Math.abs(v).toFixed(2)}`;
+  return fmt(v, unit);
 }
 
 /** The narrowest a panel of a faceted plot is laid out: the grid fits as many across as this allows. */
@@ -221,7 +233,10 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   let hoveredBin = -1;
   let drawn: Array<DrawnPoint<PlotPoint>> = [];
   let geometry: { x: Scale; y: Scale; plotW: number; plotH: number } | undefined;
-  let histogram: { edges: number[]; counts: number[][]; maxCount: number } | undefined;
+  /** `heights`: what each bar is drawn to, its count or (`histNorm: 'percent'`) its share of its colour in percent. */
+  let histogram: { edges: number[]; counts: number[][]; heights: number[][]; maxCount: number;
+    /** Each colour's mean and standard deviation, when the plot draws normal curves and the colour has spread. */
+    normal: Array<{ mean: number; sd: number } | undefined> } | undefined;
   /** Where the cells of a box or bar plot were drawn, for hover and click. */
   let cat: { slotW: number; n: number; plotW: number; layout: ReturnType<typeof categoryLayout>;
     /** A stacked bar's segments per category, in canvas pixels, for hover and click. */
@@ -247,8 +262,14 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   }
 
   /** The limit lines of the test an axis measures, as the plot's `limits` setting asks for them. */
-  const linesOf = (axis: ResolvedAxis | undefined): LimitLine[] =>
-    limitLines(axis?.limits, resolved?.spec.limits ?? 'both').filter(l => axis?.scale !== 'log' || l.value > 0);
+  const linesOf = (axis: ResolvedAxis | undefined): LimitLine[] => {
+    const role = axis && axis === resolved?.x ? 'x' : 'y';
+    // The reader's own reference lines and bands: a band is its two edges, shaded from the lower.
+    const refs = (resolved?.spec.axes?.[role]?.references ?? []).flatMap((r): LimitLine[] => r.to === undefined
+      ? [{ value: r.at, kind: 'ref', end: 'lo', label: r.label ?? '' }]
+      : [{ value: r.at, kind: 'ref', end: 'lo', label: r.label ?? '', bandTo: r.to }, { value: r.to, kind: 'ref', end: 'hi', label: r.label ?? '' }]);
+    return [...limitLines(axis?.limits, resolved?.spec.limits ?? 'both'), ...refs].filter(l => axis?.scale !== 'log' || l.value > 0);
+  };
 
   /** `values` with the limits added when that keeps the data a third of the axis: the rule the Insights charts use. */
   const withLimits = (values: number[], lines: readonly LimitLine[]): number[] => {
@@ -269,8 +290,19 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const off = lines.filter(l => !inside.includes(l)).map(l => ({ value: l.value, label: l.label, side: (l.value < scale.lo ? 'lo' : 'hi') as 'lo' | 'hi' }));
     ctx.save();
     ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
-    const text = (l: LimitLine) => `${l.label} ${fmt(l.value, axis.unit)}`;
+    const text = (l: LimitLine) => `${l.label} ${fmt(l.value, axis.unit)}`.trim();
     const rowH = fontPx(-1) + 2;
+    // A reference band: shaded between its edges (clipped to the plot), under the lines.
+    for (const l of lines) {
+      if (l.bandTo === undefined) continue;
+      const a = scale.frac(Math.min(l.value, l.bandTo)), b = scale.frac(Math.max(l.value, l.bandTo));
+      const f0 = Math.max(0, Math.min(a, b)), f1 = Math.min(1, Math.max(a, b));
+      if (f1 <= f0) continue;
+      ctx.save(); ctx.globalAlpha = 0.1; ctx.fillStyle = color;
+      if (orient === 'y') ctx.fillRect(LEFT, TOP + (1 - f1) * plotH, plotW, (f1 - f0) * plotH);
+      else ctx.fillRect(LEFT + f0 * plotW, TOP, (f1 - f0) * plotW, plotH);
+      ctx.restore();
+    }
     if (orient === 'y') {
       const placed = inside.map(l => { const y = TOP + (1 - scale.frac(l.value)) * plotH; return { l, y, start: y - 6 - rowH / 2, end: y - 6 + rowH / 2 }; });
       const rows = stackLabelRows(placed, 1);
@@ -462,6 +494,30 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+    // y = x, then each colour's fitted line, sampled along X so a log axis draws the same line as a curve.
+    const sc = resolved.marks;
+    if (sc.type === 'scatter' && (sc.identity || sc.fits)) {
+      const pxAt = (vx: number, vy: number): [number, number] => [LEFT + x.frac(vx) * plotW, TOP + (1 - y.frac(vy)) * plotH];
+      const along = (f: (v: number) => number, color: string, dash: number[]) => {
+        ctx.save();
+        ctx.beginPath(); ctx.rect(LEFT, TOP, plotW, plotH); ctx.clip();
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dash);
+        ctx.beginPath();
+        for (let k = 0; k <= 60; k++) {
+          const t = k / 60;
+          const vx = x.log ? 10 ** (Math.log10(x.lo) + (Math.log10(x.hi) - Math.log10(x.lo)) * t) : x.lo + (x.hi - x.lo) * t;
+          const [px, py] = pxAt(vx, f(vx));
+          if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.restore();
+      };
+      if (sc.identity) along(v => v, theme.textMuted, [6, 4]);
+      for (const fit of sc.fits ?? []) {
+        if (active.size > 0 && !active.has(fit.group) && !scale) continue;
+        along(v => fit.intercept + fit.slope * v, scale ? theme.text : colorOf(fit.group), []);
+      }
+    }
     const hot = hovered ? drawn.find(d => d.p === hovered) : undefined;
     if (hot) {
       ctx.beginPath(); ctx.arc(hot.cx, hot.cy, 5, 0, Math.PI * 2);
@@ -500,7 +556,25 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         counts[g][b]++;
       }
     });
-    histogram = { edges, counts, maxCount: Math.max(1, ...counts.map(c => maxOf(c))) };
+    // Shares of each colour's own values in view, so a small group's shape compares with a large one's.
+    const percent = resolved.spec.histNorm === 'percent';
+    const heights = percent ? counts.map(c => { const t = c.reduce((a, b) => a + b, 0); return c.map(n => (t ? (n / t) * 100 : 0)); }) : counts;
+    // A normal curve can rise above the bars: the axis reaches its peak, n × bin width / (σ√2π).
+    let peak = 0;
+    const normal: Array<{ mean: number; sd: number } | undefined> = values.map(() => undefined);
+    if (resolved.spec.normalCurve && !x.log) {
+      const binW = (edges[edges.length - 1] - edges[0]) / bins;
+      values.forEach((vs, g) => {
+        const f = vs.filter(Number.isFinite);
+        if (f.length < 2) return;
+        const mean = f.reduce((a, b) => a + b, 0) / f.length;
+        const sd = Math.sqrt(sampleVariance(f, mean));
+        if (!(sd > 0)) return;
+        normal[g] = { mean, sd };
+        peak = Math.max(peak, ((percent ? 100 : counts[g].reduce((a, b) => a + b, 0)) * binW) / (sd * Math.sqrt(2 * Math.PI)));
+      });
+    }
+    histogram = { edges, counts, heights, normal, maxCount: Math.max(percent ? 0.001 : 1, peak, ...heights.map(c => maxOf(c))) };
   }
 
   function drawHistogram(): void {
@@ -511,7 +585,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const prep = prepareCanvas(canvas, card, w, h);
     if (!prep) return;
     const { ctx } = prep;
-    const { edges, counts, maxCount } = histogram;
+    const { edges, counts, heights, normal, maxCount } = histogram;
     const x = makeScale([edges[0], edges[edges.length - 1]], { ...resolved.x, min: edges[0], max: edges[edges.length - 1] });
     const y = makeScale([0, maxCount], { label: resolved.y.label, scale: 'linear', min: 0, max: maxCount * 1.05 });
     geometry = { x, y, plotW, plotH };
@@ -522,7 +596,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     for (const g of groups) {
       ctx.globalAlpha = overlay ? 0.55 : 0.85;
       ctx.fillStyle = colorOf(g);
-      counts[g].forEach((n, b) => {
+      heights[g].forEach((n, b) => {
         if (n === 0) return;
         const x0 = LEFT + Math.min(x.frac(edges[b]), x.frac(edges[b + 1])) * plotW;
         const x1 = LEFT + Math.max(x.frac(edges[b]), x.frac(edges[b + 1])) * plotW;
@@ -531,6 +605,29 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       });
     }
     ctx.globalAlpha = 1;
+    // Each colour's normal distribution, at its mean and standard deviation, scaled as its bars are: a count is n × bin
+    // width × density, a share 100 × bin width × density.
+    if (resolved.spec.normalCurve && !x.log) {
+      const binW = (edges[edges.length - 1] - edges[0]) / (edges.length - 1);
+      for (const g of groups) {
+        const fit = normal[g];
+        if (!fit) continue;
+        const { mean, sd } = fit;
+        const scale = (resolved.spec.histNorm === 'percent' ? 100 : counts[g].reduce((a, b) => a + b, 0)) * binW;
+        ctx.save();
+        ctx.beginPath(); ctx.rect(LEFT, TOP, plotW, plotH); ctx.clip();
+        ctx.strokeStyle = colorOf(g); ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let k = 0; k <= 120; k++) {
+          const v = edges[0] + ((edges[edges.length - 1] - edges[0]) * k) / 120;
+          const dens = Math.exp(-0.5 * ((v - mean) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI));
+          const px = LEFT + x.frac(v) * plotW, py = TOP + (1 - y.frac(scale * dens)) * plotH;
+          if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
     if (hoveredBin >= 0) {
       const x0 = LEFT + Math.min(x.frac(edges[hoveredBin]), x.frac(edges[hoveredBin + 1])) * plotW;
       const x1 = LEFT + Math.max(x.frac(edges[hoveredBin]), x.frac(edges[hoveredBin + 1])) * plotW;
@@ -721,12 +818,46 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const { ctx } = prep;
     const xLines = linesOf(resolved.x), yLines = linesOf(resolved.y);
     const x = makeScale(withLimits(spanOf(m.xs, resolved.x), xLines), resolved.x);
-    const y = makeScale(withLimits(spanOf(m.values.flat().filter(Number.isFinite), resolved.y), yLines), resolved.y);
+    const bandValues = m.band ? [...m.band.lo.flat(), ...m.band.hi.flat()] : [];
+    const y = makeScale(withLimits(spanOf([...m.values.flat(), ...bandValues].filter(Number.isFinite), resolved.y), yLines), resolved.y);
     geometry = { x, y, plotW, plotH };
     drawFrame(ctx, theme, w, h, plotW, plotH, x, y, resolved.x, resolved.y);
     drawLimits(ctx, theme.limitLine, plotW, plotH, x, xLines, resolved.x, 'x');
     drawLimits(ctx, theme.limitLine, plotW, plotH, y, yLines, resolved.y, 'y');
     lineX = m.xs.map(v => LEFT + x.frac(v) * plotW);
+    // Each colour's band under its line: a filled run of the X values with both ends known, broken where one is not.
+    if (m.band) {
+      const yPx = (v: number) => TOP + (1 - y.frac(v)) * plotH;
+      m.band.lo.forEach((lo, g) => {
+        if (active.size > 0 && !active.has(g)) return;
+        const hi = m.band!.hi[g];
+        ctx.save();
+        ctx.fillStyle = colorOf(g);
+        ctx.globalAlpha = 0.16;
+        let run: number[] = [];
+        const flush = () => {
+          // A lone point has no width to fill: its band is a bar from low to high, capped.
+          if (run.length === 1) {
+            const i = run[0], x0 = lineX[i];
+            ctx.globalAlpha = 0.55; ctx.strokeStyle = colorOf(g); ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(x0, yPx(lo[i])); ctx.lineTo(x0, yPx(hi[i]));
+            ctx.moveTo(x0 - 4, yPx(lo[i])); ctx.lineTo(x0 + 4, yPx(lo[i])); ctx.moveTo(x0 - 4, yPx(hi[i])); ctx.lineTo(x0 + 4, yPx(hi[i]));
+            ctx.stroke();
+            ctx.globalAlpha = 0.16;
+          } else if (run.length) {
+            ctx.beginPath();
+            run.forEach((i, k) => { if (k === 0) ctx.moveTo(lineX[i], yPx(hi[i])); else ctx.lineTo(lineX[i], yPx(hi[i])); });
+            for (let k = run.length - 1; k >= 0; k--) ctx.lineTo(lineX[run[k]], yPx(lo[run[k]]));
+            ctx.closePath();
+            ctx.fill();
+          }
+          run = [];
+        };
+        lo.forEach((v, i) => { if (Number.isFinite(v) && Number.isFinite(hi[i])) run.push(i); else flush(); });
+        flush();
+        ctx.restore();
+      });
+    }
     m.values.forEach((series, g) => {
       if (active.size > 0 && !active.has(g)) return;
       ctx.strokeStyle = colorOf(g); ctx.fillStyle = colorOf(g); ctx.lineWidth = 2;
@@ -761,7 +892,11 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const noun = resolved.level === 'die' ? 'dies' : 'wafers';
     const rows = m.values.map((series, g) => ({ g, v: series[best], n: m.counts[g][best] })).filter(r => Number.isFinite(r.v) && (active.size === 0 || active.has(r.g)));
     return `<strong>${escHtml(`${resolved.x.label}: ${fmt(m.xs[best], resolved.x.unit)}`)}</strong><br>`
-      + rows.map(r => escHtml(`${resolved!.groups.length > 1 ? `${groupLabel(r.g)}: ` : ''}${fmt(r.v, resolved!.y!.unit)} (${r.n.toLocaleString('en-GB')} ${noun})`)).join('<br>');
+      + rows.map(r => {
+        const lo = m.band?.lo[r.g][best], hi = m.band?.hi[r.g][best];
+        const band = lo !== undefined && hi !== undefined && Number.isFinite(lo) && Number.isFinite(hi) ? `, band ${fmt(lo, resolved!.y!.unit)} to ${fmt(hi, resolved!.y!.unit)}` : '';
+        return escHtml(`${resolved!.groups.length > 1 ? `${groupLabel(r.g)}: ` : ''}${fmt(r.v, resolved!.y!.unit)}${band} (${r.n.toLocaleString('en-GB')} ${noun})`);
+      }).join('<br>');
   }
 
   // ── probability ──
@@ -850,9 +985,211 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       + (options.onOpenWafer ? `<br><em>click to ${escHtml(options.openActionLabel ?? 'open this wafer')}</em>` : '');
   }
 
+  // ── heatmap ──
+  /** Where the heatmap's grid was drawn, for hover and click. */
+  let heat: { left: number; cw: number; ch: number; rows: number; cols: number } | undefined;
+  let hoveredHeat: { r: number; c: number } | null = null;
+
+  function drawHeatmap(): void {
+    const m = resolved?.marks;
+    if (!resolved || !canvas || m?.type !== 'heatmap') return;
+    applyCanvasFlow(canvas, above ?? 0);
+    const theme = resolveChartCanvasColors(card);
+    const probe = canvas.getContext('2d');
+    let rowW = 0, colW = 0;
+    if (probe) {
+      probe.font = `${fontPx(-1)}px system-ui, sans-serif`;
+      rowW = maxOf(m.rows.map(t => probe.measureText(t.length > 24 ? `${t.slice(0, 23)}…` : t).width));
+      colW = maxOf(m.cols.map(t => probe.measureText(t.length > 22 ? `${t.slice(0, 21)}…` : t).width));
+    }
+    // Room for the row labels at the left; the column labels slant when flat ones would collide.
+    const left = Math.min(180, Math.max(LEFT, rowW + 24));
+    const slot = Math.max(8, body.clientWidth - left - RIGHT) / Math.max(1, m.cols.length);
+    const rotate = colW + 8 > slot;
+    bottomMargin = rotate ? BOTTOM + Math.min(110, colW * 0.72) : BOTTOM;
+    const { w, h } = dims();
+    const plotW = Math.max(10, w - left - RIGHT), plotH = Math.max(10, h - TOP - bottomMargin);
+    const prep = prepareCanvas(canvas, card, w, h);
+    if (!prep) return;
+    const { ctx } = prep;
+    const cw = plotW / m.cols.length, ch = plotH / m.rows.length;
+    heat = { left, cw, ch, rows: m.rows.length, cols: m.cols.length };
+    const scale = resolved.colorScale;
+    const gradient = resolveValueColorFn();
+    const span = scale ? scale.hi - scale.lo || 1 : 1;
+    ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+    for (let r = 0; r < m.rows.length; r++) {
+      for (let c = 0; c < m.cols.length; c++) {
+        const v = m.values[r][c];
+        const x0 = left + c * cw, y0 = TOP + r * ch;
+        ctx.fillStyle = Number.isFinite(v) && scale ? gradient((v - scale.lo) / span) : theme.track;
+        ctx.fillRect(x0 + 0.5, y0 + 0.5, Math.max(1, cw - 1), Math.max(1, ch - 1));
+        // The value itself, where the cell has room for it.
+        if (Number.isFinite(v) && cw >= 40 && ch >= 16) {
+          ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          fillTextOnHalo(ctx, cellText(v, resolved.y?.unit, scale?.integer), x0 + cw / 2, y0 + ch / 2, 'rgba(0,0,0,0.55)');
+        }
+      }
+    }
+    if (hoveredHeat) { ctx.lineWidth = 2; ctx.strokeStyle = theme.text; ctx.strokeRect(left + hoveredHeat.c * cw, TOP + hoveredHeat.r * ch, cw, ch); }
+    // Row labels at the left, column labels below, and the two axis titles.
+    ctx.fillStyle = theme.textMuted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    m.rows.forEach((t, r) => ctx.fillText(t.length > 24 ? `${t.slice(0, 23)}…` : t, left - 6, TOP + (r + 0.5) * ch));
+    m.cols.forEach((t, c) => {
+      const text = t.length > 22 ? `${t.slice(0, 21)}…` : t, cx = left + (c + 0.5) * cw;
+      if (rotate) { ctx.save(); ctx.translate(cx, TOP + plotH + 6); ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
+      else { ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(text, cx, TOP + plotH + 4); }
+    });
+    ctx.font = `${fontPx(0)}px system-ui, sans-serif`; ctx.fillStyle = theme.text;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(resolved.x?.label ?? '', left + plotW / 2, h - 6);
+  }
+
+  function heatAt(e: MouseEvent): { r: number; c: number } | null {
+    if (!heat || !canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const c = Math.floor((e.clientX - rect.left - heat.left) / heat.cw), r = Math.floor((e.clientY - rect.top - TOP) / heat.ch);
+    return r >= 0 && r < heat.rows && c >= 0 && c < heat.cols ? { r, c } : null;
+  }
+
+  function heatTip(cell: { r: number; c: number }): string {
+    const r = resolved!;
+    const m = r.marks as Extract<NonNullable<typeof r.marks>, { type: 'heatmap' }>;
+    const v = m.values[cell.r][cell.c], n = m.cellUnits[cell.r][cell.c].length;
+    const noun = r.level === 'die' ? 'dies' : 'wafers';
+    return `<strong>${escHtml(`${m.rows[cell.r]} · ${m.cols[cell.c]}`)}</strong><br>`
+      + (Number.isFinite(v) ? escHtml(`${r.y?.label ?? 'Count'}: ${cellText(v, r.y?.unit, r.colorScale?.integer)}`) + '<br>' : '')
+      + escHtml(`${n.toLocaleString('en-GB')} ${noun}`)
+      + (n && options.onSelectPoints ? '<br><em>click to chart or tabulate them</em>' : '');
+  }
+
+  // ── control chart ──
+  function drawControl(): void {
+    const m = resolved?.marks;
+    if (!resolved || !canvas || !resolved.x || !resolved.y || m?.type !== 'control') return;
+    applyCanvasFlow(canvas, above ?? 0);
+    const theme = resolveChartCanvasColors(card);
+    const { w, h, plotW, plotH } = dims();
+    const prep = prepareCanvas(canvas, card, w, h);
+    if (!prep) return;
+    const { ctx } = prep;
+    const L = m.limits;
+    const yLines = linesOf(resolved.y);
+    const x = makeScale(spanOf(m.xs, resolved.x), resolved.x);
+    const y = makeScale(withLimits(spanOf([...m.values, L.ucl, L.lcl], resolved.y), yLines), resolved.y);
+    geometry = { x, y, plotW, plotH };
+    drawFrame(ctx, theme, w, h, plotW, plotH, x, y, resolved.x, resolved.y);
+    drawLimits(ctx, theme.limitLine, plotW, plotH, y, yLines, resolved.y, 'y');
+    const px = (k: number) => LEFT + x.frac(m.xs[k]) * plotW, py = (v: number) => TOP + (1 - y.frac(v)) * plotH;
+    // The centre and the ±1σ, ±2σ zones faint, the ±3σ control limits dashed and labelled.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(LEFT, TOP, plotW, plotH); ctx.clip();
+    const hline = (v: number, dash: number[], alpha: number, width = 1) => {
+      ctx.globalAlpha = alpha; ctx.setLineDash(dash); ctx.lineWidth = width; ctx.strokeStyle = theme.text;
+      ctx.beginPath(); ctx.moveTo(LEFT, py(v)); ctx.lineTo(LEFT + plotW, py(v)); ctx.stroke();
+    };
+    for (const k of [-2, -1, 1, 2]) hline(L.centre + k * L.sigma, [2, 4], 0.25);
+    hline(L.centre, [], 0.6, 1.5);
+    hline(L.ucl, [6, 4], 0.85); hline(L.lcl, [6, 4], 0.85);
+    ctx.restore();
+    ctx.fillStyle = theme.textMuted; ctx.font = `${fontPx(-1)}px system-ui, sans-serif`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    const fmtY = (v: number) => fmt(v, resolved!.y!.unit);
+    ctx.fillText(`UCL ${fmtY(L.ucl)}`, LEFT + plotW - 4, py(L.ucl) - 2);
+    ctx.textBaseline = 'top';
+    ctx.fillText(`LCL ${fmtY(L.lcl)}`, LEFT + plotW - 4, py(L.lcl) + 2);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`Centre ${fmtY(L.centre)}`, LEFT + plotW - 4, py(L.centre) - 2);
+    // The baseline's end, when the limits come from the first points only.
+    if (L.baseline < m.values.length) {
+      const bx = (px(L.baseline - 1) + px(L.baseline)) / 2;
+      ctx.save(); ctx.strokeStyle = theme.textMuted; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(bx, TOP); ctx.lineTo(bx, TOP + plotH); ctx.stroke(); ctx.restore();
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('limits from here ←', LEFT + 4, TOP + 2);
+    }
+    // The values joined in order; a point breaking a rule in the error colour, its rule numbers above it.
+    ctx.strokeStyle = colorOf(0); ctx.lineWidth = 1.5; ctx.setLineDash([]);
+    ctx.beginPath(); m.values.forEach((v, k) => { if (k === 0) ctx.moveTo(px(k), py(v)); else ctx.lineTo(px(k), py(v)); }); ctx.stroke();
+    const broken = new Map(m.violations.map(v => [v.index, v.rules]));
+    drawn = [];
+    m.values.forEach((v, k) => {
+      const rules = broken.get(k);
+      ctx.beginPath(); ctx.arc(px(k), py(v), rules ? 4.5 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = rules ? theme.alert : colorOf(0); ctx.fill();
+      if (rules) { ctx.fillStyle = theme.alert; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(rules.join(','), px(k), py(v) - 6); }
+      drawn.push({ p: { x: m.xs[k], y: v, group: 0, item: m.items[k] }, cx: px(k), cy: py(v) });
+    });
+    const hot = hovered ? drawn.find(d => d.p === hovered) : undefined;
+    if (hot) { ctx.beginPath(); ctx.arc(hot.cx, hot.cy, 6, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = theme.text; ctx.stroke(); }
+  }
+
+  function describeControlPoint(p: PlotPoint): string {
+    const r = resolved!;
+    const m = r.marks as Extract<NonNullable<typeof r.marks>, { type: 'control' }>;
+    const k = m.items.indexOf(p.item);
+    const z = (p.y - m.limits.centre) / m.limits.sigma;
+    const rules = m.violations.find(v => v.index === k)?.rules;
+    return `<strong>${escHtml(options.waferLabel(p.item))}</strong><br>`
+      + escHtml(`${r.y!.label}: ${fmt(p.y, r.y!.unit)} (${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(1)}σ)`)
+      + (rules ? `<br>${escHtml(`breaks rule ${rules.map(n => `${n} (${CONTROL_RULE_TEXT[n]})`).join(', ')}`)}` : '')
+      + (options.onOpenWafer ? `<br><em>click to ${escHtml(options.openActionLabel ?? 'open this wafer')}</em>` : '');
+  }
+
+  // ── goal plot ──
+  function drawGoal(): void {
+    const m = resolved?.marks;
+    if (!resolved || !canvas || !resolved.x || !resolved.y || m?.type !== 'goal') return;
+    applyCanvasFlow(canvas, above ?? 0);
+    const theme = resolveChartCanvasColors(card);
+    const { w, h, plotW, plotH } = dims();
+    const prep = prepareCanvas(canvas, card, w, h);
+    if (!prep) return;
+    const { ctx } = prep;
+    // Symmetric about a centred mean, from zero spread, wide enough for the Ppk 1 triangle.
+    const reach = Math.max(0.5, ...m.points.map(p => Math.abs(p.x)));
+    const x = makeScale([-reach, reach], { ...resolved.x, min: resolved.x.min ?? -reach * 1.05, max: resolved.x.max ?? reach * 1.05 });
+    const y = makeScale([0, ...m.points.map(p => p.y), 1 / 6], { ...resolved.y, min: resolved.y.min ?? 0 }, { floorAtZero: true });
+    geometry = { x, y, plotW, plotH };
+    drawFrame(ctx, theme, w, h, plotW, plotH, x, y, resolved.x, resolved.y);
+    const px = (v: number) => LEFT + x.frac(v) * plotW, py = (v: number) => TOP + (1 - y.frac(v)) * plotH;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(LEFT, TOP, plotW, plotH); ctx.clip();
+    ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
+    const contours: Array<[number, number[]]> = [[1, [6, 4]], [1.33, []]];
+    for (const [ppk, dash] of contours) {
+      const apex = 1 / (6 * ppk);
+      ctx.strokeStyle = theme.textMuted; ctx.lineWidth = 1; ctx.setLineDash(dash);
+      ctx.beginPath(); ctx.moveTo(px(-0.5), py(0)); ctx.lineTo(px(0), py(apex)); ctx.lineTo(px(0.5), py(0)); ctx.stroke();
+      ctx.fillStyle = theme.textMuted; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+      ctx.fillText(`Ppk ${ppk}`, px(0) + 4, py(apex) - 2);
+    }
+    ctx.restore();
+    drawn = [];
+    for (const p of m.points) {
+      if (active.size > 0 && !active.has(p.group)) continue;
+      ctx.beginPath(); ctx.arc(px(p.x), py(p.y), 4, 0, Math.PI * 2); ctx.fillStyle = colorOf(p.group); ctx.fill();
+      // The tests short of Ppk 1.33 are named: they are what the plot is read for.
+      if (p.ppk < 1.33) { ctx.fillStyle = theme.text; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(p.label, px(p.x) + 6, py(p.y)); }
+      drawn.push({ p: { x: p.x, y: p.y, group: p.group, item: -1, value: p.testNumber }, cx: px(p.x), cy: py(p.y) });
+    }
+    const hot = hovered ? drawn.find(d => d.p === hovered) : undefined;
+    if (hot) { ctx.beginPath(); ctx.arc(hot.cx, hot.cy, 6, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = theme.text; ctx.stroke(); }
+  }
+
+  function describeGoalPoint(p: PlotPoint): string {
+    const r = resolved!;
+    const m = r.marks as Extract<NonNullable<typeof r.marks>, { type: 'goal' }>;
+    const g = m.points.find(q => q.testNumber === p.value && q.group === p.group);
+    if (!g) return '';
+    return `<strong>${escHtml(g.label)}</strong>${r.groups.length > 1 ? ` · ${escHtml(groupLabel(g.group))}` : ''}<br>`
+      + escHtml(`Ppk ${g.ppk.toFixed(2)} · ${g.n.toLocaleString('en-GB')} dies`) + '<br>'
+      + escHtml(`mean ${g.x >= 0 ? '+' : '−'}${Math.abs(g.x * 100).toFixed(1)}% of the window from its centre, σ ${(g.y * 100).toFixed(1)}% of it (${g.basis === 'spec' ? 'spec' : 'test'} limits)`);
+  }
+
   function draw(): void {
     const t = resolved?.marks?.type;
     if (t === 'scatter') drawScatter();
+    else if (t === 'control') drawControl();
+    else if (t === 'heatmap') drawHeatmap();
+    else if (t === 'goal') drawGoal();
     else if (t === 'probability') drawProbability();
     else if (t === 'histogram') drawHistogram();
     else if (t === 'box' || t === 'bar') drawCategorical();
@@ -886,7 +1223,10 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const axis = resolved.x;
     const lines = counts.map((c, g) => ({ g, n: c[b] })).filter(r => r.n > 0 && (active.size === 0 || active.has(r.g)));
     return `<strong>${escHtml(`${fmt(edges[b], axis.unit)} to ${fmt(edges[b + 1], axis.unit)}`)}</strong><br>`
-      + (lines.length ? lines.map(r => escHtml(`${resolved!.groups.length > 1 ? `${groupLabel(r.g)}: ` : ''}${r.n.toLocaleString('en-GB')} ${resolved!.level === 'die' ? 'dies' : 'wafers'}`)).join('<br>') : 'none');
+      + (lines.length ? lines.map(r => {
+        const share = resolved!.spec.histNorm === 'percent' ? ` (${histogram!.heights[r.g][b].toFixed(1)}% of ${resolved!.groups.length > 1 ? 'its colour' : 'them'})` : '';
+        return escHtml(`${resolved!.groups.length > 1 ? `${groupLabel(r.g)}: ` : ''}${r.n.toLocaleString('en-GB')} ${resolved!.level === 'die' ? 'dies' : 'wafers'}${share}`);
+      }).join('<br>') : 'none');
   }
 
   /** The key to a continuous colour: its name, a gradient strip, and the range the strip spans. */
@@ -900,8 +1240,10 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const g = strip.getContext('2d');
     const gradient = resolveValueColorFn();
     if (g) for (let i = 0; i < 200; i++) { g.fillStyle = gradient(i / 199); g.fillRect(i, 0, 1, 10); }
-    const lo = doc.createElement('span'); lo.textContent = fmt(scale.lo, scale.unit);
-    const hi = doc.createElement('span'); hi.textContent = fmt(scale.hi, scale.unit);
+    // A heatmap's key reads as its cells do; a scatter's gradient keeps its unit's own scaling.
+    const text = (v: number) => (resolved?.marks?.type === 'heatmap' ? cellText(v, scale.unit, scale.integer) : fmt(v, scale.unit));
+    const lo = doc.createElement('span'); lo.textContent = text(scale.lo);
+    const hi = doc.createElement('span'); hi.textContent = text(scale.hi);
     const name = doc.createElement('span'); name.textContent = scale.label;
     name.style.color = CLR.text;
     row.append(name, lo, strip, hi);
@@ -916,7 +1258,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     pointer?.destroy(); pointer = undefined;
     body.innerHTML = '';
     canvas = undefined; legend = undefined; above = undefined; chips = []; hovered = null; hoveredBin = -1; drawn = []; geometry = undefined;
-    cat = undefined; hoveredCell = null; lineX = []; hoveredLine = -1; bottomMargin = BOTTOM; probabilityPoints = new Map();
+    cat = undefined; hoveredCell = null; heat = undefined; hoveredHeat = null; lineX = []; hoveredLine = -1; bottomMargin = BOTTOM; probabilityPoints = new Map();
     active.clear(); selected.clear();
     for (const p of panels) p.destroy();
     panels = [];
@@ -956,6 +1298,14 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     above.style.display = 'flow-root';   // keeps the legend's margin inside, so the canvas starts below it
     body.appendChild(above);
     above.appendChild(hint);
+    // Each fitted line in words: its equation, R² and n.
+    for (const line of r.fitNotes ?? []) {
+      const n = doc.createElement('div');
+      n.dataset.wmapPlotFit = '1';
+      n.textContent = line;
+      Object.assign(n.style, { color: CLR.text, fontSize: FONT.body, marginBottom: SPACE.xxs, fontVariantNumeric: 'tabular-nums' } as Partial<CSSStyleDeclaration>);
+      above.appendChild(n);
+    }
     for (const note of r.notes) {
       const n = doc.createElement('div');
       markNoPrint(n);
@@ -1038,6 +1388,16 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
           hasSelection: () => selected.size > 0,
         } : undefined,
       });
+    } else if (r.marks.type === 'control' || r.marks.type === 'goal') {
+      const control = r.marks.type === 'control';
+      pointer = wirePointInteractions<PlotPoint>({
+        card, canvas, tooltip,
+        drawn: () => drawn,
+        describe: control ? describeControlPoint : describeGoalPoint,
+        clickable: () => control && !!options.onOpenWafer,
+        onOpen: p => { if (control) options.onOpenWafer?.(p.item, plotTestNumber(r.spec)); },
+        onHover: p => { hovered = p; draw(); },
+      });
     } else if (r.marks.type === 'probability') {
       const pm = r.marks;
       const linear = r.spec.probabilityAxis === 'linear';
@@ -1106,6 +1466,24 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
           if (points.length > 0) { tooltip.style.display = 'none'; options.onSelectPoints!(points, { x: e.clientX, y: e.clientY }, canvas!); }
         });
       }
+    } else if (r.marks.type === 'heatmap') {
+      const hm = r.marks;
+      canvas.addEventListener('mousemove', e => {
+        const cell = heatAt(e);
+        canvas!.style.cursor = cell && options.onSelectPoints && hm.cellUnits[cell.r][cell.c].length ? 'pointer' : 'default';
+        if (!cell) { tooltip.style.display = 'none'; if (hoveredHeat) { hoveredHeat = null; draw(); } return; }
+        tooltip.innerHTML = heatTip(cell);
+        tooltip.style.display = 'block';
+        positionChartTooltip(tooltip, card, e.clientX, e.clientY);
+        if (!hoveredHeat || hoveredHeat.r !== cell.r || hoveredHeat.c !== cell.c) { hoveredHeat = cell; draw(); }
+      });
+      canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; if (hoveredHeat) { hoveredHeat = null; draw(); } });
+      canvas.addEventListener('click', e => {
+        const cell = heatAt(e);
+        if (!cell || !options.onSelectPoints) return;
+        const units = hm.cellUnits[cell.r][cell.c];
+        if (units.length) { tooltip.style.display = 'none'; options.onSelectPoints(unitPoints(hm.unit, units, 0), { x: e.clientX, y: e.clientY }, canvas!); }
+      });
     } else if (r.marks.type === 'box' || r.marks.type === 'bar') {
       const cm = r.marks;
       canvas.addEventListener('mousemove', e => {
@@ -1159,7 +1537,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     if (!r || !r.marks) return undefined;
     const gradient = resolveValueColorFn();
     return {
-      caption: [plotFootnote(r), ...r.notes],
+      caption: [plotFootnote(r), ...(r.fitNotes ?? []), ...r.notes],
       legend: r.groups.length > 1 ? r.groups.map((g, i) => ({ label: g || '(none)', color: colorOf(i) })) : undefined,
       colorbar: r.colorScale ? { label: r.colorScale.label, lo: fmt(r.colorScale.lo, r.colorScale.unit), hi: fmt(r.colorScale.hi, r.colorScale.unit), color: gradient } : undefined,
     };

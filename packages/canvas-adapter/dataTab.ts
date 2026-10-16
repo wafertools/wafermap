@@ -31,6 +31,7 @@ import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip, 
 import { buildTestSection, buildFunctionalTestSection } from './summaryPanel.js';
 import type { InsightsItem } from './insightsTab.js';
 import type { Wafer } from '../core/wafer.js';
+import { patTests, waferPatVerdicts, PAT_VERDICT_LABEL, type DiePat } from '../stats/pat.js';
 
 export type DataView = 'statistics' | 'dies' | 'wafers';
 
@@ -41,6 +42,8 @@ export interface DataItem {
   dies: Die[];
   waferIndex: number;
   wafer?: Wafer;
+  /** Every die of the wafer, when `dies` is a part of it: PAT limits are set from the whole wafer. Absent = `dies` is the wafer. */
+  allDies?: Die[];
   /** The wafer's own pass bins: the Wafers view's yield judges by them. */
   passBins: readonly number[];
   statsSummary?: InsightsItem['statsSummary'];
@@ -244,6 +247,31 @@ function buildStatisticsView(deps: DataSectionDeps): ViewResult {
 
 // ── Dies ─────────────────────────────────────────────────────────────────────
 
+/**
+ * The PAT columns of a Dies table: each die's verdict on its own wafer, and the tests that put an outlier outside. Only
+ * wafers whose dies are all there (a part of a wafer is not the population its limits describe, so a selection without
+ * the whole wafer behind it gets none), and only when the lot has tests PAT can judge.
+ */
+function diePatColumns(items: readonly DataItem[], defs: TestDef[], isPart: boolean): NonNullable<Parameters<typeof resolveDieColumns>[2]>['patColumns'] {
+  if (patTests(defs).length === 0) return undefined;
+  const byDie = new Map<Die, DiePat>();
+  for (const it of items) {
+    const whole = it.allDies ?? (isPart ? undefined : it.dies);
+    if (!whole) continue;
+    const verdicts = waferPatVerdicts(whole, defs, it.passBins);
+    whole.forEach((d, i) => byDie.set(d, verdicts[i]));
+  }
+  if (byDie.size === 0) return undefined;
+  const name = (tn: number) => { const d = defs.find(x => x.testNumber === tn); return d ? testLabel(d, tn) : `Test ${tn}`; };
+  let anyOutlier = false;
+  for (const v of byDie.values()) if (v.verdict === 'outlier') { anyOutlier = true; break; }
+  return {
+    verdict: d => { const v = byDie.get(d)?.verdict; return v ? PAT_VERDICT_LABEL[v] : undefined; },
+    tests: d => { const v = byDie.get(d); return v?.verdict === 'outlier' ? v.tests.map(name).join('; ') : ''; },
+    anyOutlier,
+  };
+}
+
 function buildDiesView(deps: DataSectionDeps): ViewResult {
   const { doc, items } = deps;
   const waferLabelByDie = new WeakMap<Die, string>();
@@ -262,8 +290,10 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
   }
   if (dies.length === 0) return emptyView(doc, 'No dies to show.');
 
+  const patColumns = diePatColumns(items, deps.allTestDefs, !!deps.population);
   const { columns, visibleColumns } = resolveDieColumns(dies, deps.allTestDefs, {
     ...deps.dieListOptions,
+    ...(patColumns ? { patColumns } : {}),
     metadataFields: deps.metadataFields,
     extraColumn: items.length > 1 || deps.population ? { label: 'Wafer', get: d => waferLabelByDie.get(d) } : undefined,
     getWafer: anyWafer ? (d => waferByDie.get(d)) : undefined,
@@ -499,7 +529,7 @@ export interface DataTablesInput {
   doc: Document;
   /** One entry per wafer. `wafer` gives ring/quadrant and the lot/product columns; `passBins` and
    *  `statsSummary` give the Wafers view its yield and means. */
-  items: ReadonlyArray<{ label: string; dies: Die[]; waferIndex?: number; wafer?: Wafer; passBins: readonly number[]; statsSummary?: DataItem['statsSummary'] }>;
+  items: ReadonlyArray<{ label: string; dies: Die[]; allDies?: Die[]; waferIndex?: number; wafer?: Wafer; passBins: readonly number[]; statsSummary?: DataItem['statsSummary'] }>;
   testDefs: TestDef[] | undefined;
   /** Set when the tables describe part of a population — a drilldown selection: who the dies are, in
    *  words ("selected on W03"). A saved file then says so in its name and a Wafer column. Omit for a whole wafer or lot. */

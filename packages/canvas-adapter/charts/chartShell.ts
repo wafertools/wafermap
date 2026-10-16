@@ -133,6 +133,8 @@ export interface ChartCanvasColors {
    * limit line and its label need.
    */
   limitLine: string;
+  /** A point that breaks a rule (a control chart's out-of-control wafer): the theme's error text colour, readable on a panel. */
+  alert: string;
   /**
    * Gridlines: `border` at `GRID_ALPHA`. A gridline is a reading aid behind the
    * data; drawn at full `border` strength (the axis colour) it competed with the
@@ -177,6 +179,7 @@ const CHART_COLOR_FALLBACKS: Record<Exclude<keyof ChartCanvasColors, 'grid'>, st
   accent: '#1a66cc',
   // A darker amber than `warnBorder`: this one is read, not merely sensed.
   limitLine: '#b45309',
+  alert: '#7a1c1c',
 };
 
 const CHART_COLOR_TOKEN: Record<Exclude<keyof ChartCanvasColors, 'grid'>, string> = {
@@ -189,6 +192,7 @@ const CHART_COLOR_TOKEN: Record<Exclude<keyof ChartCanvasColors, 'grid'>, string
   warnBorder: 'warn-border',
   accent: 'icon-active',
   limitLine: 'warn-text',
+  alert: 'err-text',
 };
 
 /** Resolve `--wmap-*` custom properties to concrete color strings for canvas
@@ -1928,8 +1932,11 @@ export interface AxisPrefs {
 // a chart showing both must never let one be read as the other, so each kind has
 // its own label and its own dash pattern — never colour alone.
 
-/** `pat`: one wafer's part-average-testing limits (stats/pat.ts), drawn only on a plot of that wafer. */
-export type LimitKind = 'test' | 'spec' | 'pat';
+/**
+ * `pat`: one wafer's part-average-testing limits (stats/pat.ts), drawn only on a plot of that wafer; `whatif`: proposed limits
+ * for a histogram or probability plot; `ref`: a line or band the reader put on the axis.
+ */
+export type LimitKind = 'test' | 'spec' | 'pat' | 'whatif' | 'ref';
 /** The Insights "Limits" choice. */
 export type LimitsShown = 'test' | 'spec' | 'both' | 'none';
 
@@ -1939,12 +1946,16 @@ export interface LimitLine {
   /** Which end of its pair: the low limit or the high one. */
   end: 'lo' | 'hi';
   label: string;
+  /** A reference band: the other edge, shaded between it and `value`. Set on the band's lower line only. */
+  bandTo?: number;
 }
 
 export const LIMIT_LABEL: Readonly<Record<LimitKind, { lo: string; hi: string }>> = {
   test: { lo: 'Lo limit', hi: 'Hi limit' },
   spec: { lo: 'LSL', hi: 'USL' },
   pat: { lo: 'PAT lo', hi: 'PAT hi' },
+  whatif: { lo: 'What-if lo', hi: 'What-if hi' },
+  ref: { lo: '', hi: '' },
 };
 
 /** Canvas dash pattern per kind: short dashes for test limits, long for spec, dots for PAT. */
@@ -1952,6 +1963,8 @@ export const LIMIT_DASH: Readonly<Record<LimitKind, number[]>> = {
   test: [3, 3],
   spec: [10, 4],
   pat: [1, 3],
+  whatif: [8, 3, 2, 3],
+  ref: [6, 2, 1, 2],
 };
 
 export const LIMITS_SHOWN_OPTIONS: ReadonlyArray<{ value: LimitsShown; label: string }> = [
@@ -1961,10 +1974,11 @@ export const LIMITS_SHOWN_OPTIONS: ReadonlyArray<{ value: LimitsShown; label: st
   { value: 'none', label: 'None' },
 ];
 
-type LimitSource = { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number; patLow?: number; patHigh?: number } | undefined;
+type LimitSource = { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number; patLow?: number; patHigh?: number; whatIfLow?: number; whatIfHigh?: number } | undefined;
 
 function linesOfKind(def: LimitSource, kind: LimitKind): LimitLine[] {
-  const [lo, hi] = kind === 'test' ? [def?.limitLow, def?.limitHigh] : kind === 'spec' ? [def?.specLow, def?.specHigh] : [def?.patLow, def?.patHigh];
+  const [lo, hi] = kind === 'test' ? [def?.limitLow, def?.limitHigh] : kind === 'spec' ? [def?.specLow, def?.specHigh]
+    : kind === 'pat' ? [def?.patLow, def?.patHigh] : kind === 'whatif' ? [def?.whatIfLow, def?.whatIfHigh] : [undefined, undefined];
   const out: LimitLine[] = [];
   if (lo !== undefined && Number.isFinite(lo)) out.push({ value: lo, kind, end: 'lo', label: LIMIT_LABEL[kind].lo });
   if (hi !== undefined && Number.isFinite(hi)) out.push({ value: hi, kind, end: 'hi', label: LIMIT_LABEL[kind].hi });
@@ -1991,7 +2005,7 @@ export function limitLines(def: LimitSource, shown: LimitsShown = 'both'): Limit
   const spec = linesOfKind(def, 'spec');
   const chosen = shown === 'test' ? test : shown === 'spec' ? spec : [...test, ...spec];
   // PAT limits are a screen within the test's limits, not a choice between kinds: drawn whenever limits are.
-  return [...(chosen.length ? chosen : [...test, ...spec]), ...linesOfKind(def, 'pat')];
+  return [...(chosen.length ? chosen : [...test, ...spec]), ...linesOfKind(def, 'pat'), ...linesOfKind(def, 'whatif')];
 }
 
 /** The span the lines cover, for axis-range decisions. */

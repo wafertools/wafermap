@@ -36,6 +36,71 @@ under `### Breaking`.
   is counted against its own test; and a limit line is drawn only where every test puts it at the same place. A set
   reads at most four million values (dies × tests). The editor offers **Several tests…** in the values list, a **Tests**
   box, and **Rescale values**. Plot files stay at version 1.
+- **A PAT showcase lot.** `docs/data/showcase-pat-screen.csv` (with `.meta.json`, from `scripts/gen-showcase-csvs.mjs`) is a synthetic
+  lot of four wafers with four tests that each have both limits, planted PAT outliers on every wafer, a group of them on one,
+  a log-normal (lopsided) Iddq and a few dies outside their limits, for trying the PAT card, columns and plots.
+- **Pointers to the explanations.** The comparison, commonality and PAT cards, and the footnotes of probability, control, goal and
+  heatmap plots, say where in the user guide to read how to interpret them.
+- **The statistics explained.** The user guide has a new section, *The statistics, explained*: for each figure the Insights and Plot
+  tabs show (group comparison and its p and q, what divides yield, probability plots, fit lines, bands, control charts,
+  capability and the goal plot, rescaling, ranges, what-if limits, heatmaps and the difference map, part average testing
+  and the example plots) what question it answers, how it is worked out, how to read it and what it cannot say. PAT's
+  entry states how the limits are set and how they differ from AEC-Q001. The glossary gains matching entries.
+- **Reference lines and bands on a plot axis.** `PlotAxis.references` is a list of up to eight `{ at, to?, label? }`: a dash-dot
+  line at `at`, or a shaded band from `at` to `to`, in the axis's own unit, on any value axis (scatter X and Y, a
+  histogram's or probability plot's values, a box, bar, line or control chart's values). Each is labelled with its name and
+  value and takes part in the axis range as test limits do; one off the edge is marked there. The editor's **Reference
+  lines** box in Customise reads `0.45 Target, 0.3..0.5 Window`. Plot files stay at version 1.
+- **PAT in Insights and the Dies table.** The Overview has a **Part average testing (PAT)** card (shown when a test has both
+  limits and a wafer has enough passing dies): per wafer the dies within the PAT limits, the outliers and their rate, and the
+  dies that fail anyway, with the wafers with the most outliers first, the tests the outliers are outside on, and the tests
+  whose values are lopsided (quartile skewness of 0.2 or more), where symmetric limits fit less well. The Dies
+  table and its CSV gain a **PAT** column, and **PAT tests** when there are outliers, for whole wafers (a part of a wafer
+  has none: its limits are the whole wafer's).
+- **More example plots, chosen from the lot.** The Plot tab's **Add examples** takes its tests and split from the data in view: the lead
+  test varies most between wafers (for one wafer, follows radial position most), its partner tracks it best, and the split
+  is the lot field that explains most of the lead test's wafer-to-wafer spread (`stats/examplePicks.ts`, which reads a sample of
+  at most 4,000 dies and 60 tests). The examples are coloured by the split (by ring where the lot has no split), so groups are told apart at a glance. It also draws, where the lot has the data for them, the first
+  tests as a rescaled set (a box per test, and a heatmap of tests by wafer), the first test by split and by wafer
+  nested in split, panels by ring, the first test by ranges of the second and of radial position, a pareto of the hard
+  bins, each wafer's bin mix, the first test by PAT verdict, die positions coloured by PAT verdict, an individuals control chart (five or more wafers), and,
+  where the test definitions carry limits, a capability goal plot and a pass-rate bar. The
+  scatter carries a fitted line, the histogram its normal curve and the line a ±1 SD band.
+- **A measured value in ranges, as a category.** A field `{ binned: field, bins?, by? }` cuts a test, a die position
+  (Radial position, Die X, Die Y) or a wafer figure such as Yield into 2 to 20 ranges (default 5) that each hold about
+  the same number of values (`by: 'count'`, the default) or span the same width (`'width'`), named by their limits in the field's unit
+  ("7.16 pA to 19.4 pA") and listed lowest first. It takes the places a category does: the X of a box or bar (Vth by Idsat decile), a
+  colour, a heatmap's rows or columns, and the panels. The edges are set over the whole population plotted, so every
+  panel and colour shares them. The editor lists such fields as "Idsat in ranges" with a count and Equal counts or
+  Equal widths beneath. A field that is a category already is refused with the reason. Plot files stay at version 1.
+- **Heatmaps and a difference map.** `chart: 'heatmap'` draws one cell per value of `fields.rows` and of `fields.x`,
+  coloured by Y combined over the cell's dies (a count without Y): it resolves as the bar of the two fields nested, so
+  sets of tests (Test as the rows), rescaling, pass rates, pooled yield and `where` all apply, with a colour bar over
+  the cells, values written where they fit, and a click on a cell for its dies. With Group by on, Insights
+  Distributions has a **Difference map**: one group's mean minus another's at every die position (each the mean over
+  the group's wafers by the stacked maps' own rule; yield as the share passing), drawn as a wafer map on the first
+  wafer's geometry and orientation, coloured symmetrically about zero, following the section's test.
+- **Control charts and capability goal plots.** `chart: 'control'` is an individuals chart of one value per wafer (a
+  test's wafer mean, a yield or a pass rate) along wafer order or another wafer field with a number per wafer: the
+  centre is the mean, the limits ±3σ with σ the average moving range / 1.128, faint ±1σ and ±2σ zones, and each point
+  that breaks a Western Electric rule (beyond 3σ; 2 of 3 beyond 2σ; 4 of 5 beyond 1σ; 8 in a row on one side) marked
+  with its rule. `baseline: n` sets the limits from the first n wafers. `chart: 'goal'` places each test with both
+  limits (or the set on Y) by its mean's offset from the centre of its limit window and its standard deviation, both
+  as shares of the window, against triangles of Ppk 1 and 1.33, with a point per colour group; tests short of 1.33 are
+  named.
+- **Fit lines, histogram shares and what-if limits in plots.** A scatter can carry a fitted line per colour
+  (`fit: 'linear'`, least squares of Y on X, or `'orthogonal'`, Deming regression with equal errors, for two
+  measurements of one quantity), each stated above the chart as its equation with R² and n, and a y = x line
+  (`identity`) where X and Y share a unit. A histogram can show each colour's bars as a share of its own values
+  (`histNorm: 'percent'`) and each colour's fitted normal curve (`normalCurve`). `whatIf: { lo, hi }` on a histogram or
+  probability plot of one test draws proposed limits as their own kind of line and states the test's pass rate by its
+  test limits and with the proposed ones, with the dies that change.
+- **Pass rates, die filters and spread bands in plots.** A field `{ passRate: n }` is test n's pass rate (each die 100
+  or 0, judged as the test pass-rate card judges: test limits for a parametric test, the recorded outcome for a
+  functional one), pooled over the dies of a bar or line, or per wafer with one mark per wafer; a die-level box,
+  scatter or histogram of it is refused. `where: { field, values }` keeps only the dies (or wafers, for a wafer field)
+  with those values, before panels and everything else, and the statement says so. `spread` puts a band round a line
+  of means or medians: ±1 SD, the mean's 95% interval with Student's t, the quartiles or the range.
 - **Radial position, stacked bars and paretos in plots.** A die field **Radial position** gives a die's distance from
   the wafer centre as a percentage of the radius, from the same centre offset the rings and quadrants use, so a ring is
   a band of it. A bar's colours can be stacked (`stack: 'stack'`) or shown as shares of each category

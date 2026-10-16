@@ -120,6 +120,11 @@ export interface DieListOptions extends DieListDisplayOptions {
    */
   extraColumn?: { label: string; get: (die: Die) => string | undefined };
   /**
+   * Each die's part-average-testing verdict (`stats/pat.ts`) and, for an outlier, the tests that put it outside, as
+   * two columns after Soft bin. Offered only for whole wafers: PAT limits are set from every die of a wafer.
+   */
+  patColumns?: { verdict: (die: Die) => string | undefined; tests: (die: Die) => string; anyOutlier: boolean };
+  /**
    * Per-die wafer lookup for Ring/Quadrant classification. A single-wafer
    * caller passes a constant `() => wafer`; the lot-pooled combined list
    * (multiple wafers in one export) passes a per-die lookup, since a die
@@ -314,7 +319,7 @@ export function resolveDieColumns(
   // whether this particular export happens to populate them.
   const reservedLabels = [
     ...(options.extraColumn ? [options.extraColumn.label] : []),
-    'X', 'Y', ...DIE_REGION_KEYS.map(k => DIE_REGIONS[k].label), 'Edge excluded', 'Site', 'Hard bin', 'Soft bin',
+    'X', 'Y', ...DIE_REGION_KEYS.map(k => DIE_REGIONS[k].label), 'Edge excluded', 'Site', 'Hard bin', 'Soft bin', 'PAT', 'PAT tests',
     ...testColumns.map(td => withUnit(testLabel(td, td.testNumber), td.unit)),
   ];
 
@@ -338,6 +343,10 @@ export function resolveDieColumns(
     { label: 'Site', get: (d) => d.siteNum !== undefined ? String(d.siteNum) : '' },
     { label: 'Hard bin', get: (d) => d.hbin !== undefined ? String(d.hbin) : '' },
     { label: 'Soft bin', get: (d) => d.sbin !== undefined ? String(d.sbin) : '' },
+    ...(options.patColumns ? [
+      { label: 'PAT', get: (d: Die) => options.patColumns!.verdict(d) ?? '' },
+      ...(options.patColumns.anyOutlier ? [{ label: 'PAT tests', get: (d: Die) => options.patColumns!.tests(d) }] : []),
+    ] : []),
     ...testColumns.map((td) => {
       const functional = !isParametricTest(td);
       return {

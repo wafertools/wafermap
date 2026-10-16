@@ -94,7 +94,8 @@ export function renderGroupComparisonPanel(o: GroupComparisonPanelOptions): { ca
   note.textContent = `Each wafer is one value, the mean of its dies, so n is wafers (${sizes}). `
     + `Welch: Welch's ANOVA (Welch's t for two groups). Rank: Kruskal–Wallis${rows.some(r => r.comparison.kruskal?.approximate) ? ', approximate with fewer than five wafers in a group' : ''}. `
     + `q: Benjamini–Hochberg across the ${rows.length} tests, which the table is ranked by.`
-    + (control ? ` Each group's difference from ${control} has a Holm-adjusted p.` : '');
+    + (control ? ` Each group's difference from ${control} has a Holm-adjusted p.` : '')
+    + ' How to read this: User guide, section 10.2.';
   Object.assign(note.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   body.appendChild(note);
 

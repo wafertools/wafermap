@@ -475,34 +475,41 @@ test('generic words and lot fields in a title are not mistaken for fields', () =
 
 // ── examples ──
 
-test('examples: one of each type the lot can show, built from its own tests and fields', () => {
+test('examples: one of each type the lot can show, and the newer features, built from its own tests and fields', () => {
   const cat = fieldCatalogue(lot(), ctx);
   let n = 0;
   const ex = examplePlots(cat, 3, () => `e${n++}`);
-  assert.deepEqual(ex.map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'sweep']);
-  assert.deepEqual(ex[0].fields, { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } });
+  assert.deepEqual(ex.map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'box', 'heatmap', 'box', 'box', 'histogram', 'box', 'box', 'bar', 'bar', 'sweep']);
+  assert.deepEqual(ex[0].fields, { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' }, color: { meta: 'split' } }, 'coloured by the split');
+  assert.deepEqual(ex[3].fields.color, { meta: 'split' }, 'a bar per split, each its own colour');
+  assert.equal(ex[0].fit, 'linear');
+  assert.deepEqual(ex[6].fields.y, { tests: [1050, 1060], names: { 1050: 'Vth', 1060: 'Idsat' } }, 'the lot\'s tests as one set, rescaled');
+  assert.equal(ex[6].normalize, 'zscore');
+  assert.deepEqual(ex[9].fields.x, [{ meta: 'split' }, { builtin: 'wafer' }], 'wafers nested in their split');
+  assert.deepEqual(ex[11].fields.x, { binned: { test: 1060, name: 'Idsat' }, bins: 5 });
+  assert.equal(ex[13].cumulative, true, 'a pareto of the hard bins');
   assert.deepEqual(ex[3].fields.x, { meta: 'split' }, 'the first lot field that divides the wafers');
   assert.deepEqual(ex[3].fields.y, { builtin: 'yield' });
-  assert.equal(new Set(ex.map(p => p.id)).size, 7);
+  assert.equal(new Set(ex.map(p => p.id)).size, 16);
   for (const p of ex.filter(p => p.chart !== 'sweep')) {
     assert.equal('title' in p, false, 'untitled, so each is named by what it plots');
     const r = resolvePlot(p, lot(), ctx);
     assert.deepEqual(r.issues, [], `${p.chart}: ${r.issues}`);
     assert.ok(r.plotted > 0, p.chart);
   }
-  const sweep = ex[6];
+  const sweep = ex[15];
   assert.equal(sweep.title, 'Example sweep', 'a sweep has no fields to name it, so it is titled');
   assert.deepEqual(sweep.sweep.series, [{ label: 'Series 1', tests: [1050, 1060], testNames: { 1050: 'Vth', 1060: 'Idsat' } }], 'the lot\'s own tests, in test order');
 });
 
 test('examples: a single wafer gets only what makes sense for one', () => {
   const cat = fieldCatalogue([lot()[0]], ctx);
-  assert.deepEqual(examplePlots(cat, 1, () => 'x').map(p => p.chart), ['scatter', 'histogram', 'probability', 'sweep']);
+  assert.deepEqual(examplePlots(cat, 1, () => 'x').map(p => p.chart), ['scatter', 'histogram', 'probability', 'box', 'histogram', 'box', 'box', 'bar', 'sweep']);
 });
 
-test('examples: with no tests there is nothing to draw but yield', () => {
+test('examples: with no tests there is nothing to draw but yield and the bins', () => {
   const cat = fieldCatalogue(lot(), ctx).filter(f => f.group !== 'Tests');
-  assert.deepEqual(examplePlots(cat, 3, () => 'x').map(p => p.chart), ['bar']);
+  assert.deepEqual(examplePlots(cat, 3, () => 'x').map(p => p.chart), ['bar', 'bar', 'bar']);
 });
 
 test('examples: yield is by wafer when no lot field divides them', () => {
@@ -582,4 +589,47 @@ test('a ring or quadrant of a plot is the wafer\'s own ring, whatever the defaul
   assert.deepEqual(rings(item(6)), ['Ring 1', 'Ring 2', 'Ring 3', 'Ring 4', 'Ring 5', 'Ring 6']);
   assert.ok(rings(item(4)).length <= 4 && !rings(item(4)).includes('Ring 5'));
   assert.throws(() => rings({ ...item(6), ringCount: undefined }), /no ring count/, 'no default stands in for a missing one');
+});
+
+test('examples: five or more wafers add a control chart, and it resolves', () => {
+  const items = Array.from({ length: 6 }, (_, i) => wafer(`W${i + 1}`, { vth0: 0.4 + i * 0.01, meta: { split: i % 2 ? 'FF' : 'TT' } }));
+  const ex = examplePlots(fieldCatalogue(items, ctx), items.length, () => 'x');
+  const control = ex.find(p => p.chart === 'control');
+  assert.ok(control, 'a control chart of the first test');
+  assert.deepEqual(resolvePlot(control, items, ctx).issues, []);
+  for (const p of ex.filter(p => p.chart !== 'sweep')) assert.deepEqual(resolvePlot(p, items, ctx).issues, [], p.chart);
+});
+
+test('examples are drawn from the data: the test that moves most between wafers leads, and the split that explains it', () => {
+  // Three tests: Flat barely moves between wafers, Drift rises wafer by wafer, Follow tracks Drift. Split A/B divides the drift.
+  const DEFS3 = [{ testNumber: 1, name: 'Flat', unit: 'V' }, { testNumber: 2, name: 'Drift', unit: 'V' }, { testNumber: 3, name: 'Follow', unit: 'V' }];
+  const mk = (label, level, split) => {
+    const r = buildWaferMap({
+      results: Array.from({ length: 40 }, (_, k) => ({ x: k % 8, y: Math.floor(k / 8), hbin: 1,
+        testValues: { 1: Math.sin(k * 7) * 0.1, 2: level + Math.sin(k * 3) * 0.05, 3: 2 * level + Math.cos(k * 5) * 0.01 } })),
+      waferConfig: { diameter: 30, metadata: { split } }, dieConfig: { width: 2, height: 2 }, passBins: [1], testDefs: DEFS3,
+    });
+    return { label, dies: r.dies, metadata: r.metadata, passBins: [1], ringCount: r.ringCount, wafer: r.wafer };
+  };
+  const items = [mk('W1', 1, 'A'), mk('W2', 1.1, 'A'), mk('W3', 2, 'B'), mk('W4', 2.1, 'B')];
+  const c3 = { testDefs: DEFS3, passBins: [1] };
+  const ex = examplePlots(fieldCatalogue(items, c3), items.length, () => 'x', { items, ctx: c3 });
+  assert.equal(ex[0].chart, 'scatter');
+  assert.equal(ex[0].fields.x.test, 2, 'Drift leads');
+  assert.equal(ex[0].fields.y.test, 3, 'Follow, which tracks it, is the partner');
+  assert.deepEqual(ex.find(p => p.chart === 'bar').fields.x, { meta: 'split' });
+  for (const p of ex.filter(p => p.chart !== 'sweep')) assert.deepEqual(resolvePlot(p, items, c3).issues, [], p.chart);
+});
+
+test('examples add a goal plot and a pass-rate bar only where the test definitions carry limits', () => {
+  const L = [{ testNumber: 1050, name: 'Vth', unit: 'V', limitLow: 0.3, limitHigh: 0.7 }, { testNumber: 1060, name: 'Idsat', unit: 'A', limitLow: 0 }];
+  const items = lot();
+  const c = { testDefs: L, passBins: [1] };
+  const ex = examplePlots(fieldCatalogue(items, c), items.length, () => 'x', { items, ctx: c });
+  assert.ok(ex.some(p => p.chart === 'goal'), 'a goal plot, coloured by the split');
+  const rate = ex.find(p => p.fields?.y && 'passRate' in p.fields.y);
+  assert.ok(rate, 'a pass-rate bar');
+  for (const p of ex.filter(p => p.chart === 'goal' || p === rate)) assert.deepEqual(resolvePlot(p, items, c).issues, [], p.chart);
+  const none = examplePlots(fieldCatalogue(items, ctx), items.length, () => 'x', { items, ctx });
+  assert.equal(none.some(p => p.chart === 'goal'), false, 'no limits, no goal plot');
 });

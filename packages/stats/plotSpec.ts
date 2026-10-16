@@ -28,7 +28,7 @@ export const SWEEPS_FORMAT = 'tsmap-sweeps';
 /** A sweep's own definition: a `SweepSpec` without the `id` and `title` the plot already carries. */
 export type SweepPayload = Omit<SweepSpec, 'id' | 'title'>;
 
-export const PLOT_CHARTS = ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep', 'probability'] as const;
+export const PLOT_CHARTS = ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep', 'probability', 'control', 'goal', 'heatmap'] as const;
 export type PlotChart = (typeof PLOT_CHARTS)[number];
 
 export const PLOT_BUILTINS = ['wafer', 'x', 'y', 'ring', 'quadrant', 'reticleCell', 'reticleShot', 'hbin', 'sbin', 'site', 'yield', 'dieCount', 'waferOrder', 'test', 'pat', 'radius'] as const;
@@ -48,13 +48,47 @@ export type PlotField =
    * `"1010..1030"`, the syntax a sweep's tests use. `names` holds the name each test had when the plot was made, the
    * same check a single test's `name` is.
    */
-  | PlotTestSet;
+  | PlotTestSet
+  /**
+   * A test's pass rate: each die 100 when it passes the test and 0 when it fails (a parametric test judged by its test
+   * limits, a functional one by its recorded verdict), so a bar or line of it is the share of judged dies that pass.
+   * `name` is checked as a test field's is.
+   */
+  | { passRate: number; name?: string }
+  | PlotBinnedField;
 
 export interface PlotTestSet { tests: Array<number | string>; names?: Record<string, string> }
+
+export const PLOT_BIN_BY = ['count', 'width'] as const;
+/** Fewest and most bins a binned field takes, and how many it takes when it does not say. */
+export const PLOT_BINS_MIN = 2, PLOT_BINS_MAX = 20, PLOT_BINS_DEFAULT = 5;
+
+/**
+ * A continuous field cut into ranges, so it can be a category: the X of a box or bar, a colour, a heatmap's rows or
+ * columns, the panels. `binned` is a measured test, a die position (radius, X, Y) or a wafer figure (yield, a lot field
+ * of numbers); `bins` how many ranges (default 5); `by` whether each range holds about the same number of values
+ * (`'count'`, the default: quintiles, deciles) or spans the same width (`'width'`). The edges are set over the whole
+ * population plotted, so every panel and every colour shares them.
+ */
+export interface PlotBinnedField { binned: PlotField; bins?: number; by?: (typeof PLOT_BIN_BY)[number] }
+
+/** A binned field. */
+export const isBinned = (f: unknown): f is PlotBinnedField => isObject(f) && 'binned' in f;
+
+/** The most reference lines and bands one axis carries. */
+export const PLOT_REFERENCES_MAX = 8;
+
+/**
+ * A line the reader draws on a value axis: at `at`, or a shaded band from `at` to `to`. Values are in the axis's own
+ * unit, as measured (or as rescaled, when the plot is). `label` names it on the chart; absent = the value alone.
+ */
+export interface PlotReference { at: number; to?: number; label?: string }
 
 export interface PlotAxis {
   /** Replaces the automatic axis title. Absent = automatic. */
   label?: string;
+  /** Reference lines and bands on a value axis: a target, a guard band, a customer's limit. Absent = none. */
+  references?: PlotReference[];
   scale?: 'linear' | 'log';
   min?: number;
   max?: number;
@@ -97,6 +131,8 @@ export interface PlotSpec {
     y?: PlotField;
     /** Absent = follow the tab's Group by. */
     color?: PlotColor;
+    /** A heatmap's rows: a category field (Test, with a set of tests as the values; a bin; a ring). Its columns are `x`. */
+    rows?: PlotField;
     /**
      * One panel per value of this category field, each drawing the plot over that part of the population, on shared
      * axes and colours: a wafer field (split, lot) takes whole wafers, a die field (ring, site) the dies in it, and Test,
@@ -128,6 +164,31 @@ export interface PlotSpec {
   top?: number;
   /** A cumulative-percentage line over a value-sorted bar of counts or sums: a pareto chart. */
   cumulative?: boolean;
+  /**
+   * A band round a line of means or medians at each X: `sd` mean ± one standard deviation of the values combined there,
+   * `ci95` the mean's 95% confidence interval (Student's t), `iqr` the quartiles, `minmax` the range. Absent = none.
+   */
+  spread?: 'sd' | 'ci95' | 'iqr' | 'minmax';
+  /**
+   * A scatter's fitted line per colour: `linear` least squares of Y on X, `orthogonal` the line closest to the points
+   * at right angles (Deming regression with equal errors), for two measurements of one quantity. Absent = none.
+   */
+  fit?: 'linear' | 'orthogonal';
+  /** A scatter's y = x line, for X and Y in one unit. */
+  identity?: boolean;
+  /** A histogram's bars as counts, or as each colour's share of its own values in percent. Absent = counts. */
+  histNorm?: 'count' | 'percent';
+  /** Each colour's fitted normal distribution over its histogram bars. */
+  normalCurve?: boolean;
+  /** Proposed limits for the plotted test, on a histogram or probability plot: drawn, and its pass rate under them stated. */
+  whatIf?: { lo?: number; hi?: number };
+  /** A control chart's limits set from its first this many points (at least 3). Absent = all of them. */
+  baseline?: number;
+  /**
+   * Only the dies whose value of a category field is one of `values` (only the wafers, for a wafer field): bin 1 only,
+   * the edge ring only, one split. Applied before everything else, panels included. Absent = every die.
+   */
+  where?: { field: PlotField; values: string[] };
   /** Rescale the measured values on Y, each test on its own. Absent = the values as measured. */
   normalize?: PlotNormalize;
   /** The definition of a `sweep` chart: ordered runs of tests read as curves. Such a plot has no `fields`. */
@@ -159,9 +220,12 @@ export const xFieldsOf = (x: PlotField | PlotField[] | undefined): PlotField[] =
 /** Two fields name the same series. */
 export function sameField(a: PlotField | undefined, b: PlotField | undefined): boolean {
   if (!a || !b) return a === b;
+  // A binned field is the same series as another binning of the same field: it is one field, cut differently.
+  if (isBinned(a) || isBinned(b)) return isBinned(a) && isBinned(b) && sameField(a.binned, b.binned);
   if ('test' in a) return 'test' in b && a.test === b.test;
   if ('builtin' in a) return 'builtin' in b && a.builtin === b.builtin;
   if ('tests' in a) return 'tests' in b && a.tests.length === b.tests.length && a.tests.every((t, i) => String(t) === String(b.tests[i]));
+  if ('passRate' in a) return 'passRate' in b && a.passRate === b.passRate;
   return 'meta' in b && a.meta === b.meta;
 }
 
@@ -170,10 +234,12 @@ export const isTestSet = (f: unknown): f is PlotTestSet => isObject(f) && 'tests
 
 export function isField(v: unknown): v is PlotField {
   if (!isObject(v)) return false;
+  if ('binned' in v) return isField(v.binned) && !isBinned(v.binned) && !isTestSet(v.binned) && !('passRate' in v.binned);
   if ('test' in v) return Number.isInteger(v.test);
   if ('builtin' in v) return (PLOT_BUILTINS as readonly unknown[]).includes(v.builtin);
   if ('meta' in v) return typeof v.meta === 'string' && v.meta !== '';
   if ('tests' in v) return Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isTestEntry);
+  if ('passRate' in v) return Number.isInteger(v.passRate);
   return false;
 }
 
@@ -181,6 +247,16 @@ export function isField(v: unknown): v is PlotField {
 function readField(raw: unknown, where: string, warnings: string[]): PlotField | undefined {
   if (raw === undefined) return undefined;
   if (!isObject(raw)) { warnings.push(`${where}: not a field, left out`); return undefined; }
+  if ('binned' in raw) {
+    const inner = readField(raw.binned, `${where}.binned`, warnings);
+    if (!inner || isBinned(inner) || isTestSet(inner) || 'passRate' in inner) { if (inner) warnings.push(`${where}: only one test or value can be binned, left out`); return undefined; }
+    const out: Record<string, unknown> = { ...raw, binned: inner };
+    if ('bins' in raw && !(Number.isInteger(raw.bins) && (raw.bins as number) >= PLOT_BINS_MIN && (raw.bins as number) <= PLOT_BINS_MAX)) {
+      warnings.push(`${where}.bins: ${JSON.stringify(raw.bins)} is not a whole number from ${PLOT_BINS_MIN} to ${PLOT_BINS_MAX}, left out`); delete out.bins;
+    }
+    if ('by' in raw && !(PLOT_BIN_BY as readonly unknown[]).includes(raw.by)) { warnings.push(`${where}.by: "${String(raw.by)}" is not count or width, left out`); delete out.by; }
+    return out as unknown as PlotField;
+  }
   if ('test' in raw) {
     if (!Number.isInteger(raw.test)) { warnings.push(`${where}: test number ${JSON.stringify(raw.test)} is not an integer, left out`); return undefined; }
     // Keys this build does not know are kept, so a round trip through it does not strip a newer build's settings.
@@ -198,6 +274,12 @@ function readField(raw: unknown, where: string, warnings: string[]): PlotField |
   if ('meta' in raw) {
     if (typeof raw.meta !== 'string' || raw.meta === '') { warnings.push(`${where}: metadata key is empty, left out`); return undefined; }
     return { ...raw, meta: raw.meta } as unknown as PlotField;
+  }
+  if ('passRate' in raw) {
+    if (!Number.isInteger(raw.passRate)) { warnings.push(`${where}: pass-rate test ${JSON.stringify(raw.passRate)} is not an integer, left out`); return undefined; }
+    const out: Record<string, unknown> = { ...raw };
+    if (!(typeof raw.name === 'string' && raw.name !== '')) delete out.name;
+    return out as unknown as PlotField;
   }
   if ('tests' in raw) {
     if (!Array.isArray(raw.tests) || raw.tests.length === 0 || !raw.tests.every(isTestEntry)) {
@@ -220,6 +302,18 @@ function readAxis(raw: unknown, where: string, warnings: string[]): PlotAxis | u
     if (k in raw && !isFiniteNumber(raw[k])) { warnings.push(`${where}.${k}: not a number, left out`); delete out[k]; }
   }
   if ('reverse' in raw && typeof raw.reverse !== 'boolean') { warnings.push(`${where}.reverse: not true or false, left out`); delete out.reverse; }
+  if ('references' in raw) {
+    const kept: PlotReference[] = [];
+    const list = Array.isArray(raw.references) ? raw.references : [];
+    if (!Array.isArray(raw.references)) warnings.push(`${where}.references: not a list, left out`);
+    list.forEach((r, i) => {
+      if (isObject(r) && isFiniteNumber(r.at) && (r.to === undefined || (isFiniteNumber(r.to) && r.to !== r.at)) && (r.label === undefined || typeof r.label === 'string')) {
+        if (kept.length < PLOT_REFERENCES_MAX) kept.push({ ...r, at: r.at, ...(r.to !== undefined ? { to: r.to } : {}) } as PlotReference);
+        else warnings.push(`${where}.references[${i}]: more than ${PLOT_REFERENCES_MAX}, left out`);
+      } else warnings.push(`${where}.references[${i}]: needs a number (and a different number for a band), left out`);
+    });
+    if (kept.length) out.references = kept; else delete out.references;
+  }
   return out;
 }
 
@@ -299,6 +393,10 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
     const f = readField(enc[role], `${where}.fields.${role}`, warnings);
     if (f) fields[role] = f; else delete fields[role];
   }
+  if (enc.rows !== undefined) {
+    const f = readField(enc.rows, `${where}.fields.rows`, warnings);
+    if (f) fields.rows = f; else delete fields.rows;
+  }
   if (enc.facet !== undefined) {
     const f = readField(enc.facet, `${where}.fields.facet`, warnings);
     if (f) fields.facet = f; else delete fields.facet;
@@ -319,9 +417,27 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
   if ('aggregate' in raw && !(PLOT_AGGREGATES as readonly unknown[]).includes(raw.aggregate)) {
     warnings.push(`${where}.aggregate: "${String(raw.aggregate)}" is not known to this version, left out`); delete out.aggregate;
   }
+  if ('where' in raw) {
+    const w = raw.where;
+    const field = isObject(w) ? readField(w.field, `${where}.where.field`, warnings) : undefined;
+    const values = isObject(w) && Array.isArray(w.values) ? w.values.filter((v): v is string => typeof v === 'string') : [];
+    if (!field || values.length === 0) { warnings.push(`${where}.where: needs a field and at least one value, left out`); delete out.where; }
+    else out.where = { ...(w as Record<string, unknown>), field, values };
+  }
   if ('stack' in raw && raw.stack !== 'stack' && raw.stack !== 'percent') { warnings.push(`${where}.stack: "${String(raw.stack)}" is not stack or percent, left out`); delete out.stack; }
   if ('sort' in raw && raw.sort !== 'value') { warnings.push(`${where}.sort: "${String(raw.sort)}" is not known to this version, left out`); delete out.sort; }
   if ('top' in raw && !(Number.isInteger(raw.top) && (raw.top as number) >= 1)) { warnings.push(`${where}.top: not a whole number of at least 1, left out`); delete out.top; }
+  if ('baseline' in raw && !(Number.isInteger(raw.baseline) && (raw.baseline as number) >= 3)) { warnings.push(`${where}.baseline: not a whole number of at least 3, left out`); delete out.baseline; }
+  if ('fit' in raw && raw.fit !== 'linear' && raw.fit !== 'orthogonal') { warnings.push(`${where}.fit: "${String(raw.fit)}" is not linear or orthogonal, left out`); delete out.fit; }
+  for (const k of ['identity', 'normalCurve'] as const) if (k in raw && typeof raw[k] !== 'boolean') { warnings.push(`${where}.${k}: not true or false, left out`); delete out[k]; }
+  if ('histNorm' in raw && raw.histNorm !== 'count' && raw.histNorm !== 'percent') { warnings.push(`${where}.histNorm: "${String(raw.histNorm)}" is not count or percent, left out`); delete out.histNorm; }
+  if ('whatIf' in raw) {
+    const w = raw.whatIf;
+    const lo = isObject(w) && isFiniteNumber(w.lo) ? w.lo : undefined, hi = isObject(w) && isFiniteNumber(w.hi) ? w.hi : undefined;
+    if (lo === undefined && hi === undefined) { warnings.push(`${where}.whatIf: needs a low or a high limit, left out`); delete out.whatIf; }
+    else out.whatIf = { ...(lo !== undefined ? { lo } : {}), ...(hi !== undefined ? { hi } : {}) };
+  }
+  if ('spread' in raw && !['sd', 'ci95', 'iqr', 'minmax'].includes(raw.spread as string)) { warnings.push(`${where}.spread: "${String(raw.spread)}" is not known to this version, left out`); delete out.spread; }
   if ('cumulative' in raw && typeof raw.cumulative !== 'boolean') { warnings.push(`${where}.cumulative: not true or false, left out`); delete out.cumulative; }
   if ('probabilityAxis' in raw && raw.probabilityAxis !== 'normal' && raw.probabilityAxis !== 'linear') {
     warnings.push(`${where}.probabilityAxis: "${String(raw.probabilityAxis)}" is not normal or linear, left out`); delete out.probabilityAxis;
@@ -430,7 +546,7 @@ export function addPlots(existing: readonly PlotSpec[], incoming: readonly PlotS
 export function plotIssue(plot: PlotSpec): string | undefined {
   if (!(PLOT_CHARTS as readonly unknown[]).includes(plot.chart)) return 'Needs a newer version of this tool';
   const given = plot.fields ?? {};
-  for (const f of [...xFieldsOf(given.x), given.y, given.color, given.facet]) {
+  for (const f of [...xFieldsOf(given.x), given.y, given.color, given.facet, given.rows, plot.where?.field]) {
     if (f === undefined || (isObject(f) && ('follow' in f || 'none' in f))) continue;
     if (!isField(f)) return 'Needs a newer version of this tool';
   }

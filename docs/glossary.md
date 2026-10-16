@@ -74,6 +74,26 @@ The solid, categorical colouring shown in `value` plot mode in place of the cont
 
 A statistical measure of how well a parametric test's values fit within its spec limits — the Insights tab's Distributions sub-tab plots one box per test, normalised so `limitLow = 0` and `limitHigh = 1` where both limits are defined, worst `Ppk` first. `Cp`/`Cpk` ("potential"/short-term capability) use the pooled *within-wafer* standard deviation, treating each wafer as the natural short-term subgroup; `Cp` ignores how centered the distribution is, `Cpk` penalizes an off-center mean. `Pp`/`Ppk` ("performance"/long-term capability) use the plain standard deviation across every die instead. Higher is better; ≥1.33 is a common (but process-specific) threshold for "capable." `Cp`/`Cpk` are omitted when no wafer contributes at least two values (no within-subgroup variance is computable). Tests missing one or both spec limits are not omitted from the chart — they still appear (muted, dashed, no capability indices), normalized onto their own observed range instead, and sorted after spec'd tests by most-variable-first, since a lot with sparse spec coverage would otherwise render an all-but-empty chart. *Library mapping: `StatsSummary.stats.capability` and `LotStatsSummary.stats.capability` (`TestCapability`), from `analyzeWaferMap`/`analyzeWaferLot` with `computePerTestStats`.*
 
+### Welch test, Kruskal–Wallis and q-value
+
+How Insights asks whether groups of wafers (the splits of a lot) really differ. Each wafer is one value, the mean of its dies, so n is wafers. **Welch's t / ANOVA** compares group means without assuming equal spreads; **Kruskal–Wallis** asks the same of ranks, so one odd wafer cannot drive it; the **q-value** is the Welch p adjusted (Benjamini–Hochberg) for how many tests were compared. A small p or q says a difference is unlikely to be chance, not that it matters or why it exists. See the user guide, section 10.2. *Library mapping: `stats/groupCompare.ts` (internal); shown in the Distributions comparison table and in plot footnotes.*
+
+### Robust sigma
+
+A spread estimate that outliers cannot inflate: the interquartile range divided by 1.35 (the interquartile range of a normal distribution in standard deviations), around the median rather than the mean. Part average testing sets its limits from it. See the user guide, section 10.12.
+
+### Part average testing (PAT)
+
+Screening that flags a die whose value on a test is far from the rest of its wafer even though it passes the test limits. Here the limits are dynamic, per wafer and test: the median ± 6 robust sigma of the passing dies, never wider than the test's own limits. A **PAT outlier** passes its bin and every test limit but is outside the PAT limits of at least one test. This is analysis of collected data, not a production screen, and it does not claim compliance with AEC-Q001 Rev D, whose method it follows (no static limits, no check for non-normal data). See the user guide, section 10.12. *Library mapping: `waferPatLimits`, `waferPatVerdicts` (internal), the plot field `{ builtin: 'pat' }`.*
+
+### Western Electric rules
+
+Four tests for a control chart that say a run of points is unlikely to be chance: one point beyond 3σ; two of three beyond 2σ on one side; four of five beyond 1σ on one side; eight in a row on one side of the centre. Each is flagged at the point that completes it. See the user guide, section 10.7. *Library mapping: `chart: 'control'`.*
+
+### Probability plot
+
+Each group's sorted values against their cumulative share, on an axis stretched by the normal distribution so normal data falls on a straight line. A shift, a different spread, a second population and outliers each look different. See the user guide, section 10.4. *Library mapping: `chart: 'probability'`.*
+
 ### Reticle
 
 The rectangular exposure field used in photolithography, typically containing a fixed grid of die sites. One reticle field is stepped across the wafer repeatedly to pattern the full surface. The library can overlay the reticle grid and attribute findings to specific reticle positions, which is useful for identifying systematic defects tied to a particular mask location. *Library mapping: `WaferMapInput.reticleConfig`, `ReticleConfig`.*

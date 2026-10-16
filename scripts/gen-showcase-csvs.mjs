@@ -589,4 +589,65 @@ function geometry({ radiusMm, pitchMmX, pitchMmY, edgeExcludeMm, notch = 'bottom
   console.log(`showcase-bin-rich.csv      — ${rows.length} rows · ${dies.length} die/wafer · 4 wafers · ${hbinDefs.length} hard / ${sbinDefs.length} soft bins`);
 }
 
+// ── File 9: Part-average-testing screen — four limit-bounded tests, planted outliers ──
+// 200 mm wafer, 4.0 × 4.0 mm die → ~1,800 die/wafer, 4 wafers. Every test has BOTH limits, so part average testing
+// (PAT) can judge it, and the process spread is much tighter than the limits, so a die can sit well off its wafer's
+// population and still pass every limit: that die is a PAT outlier. Planted: a few scattered outliers on every wafer,
+// a group of them together on one wafer, one test with a long tail (IDDQ, log-normal) and a handful of dies that fail
+// their limits outright. Entirely synthetic.
+
+{
+  const rng = makeLcg(0x9A7_5C2E);
+  const gauss = () => Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
+  const radiusMm = 100, pX = 4.0, pY = 4.0;
+  const dies = waferGrid({ radiusMm, pitchMmX: pX, pitchMmY: pY, edgeExcludeMm: 3 });
+  const wafers = ['P1', 'P2', 'P3', 'P4'];
+  const rows = [];
+  const near = (die, ci, cj, r) => Math.hypot(die.x - ci, die.y - cj) <= r;
+
+  wafers.forEach((wid, wi) => {
+    const offset = wi * 0.004;                    // a small wafer-to-wafer drift in Vth
+    for (const die of dies) {
+      const rMm = Math.hypot(die.x * pX, die.y * pY) / radiusMm;
+      let vth = 0.50 + offset + 0.015 * gauss() + 0.01 * rMm;
+      let iddq = 12 * Math.exp(0.5 * gauss());    // log-normal: a long tail towards high values
+      let idsat = 11 + 0.35 * gauss() - 0.4 * rMm;
+      let tpd = 1.40 + 0.05 * gauss() + 0.06 * rMm;
+      let sbin = 1;
+      const planted = rng() < 0.004 || (wi === 2 && near(die, 6, -4, 2.3) && rng() < 0.7);
+      if (planted) { vth += 0.11 + 0.03 * rng(); idsat -= 0.6 + 0.6 * rng(); }   // inside the limits, far off the wafer
+      if (rng() < 0.0025) { vth = 0.71; }         // outside the limit outright
+      if (rng() < 0.0015) { iddq = 62 + 20 * rng(); }
+      if (vth < 0.35 || vth > 0.65) sbin = 5;
+      else if (iddq > 60) sbin = 6;
+      else if (idsat < 8 || idsat > 14 || tpd < 1.0 || tpd > 2.0) sbin = 7;
+      rows.push({
+        LOT_ID: 'PAT-DEMO-01', WAFER_ID: wid, X: die.x, Y: die.y, SBIN: sbin,
+        VTH_V: vth.toFixed(4), IDDQ_UA: iddq.toFixed(2), IDSAT_MA: idsat.toFixed(3), TPD_NS: tpd.toFixed(4),
+        TESTDATE: '2026-09-02',
+      });
+    }
+  });
+
+  writeMeta('showcase-pat-screen', {
+    ...geometry({ radiusMm, pitchMmX: pX, pitchMmY: pY }),
+    passBins: [1],
+    sbinDefs: [
+      { bin: 1, name: 'Pass' },
+      { bin: 5, name: 'Vth out of limits' },
+      { bin: 6, name: 'Iddq high' },
+      { bin: 7, name: 'Idsat / Tpd out of limits' },
+    ],
+    testDefs: [
+      { testNumber: 1, name: 'VTH_V',    unit: 'V',  limitLow: 0.35, limitHigh: 0.65 },
+      { testNumber: 2, name: 'IDDQ_UA',  unit: 'µA',  limitLow: 0,    limitHigh: 60 },
+      { testNumber: 3, name: 'IDSAT_MA', unit: 'mA',  limitLow: 8,    limitHigh: 14 },
+      { testNumber: 4, name: 'TPD_NS',   unit: 'ns',  limitLow: 1.0,  limitHigh: 2.0 },
+    ],
+  });
+  writeFileSync(join(OUT, 'showcase-pat-screen.csv'),
+    csv(['LOT_ID','WAFER_ID','X','Y','SBIN','VTH_V','IDDQ_UA','IDSAT_MA','TPD_NS','TESTDATE'], rows));
+  console.log(`showcase-pat-screen.csv    — ${rows.length} rows · ${dies.length} die/wafer · 4 wafers · planted PAT outliers`);
+}
+
 console.log(`\nAll files written to ${OUT}`);

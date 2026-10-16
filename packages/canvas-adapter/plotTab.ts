@@ -176,17 +176,18 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     edit(plot);
   }
 
-  /** One example of each chart type the lot can show, skipping any the reader already has. */
+  /** Example plots drawn from this lot's own tests and fields, most telling first, skipping any the reader already has. */
   function addExamples(): void {
-    const key = (p: PlotSpec) => JSON.stringify([p.chart, p.fields, p.aggregate ?? null, p.sweep ?? null]);
+    // The options that define an example (a fitted line, a rescaling, a band) are part of its identity, so a plain plot of the same fields does not hide it.
+    const key = (p: PlotSpec) => JSON.stringify([p.chart, p.fields, p.aggregate ?? null, p.sweep ?? null, p.fit ?? null, p.normalCurve ?? null, p.spread ?? null, p.normalize ?? null, p.sort ?? null, p.cumulative ?? null, p.stack ?? null]);
     const have = new Set(store.get().map(key));
-    const fresh = examplePlots(catalogue, items.length, newPlotId).filter(p => !have.has(key(p)));
+    const fresh = examplePlots(catalogue, items.length, newPlotId, { items, ctx }).filter(p => !have.has(key(p)));
     if (fresh.length === 0) {
       say(catalogue.some(f => f.group === 'Tests') ? 'The examples for this lot are already in your plots.' : 'There are no measured values in this lot to draw examples from.');
       return;
     }
     for (const p of fresh) store.upsert(p);
-    say(`Added ${fresh.length} example plot${fresh.length === 1 ? '' : 's'}: ${fresh.map(p => p.chart).join(', ')}. Edit one to make it yours, or Delete what you do not need.`);
+    say(`Added ${fresh.length} example plot${fresh.length === 1 ? '' : 's'}: ${[...new Set(fresh.map(p => p.chart))].join(', ')}. Edit one to make it yours, or Delete what you do not need.`);
   }
 
   /** Edit, Duplicate and Delete on a card's button row: the same three for every kind of plot. */

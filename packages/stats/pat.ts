@@ -31,6 +31,12 @@ export const PAT_K = 6;
 export const PAT_IQR_SIGMA = 1.35;
 /** Passing values a wafer needs on a test before its PAT limits mean anything. */
 export const PAT_MIN_DIES = 30;
+/**
+ * Quartile skewness, (Q3 + Q1 − 2 × median) / (Q3 − Q1), from which a test's values count as lopsided: 0 for a symmetric
+ * distribution, ±1 at the extreme. Symmetric limits fit such a test badly (about 0.17 for a log-normal of shape 0.5,
+ * 0.33 for shape 1).
+ */
+export const PAT_SKEW_WARN = 0.2;
 
 export interface PatLimit {
   testNumber: number;
@@ -45,6 +51,8 @@ export interface PatLimit {
   /** The ±6σ band reached past the test's own limit at that end, so the PAT limit is the test's limit there. */
   clippedLo: boolean;
   clippedHi: boolean;
+  /** Quartile skewness of the values the limits were set from (see `PAT_SKEW_WARN`). */
+  skew: number;
 }
 
 export interface WaferPat {
@@ -101,7 +109,7 @@ function compute(dies: readonly Die[], testDefs: readonly TestDef[], passBins: r
     const rawLo = q.median - PAT_K * robustSigma, rawHi = q.median + PAT_K * robustSigma;
     limits.set(t.testNumber, {
       testNumber: t.testNumber, lo: Math.max(rawLo, lsl), hi: Math.min(rawHi, usl), median: q.median, robustSigma, n: vs.length,
-      basis, clippedLo: rawLo < lsl, clippedHi: rawHi > usl,
+      basis, clippedLo: rawLo < lsl, clippedHi: rawHi > usl, skew: (q.q3 + q.q1 - 2 * q.median) / (q.q3 - q.q1),
     });
   });
 

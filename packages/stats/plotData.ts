@@ -14,7 +14,7 @@
 //   - A wafer-level field (yield, metadata) cannot be split by a die-level one; that is an issue, not a chart.
 
 import type { Die } from '../core/dies.js';
-import { hasPosition } from '../core/dies.js';
+import { hasPosition, isYieldEligibleDie } from '../core/dies.js';
 import { DIE_REGIONS, DIE_REGION_KEYS, dieRadialPosition } from './dieRegions.js';
 import type { Wafer } from '../core/wafer.js';
 import type { WaferMetadata } from '../core/metadata.js';
@@ -26,14 +26,18 @@ import { facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
 import { sameTestName } from './sweep.js';
-import { sameField, plotIssue, isField, isTestSet, xFieldsOf, PLOT_X_LEVELS, PLOT_FACET_LIMIT } from './plotSpec.js';
-import type { PlotSpec, PlotField, PlotAxis, PlotAggregate, PlotBuiltin, PlotTestSet, PlotNormalize, PlotColor } from './plotSpec.js';
-import { fmtExact } from '../renderer/fmt.js';
+import { sameField, plotIssue, isField, isTestSet, isBinned, xFieldsOf, PLOT_X_LEVELS, PLOT_FACET_LIMIT, PLOT_BINS_DEFAULT } from './plotSpec.js';
+import type { PlotSpec, PlotField, PlotAxis, PlotAggregate, PlotBuiltin, PlotTestSet, PlotNormalize, PlotColor, PlotBinnedField } from './plotSpec.js';
+import { fmtExact, fmt } from '../renderer/fmt.js';
 import { parseTestReference } from '../renderer/derivedTests/parser.js';
 import { capabilityLimits } from './capability.js';
 import { mean as meanOf, median as medianOf } from '../core/utils.js';
-import { sampleVariance } from './math.js';
+import { sampleVariance, quantile, tQuantileTwoSided } from './math.js';
+import { pickExamples } from './examplePicks.js';
 import { compareGroups, formatP, type GroupComparison } from './groupCompare.js';
+import { dieFailsTest } from './testPassRate.js';
+import { individualsLimits, westernElectric, CONTROL_RULE_TEXT, type ControlLimits, type ControlViolation } from './control.js';
+import { buildCapabilityFigures } from './capability.js';
 import { patTests, waferPatLimits, waferPatVerdicts, PAT_VERDICT_LABEL, PAT_VERDICT_ORDER, PAT_K } from './pat.js';
 
 /** One wafer of the population. The same shape a drilldown source's items have. */
@@ -62,20 +66,28 @@ export interface PlotContext {
   scaleDies?: readonly Die[];
   /** @internal The panels divide a set of tests by test, so neither X nor the colour has to. */
   facetByTest?: boolean;
+  /** @internal The plot's `where` is already applied: these are the dies it keeps. */
+  whereApplied?: boolean;
+  /** @internal A heatmap resolved as the bar of its two category levels, before it is laid out as a grid. */
+  asHeatmap?: boolean;
   /** @internal Resolving one panel (or the whole) of a faceted plot: its facet is already applied. */
   inFacet?: boolean;
   /** @internal The wafers of the whole plot, when this is a panel of it: a followed colour is per wafer when the whole
    *  has several, though a panel may hold one. */
   wholeWafers?: number;
+  /** @internal The whole population, when this is a panel of it: a binned field's ranges are cut over all of it. */
+  wholeItems?: readonly PlotItem[];
+  /** @internal The ranges a binned field was cut into, by field, so every panel shares them. */
+  binEdges?: Map<string, number[]>;
 }
 
 export type FieldKind = 'numeric' | 'categorical';
 
 /**
- * A test's limits: the tester's (`limitLow`/`limitHigh`), the specification's (`specLow`/`specHigh`) and, on a plot of
- * one wafer, that wafer's PAT limits (`patLow`/`patHigh`). Any may be absent.
+ * A test's limits: the tester's (`limitLow`/`limitHigh`), the specification's (`specLow`/`specHigh`), on a plot of one
+ * wafer that wafer's PAT limits (`patLow`/`patHigh`), and proposed what-if limits (`whatIfLow`/`whatIfHigh`). Any may be absent.
  */
-export interface TestLimits { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number; patLow?: number; patHigh?: number }
+export interface TestLimits { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number; patLow?: number; patHigh?: number; whatIfLow?: number; whatIfHigh?: number }
 
 /** The limits a test definition states, or `undefined` when it states none. */
 function limitsOf(def: TestDef | undefined): TestLimits | undefined {
@@ -109,13 +121,40 @@ export interface FieldColumn {
   labelOf?: (row: number) => string;
 }
 
+/** One test of a goal plot: `x` (mean − centre of the window) / window, `y` standard deviation / window, Ppk = (½ − |x|) / 3y. */
+export interface GoalPoint { x: number; y: number; group: number; testNumber: number; label: string; ppk: number; n: number; basis: 'spec' | 'test' }
+
+/** A line fitted to one colour's points: y = intercept + slope · x. `r2` is the squared Pearson correlation of the points. */
+export interface PlotFit { group: number; slope: number; intercept: number; r2: number; n: number }
+
+/**
+ * The line through points `xs`, `ys`: least squares of y on x (`linear`), or the line closest to the points at right
+ * angles (`orthogonal`, Deming regression with equal error variances), which does not tilt towards horizontal when x
+ * is as noisy as y. Undefined with fewer than three points or no spread in x.
+ */
+export function fitLine(xs: readonly number[], ys: readonly number[], how: 'linear' | 'orthogonal'): Omit<PlotFit, 'group'> | undefined {
+  const n = xs.length;
+  if (n < 3) return undefined;
+  let mx = 0, my = 0;
+  for (let i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; }
+  mx /= n; my /= n;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  if (!(sxx > 0)) return undefined;
+  const r2 = syy > 0 ? (sxy * sxy) / (sxx * syy) : 1;
+  const slope = how === 'linear' || sxy === 0 ? sxy / sxx
+    : (syy - sxx + Math.sqrt((syy - sxx) ** 2 + 4 * sxy * sxy)) / (2 * sxy);
+  return { slope, intercept: my - slope * mx, r2, n };
+}
+
 export interface PlotPoint { x: number; y: number; group: number; item: number; die?: Die; /** The colour field's value, when it is continuous. */ value?: number }
 
 /** What one mark stands for: the wafer it is on, and the die when it is one die (not a wafer's aggregate). */
 export interface PlotUnit { item: number; die?: Die }
 
 export type PlotMarks =
-  | { type: 'scatter'; points: PlotPoint[] }
+  /** `fits`: a fitted line per colour, when the plot asks for one (`PlotSpec.fit`); `identity`: draw y = x. */
+  | { type: 'scatter'; points: PlotPoint[]; fits?: PlotFit[]; identity?: true }
   /** `units[g][k]` is the unit behind `values[g][k]`, so a bar can say which dies (or wafers) it counts. */
   | { type: 'histogram'; values: number[][]; units: number[][]; unit: (u: number) => PlotUnit }
   /** Each group's values ascending, `units[g][k]` the unit behind `values[g][k]`; the k-th of n sits at `probabilityPosition(k, n)`. */
@@ -126,7 +165,17 @@ export type PlotMarks =
    * `cumulative`: each category's running share of the whole, in percent, for a pareto line.
    */
   | { type: 'box' | 'bar'; categories: string[]; cells: number[][][]; cellUnits: number[][][]; values: number[][]; categoryItems?: number[]; nest?: { levels: string[]; parts: string[][] }; stack?: 'stack' | 'percent'; cumulative?: number[]; unit: (u: number) => PlotUnit }
-  | { type: 'line'; xs: number[]; values: number[][]; counts: number[][]; cellUnits: number[][][]; unit: (u: number) => PlotUnit };
+  /** An individuals chart: one value per wafer (`items[k]` is the wafer of `values[k]`) in X order, its limits and the points breaking a rule. */
+  | { type: 'control'; xs: number[]; values: number[]; items: number[]; limits: ControlLimits; violations: ControlViolation[] }
+  /**
+   * A heatmap: `values[r][c]` the combined value of the cell at row r and column c (NaN where it holds nothing),
+   * `cellUnits[r][c]` the units behind it.
+   */
+  | { type: 'heatmap'; rows: string[]; cols: string[]; values: number[][]; cellUnits: number[][][]; unit: (u: number) => PlotUnit }
+  /** A goal plot: one point per test (and colour), its mean offset and spread as shares of its limit window. */
+  | { type: 'goal'; points: GoalPoint[] }
+  /** `band`: the spread round each value, per group and X, when the plot asks for one (`PlotSpec.spread`). */
+  | { type: 'line'; xs: number[]; values: number[][]; counts: number[][]; cellUnits: number[][][]; band?: { lo: number[][]; hi: number[][] }; unit: (u: number) => PlotUnit };
 
 /** `label` is the axis title WITHOUT its unit: the chart appends the unit, scaled to the ticks ("µA" for 0.000861 A). */
 export interface ResolvedAxis {
@@ -152,7 +201,7 @@ export interface ResolvedPlot {
   /** Colour groups in legend order; `['']` when there is no colour (or the colour is continuous, see `colorScale`). */
   groups: string[];
   /** Set when a scatter is coloured by a continuous field: the range its colourbar covers. */
-  colorScale?: { label: string; unit?: string; lo: number; hi: number };
+  colorScale?: { label: string; unit?: string; lo: number; hi: number; /** Every value is a whole number (a count): shown without decimals. */ integer?: true };
   colorLabel?: string;
   /** How values were combined, in words ("mean of Vth per wafer"), when they were. */
   aggregation?: string;
@@ -172,6 +221,12 @@ export interface ResolvedPlot {
   facetLabel?: string;
   /** The plot shows PAT verdicts or PAT limits: its statement says how they are set. */
   usesPat?: true;
+  /** What `where` kept, in words ("only dies with Hard bin Bin 1"). */
+  filterNote?: string;
+  /** Each fitted line as an equation with its R² and n, one per colour. */
+  fitNotes?: string[];
+  /** The plotted test's pass rate under its own limits and under the proposed ones (`PlotSpec.whatIf`), over the dies it judges. */
+  whatIf?: { lo?: number; hi?: number; judged: number; passNow: number; passThen: number; sentence: string };
   /** @internal The tests a set resolved to, and their labels, in order. */
   setTests?: { tests: number[]; labels: string[] };
   /** The scope: every wafer and die handed in. */
@@ -209,7 +264,12 @@ const BUILTIN_LABEL: Record<PlotBuiltin, string> = {
 
 /** The reader's name for a field, whether or not the population has it. */
 export function fieldLabel(field: PlotField, testDefs?: readonly TestDef[]): string {
+  if (isBinned(field)) return fieldLabel(field.binned, testDefs);
   if (isTestSet(field)) return testSetLabel(field, testDefs);
+  if ('passRate' in field) {
+    const def = testDefs?.find(d => d.testNumber === field.passRate);
+    return `${def?.name || field.name || `Test ${field.passRate}`} pass rate`;
+  }
   if ('test' in field) {
     const def = testDefs?.find(d => d.testNumber === field.test);
     const name = def?.name || field.name || `Test ${field.test}`;
@@ -226,6 +286,8 @@ export function fieldLabel(field: PlotField, testDefs?: readonly TestDef[]): str
  * and anything else sorts naturally. One rule, so a field's values never come in two orders on one screen.
  */
 function categoryOrder(field: PlotField, seen: readonly string[], numeric: boolean): string[] {
+  // A binned field's ranges, lowest first: the order noted when it was resolved.
+  if (isBinned(field)) { const o = BIN_ORDER.get(field); return o ? o.filter(n => seen.includes(n)) : [...seen].sort((a, b) => parseFloat(a) - parseFloat(b)); }
   if ('builtin' in field && (field.builtin === 'wafer' || field.builtin === 'test')) return [...seen];
   if ('builtin' in field && field.builtin === 'pat') return PAT_VERDICT_ORDER.filter(v => seen.includes(v));
   if (numeric) return [...seen].sort((a, b) => (Number(a) || 0) - (Number(b) || 0));
@@ -315,11 +377,86 @@ interface Resolver {
  */
 const PLAIN_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)$/;
 
+/**
+ * The edges between a binned field's ranges, ascending, interior only (`bins - 1` of them at most; fewer where values
+ * repeat so that two ranges would hold the same cut). `count`: each range holds about the same number of values;
+ * `width`: each spans the same width between the smallest and largest.
+ */
+export function binEdges(values: ArrayLike<number>, bins: number, by: 'count' | 'width'): number[] {
+  const v = Array.from(values).filter(Number.isFinite).sort((a, b) => a - b);
+  if (v.length === 0) return [];
+  const lo = v[0], hi = v[v.length - 1];
+  const raw: number[] = [];
+  for (let k = 1; k < bins; k++) raw.push(by === 'width' ? lo + ((hi - lo) * k) / bins : quantile(v, k / bins));
+  // An edge at either end, or equal to the one before it, makes an empty range.
+  return raw.filter((e, i) => e > lo && e <= hi && (i === 0 || e > raw[i - 1]));
+}
+
+/** The range of `edges` a value falls in (0 is below the first edge). A value on an edge belongs to the range above it. */
+const binIndex = (v: number, edges: readonly number[]): number => {
+  let lo = 0, hi = edges.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (v >= edges[mid]) lo = mid + 1; else hi = mid; }
+  return lo;
+};
+
+/**
+ * The ranges' names in order, "7.16 pA to 19.4 pA": the low edge first, in the field's unit with its SI prefix (a
+ * percentage as "15.7%"), to three significant figures, or more only where two neighbouring edges would read alike. A
+ * computed edge is not a stored value (0.5238499999999999), so it is rounded to what tells the ranges apart.
+ */
+function binLabels(edges: readonly number[], lo: number, hi: number, unit: string | undefined): string[] {
+  const bounds = [lo, ...edges, hi];
+  const distinct = (t: readonly string[]) => t.every((x, i) => i === 0 || x !== t[i - 1]);
+  let text = unit && unit !== '%' ? bounds.map(b => fmt(b, unit)) : [];
+  if (!distinct(text) || text.length === 0) {
+    const tail = unit === '%' ? '%' : unit ? ` ${unit}` : '';
+    for (let p = 3; p <= 15; p++) {
+      text = bounds.map(b => `${Number(b.toPrecision(p))}${tail}`);
+      if (distinct(text)) break;
+    }
+  }
+  return bounds.slice(0, -1).map((_, i) => `${text[i]} to ${text[i + 1]}`);
+}
+
+/** The order of each binned field's range names, lowest range first, noted as the field is resolved (names sort as text, not as ranges). */
+const BIN_ORDER = new WeakMap<object, string[]>();
+
+/** A measured value or a number, cut into ranges that are categories: edges set over the whole population plotted. */
+function resolveBinned(field: PlotBinnedField, r: Resolver, base: { field: PlotField; label: string }): FieldColumn {
+  const { ctx } = r;
+  const inner = resolveField(field.binned, r);
+  const label = inner.label;   // the unit is in the range names
+  if (inner.issue) return { ...inner, ...base, label, kind: 'categorical', num: undefined, issue: inner.issue };
+  if (!inner.num) return { ...inner, ...base, label, kind: 'categorical', issue: `${inner.label} is already a category: only a measured value or a number can be put into ranges` };
+  const bins = field.bins ?? PLOT_BINS_DEFAULT, by = field.by ?? 'count';
+  // Edges over the whole population, so panels and colours share them; a panel resolves its own part only to place its values.
+  const key = `${JSON.stringify(field)}`;
+  let edges = ctx.binEdges?.get(key);
+  let whole = inner.num;
+  if (!edges) {
+    if (ctx.wholeItems && ctx.wholeItems !== r.items) {
+      const w = resolveField(field.binned, { items: ctx.wholeItems, rows: flatten(ctx.wholeItems), ctx: { ...ctx, wholeItems: undefined } });
+      if (w.num) whole = w.num;
+    }
+    edges = binEdges(whole, bins, by);
+    ctx.binEdges?.set(key, edges);
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < whole.length; i++) { const v = whole[i]; if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } }
+  if (lo === Infinity) return { ...inner, ...base, label, kind: 'categorical', num: undefined, issue: `${inner.label} has no values to put into ranges` };
+  const names = binLabels(edges, lo, hi, inner.unit);
+  BIN_ORDER.set(field, names);
+  const cat = Array.from(inner.num, v => (Number.isFinite(v) ? names[binIndex(v, edges!)] : undefined));
+  return { ...base, label, unit: undefined, level: inner.level, kind: 'categorical', cat };
+}
+
 function resolveField(field: PlotField, r: Resolver): FieldColumn {
   const { items, rows, ctx } = r;
   const label = fieldLabel(field, ctx.testDefs);
   const base = { field, label };
   const nDie = rows.dies.length, nWafer = items.length;
+
+  if (isBinned(field)) return resolveBinned(field, r, base);
 
   if (isTestSet(field)) {
     const m = r.melt;
@@ -328,6 +465,24 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
     for (let i = 0; i < nDie; i++) num[i] = testValue(rows.dies[i], m.tests[m.testOf[rows.item[i]]]) ?? NaN;
     const units = new Set(m.tests.map(tn => ctx.testDefs?.find(d => d.testNumber === tn)?.unit).filter((u): u is string => !!u));
     return { ...base, level: 'die', kind: 'numeric', unit: units.size === 1 ? [...units][0] : undefined, num, labelOf: item => m.labels[m.testOf[item]] };
+  }
+
+  if ('passRate' in field) {
+    // 100 for a die that passes the test, 0 for one that fails, missing where it cannot be judged: the mean over any set
+    // of dies is their pass rate, by the rule the Overview's test pass-rate card uses.
+    const tn = field.passRate;
+    const def = ctx.testDefs?.find(d => d.testNumber === tn);
+    if (!def) return { ...base, level: 'die', kind: 'numeric', issue: `Needs test ${tn}${field.name ? ` (${field.name})` : ''}, which is not in these dies` };
+    if (field.name && def.name && !sameTestName(field.name, def.name)) return { ...base, level: 'die', kind: 'numeric', issue: `Test ${tn} is "${field.name}" in this plot and "${def.name}" here` };
+    const parametric = isParametricTest(def);
+    if (parametric && def.limitLow === undefined && def.limitHigh === undefined) return { ...base, level: 'die', kind: 'numeric', issue: `${def.name || `Test ${tn}`} has no test limits to judge a pass by` };
+    const num = new Float64Array(nDie), weights = new Float64Array(nDie);
+    for (let i = 0; i < nDie; i++) {
+      const fails = dieFailsTest(rows.dies[i], def, parametric ? 'spec' : 'functional');
+      num[i] = fails === undefined ? NaN : fails ? 0 : 100;
+      weights[i] = fails === undefined ? 0 : 1;
+    }
+    return { ...base, level: 'die', kind: 'numeric', unit: '%', num, weights, perDie: true };
   }
 
   if ('test' in field) {
@@ -485,6 +640,9 @@ export function combine(values: readonly number[], how: PlotAggregate): number {
   }
 }
 
+/** A way of combining values as a sentence names it: "a maximum", "a pooled yield". */
+const AGG_NOUN: Record<PlotAggregate, string> = { mean: 'a mean', median: 'a median', min: 'a minimum', max: 'a maximum', sum: 'a sum', count: 'a count', yield: 'a pooled yield' };
+
 const AGG_WORD: Record<PlotAggregate, string> = { mean: 'Mean', median: 'Median', min: 'Min', max: 'Max', sum: 'Sum', count: 'Count', yield: 'Pooled yield' };
 
 // ── the plot ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -515,6 +673,8 @@ function titleFromSpec(spec: PlotSpec, ctx: PlotContext): string {
     case 'scatter': return x && y ? `${y} vs ${x}` : 'Scatter';
     case 'histogram': { const v = y ?? (levels[0] ? fieldLabel(levels[0], ctx.testDefs) : undefined); return v ?? 'Histogram'; }
     case 'probability': return y ? `${y}, cumulative` : 'Probability plot';
+    case 'control': return y ? `${y} control chart` : 'Control chart';
+    case 'goal': return 'Capability goal plot';
     case 'line': return x && y ? `${y} over ${x}` : 'Line';
     case 'box': return y && x ? `${y} by ${x}` : 'Box';
     case 'bar': return x ? (y ? `${y} by ${x}` : `Dies by ${x}`) : 'Bar';
@@ -656,7 +816,10 @@ function markExtent(m: PlotMarks, role: 'x' | 'y'): [number, number] | undefined
     case 'histogram': case 'probability': vs = role === 'x' ? m.values.flat() : []; break;
     case 'box': vs = role === 'y' ? m.cells.flat(2) : []; break;
     case 'bar': vs = role === 'y' ? m.values.flat() : []; break;
-    case 'line': vs = role === 'x' ? m.xs : m.values.flat(); break;
+    case 'line': vs = role === 'x' ? m.xs : [...m.values.flat(), ...(m.band ? [...m.band.lo.flat(), ...m.band.hi.flat()] : [])]; break;
+    case 'control': vs = role === 'x' ? m.xs : [...m.values, m.limits.ucl, m.limits.lcl]; break;
+    case 'goal': vs = m.points.map(p => (role === 'x' ? p.x : p.y)); break;
+    case 'heatmap': vs = []; break;
   }
   const finite = vs.filter(Number.isFinite);
   return finite.length ? [minOf(finite), maxOf(finite)] : undefined;
@@ -669,13 +832,31 @@ function markExtent(m: PlotMarks, role: 'x' | 'y'): [number, number] | undefined
  */
 function alignPanel(r: ResolvedPlot, index: readonly number[], whole: ResolvedPlot): ResolvedPlot {
   if (r.issues.length || !r.marks) return r;
-  const G = whole.groups.length;
   const gmap = r.groups.map(label => whole.groups.indexOf(label));
   if (gmap.some(g => g < 0)) return r;
+  const marks = mapMarks(r.marks, index, gmap, whole.groups.length);
+  const wx = whole.marks && markExtent(whole.marks, 'x'), wy = whole.marks && markExtent(whole.marks, 'y');
+  return {
+    ...r, marks, groups: whole.groups, colorScale: whole.colorScale ?? r.colorScale,
+    x: r.x && wx ? { ...r.x, extent: wx } : r.x,
+    y: r.y && wy ? { ...r.y, extent: wy } : r.y,
+  };
+}
+
+/**
+ * A plot resolved over part of the population (`items[k]` of the part is wafer `index[k]` of the whole), its units set
+ * back on the whole's wafer indices: the one remapping a panel and a filtered plot both need.
+ */
+function remapUnits(r: ResolvedPlot, index: readonly number[]): ResolvedPlot {
+  if (r.issues.length || !r.marks) return r;
+  return { ...r, marks: mapMarks(r.marks, index, r.groups.map((_, g) => g), r.groups.length) };
+}
+
+/** `m` with each unit's wafer through `index`, and group arrays laid out on `G` colours through `gmap` (empty where none). */
+function mapMarks(m: PlotMarks, index: readonly number[], gmap: readonly number[], G: number): PlotMarks {
   const widen = <T>(arr: readonly T[], empty: () => T): T[] => { const out = Array.from({ length: G }, empty); arr.forEach((v, l) => { out[gmap[l]] = v; }); return out; };
   const item = (k: number) => index[k];
   const unitOf = (unit: (u: number) => PlotUnit) => (u: number): PlotUnit => { const x = unit(u); return { ...x, item: item(x.item) }; };
-  const m = r.marks;
   let marks: PlotMarks;
   switch (m.type) {
     case 'scatter': marks = { type: 'scatter', points: m.points.map(p => ({ ...p, item: item(p.item), group: gmap[p.group] })) }; break;
@@ -688,14 +869,41 @@ function alignPanel(r: ResolvedPlot, index: readonly number[], whole: ResolvedPl
     case 'line': marks = {
       ...m, values: widen(m.values, () => m.xs.map(() => NaN)), counts: widen(m.counts, () => m.xs.map(() => 0)),
       cellUnits: widen(m.cellUnits, () => m.xs.map(() => [])), unit: unitOf(m.unit),
+      ...(m.band ? { band: { lo: widen(m.band.lo, () => m.xs.map(() => NaN)), hi: widen(m.band.hi, () => m.xs.map(() => NaN)) } } : {}),
     }; break;
+    case 'control': marks = { ...m, items: m.items.map(item) }; break;
+    case 'goal': marks = { type: 'goal', points: m.points.map(p => ({ ...p, group: gmap[p.group] })) }; break;
+    case 'heatmap': marks = { ...m, unit: unitOf(m.unit) }; break;
   }
-  const wx = whole.marks && markExtent(whole.marks, 'x'), wy = whole.marks && markExtent(whole.marks, 'y');
-  return {
-    ...r, marks, groups: whole.groups, colorScale: whole.colorScale ?? r.colorScale,
-    x: r.x && wx ? { ...r.x, extent: wx } : r.x,
-    y: r.y && wy ? { ...r.y, extent: wy } : r.y,
-  };
+  return marks;
+}
+
+/**
+ * A plot with `where`: only the dies (or, for a wafer field, the wafers) whose value of the field is one of `values`,
+ * resolved as any plot is, its units on the population's wafer indices and its statement saying what was kept. PAT
+ * limits stay the whole wafer's.
+ */
+function resolveFiltered(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext): ResolvedPlot {
+  const where = spec.where!;
+  const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
+  const rows = flatten(items);
+  const col = resolveField(where.field, { items, rows, ctx });
+  const label = col.label;
+  if (col.issue) return fail(col.issue);
+  if (!col.cat) return fail(`${label} is continuous: a plot keeps dies by a category, such as bin, ring or split`);
+  const keep = new Set(where.values);
+  const sub: PlotItem[] = [], index: number[] = [];
+  if (col.level === 'wafer') {
+    items.forEach((it, i) => { if (col.cat![i] !== undefined && keep.has(col.cat![i]!)) { sub.push(it); index.push(i); } });
+  } else {
+    const kept = items.map(() => [] as Die[]);
+    for (let i = 0; i < rows.dies.length; i++) { const v = col.cat[i]; if (v !== undefined && keep.has(v)) kept[rows.item[i]].push(rows.dies[i]); }
+    items.forEach((it, i) => { if (kept[i].length) { sub.push({ ...it, dies: kept[i], allDies: it.allDies ?? it.dies }); index.push(i); } });
+  }
+  const said = `only ${col.level === 'wafer' ? 'wafers' : 'dies'} with ${label} ${where.values.length === 1 ? where.values[0] : list(where.values.map(String))}`;
+  if (sub.length === 0) return fail(`No ${col.level === 'wafer' ? 'wafer' : 'die'} has ${label} ${list(where.values.map(String))}`);
+  const r = remapUnits(resolvePlot(spec, sub, { ...ctx, whereApplied: true }), index);
+  return { ...r, filterNote: said };
 }
 
 /**
@@ -711,7 +919,7 @@ function resolveFacets(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotCont
   const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
   const label = fieldLabel(facetField, ctx.testDefs);
   const allDies = items.flatMap(it => it.dies);
-  const inner: PlotContext = { ...ctx, inFacet: true, scaleDies: ctx.scaleDies ?? allDies, wholeWafers: ctx.wholeWafers ?? items.length };
+  const inner: PlotContext = { ...ctx, inFacet: true, scaleDies: ctx.scaleDies ?? allDies, wholeWafers: ctx.wholeWafers ?? items.length, wholeItems: ctx.wholeItems ?? items, binEdges: ctx.binEdges ?? new Map() };
   const byTest = isTestBuiltin(facetField);
   if (byTest && !isTestSet(spec.fields?.y)) return fail('Test panels need several tests as the values');
   if (byTest && (xFieldsOf(spec.fields?.x).some(isTestBuiltin) || isTestBuiltin(spec.fields?.color))) {
@@ -764,6 +972,165 @@ function resolveFacets(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotCont
   return { ...titled(whole), notes: [...whole.notes, ...notes], facets, facetLabel: label, ...(usesPat ? { usesPat: true as const } : {}) };
 }
 
+// ── heatmap ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A heatmap: one cell per row and column, coloured by the value combined there. It is the bar chart of its two
+ * category fields nested (rows outside, columns inside) laid out as a grid, so every rule a bar has holds here: a set
+ * of tests with Test as the rows, rescaling, pass rates, pooled yield, a count of dies when there is no Y, the die
+ * filter. The colour key spans the cells' values.
+ */
+function resolveHeatmap(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext): ResolvedPlot {
+  const enc = spec.fields ?? {};
+  const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
+  const cols = xFieldsOf(enc.x)[0] ?? { builtin: 'wafer' };
+  const rows: PlotField | undefined = enc.rows ?? (isTestSet(enc.y) ? { builtin: 'test' } : undefined);
+  if (!rows) return fail('Choose a field for the rows: a heatmap has one row per value of it');
+  if (sameField(rows, cols)) return fail('The rows and the columns need two different fields');
+  const { rows: _rows, ...rest } = enc;
+  const bar: PlotSpec = { ...spec, chart: 'bar', fields: { ...rest, x: [rows, cols], color: { none: true } } };
+  delete bar.stack; delete bar.sort; delete bar.top; delete bar.cumulative;
+  const r = resolvePlot(bar, items, { ...ctx, asHeatmap: true, inFacet: true, whereApplied: ctx.whereApplied });
+  if (r.issues.length || !r.marks || r.marks.type !== 'bar') return { ...r, spec };
+  const m = r.marks;
+  const parts = m.nest?.parts ?? [];
+  // Rows come in their field's order already (the outer level); the columns are put in theirs by the one ordering rule,
+  // since no single row need hold every column.
+  const rowKeys = [...new Set(parts.map(p => p[0]))];
+  const colKeys = [...new Set(parts.map(p => p[1]))];
+  const colsSorted = categoryOrder(cols, colKeys, colKeys.every(k => PLAIN_NUMBER.test(k)));
+  const values = rowKeys.map(() => colsSorted.map(() => NaN));
+  const cellUnits = rowKeys.map(() => colsSorted.map(() => [] as number[]));
+  parts.forEach((p, c) => {
+    const ri = rowKeys.indexOf(p[0]), ci = colsSorted.indexOf(p[1]);
+    values[ri][ci] = m.values[0][c];
+    cellUnits[ri][ci] = m.cellUnits[0][c];
+  });
+  const finite = values.flat().filter(Number.isFinite);
+  const rowLabel = fieldLabel(rows, ctx.testDefs), colLabel = fieldLabel(cols, ctx.testDefs);
+  return {
+    ...r, spec,
+    marks: { type: 'heatmap', rows: rowKeys, cols: colsSorted, values, cellUnits, unit: m.unit },
+    autoTitle: `${r.y?.label ?? 'Dies'} by ${rowLabel} and ${colLabel}`,
+    x: { label: spec.axes?.x?.label ?? colLabel, scale: 'linear' },
+    y: { label: spec.axes?.y?.label ?? rowLabel, scale: 'linear' },
+    colorScale: finite.length ? { label: r.y?.label ?? 'Count', unit: r.y?.unit, lo: minOf(finite), hi: maxOf(finite), ...(finite.every(Number.isInteger) ? { integer: true as const } : {}) } : undefined,
+    groups: [''],
+  };
+}
+
+// ── control chart and goal plot ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * An individuals chart: each wafer's value of Y (a test's wafer mean, or another way of combining by `aggregate`; a
+ * yield or pass rate as the wafer's own), in order of a wafer field (wafer order unless X says otherwise), with the
+ * centre and ±3σ limits of `stats/control.ts` and the Western Electric rules. One series: a colour is not drawn.
+ */
+function resolveControl(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext): ResolvedPlot {
+  const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
+  const enc = spec.fields ?? {};
+  if (!enc.y) return fail('Choose a field for the values');
+  if (isTestSet(enc.y)) return fail('A control chart follows one value: choose one test');
+  const xField: PlotField = (xFieldsOf(enc.x)[0]) ?? { builtin: 'waferOrder' };
+  const rows = flatten(items);
+  const r: Resolver = { items, rows, ctx };
+  const xCol = resolveField(xField, r), yCol = resolveField(enc.y, r);
+  const issue = xCol.issue ?? yCol.issue;
+  if (issue) return fail(issue);
+  if (xCol.level !== 'wafer' || !xCol.num) return fail(`A control chart runs along a wafer field with a number per wafer, such as wafer order or slot, not ${xCol.label}`);
+  if (!yCol.num) return fail(`${yCol.label} is a category, not a number, so it cannot be charted`);
+  // One value per wafer: a wafer field as it is, a die field combined over the wafer's dies.
+  const how: PlotAggregate = spec.aggregate && spec.aggregate !== 'yield' && spec.aggregate !== 'count' ? spec.aggregate : 'mean';
+  const per: number[][] = items.map(() => []);
+  if (yCol.level === 'die') for (let i = 0; i < rows.dies.length; i++) per[rows.item[i]].push(yCol.num[i]);
+  const valueOf = (i: number) => (yCol.level === 'wafer' ? yCol.num![i] : combine(per[i], yCol.perDie ? 'mean' : how));
+  const order = items.map((_, i) => i).filter(i => Number.isFinite(xCol.num![i]) && Number.isFinite(valueOf(i)))
+    .sort((a, b) => xCol.num![a] - xCol.num![b] || a - b);
+  const omitted = items.length - order.length;
+  if (order.length < 3) return fail('A control chart needs at least three wafers with a value');
+  const values = order.map(valueOf), xs = order.map(i => xCol.num![i]);
+  const limits = individualsLimits(values, spec.baseline)!;
+  const violations = westernElectric(values, limits);
+  const label = yCol.perDie || yCol.level === 'wafer' ? yCol.label : `${AGG_WORD[how]} ${yCol.label}`;
+  const notes: string[] = [];
+  if (enc.color && !('none' in enc.color) && !('follow' in enc.color)) notes.push('A control chart is one series: its points are not coloured');
+  const ruled = violations.length
+    ? `${violations.length} point${violations.length === 1 ? '' : 's'} break${violations.length === 1 ? 's' : ''} a Western Electric rule (${[...new Set(violations.flatMap(v => v.rules))].sort().map(n => `${n}: ${CONTROL_RULE_TEXT[n]}`).join('; ')})`
+    : 'no point breaks a Western Electric rule';
+  return {
+    spec, issues: [], notes, level: 'wafer',
+    marks: { type: 'control', xs, values, items: order, limits, violations },
+    autoTitle: `${label} control chart`,
+    x: axisFor('x', xCol.label, xCol.unit, spec, xs, notes),
+    y: { ...axisFor('y', label, yCol.unit, spec, values, notes), limits: !yCol.perDie && yCol.level === 'die' && (how === 'mean' || how === 'median') ? yCol.limits : undefined },
+    groups: [''],
+    aggregation: `individuals chart: centre the mean of ${limits.baseline === values.length ? 'all' : `the first ${limits.baseline}`} wafers, limits ±3σ with σ the average moving range / 1.128; ${ruled}`,
+    population: { wafers: items.length, dies: rows.dies.length },
+    plotted: values.length,
+    omitted: omitted ? [{ field: yCol.label, count: omitted }] : [],
+  };
+}
+
+/**
+ * A capability goal plot: each test with both limits (the set on Y, or every one), and each colour group, as its mean's
+ * offset from the centre of its limit window and its overall standard deviation, both as shares of the window. A test
+ * on the left or right is off-centre; one high up is too wide. Ppk = (½ − |x|) / (3y), so a line of equal Ppk is a
+ * triangle, drawn by the chart for Ppk 1 and 1.33.
+ */
+function resolveGoal(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext): ResolvedPlot {
+  const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
+  const defs = ctx.testDefs ?? [];
+  const enc = spec.fields ?? {};
+  let tests: TestDef[];
+  if (!enc.y) tests = defs.filter(isParametricTest);
+  else if (isTestSet(enc.y)) { const want = new Set(expandTestSet(enc.y, defs).tests); tests = defs.filter(d => want.has(d.testNumber)); }
+  else if ('test' in enc.y) tests = defs.filter(d => d.testNumber === (enc.y as { test: number }).test);
+  else return fail('A goal plot shows tests: choose tests, or leave the values empty for every test with both limits');
+  tests = tests.filter(d => isParametricTest(d) && capabilityLimits(d) !== undefined);
+  if (tests.length === 0) return fail('No test here has both a low and a high limit to set a goal by');
+  // The colour divides the dies into groups, each a capability of its own; a followed colour is the Group by, never a wafer each.
+  const rows = flatten(items);
+  const r: Resolver = { items, rows, ctx };
+  const c = enc.color;
+  const colorField: PlotField | undefined = c === undefined || 'follow' in c ? (ctx.groupBy ? { meta: ctx.groupBy } : undefined) : 'none' in c ? undefined : c;
+  let groups = [''];
+  let groupOf: (i: number) => number = () => 0;
+  if (colorField) {
+    const col = resolveField(colorField, r);
+    if (col.issue) return fail(col.issue);
+    if (!col.cat) return fail(`${col.label} is continuous: colour a goal plot by a category such as split`);
+    const at = (i: number) => (col.level === 'die' ? col.cat![i] : col.cat![rows.item[i]]);
+    const seen: string[] = [];
+    for (let i = 0; i < rows.dies.length; i++) { const v = at(i); if (v !== undefined && !seen.includes(v)) seen.push(v); }
+    groups = categoryOrder(colorField, seen, numericCategories(col));
+    groupOf = i => { const v = at(i); return v === undefined ? -1 : groups.indexOf(v); };
+  }
+  const byGroup: Die[][] = groups.map(() => []);
+  for (let i = 0; i < rows.dies.length; i++) { const g = groupOf(i); if (g >= 0) byGroup[g].push(rows.dies[i]); }
+  const points: GoalPoint[] = [];
+  byGroup.forEach((dies, g) => {
+    for (const f of buildCapabilityFigures([{ dies }], tests)) {
+      if (!f.hasSpec || f.lsl === undefined || f.usl === undefined || !(f.stdOverall > 0) || f.ppk === null) continue;
+      const w = f.usl - f.lsl;
+      points.push({ x: (f.mean - (f.lsl + f.usl) / 2) / w, y: f.stdOverall / w, group: g, testNumber: f.testNumber, label: f.label, ppk: f.ppk, n: f.n, basis: f.limitBasis ?? 'test' });
+    }
+  });
+  if (points.length === 0) return fail('No test has values with a spread to place');
+  const notes: string[] = [];
+  return {
+    spec, issues: [], notes, level: 'die',
+    marks: { type: 'goal', points },
+    autoTitle: colorField ? `Capability goal plot · by ${fieldLabel(colorField, defs)}` : 'Capability goal plot',
+    x: axisFor('x', 'Mean offset from the centre of the limits', undefined, spec, points.map(p => p.x), notes),
+    y: axisFor('y', 'Standard deviation', undefined, spec, points.map(p => p.y), notes),
+    groups, colorLabel: colorField ? fieldLabel(colorField, defs) : undefined,
+    aggregation: `each test's mean offset and standard deviation over its dies, as shares of its limit window (spec limits where it has both, else test limits); triangles: Ppk 1 and 1.33`,
+    population: { wafers: items.length, dies: rows.dies.length },
+    plotted: points.length,
+    omitted: [],
+  };
+}
+
 /** Resolves `spec` over `items`. Never throws for a plot that cannot be drawn: it returns the reasons. */
 export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext = {}): ResolvedPlot {
   const versionIssue = plotIssue(spec);
@@ -771,7 +1138,11 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
   const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
   // A sweep reads runs of tests, not fields: the sweep panel draws it, and the callers branch on the mark first.
   if (spec.chart === 'sweep') return fail('A sweep is drawn by the sweep panel');
+  if (spec.where && !ctx.whereApplied) return resolveFiltered(spec, items, ctx);
   if (spec.fields?.facet && !ctx.inFacet) return resolveFacets(spec, items, ctx);
+  if (spec.chart === 'control') return resolveControl(spec, items, ctx);
+  if (spec.chart === 'goal') return resolveGoal(spec, items, ctx);
+  if (spec.chart === 'heatmap' && !ctx.asHeatmap) return resolveHeatmap(spec, items, ctx);
 
   const mark = spec.chart;
   const enc = spec.fields ?? {};
@@ -936,6 +1307,10 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     level = 'die';
   }
   if (level === 'die' && yCol?.weights && !yCol.perDie && !dieOnly.length) level = 'wafer';
+  // A pass rate is a share of dies: a die's own 0 or 100 drawn as a point, a box or a histogram says nothing.
+  if (yCol && 'passRate' in yCol.field && level === 'die' && mark !== 'bar' && mark !== 'line') {
+    return fail(`${yCol.label} is a share of dies: draw it as a bar or a line, or with one mark per wafer (each wafer's pass rate)`);
+  }
 
   const nUnits = level === 'die' ? rows.dies.length : items.length;
   const itemOf = (u: number) => (level === 'die' ? rows.item[u] : u);
@@ -992,6 +1367,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
   let xAxis: ResolvedAxis | undefined, yAxis: ResolvedAxis | undefined;
   let aggregation: string | undefined;
   let colorScale: ResolvedPlot['colorScale'];
+  let fitNotes: string[] | undefined;
   let plotted = 0;
   const groupCount = groups.length;
 
@@ -1011,10 +1387,34 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
       const vs = points.map(p => p.value!);
       colorScale = { label: colorCol!.label, unit: colorCol!.unit, lo: minOf(vs), hi: maxOf(vs) };
     }
-    marks = { type: 'scatter', points };
+    // A fitted line per colour (one for the population with a single colour or a gradient), and y = x where the axes
+    // measure one quantity.
+    let fits: PlotFit[] | undefined;
+    if (spec.fit) {
+      const byGroup = colorValues ? [points] : Array.from({ length: groupCount }, (_, g) => points.filter(p => p.group === g));
+      fits = byGroup.flatMap((ps, g) => { const f = fitLine(ps.map(p => p.x), ps.map(p => p.y), spec.fit!); return f ? [{ group: g, ...f }] : []; });
+      const same = (xCol!.unit ?? '') === (yCol!.unit ?? '');
+      fitNotes = fits.map(f => {
+        const who = groupCount > 1 && !colorValues ? `${groups[f.group] || '(none)'}: ` : '';
+        // A minus sign, not a hyphen, as the intercept has.
+        const s4 = +f.slope.toPrecision(4);
+        const mag = `${s4 < 0 ? '−' : ''}${fmtExact(Math.abs(s4))}`;
+        const slope = same ? mag : `${mag} ${yCol!.unit ?? ''}/${xCol!.unit ?? ''}`.trim();
+        const sign = f.intercept < 0 ? '−' : '+';
+        return `${who}y = ${slope} x ${sign} ${fmt(Math.abs(f.intercept), yCol!.unit)}, R² ${f.r2.toFixed(3)}, n ${f.n.toLocaleString('en-GB')}`;
+      });
+    }
+    let identity = false;
+    if (spec.identity) {
+      if ((xCol!.unit ?? '') !== (yCol!.unit ?? '')) notes.push(`y = x is left off: ${xCol!.label} and ${yCol!.label} are in different units`);
+      else identity = true;
+    }
+    marks = { type: 'scatter', points, ...(fits?.length ? { fits } : {}), ...(identity ? { identity: true as const } : {}) };
     xAxis = axisFor('x', xCol!.label, xCol!.unit, spec, points.map(p => p.x), notes);
     yAxis = axisFor('y', yCol!.label, yCol!.unit, spec, points.map(p => p.y), notes);
-    aggregation = [perWaferNote(xCol!), perWaferNote(yCol!)].filter(Boolean).join('; ') || undefined;
+    aggregation = [perWaferNote(xCol!), perWaferNote(yCol!),
+      fits?.length ? `${spec.fit === 'orthogonal' ? 'orthogonal (Deming) fit' : 'least-squares fit of Y on X'} per ${groupCount > 1 && !colorValues ? 'colour' : 'plot'}` : undefined]
+      .filter(Boolean).join('; ') || undefined;
   } else if (mark === 'histogram') {
     const vs = numAt(yCol!);
     const values: number[][] = Array.from({ length: groupCount }, () => []);
@@ -1025,8 +1425,10 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     }
     marks = { type: 'histogram', values, units, unit: unitInfo };
     xAxis = axisFor('x', yCol!.label, yCol!.unit, spec, values.flat(), notes);
-    yAxis = { label: 'Count', scale: 'linear', ...(spec.axes?.y?.label ? { label: spec.axes.y.label } : {}) };
-    aggregation = perWaferNote(yCol!);
+    const percent = spec.histNorm === 'percent';
+    yAxis = { label: percent ? (groupCount > 1 ? `Share of each colour's ${unitNoun}` : `Share of ${unitNoun}`) : 'Count', scale: 'linear', ...(percent ? { unit: '%' } : {}), ...(spec.axes?.y?.label ? { label: spec.axes.y.label } : {}) };
+    if (spec.normalCurve && xAxis.scale === 'log') notes.push('The normal curve is left off a log axis, where a normal distribution is not the shape its bars would follow');
+    aggregation = [perWaferNote(yCol!), spec.normalCurve && xAxis.scale !== 'log' ? `curve: the normal distribution with ${groupCount > 1 ? "each colour's" : 'the'} mean and standard deviation` : undefined].filter(Boolean).join('; ') || undefined;
   } else if (mark === 'probability') {
     // Each group's values in order, the unit behind each kept beside it so a point can name its die.
     // Each group's units sorted by value: a plain index sort, no pair per value, since a lot can hold millions of them.
@@ -1064,11 +1466,39 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     }));
     const counts = Array.from({ length: groupCount }, (_, g) => xsSorted.map(x => cells.get(`${g}|${x}`)?.length ?? 0));
     const lineUnits = Array.from({ length: groupCount }, (_, g) => xsSorted.map(x => cellUnitsMap.get(`${g}|${x}`) ?? []));
-    marks = { type: 'line', xs: xsSorted, values, counts, cellUnits: lineUnits, unit: unitInfo };
+    // The spread of the values combined at each X: a band round a mean or a median, never round a pass rate, whose
+    // values are 0 and 100 and whose spread says nothing about the rate.
+    let band: { lo: number[][]; hi: number[][] } | undefined;
+    const spread = spec.spread;
+    if (spread) {
+      if (yCol!.perDie) return fail(`A band shows how values spread, and ${yCol!.label} is a share of passing dies, not a value: leave the band off`);
+      if (how !== 'mean' && how !== 'median') return fail(`A band goes round a mean or a median, not ${AGG_NOUN[how]}`);
+      const tByDf = new Map<number, number>();   // Student's t for the 95% interval, once per degrees of freedom
+      const at = (g: number, x: number, k: number): [number, number] => {
+        const cell = (cells.get(`${g}|${x}`) ?? []).filter(Number.isFinite);
+        if (cell.length === 0) return [NaN, NaN];
+        if (spread === 'minmax') return [minOf(cell), maxOf(cell)];
+        if (spread === 'iqr') { const sorted = cell.sort((a, b) => a - b); return [quantile(sorted, 0.25), quantile(sorted, 0.75)]; }
+        if (cell.length < 2) return [NaN, NaN];
+        const m = cell.reduce((a, b) => a + b, 0) / cell.length;
+        const sd = Math.sqrt(sampleVariance(cell, m));
+        let t = 1;
+        if (spread === 'ci95') { t = tByDf.get(cell.length - 1) ?? tQuantileTwoSided(0.05, cell.length - 1); tByDf.set(cell.length - 1, t); }
+        const half = spread === 'sd' ? sd : t * sd / Math.sqrt(cell.length);
+        return [values[g][k] - half, values[g][k] + half];
+      };
+      const lo = values.map(() => [] as number[]), hi = values.map(() => [] as number[]);
+      values.forEach((_, g) => xsSorted.forEach((x, k) => { const [l, h] = at(g, x, k); lo[g].push(l); hi[g].push(h); }));
+      band = { lo, hi };
+    }
+    marks = { type: 'line', xs: xsSorted, values, counts, cellUnits: lineUnits, unit: unitInfo, ...(band ? { band } : {}) };
     xAxis = axisFor('x', xCol!.label, xCol!.unit, spec, xsSorted, notes);
     const yAgg = how === 'yield' ? 'mean' : how;
     yAxis = axisFor('y', yCol!.perDie ? yCol!.label : `${AGG_WORD[yAgg]} ${yCol!.label}`, yCol!.unit, spec, values.flat(), notes);
-    aggregation = yCol!.perDie ? `passing dies over judged dies, per ${xCol!.label.toLowerCase()}` : `${AGG_WORD[yAgg].toLowerCase()} of ${yCol!.label} per ${xCol!.label}`;
+    const of = level === 'die' ? 'dies' : 'wafers';
+    const bandWords = { sd: `± 1 standard deviation of the ${of}`, ci95: `the mean's 95% confidence interval (Student's t, n = ${of})`, iqr: `the quartiles of the ${of}`, minmax: `the range of the ${of}` } as const;
+    aggregation = (yCol!.perDie ? `passing dies over judged dies, per ${xCol!.label.toLowerCase()}` : `${AGG_WORD[yAgg].toLowerCase()} of ${yCol!.label} per ${xCol!.label}`)
+      + (spread ? `; band: ${bandWords[spread]} at each ${xCol!.label.toLowerCase()}` : '');
   } else {
     // box and bar: one category per value of X, or per combination of the values of nested X levels, outer first.
     const levelLabels: Array<(string | undefined)[]> = [];
@@ -1137,7 +1567,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     // Rearrangements: categories by value, the first few kept, the colours stacked or as shares, a cumulative line.
     const adds = mark === 'bar' && (how === 'count' || how === 'sum');
     if (spec.stack && mark !== 'bar') return fail('Only a bar chart stacks its colours');
-    if (spec.stack && !adds) return fail(`Stacking adds the colours' values, which means something for a count or a sum, not a ${AGG_WORD[how].toLowerCase()}: combine by count or sum, or draw the colours side by side`);
+    if (spec.stack && !adds) return fail(`Stacking adds the colours' values, which means something for a count or a sum, not ${AGG_NOUN[how]}: combine by count or sum, or draw the colours side by side`);
     if (spec.cumulative && !(adds && spec.sort === 'value')) return fail('A cumulative line needs a bar of counts or sums sorted by value, largest first');
     if ((spec.sort || spec.top) && xCols.length > 1) return fail('Sorting by value and keeping the top categories need one category field on X');
     const totalOf = (c: number): number => {
@@ -1179,7 +1609,7 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     xAxis = { label: spec.axes?.x?.label ?? xCols.map(c => c.label).join(' › '), scale: 'linear' };
     if (mark === 'bar') {
       const word = how === 'count' ? 'Count' : AGG_WORD[how];
-      const base = wantsCount ? `Count of ${unitNoun}` : how === 'yield' ? 'Pooled yield' : `${word} ${yCol!.label}`;
+      const base = wantsCount ? `Count of ${unitNoun}` : how === 'yield' ? ('passRate' in yCol!.field ? yCol!.label : 'Pooled yield') : `${word} ${yCol!.label}`;
       const percent = spec.stack === 'percent' && groupCount > 1;
       const ylabel = percent ? `Share of each ${xCols[0].label.toLowerCase()}'s ${wantsCount ? unitNoun : base.toLowerCase()}` : base;
       // A stack's axis spans each category's total, not its colours one by one.
@@ -1248,6 +1678,34 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     }
   }
 
+  // What-if limits: the plotted test's pass rate under its own test limits and under the proposed ones, over the dies
+  // judged by both (a value, yield-eligible), with the proposed limits drawn on the values axis.
+  let whatIf: ResolvedPlot['whatIf'];
+  if (spec.whatIf) {
+    if (!(mark === 'histogram' || mark === 'probability')) return fail('What-if limits go on a histogram or a probability plot of one test');
+    if (melt || !yCol || !('test' in yCol.field)) return fail('What-if limits need one measured test as the values');
+    if (spec.normalize) return fail("What-if limits are in the test's own unit: turn rescaling off to set them");
+    const tn = (yCol.field as { test: number }).test;
+    const def = defs.find(d => d.testNumber === tn);
+    const nowLo = def?.limitLow ?? -Infinity, nowHi = def?.limitHigh ?? Infinity;
+    const lo = spec.whatIf.lo ?? def?.limitLow ?? -Infinity, hi = spec.whatIf.hi ?? def?.limitHigh ?? Infinity;
+    let judged = 0, passNow = 0, passThen = 0;
+    for (let i = 0; i < rows.dies.length; i++) {
+      const v = testValue(rows.dies[i], tn);
+      if (v === undefined || !Number.isFinite(v) || !isYieldEligibleDie(rows.dies[i])) continue;
+      judged++;
+      if (v >= nowLo && v <= nowHi) passNow++;
+      if (v >= lo && v <= hi) passThen++;
+    }
+    const rate = (k: number) => (judged ? `${((k / judged) * 100).toFixed(1)}%` : '—');
+    const range = `${Number.isFinite(lo) ? fmt(lo, yCol.unit) : '−∞'} to ${Number.isFinite(hi) ? fmt(hi, yCol.unit) : '∞'}`;
+    const diff = passThen - passNow;
+    const sentence = `what-if: ${yCol.label} passes ${rate(passNow)} of ${judged.toLocaleString('en-GB')} dies by its test limits, ${rate(passThen)} from ${range}`
+      + ` (${diff === 0 ? 'no die changes' : `${diff > 0 ? '+' : '−'}${Math.abs(diff).toLocaleString('en-GB')} dies`})`;
+    whatIf = { ...(Number.isFinite(lo) ? { lo } : {}), ...(Number.isFinite(hi) ? { hi } : {}), judged, passNow, passThen, sentence };
+    if (xAxis) xAxis.limits = { ...xAxis.limits, ...(spec.whatIf.lo !== undefined ? { whatIfLow: spec.whatIf.lo } : {}), ...(spec.whatIf.hi !== undefined ? { whatIfHigh: spec.whatIf.hi } : {}) };
+  }
+
   const usesPat = [...xCols, yCol, colorCol].some(c => !!c && 'builtin' in c.field && c.field.builtin === 'pat')
     || [xAxis, yAxis].some(a => a?.limits?.patLow !== undefined || a?.limits?.patHigh !== undefined);
 
@@ -1255,6 +1713,8 @@ export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: Plo
     spec, issues: [], notes, marks, level,
     ...(comparison ? { comparison } : {}),
     ...(usesPat ? { usesPat: true as const } : {}),
+    ...(fitNotes?.length ? { fitNotes } : {}),
+    ...(whatIf ? { whatIf } : {}),
     ...(excludedSet ? { excluded: { limitSet: excludedSet, fields: excludedFields } } : {}),
     autoTitle: title(), x: xAxis, y: yAxis, groups, colorScale, colorLabel, aggregation,
     ...(spec.normalize && scales ? { normalization: normalizeNote(spec.normalize, bases) } : {}),
@@ -1284,6 +1744,8 @@ function comparisonSentence(by: string, c: GroupComparison): string {
 export function plotFootnote(resolved: ResolvedPlot): string {
   const { wafers, dies } = resolved.population;
   const parts = [`${wafers.toLocaleString('en-GB')} wafer${wafers === 1 ? '' : 's'} · ${dies.toLocaleString('en-GB')} dies`];
+  if (resolved.filterNote) parts.push(resolved.filterNote);
+  if (resolved.whatIf) parts.push(resolved.whatIf.sentence);
   if (resolved.aggregation) parts.push(resolved.aggregation);
   if (resolved.normalization) parts.push(resolved.normalization);
   if (resolved.comparison) parts.push(comparisonSentence(resolved.comparison.by, resolved.comparison.result));
@@ -1293,13 +1755,18 @@ export function plotFootnote(resolved: ResolvedPlot): string {
   if (resolved.excluded) {
     for (const f of resolved.excluded.fields) parts.push(`${f.count.toLocaleString('en-GB')} ${f.field} value${f.count === 1 ? '' : 's'} outside ${resolved.excluded.limitSet} excluded`);
   }
+  const guide = GUIDE_SECTION[resolved.spec.chart];
+  if (guide) parts.push(`how to read this: User guide, section ${guide}`);
   return parts.join(' · ');
 }
+
+/** The user-guide section that explains how to read a chart type's statistics. */
+const GUIDE_SECTION: Partial<Record<PlotSpec['chart'], string>> = { probability: '10.4', control: '10.7', goal: '10.8', heatmap: '10.11' };
 
 
 // ── what can be chosen ────────────────────────────────────────────────────────────────────────────────────
 
-export type FieldGroup = 'Tests' | 'Verdicts' | 'Die' | 'Wafer';
+export type FieldGroup = 'Tests' | 'Verdicts' | 'Pass rates' | 'Die' | 'Wafer';
 
 /** One entry of the editor's field list. */
 export interface FieldOption {
@@ -1319,7 +1786,9 @@ export interface FieldOption {
 
 /** A stable string for a field, for list values and comparisons. */
 export function fieldKey(f: PlotField): string {
+  if (isBinned(f)) return `binned:${fieldKey(f.binned)}`;
   if (isTestSet(f)) return `tests:${f.tests.join(',')}`;
+  if ('passRate' in f) return `passRate:${f.passRate}`;
   return 'test' in f ? `test:${f.test}` : 'builtin' in f ? `builtin:${f.builtin}` : `meta:${f.meta}`;
 }
 
@@ -1360,6 +1829,18 @@ export function fieldCatalogue(items: readonly PlotItem[], ctx: PlotContext = {}
       group: 'Verdicts', kind: 'categorical', level: 'die', categorical: true,
     });
   }
+  // Each judgeable test's pass rate: a parametric test with a limit, or a functional one with outcomes here.
+  for (const d of defs) {
+    const judgeable = isParametricTest(d) ? (d.limitLow !== undefined || d.limitHigh !== undefined) && (present.has(d.testNumber) || !dies.length)
+      : outcomes.has(d.testNumber) || !dies.length;
+    if (!judgeable) continue;
+    const name = d.name || `Test ${d.testNumber}`;
+    out.push({
+      field: { passRate: d.testNumber, ...(d.name ? { name: d.name } : {}) },
+      label: `${name} · ${d.testNumber} pass rate`, name: `${name} pass rate`,
+      group: 'Pass rates', kind: 'numeric', level: 'die', categorical: false,
+    });
+  }
   const has = (f: (d: Die) => boolean) => dies.some(f);
   const die = (builtin: PlotBuiltin, kind: FieldKind, categorical: boolean) =>
     out.push({ field: { builtin }, label: BUILTIN_LABEL[builtin], name: BUILTIN_LABEL[builtin], group: 'Die', kind, level: 'die', categorical });
@@ -1393,6 +1874,18 @@ export function fieldCatalogue(items: readonly PlotItem[], ctx: PlotContext = {}
   return out;
 }
 
+/**
+ * The values a category field takes on this population, in the order every list of them uses (`categoryOrder`): what
+ * the editor offers for a plot's `where`. Empty for a field with no categories here.
+ */
+export function fieldValues(field: PlotField, items: readonly PlotItem[], ctx: PlotContext = {}): string[] {
+  const col = resolveField(field, { items, rows: flatten(items), ctx });
+  if (col.issue || !col.cat) return [];
+  const seen: string[] = [];
+  for (const v of col.cat) if (v !== undefined && !seen.includes(v)) seen.push(v);
+  return categoryOrder(field, seen, numericCategories(col));
+}
+
 export type PlotRole = 'x' | 'y' | 'color';
 
 /**
@@ -1401,10 +1894,13 @@ export type PlotRole = 'x' | 'y' | 'color';
  * always a category, since a continuous colour is not drawn yet.
  */
 export function fieldsForRole(catalogue: readonly FieldOption[], mark: PlotSpec['chart'], role: PlotRole): FieldOption[] {
+  // A control chart runs along a wafer field with a number per wafer: wafer order, slot, a date.
+  if (mark === 'control' && role === 'x') return catalogue.filter(f => f.kind === 'numeric' && f.level === 'wafer');
   const valueRole = role === 'y' || (role === 'x' && (mark === 'scatter' || mark === 'line' || mark === 'histogram'));
   // A scatter can also be coloured on a gradient by a measured value or a wafer figure.
   if (role === 'color') return catalogue.filter(f => f.categorical || (mark === 'scatter' && f.kind === 'numeric'));
-  if (valueRole) return catalogue.filter(f => f.kind === 'numeric');
+  // A pass rate is a share to read off the values axis, never a position to plot against.
+  if (valueRole) return catalogue.filter(f => f.kind === 'numeric' && (role === 'y' || f.group !== 'Pass rates'));
   // A bar or box X: categories, or a numeric lot field, each value its own category.
   return catalogue.filter(f => f.categorical);
 }
@@ -1486,21 +1982,72 @@ export function describeTitleDrift(d: TitleDrift): string | null {
  * support it (a line needs two wafers, a sweep two tests). Untitled, so each one is named by what it plots; the sweep,
  * which has no fields to name it by, is titled "Example sweep".
  */
-export function examplePlots(catalogue: readonly FieldOption[], waferCount: number, newId: () => string): PlotSpec[] {
-  const tests = catalogue.filter(f => f.group === 'Tests' && 'test' in f.field).map(f => f.field);
+export function examplePlots(catalogue: readonly FieldOption[], waferCount: number, newId: () => string, data?: { items: readonly PlotItem[]; ctx?: PlotContext }): PlotSpec[] {
+  const inOrder = catalogue.filter(f => f.group === 'Tests' && 'test' in f.field);
+  // With the data to hand the tests are put in the order they have most to show, the second being the one that follows the first.
+  const metaKeys = catalogue.flatMap(f => ('meta' in f.field ? [f.field.meta] : []));
+  const picks = data ? pickExamples(data.items, inOrder.map(f => (f.field as { test: number }).test), metaKeys, data.ctx?.curation) : undefined;
+  const byNumber = new Map(inOrder.map(f => [(f.field as { test: number }).test, f]));
+  const testFields = picks ? [
+    ...picks.ranked.map(n => byNumber.get(n)!).filter(Boolean).filter(f => (f.field as { test: number }).test !== picks.partner),
+  ] : inOrder;
+  if (picks?.partner !== undefined && testFields.length) testFields.splice(1, 0, byNumber.get(picks.partner)!);
+  const tests = testFields.map(f => f.field);
   const out: PlotSpec[] = [];
   const manyWafers = waferCount > 1;
-  if (tests.length >= 2) out.push({ id: newId(), chart: 'scatter', fields: { x: tests[0], y: tests[1] } });
-  if (tests.length >= 1) out.push({ id: newId(), chart: 'histogram', fields: { y: tests[0], color: { none: true } } });
-  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), chart: 'box', fields: { x: { builtin: 'wafer' }, y: tests[0], color: { none: true } } });
-  if (manyWafers) {
-    const dividing = catalogue.find(f => 'meta' in f.field && f.distinct !== undefined && f.distinct >= 2 && f.distinct <= Math.max(2, Math.floor(waferCount / 2)));
-    out.push({ id: newId(), chart: 'bar', fields: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
-  }
-  if (tests.length >= 1 && manyWafers) out.push({ id: newId(), chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean' });
+  const has = (b: PlotBuiltin) => catalogue.some(f => 'builtin' in f.field && f.field.builtin === b);
+  const dividing = (picks?.splitKey ? catalogue.find(f => 'meta' in f.field && f.field.meta === picks.splitKey) : undefined)
+    ?? catalogue.find(f => 'meta' in f.field && f.distinct !== undefined && f.distinct >= 2 && f.distinct <= Math.max(2, Math.floor(waferCount / 2)));
+  const add = (spec: Omit<PlotSpec, 'id'>) => out.push({ id: newId(), ...spec });
+  // A few tests as one set, each named as it is here so the plot is read against the same tests elsewhere.
+  const set: PlotTestSet | undefined = testFields.length >= 2 ? {
+    tests: testFields.slice(0, 8).map(f => (f.field as { test: number }).test),
+    names: Object.fromEntries(testFields.slice(0, 8).map(f => [String((f.field as { test: number }).test), f.name])),
+  } : undefined;
+
+  // Colour carries the comparison: the split where the lot has one, else the ring; a plot whose X is that field colours
+  // each of its categories.
+  const split: PlotField | undefined = dividing?.field;
+  const tint: PlotField | undefined = split ?? (has('ring') ? { builtin: 'ring' } : undefined);
+  const byTint: { color: PlotColor } = { color: tint ?? { none: true } };
+  const bySplit: { color: PlotColor } = { color: split ?? { none: true } };
+
+  if (tests.length >= 2) add({ chart: 'scatter', fields: { x: tests[0], y: tests[1], ...(split ? { color: split } : {}) }, fit: 'linear' });
+  if (tests.length >= 1) add({ chart: 'histogram', fields: { y: tests[0], ...byTint }, normalCurve: true });
+  if (tests.length >= 1 && manyWafers) add({ chart: 'box', fields: { x: { builtin: 'wafer' }, y: tests[0], ...bySplit } });
+  if (manyWafers) add({ chart: 'bar', fields: { x: split ?? { builtin: 'wafer' }, y: { builtin: 'yield' }, color: split ?? { none: true } } });
+  if (tests.length >= 1 && manyWafers) add({ chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean', spread: 'sd' });
   // The first test as cumulative curves, one per wafer (or per Group by), where a shifted or wider wafer stands out.
-  if (tests.length >= 1) out.push({ id: newId(), chart: 'probability', fields: { y: tests[0] } });
-  if (tests.length >= 2) out.push({ ...startingSweep(tests.flatMap(f => ('test' in f ? [f] : [])), newId()), title: 'Example sweep' });
+  if (tests.length >= 1) add({ chart: 'probability', fields: { y: tests[0] } });
+
+  // Several tests at once, each rescaled so they share an axis: a box per test, and a grid of tests by wafer.
+  if (set) add({ chart: 'box', fields: { x: { builtin: 'test' }, y: set, ...bySplit }, normalize: 'zscore' });
+  if (set && manyWafers) add({ chart: 'heatmap', fields: { x: { builtin: 'wafer' }, y: set }, aggregate: 'mean', normalize: 'zscore' });
+  // Split experiments: the groups compared with each wafer as one value, and wafers nested inside their split.
+  if (tests.length >= 1 && split) add({ chart: 'box', fields: { x: split, y: tests[0], color: split } });
+  if (tests.length >= 1 && split) add({ chart: 'box', fields: { x: [split, { builtin: 'wafer' }], y: tests[0], color: split } });
+  // Panels: the same plot once per ring, on shared axes, coloured by split.
+  if (tests.length >= 1 && has('ring')) add({ chart: 'histogram', fields: { y: tests[0], ...bySplit, facet: { builtin: 'ring' } } });
+  // A measured value in ranges as a category: the first test by the second, and by distance from the centre.
+  if (tests.length >= 2) add({ chart: 'box', fields: { x: { binned: tests[1], bins: 5 }, y: tests[0], ...byTint } });
+  if (tests.length >= 1 && has('radius')) add({ chart: 'box', fields: { x: { binned: { builtin: 'radius' }, bins: 6, by: 'width' }, y: tests[0], ...bySplit } });
+  // Bins: a pareto of the hard bins, and each wafer's bin mix.
+  if (has('hbin')) add({ chart: 'bar', fields: { x: { builtin: 'hbin' }, color: { none: true } }, sort: 'value', cumulative: true });
+  if (has('hbin') && manyWafers) add({ chart: 'bar', fields: { x: { builtin: 'wafer' }, color: { builtin: 'hbin' } }, stack: 'percent' });
+  // Part-average testing: the first test by each die's verdict, so outliers inside the limits stand apart.
+  if (tests.length >= 1 && has('pat')) add({ chart: 'box', fields: { x: { builtin: 'pat' }, y: tests[0], color: { builtin: 'pat' } } });
+  // Where on the wafer the PAT outliers are: every die at its position, coloured by its verdict.
+  if (has('pat') && has('x') && has('y')) add({ chart: 'scatter', fields: { x: { builtin: 'x' }, y: { builtin: 'y' }, color: { builtin: 'pat' } } });
+  // Wafer by wafer on an individuals chart with control limits and rule breaks.
+  if (tests.length >= 1 && waferCount >= 5) add({ chart: 'control', fields: { x: { builtin: 'waferOrder' }, y: tests[0] } });
+  // Which tests meet their limits: every test with both limits on a goal plot (a split moves its points), and the lead
+  // test's pass rate by split. Only where the test definitions say which tests have limits.
+  const defs = data?.ctx?.testDefs ?? [];
+  const limited = tests.flatMap(f => { const d = 'test' in f ? defs.find(x => x.testNumber === f.test) : undefined; return d && isParametricTest(d) ? [{ f, d }] : []; });
+  if (limited.some(({ d }) => d.limitLow !== undefined && d.limitHigh !== undefined)) add({ chart: 'goal', fields: dividing ? { color: dividing.field } : {} });
+  const rated = limited.find(({ d }) => d.limitLow !== undefined || d.limitHigh !== undefined);
+  if (rated && manyWafers) add({ chart: 'bar', fields: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: { passRate: (rated.f as { test: number }).test, ...(rated.d.name ? { name: rated.d.name } : {}) }, color: { none: true } } });
+  if (tests.length >= 2) out.push({ ...startingSweep(inOrder.map(f => f.field).flatMap(f => ('test' in f ? [f] : [])), newId()), title: 'Example sweep' });
   return out;
 }
 
@@ -1516,6 +2063,7 @@ export function plotTestNumber(spec: PlotSpec): number | undefined {
   const order = spec.chart === 'scatter' ? [x, y, color] : spec.chart === 'histogram' || spec.chart === 'probability' ? [y, x] : [y];
   for (const f of order) {
     if (isField(f) && 'test' in f) return f.test;
+    if (isField(f) && 'passRate' in f) return f.passRate;
     // A set of tests opens a wafer on its first.
     if (isTestSet(f)) { const first = f.tests[0]; const n = typeof first === 'number' ? first : parseInt(String(first), 10); if (Number.isInteger(n)) return n; }
   }

@@ -9,7 +9,7 @@
 // what keeps this module from depending on the drilldown menu that depends on it.
 
 import type { PlotContext, PlotItem } from '../stats/plotData.js';
-import { fieldCatalogue, resolvePlot, plotTitle } from '../stats/plotData.js';
+import { fieldCatalogue, fieldValues, resolvePlot, plotTitle } from '../stats/plotData.js';
 import { plotToSweep, type PlotSpec } from '../stats/plotSpec.js';
 import { renderPlotChart, type PlotChartOptions } from './charts/plotChart.js';
 import { renderSweepPanel, type SweepPanelOptions } from './charts/sweep.js';
@@ -108,6 +108,7 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
       followLabel: () => o.groupLabel ?? (o.items.length > 1 ? 'a colour per wafer' : undefined),
       autoText: () => { const r = resolve(current); return { title: r.autoTitle, x: r.x?.label, y: r.y?.label }; },
       onChange: onEdit,
+      valuesOf: f => fieldValues(f, o.items, o.ctx),
     });
   right.appendChild(editor.el);
 

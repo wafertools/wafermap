@@ -558,17 +558,19 @@ them as a file (`onSaveText` receives the export; `onPickPlotsFile` supplies the
 {
   id: 'plot-lq1x-0f3a-0',                   // generated once, never reused; survives rename and reorder
   title?: 'Vth vs Idsat',                    // only when the reader typed one; absent = an automatic title
-  chart: 'scatter' | 'histogram' | 'box' | 'bar' | 'line' | 'probability' | 'sweep',   // a sweep has `sweep` (below) instead of `fields`
+  chart: 'scatter' | 'histogram' | 'box' | 'bar' | 'line' | 'probability' | 'control' | 'heatmap' | 'goal' | 'sweep',   // a sweep has `sweep` (below) instead of `fields`
   fields: {
     x?: Field | Field[], y?: Field,          // a histogram reads y (or x) as its values; a box or bar's x is its categories (default wafer),
                                              // or up to 3 fields nested, outer first: one category per combination
     color?: Field | { follow: 'groupBy' } | { none: true },   // absent = follow the tab's Group by; a measured value or wafer figure
                                              // colours a scatter on a gradient, anything else is a category
     facet?: Field,                           // one panel per value of this category field (at most 24), on shared axes and colours
+    rows?: Field,                            // a heatmap's rows (its columns are x)
   },
   level?: 'die' | 'wafer',                   // the unit one mark stands for; absent = the finest the fields allow
   aggregate?: 'mean' | 'median' | 'min' | 'max' | 'sum' | 'count' | 'yield',
-  axes?: { x?: Axis, y?: Axis },             // Axis = { label?, scale?: 'linear' | 'log', min?, max?, reverse? }
+  axes?: { x?: Axis, y?: Axis },             // Axis = { label?, scale?: 'linear' | 'log', min?, max?, reverse?, references? }
+                                             // references = up to 8 of { at: 0.45, to?: 0.5, label?: 'Target' }: a line, or a shaded band from at to to, in the axis's own unit
   bins?: 16,
   limits?: 'both' | 'test' | 'spec' | 'none',   // which of a plotted test's limits are drawn; absent = both
   normalize?: 'limits' | 'zscore' | 'robust',   // rescale the measured values on Y, each test on its own; absent = as measured
@@ -576,8 +578,15 @@ them as a file (`onSaveText` receives the export; `onPickPlotsFile` supplies the
   stack?: 'stack' | 'percent',               // a bar's colours stacked, or as shares of each category (counts and sums only)
   sort?: 'value', top?: 10,                  // categories largest first (a box by median), and only the first `top`
   cumulative?: true,                         // a pareto line over a value-sorted bar of counts or sums
+  spread?: 'sd' | 'ci95' | 'iqr' | 'minmax', // a band round a line of means or medians
+  where?: { field: Field, values: ['Bin 1'] },   // only the dies (wafers, for a wafer field) with these values
+  fit?: 'linear' | 'orthogonal', identity?: true,   // a scatter's fitted line per colour, and y = x
+  histNorm?: 'count' | 'percent', normalCurve?: true, // a histogram as each colour's shares, with its normal curve
+  whatIf?: { lo?: 0.45, hi?: 0.56 },        // proposed limits for the plotted test: drawn, and its pass rate under them stated
+  baseline?: 8,                              // a control chart's limits from its first 8 points (absent = all)
 }
-// Field = { test: 1050, name?: 'Vth' } | { tests: [1050, '1060..1080'], names?: { 1050: 'Vth' } }
+// Field = { test: 1050, name?: 'Vth' } | { tests: [1050, '1060..1080'], names?: { 1050: 'Vth' } } | { passRate: 1050, name?: 'Vth' }
+//       | { binned: Field, bins?: 5, by?: 'count' | 'width' }   // a test, radius, die X/Y or yield cut into 2-20 ranges, as a category
 //       | { builtin: 'wafer' | 'x' | 'y' | 'radius' | 'ring' | 'quadrant' | 'hbin' | 'sbin' | 'site' | 'yield' | 'dieCount' | 'waferOrder' | 'test' | 'pat' } | { meta: 'split' }
 ```
 
@@ -590,6 +599,12 @@ Things that hold for every plot:
   count of dies missing a value.
 - **One unit per mark.** With `level: 'wafer'`, die-level values are combined per wafer with `aggregate`, and a
   per-wafer field (yield) can be split by a per-die one (ring, hard bin) only in a bar of pooled yield or a line, which take the pass verdict per die; any other chart of it is reported, not drawn. A field that cannot be a role's value (a category as a scatter's Y) is reported with what to use instead, never thrown.
+- **A value in ranges.** `{ binned: field, bins?, by? }` cuts a measured test, a die position or a wafer figure into 2 to 20
+  ranges (default 5) holding about the same number of values (`'count'`, the default) or spanning the same width (`'width'`),
+  and uses them as a category: the X of a box or bar, a colour, a heatmap's rows or columns, the panels. The edges are set over
+  the whole population plotted, so panels and colours share them; a field that is a category already is reported.
+- **Reference lines and bands.** `axes.x.references` and `axes.y.references` draw the reader's own lines (a target, a guard band)
+  on a value axis, labelled with their name and value; they take part in the axis range as test limits do.
 - **Several tests in one plot.** `{ tests: [...] }` as the Y of a box, bar, line or histogram reads each named test
   as its own series of values, and `{ builtin: 'test' }` on X or the colour tells them apart (a box or bar without an
   X puts the tests along X; otherwise the colour is the test). Entries are test numbers or ranges such as

@@ -789,6 +789,14 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   to destroy it. Clicking a capability box drives the box plot, histogram and
   trend onto that same test automatically.
 
+  With **Group by** on, a **Difference map** at the foot of Distributions draws one group minus another at every die
+  position, as a wafer map: pick the two groups and a test (it follows the test the other panels show until you pick
+  one) or *Yield*. Each group's value at a position is its mean over the group's wafers there (for yield, the share
+  of them passing), as its stacked map would show it, and a position either group lacks is grey. The colours run
+  symmetrically from the largest negative difference to the largest positive, with zero in the middle. It is drawn on
+  the first wafer of the first group's geometry and orientation, so a die is where it is on every other map; the map
+  carries no wafer's identity, since it is none.
+
   With **Group by** on (a split, a lot), a **Comparison by** table comes first: every measured test compared across the
   groups, ranked so the tests that moved are at the top. Each wafer counts once, as the mean of its dies, because dies
   on one wafer share its processing: counted die by die, a difference no bigger than one wafer's offset would look
@@ -799,7 +807,7 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   many tests were compared, Benjamini–Hochberg; the table is sorted by it), and the **largest shift** in wafer-to-wafer
   standard deviations and as a share of the limit window. Choose a **Control** (the process of record) and each other
   group's cell adds its difference from the control with a Holm-adjusted p. Click a test to show it in the panels below.
-  **Comparison CSV** saves the table. Narrowing **Show** to one group leaves nothing to compare, so the table is not shown.
+  **Comparison CSV** saves the table. [Section 10.2](#102-comparing-groups-of-wafers) explains each figure. Narrowing **Show** to one group leaves nothing to compare, so the table is not shown.
 
   The box plot, histogram, trend and the Correlation tab's scatter draw the
   test's limits as dashed lines. A test can have two kinds: **test limits**
@@ -941,11 +949,18 @@ warns when that is more than a spreadsheet can open (1,048,576).
 
 The **Plot** sub-tab is where you build your own charts. **+ New plot** starts one,
 already filled in with the first two tests of the lot, and opens it beside a large
-copy of the chart. **Add examples** draws one plot of each chart type the lot can
-show (a scatter of the first two tests, a histogram, a box, a bar of yield by the
-first lot field that divides the wafers, a line over wafer order, a probability plot
-of the first test, and a sweep of the first tests in test order), to start from
-or to see what each type is for; pressing it again adds only what is missing. Every change you make there is drawn at once; there is no Apply
+copy of the chart. **Add examples** draws plots to start from, or to see what each chart and
+setting is for. They are chosen from the lot in view: the *lead* test is the one that varies most from wafer to
+wafer (for a single wafer, the one that follows distance from the centre most), its partner the test that tracks it
+best, and the split is the lot field that best explains the lead test. The examples are a scatter of the lead
+test against its partner with a fitted line, a histogram with its
+normal curve, a box of the lead test by wafer, a bar of yield by the split, a line over wafer order with a ±1 SD band, and a probability plot. It adds one of each newer
+feature the lot can show: the most telling tests as one set rescaled to z-scores (a box per test, and a heatmap of
+tests by wafer), the lead test by split and by wafer nested in split, panels by ring, the lead test by ranges of its
+partner and of the distance from the centre, a pareto of the hard bins and each wafer's bin mix, the
+lead test by PAT verdict and a map of the dies coloured by PAT verdict (where the outliers are), an individuals control chart (five or more wafers), a capability goal plot and a
+pass-rate bar when tests have limits, and a sweep of the first
+tests in test order. Edit any of them to see how it is set. Pressing the button again adds only what is missing. Every change you make there is drawn at once; there is no Apply
 button, and the plot is kept as you go.
 
 ![The Plot tab: example plots, one card each](images/guide-plot-tab.png)
@@ -966,6 +981,9 @@ In **Setup**, choose the **chart type**, then the field for each role:
 | **Bar** | one aggregated value for each category (or a count) | categories, values (optional), how to combine them |
 | **Line** | one aggregated value at each X, joined | X, Y, how to combine them |
 | **Probability** | the share of values at or below each value, one curve per colour | the values |
+| **Control** | one value per wafer in order, against control limits, with the points that break a rule marked | along (X), the values |
+| **Heatmap** | one cell per row and column, coloured by the value combined there | columns, rows, values (optional: a count) |
+| **Goal** | every test with both limits as a point: how far off centre and how wide | the tests (all by default) |
 
 - **X axis** and **Y axis** (a histogram has one **Values** field; a box or bar has
   **Categories** instead of a numeric X). Any measured test, a die's X or Y position,
@@ -1000,6 +1018,55 @@ In **Setup**, choose the **chart type**, then the field for each role:
   **Share axis** for a plain 0 to 100% axis. Limits are drawn on the values axis. Hover a point for its die, its rank in
   its group and where that rank is plotted; click it to open its wafer; drag a box to take every die inside it to the drilldown menu (a curve of many
   dies draws a sample of its middle, but all of both tails, and a drag still takes every die).
+- **Heatmap**: a grid with one row per value of one field and one column per value of another, each cell coloured by
+  the value combined over its dies (with no values, a count of them): hard bins by wafer, rings by split, and with
+  several tests as the values Test as the rows, so tests by wafer, rescaled to compare. The colour bar above it spans
+  the cells; a cell shows its value when it has room, and a click charts or tabulates its dies. It is a bar chart of
+  the two fields nested, laid out as a grid, so the same rules apply: pooled yield, pass rates, *Only dies where*.
+- **Control** charts each wafer's value (a test's wafer mean, or as *Combine values by* says; a yield or a pass rate as
+  the wafer's own) in wafer order, or along another wafer field with a number per wafer such as slot or date. It is an
+  individuals chart: the centre is the mean, the control limits ±3σ with σ taken from the average moving range (÷ 1.128),
+  which measures wafer-to-wafer noise so a slow drift does not widen the limits it is judged against. Faint lines mark
+  ±1σ and ±2σ. A point that breaks a Western Electric rule is drawn in red with the rule's number: **1** beyond 3σ,
+  **2** two of three beyond 2σ on one side, **3** four of five beyond 1σ on one side, **4** eight in a row on one side
+  of the centre; the line under the chart names the rules broken. **Limits from the first** sets the centre and σ from
+  the first wafers only (a baseline), so later wafers are judged against them; a dotted line marks where it ends. Hover
+  a point for its wafer and how many σ it is from the centre; click it to open the wafer.
+- **Goal** (capability goal plot) places each test that has both limits by its mean's offset from the centre of its
+  limit window (left and right) and its standard deviation (up), both as shares of the window, using spec limits
+  where a test has both kinds. Every point on a triangle has the same Ppk: the dashed one is Ppk 1, the solid one
+  1.33, so a test outside the solid triangle is short of 1.33, and whether it sits to the side (off centre) or high
+  (too wide) says what would fix it. Tests short of 1.33 are named. Colour by a split to see each test move between
+  splits; *Tests* narrows it to a set.
+- **Fit line** (scatter): one line per colour, *Least squares* (Y on X, the usual regression) or *Orthogonal* (the line
+  closest to the points at right angles, for two measurements of the same quantity, such as one test on two testers,
+  where least squares would tilt the line towards flat). Each line's equation, R² and number of points are written
+  above the chart. **y = x line** draws the line of agreement, when X and Y are in the same unit.
+- **Bars as** (histogram): *Counts*, or *Shares*: each colour's bars as a percentage of its own values, so a split of
+  three wafers and one of thirty can be compared by shape. **Normal curve** overlays each colour's normal distribution
+  at its mean and standard deviation, scaled to its bars (not on a log axis).
+- **What-if limits** (histogram or probability plot of one test, not rescaled): a proposed low and high limit in the
+  test's own unit, drawn as their own lines (*What-if lo* / *What-if hi*). The line under the plot gives the test's
+  pass rate over the dies it judges by its current test limits and with the proposed ones, and how many dies change.
+  It is the test's pass rate, not the yield: a die's bin depends on every test.
+- **Pass rates**, listed under *Pass rates* in the values list: a test's pass rate, each die 100 when it passes and 0
+  when it fails, judged as the Overview's test pass-rate card judges (a parametric test by its test limits, a
+  functional one by its recorded outcome). A bar or line of it is the share of judged dies that pass, pooled over the
+  dies in each bar; with one mark per wafer it is each wafer's own rate, which a box or scatter can then show. A
+  single die's 0 or 100 drawn as a point says nothing, so a box, scatter or histogram of it per die is refused.
+- **In ranges**: on the categories of a box or bar, the colour, a heatmap's rows and the panels, a measured test,
+  Radial position, Die X or Y and Yield are listed as *"… in ranges"*. The values are cut into 2 to 20 ranges (5 to
+  begin with), either holding about the same number of values (*Equal counts*: quartiles, deciles) or spanning the
+  same width (*Equal widths*), and each range is a category named by its limits in the field's unit (*7.16 pA to 19.4 pA*), lowest first. Vth by Idsat decile is
+  a box with Idsat in ranges on the X axis. The edges are set over every die plotted, so panels and colours share
+  them.
+- **Only dies where**: keep only the dies with chosen values of one category field (bin 1, the edge ring, one site), or
+  for a wafer field the wafers (one split, two lots). Tick the values to keep; the last one cannot be cleared. It
+  applies before everything else, panels included, and the line under the plot says what was kept. PAT limits stay
+  the whole wafer's.
+- **Band** (line): round a line of means or medians, *±1 SD* (the standard deviation of the values combined at each
+  X), *95% CI* (the mean's confidence interval, with Student's t for the number of dies or wafers there), *Quartiles*
+  or *Range*, as a pale band in each line's colour. A pass rate has no spread of values to show, so it takes no band.
 - **Radial position**, a die field: a die's distance from the wafer centre as a percentage of the radius, 0 at the
   centre and 100 at the edge. The rings are bands of it (with four rings, ring 4 is 75–100%), so a scatter of a test
   against radial position shows an edge roll-off the ring chart only buckets.
@@ -1019,6 +1086,11 @@ In **Setup**, choose the **chart type**, then the field for each role:
   categories (a bar counts outliers per wafer) or the panels. A plot of one wafer, a panel per wafer included, also
   draws that wafer's PAT limits as dotted lines labelled *PAT lo* / *PAT hi*; a plot of several wafers has several sets
   and draws none. The limits are always the whole wafer's, even in a panel of one ring.
+  [Section 10.12](#1012-part-average-testing-pat) explains how the limits are set and what this does and does not cover.
+  The Overview shows the same verdicts as a **Part average testing (PAT)** card: for each wafer, the dies within the PAT
+  limits, the outliers and the rate, the dies that fail anyway, and which tests the outliers are outside on. The Dies
+  table (Data tab) has a **PAT** column, and **PAT tests** where there are outliers, in the CSV too; a selection that
+  is only part of a wafer has neither, since the limits belong to the whole wafer.
 - **Panels**: one small plot per value of a category field, laid out like the gallery's cards, on shared axes and
   colours with one legend and one statement above them. A wafer field (split, lot) gives each panel its whole wafers; a
   die field (ring, site, bin) the dies with that value from every wafer; **Test**, with several tests as the values,
@@ -1062,6 +1134,11 @@ button to go back to the automatic title; a title that names none of the fields 
 check") is yours and is left alone. Each axis can have a **minimum**, a **maximum**, a **log scale** (offered
 whatever the values, but it stays linear, and says so, if any value is zero or
 negative) and **reverse direction**. A histogram also has a number of **bins**. A category axis has a title only.
+
+A value axis can also carry **reference lines and bands** of your own: a target, a guard band, a customer's limit. Write
+them in *Reference lines* in Customise as a value for a line or `lo..hi` for a shaded band, each with an optional name,
+separated by commas (`0.45 Target, 0.3..0.5 Window`), in the axis's own unit (rescaled values for a rescaled plot). They
+are drawn dash-dot, labelled with their name and value, and widen the axis in the way test limits do.
 
 When a plotted test has limits they are drawn as dashed lines on the axis that measures it (a histogram's values, a scatter's X or
 Y, a box, bar or line's values when they are measured values or their mean, median, minimum or maximum): short dashes for the
@@ -1248,3 +1325,184 @@ Reticle-position findings in the Findings panel highlight the specific field
 positions that show elevated failure rates. Hovering any die also shows its
 **Reticle (column, row)** position — its location within its own stepper
 field — just below the die's coordinate in the tooltip.
+
+## 10. The statistics, explained
+
+This section is for reading the statistics in Insights and the Plot tab for the first time. Each entry says what
+question the figure answers, how it is worked out in plain terms, how to read it, and what it cannot tell you. None
+of these figures is a verdict: they say how surprising a difference is, and the decision stays with you.
+
+### 10.1 Why wafers are counted, not dies
+
+Dies on one wafer went through the same processing, so they are not independent samples of anything. If a split of
+three wafers is compared die by die, thousands of dies make a tiny offset between two wafers look certain. Wherever
+the question is "do these groups differ?" (the **Comparison by** table, **What divides yield**, the note under a box
+or bar divided by a wafer field), **each wafer is one value**, the mean of its dies, and **n is the number of
+wafers**. With two or three wafers in a group many real differences come out inconclusive. That is the true state of
+the evidence, not a fault; more wafers are what settle it.
+
+### 10.2 Comparing groups of wafers
+
+- **Welch p** answers: *if the groups had the same true mean, how often would wafer means differ at least this much by
+  chance?* It is Welch's t-test for two groups and Welch's ANOVA for more. It does not assume the groups have equal
+  spreads, which is safer for splits. A small p (conventionally below 0.05) says the difference is unlikely to be
+  chance; it does not say the difference matters.
+- **Rank p** asks the same on the ranks of the wafer values (Kruskal–Wallis, with a correction for tied values), so one
+  odd wafer cannot drive it. With fewer than five wafers in a group it is approximate, and is marked so.
+- **q** corrects p for looking at many tests at once. Check 100 tests at 5% and about five will "differ" by chance
+  alone. q is Welch p adjusted by the Benjamini–Hochberg method so that, among the rows with q under 0.05, about 5% are
+  expected to be false alarms. The table is sorted by q. Read q, not p, when scanning many tests.
+- **Against a control**: choose the process of record and each other group's cell adds its difference from it, with a
+  p adjusted by Holm's method for the number of groups compared, so that comparing several groups with one control
+  does not multiply the chance of a false alarm.
+- **Largest shift** is how far apart the group means are, in wafer-to-wafer standard deviations of the test and, where
+  it has both limits, as a share of the limit window. This is the size of the effect. A tiny p with a tiny shift is a
+  real but unimportant difference; a large shift with a poor p needs more wafers.
+- **Cautions.** A group with fewer than two wafers is left out and named. The tests assume the wafer means are roughly
+  symmetric; the rank p is the check. Nothing here says *why* groups differ.
+
+### 10.3 What divides yield
+
+The **What divides yield** card applies 10.2 to every wafer field at once, for yield and for each of the five most
+common fail bins (a bin's value is its share of a wafer's judged dies). Rows are ranked by q, so the fields at the top
+separate the wafers more clearly than wafer-to-wafer noise would. The **Group by** button regroups every chart by that
+field. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
+two fields that change together (a lot and its start date) cannot be told apart by the wafers. A low q points to where
+to look; it is not a cause. Tool, chamber and probe-card fields appear only when the host supplies them as wafer
+attributes.
+
+### 10.4 The cumulative probability plot
+
+Each group's values are sorted, and the k-th smallest of n is drawn at height (k + ½) / n (Hazen's plotting position),
+so the curve is the cumulative share of dies at or below each value. On the default **normal** axis the vertical scale
+is stretched by the normal distribution, so values that follow a bell curve fall on a straight line: the middle of the
+line is the median, its steepness the spread. Read it by comparison: a curve shifted sideways is a shift in the mean, a
+flatter one a wider spread, a bend or a step a second population, and points off the ends of the line outliers or heavy
+tails. It needs no choice of bin width, and many groups overlay legibly. Choose **linear** for the plain 0–100% cumulative
+share. Large groups are drawn from a sample of 1,500 points with both tails kept in full.
+
+### 10.5 Fit lines, R² and y = x
+
+- **Least squares** is the usual regression of Y on X: the line that minimises the vertical distance to the points.
+  Use it when X is the cause or the controlled quantity.
+- **Orthogonal** (Deming regression with equal errors) minimises the distance at right angles to the line. Use it when X and Y
+  are two measurements of the same quantity (one test on two testers, two insertions), where least squares tilts the
+  line towards flat.
+- **R²** is the square of the correlation of the points: the share of Y's variation a straight line in X accounts for. It
+  says nothing about whether a line is the right shape; look at the points. **y = x** draws the line of perfect
+  agreement, offered only when X and Y share a unit.
+
+### 10.6 Bands on a line
+
+A band round a line of means shows the spread of the values combined at each X: **±1 SD** (mean plus and minus one
+standard deviation: about two thirds of normally distributed values), **95% CI** (the range that would contain the true
+mean 95% of the time, from Student's t, so it narrows with more dies and says nothing about how spread out the dies
+are), **Quartiles** (the middle half of the values, Q1 to Q3) or **Range** (smallest to largest). Use SD or quartiles to
+see how much the values vary, CI to see how well the mean is pinned down.
+
+### 10.7 Control charts
+
+The **Control** chart is an individuals (I) chart: one value per wafer in order, with the centre at the mean and
+control limits at ±3σ. σ is estimated from the average **moving range** (the difference between each value and the one
+before) divided by 1.128, so it measures wafer-to-wafer noise and a slow drift does not widen the limits it is
+judged against. Control limits describe what the process does, not what the customer wants: they are not specification
+limits. Points are flagged by four Western Electric rules, each at the point that completes it: **1** one point beyond 3σ,
+**2** two of three beyond 2σ on the same side, **3** four of five beyond 1σ on the same side, **4** eight in a row on one
+side of the centre. A flag means the point is unlikely to be chance if the process were stable; with many points a
+few false flags are expected. **Limits from the first** sets the centre and σ from a baseline of earlier wafers and
+judges the later ones against it. It needs at least three points.
+
+### 10.8 Capability, Ppk and the goal plot
+
+**Ppk** compares a test's spread with its limit window, penalising an off-centre mean: with mean μ, standard deviation
+σ and limits LSL and USL, Ppk = min(USL − μ, μ − LSL) / 3σ. A Ppk of 1 means the nearest limit is three σ from the
+mean; 1.33 is a common target, though yours may differ. The σ here is the plain standard deviation over every die
+(Cp and Cpk, in the tables, use the pooled within-wafer σ). The **goal plot** puts each test at (offset of its mean from
+the centre of the window, σ), both as shares of the window, so points on one triangle share one Ppk. A test short of
+the target is either to one side (off centre: shift the process) or high (too wide: reduce the variation). Spec limits are
+used where a test has both kinds, otherwise the test limits, and the chart says which. Below 30 dies a Ppk is a rough
+estimate. Capability indices assume roughly normal values; check the distribution before quoting them.
+
+### 10.9 Rescaling values
+
+Tests in different units can share one axis once rescaled, each on its own: **To limits** (0 at the low limit, 1 at the
+high one), **z-score** (standard deviations from the mean of the values in view), or **Robust z** (the same from the
+median, with spread taken from the median absolute deviation × 1.4826, so outliers do not set the scale). A z-score is
+relative to the population in view, so it changes when you narrow the wafers; rescaling to limits does not.
+
+### 10.10 Ranges, panels and what-if limits
+
+- **In ranges** cuts a measured value into 2–20 ranges. **Equal counts** gives each range about the same number of
+  values (quartiles, deciles), so every box has a similar n; **Equal widths** gives each the same span of values. The edges
+  are set over every die plotted, so panels and colours share them.
+- **Panels** repeat the plot per value of a field on shared axes and colours, so panels can be compared by eye.
+- **What-if limits** (histogram and probability plot of one test) draw proposed limits and state the test's pass rate
+  now and under them, and how many dies change. It is the pass rate of that test over the dies it judges, not the
+  yield, which depends on every test and bin. Treat it as a screening aid for a limit discussion.
+
+### 10.11 Heatmaps and the difference map
+
+A **heatmap** colours each row-and-column cell by the value combined over its dies (a count when there is no value),
+on a colour scale that spans the cells. Its colour is the same combination a bar would show, so the same rules apply.
+The **difference map** (Distributions, with Group by on) shows, at each die position, one group's mean minus another's:
+coloured on the value gradient, symmetric about zero so that the middle is no difference, drawn on the first wafer's geometry. A position is shown only where both groups have a
+value. A pattern on it (an edge ring, a centre spot) says where on the wafer the two processes differ, not whether the
+difference is significant.
+
+### 10.12 Part average testing (PAT)
+
+**What it is for.** A die can pass every test limit and still sit far from its neighbours' distribution on a test. Such a
+die is statistically unusual and, in automotive and other high-reliability work, is the kind of part PAT screens out.
+
+**How the limits are set here.** Per wafer, and for every parametric test with both a low and a high limit:
+
+1. Take the values of the dies that pass their bin and lie inside the test's limits (spec limits where the test has both
+   kinds).
+2. The **robust mean** is their median; the **robust σ** is (Q3 − Q1) ÷ 1.35, the interquartile range scaled to a
+   standard deviation. Both resist outliers, so an outlier cannot widen the limits that are meant to catch it.
+3. The **PAT limits** are the median ± 6 robust σ, never wider than the specification limits (the test's limits where it has
+   no specification limits): AEC-Q001 requires that PAT limits do not exceed the device specification limits.
+4. A wafer needs 30 or more such values on a test, and some spread, before it has PAT limits for it.
+
+**Verdicts.** Each die is **Within PAT limits**, a **PAT outlier** (it passes its bin and every test limit but is outside
+the PAT limits of at least one test), or **Fails (bin or limits)** (already rejected, so not an outlier). The Overview
+card counts them per wafer and names the tests the outliers are outside on; the Dies table (and its CSV) has a **PAT**
+column and, where there are outliers, **PAT tests**; the plot builder takes **PAT** as a colour, category or panel
+field and draws a wafer's PAT limits as dotted lines.
+
+**What this is and is not.** The limits follow the robust-statistics method of AEC-Q001 Rev D (section 2.4: the median as
+the robust mean, (Q3 − Q1) ÷ 1.35 as the robust sigma; section 3.1.2: dynamic limits of ± 6 robust sigma from the lot's or
+wafer's own passing parts), here per wafer. That guideline applies PAT while parts are tested: parts that pass the
+static limits are held until the dynamic limits are known, and those outside them are rejected. Here the data is already
+collected, so this shows which dies PAT would have flagged; it is not the screening itself, which belongs in the test
+programme under a documented procedure. The guideline says no claim of conformance may be made unless all its
+requirements are met, so nothing here claims it. The differences:
+
+- **No static limits.** The guideline bases dynamic limits on static ones, set from at least six lots with at least 30
+  parts each (at least 5 die in different areas of each wafer, 30 per lot) and reviewed during the first six months
+  of production and twice a year after. Here the dies that pass their bin and the test limits stand in for the parts that
+  passed the static limits.
+- **Only a warning for values that are not roughly normal.** The guideline accepts other methods for data that clearly
+  deviates from normal, with statistical justification. Here every test gets the same symmetric limits, so a lopsided test
+  has limits that are too tight on one side and too loose on the other. The Overview card lists the tests whose middle
+  half of values is lopsided (a quartile skewness of 0.2 or more either way, (Q3 + Q1 − 2 × median) ÷ (Q3 − Q1)) and on how many
+  wafers; it does not change their limits, and it sees the body of the distribution, not a few heavy tails or two humps.
+- **Every test with both limits is judged.** The guideline considers PAT for tests whose distribution is suitable for
+  outlier analysis, and lists tests that shall use PAT limits at test (pin leakage, standby supply current, IDDQ, output
+  levels, propagation delays and others, in its Appendix 2). Nothing here checks a test's distribution or matches tests
+  to that list.
+- **A floor of 30 passing values per wafer.** That floor is ours. The guideline's 1.35 is inexact for under 20 values,
+  and sets sample sizes only for static limits.
+- **Quartiles** are found by interpolation between the ranked values, which the guideline does not specify.
+
+Neighbourhood screens (good die in a bad neighbourhood) are not part of AEC-Q001 and are not in this card.
+Treat the counts as a way to find out where PAT would matter and which tests drive it.
+
+### 10.13 Example plots
+
+**Add examples** chooses its tests from the data in view rather than the order they are listed in. The **lead test**
+is the one with the largest share of its variation lying between wafers (for a single wafer, the one most tied to
+distance from the centre); its **partner** is the test that follows it most closely over a sample of dies (correlation
+above 0.3); the **split** is the lot field whose groups explain most of the lead test's variation between wafers,
+when they explain more than 5% of it. It reads at most 4,000 dies and 60 tests, so it is quick on a large lot. These are
+starting points for exploration, chosen by simple rules, and are not findings.

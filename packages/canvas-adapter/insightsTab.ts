@@ -48,6 +48,9 @@ import { renderBoxplotPanel } from './charts/boxplot.js';
 import { renderTrendPanel } from './charts/trend.js';
 import { renderGroupComparisonPanel } from './charts/groupComparison.js';
 import { renderCommonalityPanel } from './charts/commonality.js';
+import { renderPatCard } from './charts/patCard.js';
+import { renderDifferenceMapPanel } from './differenceMapPanel.js';
+import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { SweepSpec } from '../stats/sweep.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
@@ -264,6 +267,9 @@ type Item = FacetItem & {
    *  "Wafer N (no ID)" that `label` falls back to, which in a chart title would
    *  read as an ID. */
   identity?: string;
+  /** The wafer's own result as the host handed it in: what a map drawn from this wafer's dies (a difference map) is
+   *  rendered on, so it keeps the wafer's geometry and orientation. */
+  source?: RenderableWaferMap;
 };
 
 /** One wafer (or the lot's single stand-in) as the Insights views see it. */
@@ -566,7 +572,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         metadata: it.wafer.metadata ?? undefined, dies: it.dies, wafer: it.wafer,
         label: waferDisplayLabel(it, waferIndex), identity: waferIdentityLabel(it), waferIndex,
         passBins: itemPassBins(it),
-        statsSummary: it.statsSummary, testDefs: it.testDefs,
+        statsSummary: it.statsSummary, testDefs: it.testDefs, source: it,
       })
       .filter((it): it is Item => it != null);
   }
@@ -1176,6 +1182,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       outer.appendChild(commonality.card);
     }
 
+    // What part-average testing sets apart: a lot with tests that have both limits gets the per-wafer table.
+    const pat = renderPatCard({ items, testDefs: allTestDefs, ownerDocument: doc });
+    if (pat) outer.appendChild(pat.card);
+
     outer.appendChild(dataTabLink());
 
     return { card: outer, destroy: () => { yieldBins.destroy(); details.destroy(); } };
@@ -1401,6 +1411,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // that could not say which test its siblings were displaying.
       capability.setTest(testNumber);
       compare?.setTest(testNumber);
+      difference?.setTest(testNumber);
     };
 
     // With Group by on, the comparison of every test across the groups, wafer by wafer: first, since it says which
@@ -1419,6 +1430,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       ownerDocument: doc,
     });
     let compare = groups && groups.length >= 2 ? makeCompare() : undefined;
+    // With Group by on, one group minus another at each die position, as a map.
+    const difference = groups && groups.length >= 2
+      ? renderDifferenceMapPanel({ groups, testDefs, groupLabelText, selectedTestNumber: activeSectionTest ?? undefined, onSaveImage, ownerDocument: doc })
+      : undefined;
 
     axisPrefsPanels.set('distribution', [boxplot, histogram, trend]);
 
@@ -1437,11 +1452,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // instead of forcing a large dead box next to functional siblings.
     if (compare) wrap.append(compare.card);
     wrap.append(capability.card, boxplot.card, histogram.card, trend.card);
+    if (difference) wrap.append(difference.card);
 
     return {
       card: wrap,
       destroy: () => {
-        capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); compare?.destroy();
+        capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); compare?.destroy(); difference?.destroy();
       },
     };
   }

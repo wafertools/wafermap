@@ -11,8 +11,9 @@
 // box brings the automatic one back.
 
 import { combinationIssue, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, withTestSetNames, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
-import { isField, isTestSet, sameField, xFieldsOf, PLOT_X_LEVELS, type PlotAxis, type PlotField, type PlotLimits, type PlotNormalize, type PlotSpec, type PlotTestSet } from '../stats/plotSpec.js';
+import { isBinned, isField, isTestSet, sameField, xFieldsOf, PLOT_BINS_DEFAULT, PLOT_BINS_MAX, PLOT_BINS_MIN, PLOT_X_LEVELS, type PlotAxis, type PlotBinnedField, type PlotField, type PlotLimits, type PlotNormalize, type PlotSpec, type PlotTestSet } from '../stats/plotSpec.js';
 import { formatTestList, parseTestList } from '../stats/sweepText.js';
+import { formatReferences, parseReferences } from '../stats/plotReferences.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip } from './toolbar.js';
 import { makeListSelect, makeSegmented, makeToggle, type ListSelectOption } from './charts/chartShell.js';
@@ -27,6 +28,8 @@ export interface PlotEditorOptions {
   autoText: () => { title: string; x?: string; y?: string };
   /** Called with the new spec after every change. */
   onChange: (next: PlotSpec) => void;
+  /** The values a category field takes on the population, in order: what "Only dies where" offers. */
+  valuesOf?: (field: PlotField) => string[];
 }
 
 export interface PlotEditorHandle {
@@ -47,6 +50,9 @@ const CHART_OPTIONS: Array<[string, string, string]> = [
   ['bar', 'Bar', 'One combined value for each category, or a count'],
   ['line', 'Line', 'One combined value at each X, joined'],
   ['probability', 'Probability', 'The share of values at or below each value, one curve per colour: on the normal-probability axis a normal distribution is a straight line, and its tails are spread out to read'],
+  ['control', 'Control', 'One value per wafer in order, against limits from its own wafer-to-wafer variation, with the points that break a Western Electric rule marked'],
+  ['heatmap', 'Heatmap', 'One cell per row and column, coloured by the value combined there: tests by wafer, bins by wafer, rings by split'],
+  ['goal', 'Goal', 'Every test with both limits as a point: how far its mean is off centre, and how wide it is, against lines of equal Ppk'],
 ];
 const AUTO = '\0auto';
 const COUNT = '\0count';
@@ -110,8 +116,9 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   const factsOf = (f: PlotField | undefined): FieldFacts | undefined => {
     // A set of tests is not one entry of the catalogue: it is measured values, one per die and test.
     if (isTestSet(f)) return { label: 'Tests', level: 'die', kind: 'numeric', yield: false };
-    const opt = f && o.catalogue.find(c => sameField(c.field, f));
-    return opt ? { label: opt.name, level: opt.level, kind: opt.kind, yield: 'builtin' in opt.field && opt.field.builtin === 'yield' } : undefined;
+    const opt = f && o.catalogue.find(c => sameField(c.field, isBinned(f) ? f.binned : f));
+    // Put into ranges, a measured value or a number is a category of its own level.
+    return opt ? { label: opt.name, level: opt.level, kind: f && isBinned(f) ? 'categorical' : opt.kind, yield: !(f && isBinned(f)) && 'builtin' in opt.field && opt.field.builtin === 'yield' } : undefined;
   };
   /** The X field or levels of `p`, outer first: a copy, so trying a field at a level never edits the plot itself. */
   const xLevels = (p: PlotSpec = plot): PlotField[] => [...xFieldsOf(p.fields?.x)];
@@ -149,14 +156,63 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     // A field already at another level of the categories is not offered again.
     const others = role === 'x' ? xLevels().filter((_, i) => i !== at) : [];
     // Test divides a set of tests, and means nothing without one.
-    return fieldsForRole(o.catalogue, plot.chart, role).filter(f => (ySet() || !isTestField(f.field)) && !others.some(x => sameField(x, f.field))).map(f => {
+    const plain = fieldsForRole(o.catalogue, plot.chart, role).filter(f => (ySet() || !isTestField(f.field)) && !others.some(x => sameField(x, f.field))).map(f => {
       // The field already in place stays pickable: it is what the reader is looking at.
       const why = current && sameField(f.field, current) ? undefined : conflictFor(role, f, at);
       return { value: fieldKey(f.field), label: f.label, group: f.group, ...(why ? { disabled: why } : {}) };
     });
+    return role === 'y' ? plain : [...plain, ...rangeEntries(role, at)];
   };
 
-  const fieldByKey = (key: string): PlotField | undefined => o.catalogue.find(f => fieldKey(f.field) === key)?.field;
+  /**
+   * A measured value or a number put into ranges, for a role that takes categories: listed beside the fields that are
+   * categories already, as "Idsat in ranges". Not on a scatter's colour, which has a gradient for a number.
+   */
+  const rangeEntries = (role: 'x' | 'color' | 'rows' | 'facet', at = 0): ListSelectOption[] => {
+    if (role === 'x' && !(plot.chart === 'box' || plot.chart === 'bar' || plot.chart === 'heatmap')) return [];
+    if (role === 'color' && plot.chart === 'scatter') return [];
+    const used = [...(role === 'x' ? xLevels().filter((_, i) => i !== at) : xLevels()), ...(plot.fields?.color && isField(plot.fields.color) ? [plot.fields.color] : [])];
+    return o.catalogue.filter(f => f.kind === 'numeric' && !f.categorical && f.group !== 'Pass rates' && !isTestSet(f.field) && !used.some(u => sameField(u, f.field))).map(f => {
+      const field: PlotField = { binned: f.field };
+      const why = role === 'facet' && f.level === 'die' && plot.level === 'wafer' ? `${f.name} is per die: this plot has one mark per wafer`
+        : role === 'x' || role === 'color' ? conflictFor(role, { ...f, field, kind: 'categorical', categorical: true }, at) : undefined;
+      return { value: fieldKey(field), label: `${f.label} in ranges`, group: f.group, ...(why ? { disabled: why } : {}) };
+    });
+  };
+
+  const fieldByKey = (key: string): PlotField | undefined => {
+    const hit = o.catalogue.find(f => fieldKey(f.field) === key)?.field;
+    if (hit || !key.startsWith('binned:')) return hit;
+    const inner = o.catalogue.find(f => fieldKey({ binned: f.field }) === key)?.field;
+    return inner ? { binned: inner } : undefined;
+  };
+
+  /**
+   * `select` with, beneath it when the field is in ranges, how many ranges and whether each holds about the same
+   * number of values or spans the same width. `edit` changes the binned field wherever it sits in the plot.
+   */
+  function withRanges(select: HTMLElement, field: PlotField | undefined, hook: string, change: (d: PlotSpec, fn: (b: PlotBinnedField) => void) => void): HTMLElement {
+    if (!field || !isBinned(field)) return select;
+    const wrap = doc.createElement('div');
+    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs, minWidth: '0' } as Partial<CSSStyleDeclaration>);
+    const line = doc.createElement('div');
+    Object.assign(line.style, { display: 'flex', gap: SPACE.sm, alignItems: 'center', minWidth: '0' } as Partial<CSSStyleDeclaration>);
+    const count = numberBox(field.bins ?? PLOT_BINS_DEFAULT, 'Number of ranges', v => {
+      const n = v === undefined ? PLOT_BINS_DEFAULT : Math.round(v);
+      edit(d => change(d, b => { if (n === PLOT_BINS_DEFAULT) delete b.bins; else b.bins = Math.min(PLOT_BINS_MAX, Math.max(PLOT_BINS_MIN, n)); }));
+      build();
+    });
+    count.dataset.wmapPlotBins = hook;
+    count.style.width = '64px';
+    const label = doc.createElement('span');
+    label.textContent = 'ranges';
+    Object.assign(label.style, { fontSize: FONT.sub, color: CLR.label } as Partial<CSSStyleDeclaration>);
+    const how = makeSegmented([['count', 'Equal counts', 'Each range holds about the same number of values (quartiles, deciles)'], ['width', 'Equal widths', 'Each range spans the same width of values']],
+      field.by ?? 'count', v => edit(d => change(d, b => { if (v === 'count') delete b.by; else b.by = 'width'; })), doc);
+    line.append(count, label, how);
+    wrap.append(select, line);
+    return wrap;
+  }
 
   /** A select for an X or Y role. A saved field the lot lacks, or one this chart type cannot use, stays selectable so the plot can be read. */
   function fieldSelect(role: 'x' | 'y', ariaLabel: string, opts: { optional?: string; at?: number } = {}): HTMLElement {
@@ -187,7 +243,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         if (kept.length !== levels.length) setXLevels(d, kept.length || !(d.chart === 'box' || d.chart === 'bar') ? kept : [{ builtin: 'wafer' }]);
         if (isTestField(d.fields!.color as PlotField | undefined)) delete d.fields!.color;
       });
-      if (leavingSet) build();
+      if (leavingSet || isBinned(f) || (current && isBinned(current))) build();
     }, { maxWidth: '100%', ownerDocument: doc, ariaLabel, emptyText: 'Choose a field…', searchPlaceholder: 'Filter fields…', hook: role === 'x' && at > 0 ? `plot-x-${at + 1}` : `plot-${role}` });
     sel.style.width = '100%';
     return sel;
@@ -274,7 +330,10 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     for (let i = 0; i < count; i++) {
       const line = doc.createElement('div');
       Object.assign(line.style, { display: 'flex', gap: SPACE.xs, alignItems: 'center', minWidth: '0' } as Partial<CSSStyleDeclaration>);
-      const sel = fieldSelect('x', count > 1 ? `Categories, level ${i + 1} of ${count}` : 'Categories', { at: i });
+      const sel = withRanges(fieldSelect('x', count > 1 ? `Categories, level ${i + 1} of ${count}` : 'Categories', { at: i }), levels[i], `x-${i + 1}`, (d, fn) => {
+        const l = xLevels(d), b = l[i];
+        if (b && isBinned(b)) { fn(b); setXLevels(d, l); }
+      });
       Object.assign(sel.style, { flex: '1', minWidth: '0' } as Partial<CSSStyleDeclaration>);
       line.appendChild(sel);
       if (levels.length > 1) {
@@ -323,7 +382,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       d.chart = next;
       for (const role of ['x', 'y'] as const) {
         const options = fieldsForRole(o.catalogue, next, role);
-        const one = (f: PlotField | undefined) => !!f && (isTestSet(f) ? role === 'y' && next !== 'scatter' : options.some(p => sameField(p.field, f)));
+        const one = (f: PlotField | undefined) => !!f && (isTestSet(f) ? role === 'y' && next !== 'scatter' : isBinned(f) ? role === 'x' && (next === 'box' || next === 'bar' || next === 'heatmap') : options.some(p => sameField(p.field, f)));
         // Nested categories belong to a box or bar; any other chart keeps them aside for the way back.
         const usable = (f: PlotField | PlotField[] | undefined) => (Array.isArray(f) ? (next === 'box' || next === 'bar') && f.every(one) : one(f));
         const current = d.fields![role];
@@ -331,16 +390,16 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
           if (Array.isArray(current) || !sameField(current, supplied[role])) stash[role] = current;
           delete d.fields![role];
         }
-        if (d.fields![role] || (role === 'y' && next === 'bar')) continue;
+        if (d.fields![role] || (role === 'y' && (next === 'bar' || next === 'goal' || next === 'heatmap'))) continue;
         const back = stash[role];
         if (usable(back)) {
           if (role === 'x') d.fields!.x = back; else d.fields!.y = back as PlotField;
           delete stash[role]; delete supplied[role]; continue;
         }
-        const pick = role === 'x' && (next === 'box' || next === 'bar') ? { builtin: 'wafer' } as PlotField
-          : role === 'x' && next === 'line' ? (options.find(p => p.group === 'Wafer')?.field ?? options[0]?.field)
+        const pick = role === 'x' && (next === 'box' || next === 'bar' || next === 'heatmap') ? { builtin: 'wafer' } as PlotField
+          : role === 'x' && (next === 'line' || next === 'control') ? (options.find(p => p.group === 'Wafer')?.field ?? options[0]?.field)
           : options[0]?.field;
-        if (pick && !(role === 'x' && (next === 'histogram' || next === 'probability'))) { d.fields![role] = pick; supplied[role] = pick; }
+        if (pick && !(role === 'x' && (next === 'histogram' || next === 'probability' || next === 'goal'))) { d.fields![role] = pick; supplied[role] = pick; }
       }
     });
     build();
@@ -372,9 +431,28 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         else if (key === NONE) d.fields!.color = { none: true };
         else { const f = fieldByKey(key); if (f) d.fields!.color = f; }
       });
+      if (key.startsWith('binned:') || value.startsWith('binned:')) build();
     }, { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Colour', searchPlaceholder: 'Filter fields…', hook: 'plot-color' });
     sel.style.width = '100%';
-    return sel;
+    return withRanges(sel, c && isField(c) ? c : undefined, 'color', (d, fn) => { const b = d.fields!.color; if (b && isField(b) && isBinned(b)) fn(b); });
+  }
+
+  /** A heatmap's rows: a category other than the columns; Test only with a set of tests as the values. */
+  function rowsSelect(): HTMLElement {
+    const current = plot.fields!.rows;
+    const options: ListSelectOption[] = o.catalogue
+      .filter(f => f.categorical && !xLevels().some(x => sameField(x, f.field)) && (!isTestField(f.field) || ySet()))
+      .map(f => ({ value: fieldKey(f.field), label: f.label, group: f.group }));
+    options.push(...rangeEntries('rows'));
+    const value = current ? fieldKey(current) : ySet() ? fieldKey({ builtin: 'test' }) : '';
+    const sel = makeListSelect(options, value, key => {
+      const f = fieldByKey(key);
+      if (!f) return;
+      edit(d => { d.fields!.rows = f; });
+      if (key.startsWith('binned:') || value.startsWith('binned:')) build();
+    }, { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Rows', emptyText: 'Choose a field…', searchPlaceholder: 'Filter fields…', hook: 'plot-rows' });
+    sel.style.width = '100%';
+    return withRanges(sel, current, 'rows', (d, fn) => { const b = d.fields!.rows; if (b && isBinned(b)) fn(b); });
   }
 
   /**
@@ -391,12 +469,61 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       const why = f.level === 'die' && plot.level === 'wafer' ? `${f.name} is per die: this plot has one mark per wafer` : undefined;
       options.push({ value: fieldKey(f.field), label: f.label, group: f.group, ...(why ? { disabled: why } : {}) });
     }
-    const sel = makeListSelect(options, current ? fieldKey(current) : NONE, key => edit(d => {
-      if (key === NONE) delete d.fields!.facet;
-      else { const f = fieldByKey(key); if (f) d.fields!.facet = f; }
-    }), { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Panels', searchPlaceholder: 'Filter fields…', hook: 'plot-facet' });
+    options.push(...rangeEntries('facet'));
+    const was = current ? fieldKey(current) : NONE;
+    const sel = makeListSelect(options, was, key => {
+      edit(d => {
+        if (key === NONE) delete d.fields!.facet;
+        else { const f = fieldByKey(key); if (f) d.fields!.facet = f; }
+      });
+      if (key.startsWith('binned:') || was.startsWith('binned:')) build();
+    }, { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Panels', searchPlaceholder: 'Filter fields…', hook: 'plot-facet' });
     sel.style.width = '100%';
-    return sel;
+    return withRanges(sel, current, 'facet', (d, fn) => { const b = d.fields!.facet; if (b && isBinned(b)) fn(b); });
+  }
+
+  /**
+   * Only dies where: a category field and the values to keep, as a list of checkboxes. Choosing the field keeps every
+   * value until some are cleared; clearing them all is not a filter, so the last one stays.
+   */
+  function whereBlock(): HTMLElement {
+    const wrap = doc.createElement('div');
+    wrap.dataset.wmapPlotWhere = '1';
+    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
+    const w = plot.where;
+    const options: ListSelectOption[] = [{ value: NONE, label: 'Every die', group: 'Filter' },
+      ...o.catalogue.filter(f => f.categorical && !isTestField(f.field)).map(f => ({ value: fieldKey(f.field), label: f.label, group: f.group }))];
+    const sel = makeListSelect(options, w ? fieldKey(w.field) : NONE, key => {
+      if (key === NONE) { edit(d => { delete d.where; }); build(); return; }
+      const f = fieldByKey(key);
+      if (!f) return;
+      const values = o.valuesOf?.(f) ?? [];
+      if (values.length) { edit(d => { d.where = { field: f, values }; }); build(); }
+    }, { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Only dies where', searchPlaceholder: 'Filter fields…', hook: 'plot-where' });
+    sel.style.width = '100%';
+    wrap.appendChild(sel);
+    if (w) {
+      const all = o.valuesOf?.(w.field) ?? w.values;
+      const list = doc.createElement('div');
+      list.setAttribute('role', 'group');
+      list.setAttribute('aria-label', 'Values kept');
+      Object.assign(list.style, { display: 'flex', flexWrap: 'wrap', gap: `${SPACE.xs} ${SPACE.md}`, maxHeight: '120px', overflowY: 'auto' } as Partial<CSSStyleDeclaration>);
+      for (const v of all) {
+        const t = makeToggle(v, w.values.includes(v), on => {
+          // The last value kept stays: no value at all would not be a filter but an empty plot.
+          if (!on && (plot.where?.values.length ?? 0) <= 1) { build(); return; }
+          edit(d => {
+            const kept = new Set(d.where!.values);
+            if (on) kept.add(v); else kept.delete(v);
+            d.where!.values = all.filter(x => kept.has(x));
+          });
+        }, doc);
+        t.dataset.wmapPlotWhereValue = v;
+        list.appendChild(t);
+      }
+      wrap.appendChild(list);
+    }
+    return wrap;
   }
 
   function textBox(value: string, placeholder: string, label: string, commit: (v: string) => void): HTMLInputElement {
@@ -433,7 +560,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     return input;
   }
 
-  function axisBlock(role: 'x' | 'y', title: string, autoLabel: string | undefined, opts: { scale: boolean; limits?: boolean }): HTMLElement {
+  function axisBlock(role: 'x' | 'y', title: string, autoLabel: string | undefined, opts: { scale: boolean; limits?: boolean; references?: boolean }): HTMLElement {
     const ax: PlotAxis = plot.axes?.[role] ?? {};
     const setAxis = (fn: (a: PlotAxis) => void) => edit(d => {
       d.axes = d.axes ?? {};
@@ -465,6 +592,21 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       wrap.appendChild(row('Scale', makeSegmented([['linear', 'Linear'], ['log', 'Log']], ax.scale ?? 'linear', v => setAxis(a => { a.scale = v === 'log' ? 'log' : undefined; }), doc)));
     }
     wrap.appendChild(makeToggle('Reverse direction', !!ax.reverse, v => setAxis(a => { a.reverse = v; }), doc));
+    // Lines and bands the reader adds: `0.45 Target, 0.3..0.5 Window`, in the axis's own unit. Only on an axis the chart draws them on.
+    if (opts.references === false) return wrap;
+    const refs = textBox(formatReferences(ax.references), '0.45 Target, 0.3..0.5 Window', `${title} reference lines`, v => {
+      const parsed = parseReferences(v);
+      if (!parsed.ok) { refsError.textContent = parsed.error; refs.setAttribute('aria-invalid', 'true'); return; }
+      refsError.textContent = ''; refs.removeAttribute('aria-invalid');
+      setAxis(a => { a.references = parsed.value.length ? parsed.value : undefined; });
+    });
+    refs.dataset.wmapPlotRefs = role;
+    const refsError = doc.createElement('div');
+    refsError.setAttribute('role', 'alert');
+    Object.assign(refsError.style, { fontSize: FONT.sub, color: CLR.errText } as Partial<CSSStyleDeclaration>);
+    const refsRow = row('Reference lines', refs, 'A value for a line, or lo..hi for a shaded band, each with an optional name, in the axis’s own unit.');
+    refsRow.appendChild(refsError);
+    wrap.appendChild(refsRow);
     return wrap;
   }
 
@@ -541,6 +683,21 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         case 'histogram':
           panel.appendChild(row('Values', fieldSelect('y', 'Values')));
           break;
+        case 'control':
+          panel.appendChild(row('Along (X axis)', fieldSelect('x', 'Along'), 'A wafer field with a number per wafer: wafer order, slot, a date.'));
+          panel.appendChild(row('Values (Y axis)', fieldSelect('y', 'Values'), 'One value per wafer: a test’s wafer mean (or as Combine values by says), a yield or a pass rate.'));
+          panel.appendChild(row('Limits from the first', numberBox(plot.baseline, 'Wafers the limits are set from', v => edit(d => {
+            if (v === undefined || !Number.isInteger(v) || v < 3) delete d.baseline; else d.baseline = v;
+          })), 'Wafers, at least 3. Empty sets the limits from every wafer.'));
+          break;
+        case 'heatmap':
+          panel.appendChild(row('Columns (X axis)', fieldSelect('x', 'Columns'), 'One column per value: wafer, split, site…'));
+          panel.appendChild(row('Rows', rowsSelect(), 'One row per value. With several tests as the values, Test gives a row per test.'));
+          panel.appendChild(row('Values (colour)', fieldSelect('y', 'Values', { optional: `Count of ${noun}` }), 'What each cell’s colour shows, combined over its dies or wafers.'));
+          break;
+        case 'goal':
+          panel.appendChild(row('Tests', fieldSelect('y', 'Tests', { optional: 'Every test with both limits' }), 'Each test with both a low and a high limit is a point. Colour by a split to see it move.'));
+          break;
         case 'probability':
           panel.appendChild(row('Values (X axis)', fieldSelect('y', 'Values'), 'One curve per colour, each value at its share of its group: a shift is a curve moved sideways, a wider spread a flatter one, a second population a bend.'));
           break;
@@ -562,7 +719,36 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         panel.appendChild(row('Tests', testSetBox(set), 'Test numbers, or a range such as 1010..1030 for the tests declared between them. Put Test on the X axis or the colour to tell them apart.'));
       }
       panel.appendChild(row('Colour', colourSelect(), 'Compare by this field: each value gets its own colour. Follow Group by takes it from the Group by control.'));
+      panel.appendChild(row('Only dies where', whereBlock(), 'Keep the dies with these values of a field (bin 1, the edge ring, one split); a wafer field keeps whole wafers.'));
+      if (plot.chart === 'line') {
+        panel.appendChild(row('Band', makeSegmented([[AUTO, 'None'], ['sd', '±1 SD', 'Mean ± one standard deviation of the values at each X'], ['ci95', '95% CI', 'The mean’s 95% confidence interval (Student’s t)'], ['iqr', 'Quartiles'], ['minmax', 'Range']],
+          plot.spread ?? AUTO, v => edit(d => { if (v === AUTO) delete d.spread; else d.spread = v as PlotSpec['spread']; }), doc), 'Round a line of means or medians.'));
+      }
       panel.appendChild(row('Panels', panelsSelect(), 'One panel per value of this field, on shared axes and colours: split or lot takes whole wafers, ring or site the dies in it.'));
+      // A scatter's fitted lines and y = x; a histogram's bars as shares, and its normal curves.
+      if (plot.chart === 'scatter') {
+        panel.appendChild(row('Fit line', makeSegmented([[AUTO, 'None'], ['linear', 'Least squares', 'Y on X: the usual regression line'], ['orthogonal', 'Orthogonal', 'Closest to the points at right angles: for two measurements of one quantity (two testers, two insertions)']],
+          plot.fit ?? AUTO, v => edit(d => { if (v === AUTO) delete d.fit; else d.fit = v as 'linear' | 'orthogonal'; }), doc), 'One line per colour, with its equation, R² and n above the chart.'));
+        panel.appendChild(makeToggle('y = x line', !!plot.identity, v => edit(d => { if (v) d.identity = true; else delete d.identity; }), doc));
+      }
+      if (plot.chart === 'histogram') {
+        panel.appendChild(row('Bars as', makeSegmented([[AUTO, 'Counts'], ['percent', 'Shares', 'Each colour’s bars as a share of its own values, so groups of different size compare']],
+          plot.histNorm === 'percent' ? 'percent' : AUTO, v => edit(d => { if (v === AUTO) delete d.histNorm; else d.histNorm = 'percent'; }), doc)));
+        panel.appendChild(makeToggle('Normal curve', !!plot.normalCurve, v => edit(d => { if (v) d.normalCurve = true; else delete d.normalCurve; }), doc));
+      }
+      // What-if limits: proposed limits for the plotted test, in its own unit.
+      const yv = plot.fields!.y;
+      if ((plot.chart === 'histogram' || plot.chart === 'probability') && yv && 'test' in yv && !plot.normalize) {
+        const limits = doc.createElement('div');
+        Object.assign(limits.style, { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: SPACE.md } as Partial<CSSStyleDeclaration>);
+        const setWhatIf = (k: 'lo' | 'hi') => (v: number | undefined) => edit(d => {
+          const w = { ...(d.whatIf ?? {}) };
+          if (v === undefined) delete w[k]; else w[k] = v;
+          if (w.lo === undefined && w.hi === undefined) delete d.whatIf; else d.whatIf = w;
+        });
+        limits.append(row('Low', numberBox(plot.whatIf?.lo, 'What-if low limit', setWhatIf('lo'))), row('High', numberBox(plot.whatIf?.hi, 'What-if high limit', setWhatIf('hi'))));
+        panel.appendChild(row('What-if limits', limits, 'In the test’s own unit (V, A…). The line under the plot gives the test’s pass rate now and with these, and the dies that change.'));
+      }
       // How a box or bar lays out its categories: order, how many, a bar's colours stacked, a pareto line.
       if (plot.chart === 'box' || plot.chart === 'bar') {
         const single = xLevels().length <= 1;
@@ -588,7 +774,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         }, doc), set ? 'Tests in different units share one axis only once they are rescaled.' : undefined));
       }
       // How values become marks. Hidden where it cannot matter, so the common plot has no extra controls.
-      if (plot.chart === 'bar' || plot.chart === 'line' || plot.level === 'wafer') panel.appendChild(row('Combine values by', aggregateSelect()));
+      if (plot.chart === 'bar' || plot.chart === 'line' || plot.chart === 'control' || plot.chart === 'heatmap' || plot.level === 'wafer') panel.appendChild(row('Combine values by', aggregateSelect()));
       panel.appendChild(row('One mark per', makeSegmented([[AUTO, 'Automatic'], ['die', 'Die'], ['wafer', 'Wafer']], plot.level ?? AUTO, v => {
         edit(d => { if (v === AUTO) delete d.level; else d.level = v as 'die' | 'wafer'; });
         build();
@@ -606,11 +792,21 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       const auto = o.autoText();
       const categorical = plot.chart === 'box' || plot.chart === 'bar';
       const probability = plot.chart === 'probability';
+      // Reference lines are drawn on a values axis: both of a scatter or line, the values of a histogram, probability plot,
+      // box or bar, and a control chart's Y. A count, share, category or Ppk axis has none.
+      const drawsReferences = (r: 'x' | 'y'): boolean => {
+        switch (plot.chart) {
+          case 'scatter': case 'line': return true;
+          case 'histogram': case 'probability': return r === 'x';
+          case 'box': case 'bar': case 'control': return r === 'y';
+          default: return false;
+        }
+      };
       panel.appendChild(axisBlock('x', plot.chart === 'histogram' || probability ? 'Values axis' : categorical ? 'Categories axis' : 'X axis', auto.x,
-        { scale: !categorical, limits: !categorical }));
+        { scale: !categorical, limits: !categorical, references: drawsReferences('x') }));
       // A probability plot's vertical axis is shares, fixed at 0 to 100%: a title, and how the shares are spaced.
       panel.appendChild(axisBlock('y', plot.chart === 'histogram' ? 'Count axis' : probability ? 'Cumulative share axis' : categorical || plot.chart === 'line' ? 'Values axis' : 'Y axis', auto.y,
-        { scale: plot.chart !== 'histogram' && !probability, limits: !probability }));
+        { scale: plot.chart !== 'histogram' && !probability, limits: !probability, references: drawsReferences('y') }));
       if (probability) {
         panel.appendChild(row('Share axis', makeSegmented([['normal', 'Normal probability', 'Shares spaced by the normal quantile: a normal distribution is a straight line'], ['linear', 'Linear', 'Shares spaced evenly, 0 to 100%']],
           plot.probabilityAxis ?? 'normal', v => edit(d => { if (v === 'normal') delete d.probabilityAxis; else d.probabilityAxis = 'linear'; }), doc),

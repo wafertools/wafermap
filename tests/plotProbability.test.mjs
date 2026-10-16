@@ -80,7 +80,7 @@ test('one curve per wafer by default, each in ascending order with the die behin
 test('a linear share axis is said to be one; a single colour is one curve over the population', () => {
   const r = resolvePlot(spec({ y: { test: 1050 }, color: { none: true } }, { probabilityAxis: 'linear' }), lot(), ctx);
   assert.deepEqual(r.marks.values.map(v => v.length), [30]);
-  assert.match(plotFootnote(r), /of its population$/);
+  assert.match(plotFootnote(r), /of its population · how to read this: User guide, section 10.4$/);
 });
 
 test('missing values are counted, and a category cannot be the values', () => {

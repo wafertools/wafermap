@@ -44,10 +44,10 @@ number repeated in six places is a number that will be wrong in five of them.
 
 | Entry point | gzipped | When it is downloaded |
 | --- | --- | --- |
-| `@wafertools/wafermap` — the data and stats layer, no DOM | **~73 KB** | Always, if you import it |
+| `@wafertools/wafermap` — the data and stats layer, no DOM | **~76 KB** | Always, if you import it |
 | `@wafertools/wafermap/render` — the interactive renderer | **~168 KB** | Always, if you render |
-| Insights chart suite | +~68 KB | On first open, only if `insights` is left on (the default) |
-| In-app user guide | +~52 KB | On first open of the guide |
+| Insights chart suite | +~78 KB | On first open, only if `insights` is left on (the default) |
+| In-app user guide | +~61 KB | On first open of the guide |
 | Summary report builders | +~10 KB | When a report is opened from the Summary panel or the gallery |
 
 Two things worth reading off that table:

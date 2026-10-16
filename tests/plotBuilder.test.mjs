@@ -193,7 +193,7 @@ const chooseMark = (e, mark) => {
 test('every chart type is offered, and a histogram keeps the fields it does not use', () => {
   const { e, emitted } = editor(SCATTER);
   const marks = [...e.el.querySelectorAll('[role="radiogroup"]')][0];
-  assert.deepEqual([...marks.querySelectorAll('input')].map(r => r.value), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability']);
+  assert.deepEqual([...marks.querySelectorAll('input')].map(r => r.value), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'control', 'heatmap', 'goal']);
   chooseMark(e, 'histogram');
   const last = emitted.at(-1);
   assert.equal(last.chart, 'histogram');
@@ -244,6 +244,18 @@ test('"One mark per" sets the level, and wafer level shows how values are combin
   wafer.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.equal(emitted.at(-1).level, 'wafer');
   assert.ok(e.el.querySelector('[data-wmap-select="plot-aggregate"]'));
+});
+
+test('reference lines are offered only on an axis the chart draws them on', () => {
+  const refs = (plot) => {
+    const { e } = editor(plot);
+    click(tabButton(e.el, 'Customise'));
+    return ['x', 'y'].filter(r => e.el.querySelector(`[data-wmap-plot-refs="${r}"]`));
+  };
+  assert.deepEqual(refs(SCATTER), ['x', 'y']);
+  assert.deepEqual(refs({ ...SCATTER, chart: 'histogram', fields: { y: SCATTER.fields.x, color: { none: true } } }), ['x'], 'a histogram: its values, not its counts');
+  assert.deepEqual(refs({ ...SCATTER, chart: 'box', fields: { x: { builtin: 'wafer' }, y: SCATTER.fields.y, color: { none: true } } }), ['y'], 'a box: its values, not its categories');
+  assert.deepEqual(refs({ ...SCATTER, chart: 'heatmap', fields: { x: { builtin: 'wafer' }, rows: { builtin: 'hbin' } } }), [], 'a heatmap has none');
 });
 
 test('a category axis has a title but no limits or scale', () => {
@@ -794,12 +806,12 @@ test('Add examples draws one of each type from the lot, and does not add them tw
   const { tab, store, changes } = mountPlot();
   const s = await section(tab);
   click(button(s, 'wmap-plot-examples'));
-  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'sweep']);
-  assert.equal(cards(tab).length, 7);
+  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'box', 'heatmap', 'box', 'box', 'histogram', 'box', 'box', 'bar', 'bar', 'sweep']);
+  assert.equal(cards(tab).length, 16);
   for (const c of cards(tab)) assert.ok(c.querySelector('canvas'), c.dataset.wmapChartTitle);
-  assert.match(s.textContent, /Added 7 example plots: scatter, histogram, box, bar, line, probability, sweep/);
+  assert.match(s.textContent, /Added 16 example plots: scatter, histogram, box, bar, line, probability, heatmap, sweep/);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 7, 'a second click adds nothing');
+  assert.equal(store.get().length, 16, 'a second click adds nothing');
   assert.match(s.textContent, /already in your plots/);
   await tick(10);
   assert.ok(changes.length >= 1, 'the host is told');
@@ -812,7 +824,7 @@ test('Add examples keeps what the reader already has and adds only what is missi
   const second = store.get()[1];
   store.remove(second.id);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 7);
+  assert.equal(store.get().length, 16);
   assert.equal(store.get().at(-1).chart, 'histogram');
 });
 
@@ -1300,4 +1312,17 @@ test('replacing the list tells the host which sweeps it still supplies were drop
   assert.deepEqual(removed, ['s1', 's2']);
   store.replaceAll([SCATTER]);
   assert.deepEqual(removed, ['s1', 's2'], 'each reported once');
+});
+
+test('a plot with reference lines and a band draws, and the editor offers them on a value axis only', async () => {
+  const plot = { ...SCATTER, axes: { y: { references: [{ at: 5, label: 'Target' }, { at: 2, to: 6, label: 'Window' }] } } };
+  const { tab } = mountPlot({ plots: [plot] });
+  const s = await section(tab);
+  await tick(10);
+  assert.ok(cards(tab)[0].querySelector('canvas'), 'the chart is drawn with its references');
+  click(button(cards(tab)[0], 'wmap-plot-edit'));
+  await tick(10);
+  const box = document.querySelector('[data-wmap-plot-refs="y"]');
+  if (box) assert.equal(box.value, '5 Target, 2..6 Window');
+  assert.ok(s);
 });
