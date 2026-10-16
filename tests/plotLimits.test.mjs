@@ -78,10 +78,11 @@ test('a scatter draws limits on the axis of the test that has them, and none for
 
 test('"limits" chooses which kind is drawn, and none draws nothing', () => {
   const base = { id: 'h', chart: 'histogram', fields: { y: { test: 1050, name: 'Vth' }, color: { none: true } } };
+  // One wafer, so its PAT limits (dotted) are drawn with whichever kind is chosen: they are a screen inside the limits.
   const testOnly = draw({ ...base, limits: 'test' });
-  assert.deepEqual([...testOnly.dashes], ['[3,3]']);
+  assert.deepEqual([...testOnly.dashes], ['[3,3]', '[1,3]']);
   const specOnly = draw({ ...base, limits: 'spec' });
-  assert.deepEqual([...specOnly.dashes], ['[10,4]']);
+  assert.deepEqual([...specOnly.dashes], ['[10,4]', '[1,3]']);
   assert.equal(draw({ ...base, limits: 'none' }).dashes.size, 0);
 });
 

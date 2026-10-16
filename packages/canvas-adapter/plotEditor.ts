@@ -10,8 +10,10 @@
 // name or test number, so there is no choice that can only fail. Titles are automatic until typed in; clearing the
 // box brings the automatic one back.
 
-import { combinationIssue, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
-import { sameField, type PlotAxis, type PlotField, type PlotLimits, type PlotSpec } from '../stats/plotSpec.js';
+import { combinationIssue, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, withTestSetNames, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
+import { isField, isTestSet, sameField, xFieldsOf, PLOT_X_LEVELS, type PlotAxis, type PlotField, type PlotLimits, type PlotNormalize, type PlotSpec, type PlotTestSet } from '../stats/plotSpec.js';
+import { formatTestList, parseTestList } from '../stats/sweepText.js';
+import type { TestDef } from '../renderer/buildWaferMap.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip } from './toolbar.js';
 import { makeListSelect, makeSegmented, makeToggle, type ListSelectOption } from './charts/chartShell.js';
 
@@ -44,9 +46,20 @@ const CHART_OPTIONS: Array<[string, string, string]> = [
   ['box', 'Box', 'Quartiles, with whiskers to the minimum and maximum, for each category'],
   ['bar', 'Bar', 'One combined value for each category, or a count'],
   ['line', 'Line', 'One combined value at each X, joined'],
+  ['probability', 'Probability', 'The share of values at or below each value, one curve per colour: on the normal-probability axis a normal distribution is a straight line, and its tails are spread out to read'],
 ];
 const AUTO = '\0auto';
 const COUNT = '\0count';
+const SET = '\0set';
+/** How many tests a new set starts with: enough to compare, few enough to read. */
+const SET_START = 8;
+
+const NORMALIZE_OPTIONS: Array<[string, string, string]> = [
+  [AUTO, 'None', 'The values as measured, in their own unit'],
+  ['limits', 'To limits', '0 at the low limit and 1 at the high one, each test by its own limits (spec limits where it has both)'],
+  ['zscore', 'z-score', 'Standard deviations from the mean of the values in view, each test on its own'],
+  ['robust', 'Robust z', 'Like a z-score, from the median and the median absolute deviation, so a few outliers do not set the scale'],
+];
 
 const AGGREGATE_LABEL: Record<string, string> = { mean: 'Mean', median: 'Median', min: 'Minimum', max: 'Maximum', sum: 'Sum', count: 'Count', yield: 'Pooled yield (passing over judged dies)' };
 
@@ -95,24 +108,50 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
 
   /** The facts the cross-field rules need of one field of the catalogue. */
   const factsOf = (f: PlotField | undefined): FieldFacts | undefined => {
+    // A set of tests is not one entry of the catalogue: it is measured values, one per die and test.
+    if (isTestSet(f)) return { label: 'Tests', level: 'die', kind: 'numeric', yield: false };
     const opt = f && o.catalogue.find(c => sameField(c.field, f));
     return opt ? { label: opt.name, level: opt.level, kind: opt.kind, yield: 'builtin' in opt.field && opt.field.builtin === 'yield' } : undefined;
   };
-  /** Why choosing `candidate` for `role` would leave a plot that cannot be drawn, given the other fields now chosen. */
-  function conflictFor(role: PlotRole, candidate: FieldOption): string | undefined {
+  /** The X field or levels of `p`, outer first: a copy, so trying a field at a level never edits the plot itself. */
+  const xLevels = (p: PlotSpec = plot): PlotField[] => [...xFieldsOf(p.fields?.x)];
+  /** One level is written as the field itself, the shape every chart reads; several as a list; none as no X. */
+  const setXLevels = (d: PlotSpec, levels: PlotField[]): void => {
+    if (levels.length === 0) delete d.fields!.x; else d.fields!.x = levels.length === 1 ? levels[0] : levels;
+  };
+  /** Of nested levels, the finest decides what the plot's marks are, so it is the one the cross-field rules see. */
+  const finestFacts = (levels: readonly PlotField[]): FieldFacts | undefined => {
+    const facts = levels.map(factsOf).filter((x): x is FieldFacts => !!x);
+    return facts.find(x => x.level === 'die') ?? facts[0];
+  };
+  /**
+   * Why choosing `candidate` for `role` would leave a plot that cannot be drawn, given the other fields now chosen. For
+   * X, `at` is the level it would take (the first, or one past the last for a new level).
+   */
+  function conflictFor(role: PlotRole, candidate: FieldOption, at = 0): string | undefined {
     const f = plot.fields ?? {};
     const colorField = f.color && !('follow' in f.color) && !('none' in f.color) ? f.color : undefined;
-    const chosen = { x: factsOf(f.x), y: factsOf(f.y), color: factsOf(colorField) };
-    chosen[role] = factsOf(candidate.field);
+    const levels = xLevels();
+    if (role === 'x') { levels[at] = candidate.field; }
+    const chosen = { x: finestFacts(levels), y: factsOf(f.y), color: factsOf(colorField) };
+    if (role !== 'x') chosen[role] = factsOf(candidate.field);
     const continuousColor = plot.chart === 'scatter' && chosen.color?.kind === 'numeric' && !!colorField && !('meta' in colorField);
     return combinationIssue(plot.chart, chosen, { aggregate: plot.aggregate, level: plot.level, continuousColor })?.short;
   }
-  const fieldOptions = (role: PlotRole): ListSelectOption[] => {
-    const raw = plot.fields?.[role];
+  /** The parametric tests of the lot, as the definitions a set's ranges and names are read against. */
+  const lotTests = (): TestDef[] => o.catalogue.flatMap(f => (f.group === 'Tests' && 'test' in f.field ? [{ testNumber: f.field.test, name: f.field.name ?? '' }] : []));
+  const ySet = (): PlotTestSet | undefined => (isTestSet(plot.fields?.y) ? plot.fields!.y as PlotTestSet : undefined);
+  const isTestField = (f: PlotField | undefined) => !!f && 'builtin' in f && f.builtin === 'test';
+  /** The fields a role can take, the ones that would break the plot greyed with why. For X, `at` is the level. */
+  const fieldOptions = (role: PlotRole, at = 0): ListSelectOption[] => {
+    const raw = role === 'x' ? xLevels()[at] : plot.fields?.[role];
     const current = raw && !('follow' in raw) && !('none' in raw) ? raw : undefined;
-    return fieldsForRole(o.catalogue, plot.chart, role).map(f => {
+    // A field already at another level of the categories is not offered again.
+    const others = role === 'x' ? xLevels().filter((_, i) => i !== at) : [];
+    // Test divides a set of tests, and means nothing without one.
+    return fieldsForRole(o.catalogue, plot.chart, role).filter(f => (ySet() || !isTestField(f.field)) && !others.some(x => sameField(x, f.field))).map(f => {
       // The field already in place stays pickable: it is what the reader is looking at.
-      const why = current && sameField(f.field, current) ? undefined : conflictFor(role, f);
+      const why = current && sameField(f.field, current) ? undefined : conflictFor(role, f, at);
       return { value: fieldKey(f.field), label: f.label, group: f.group, ...(why ? { disabled: why } : {}) };
     });
   };
@@ -120,27 +159,162 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   const fieldByKey = (key: string): PlotField | undefined => o.catalogue.find(f => fieldKey(f.field) === key)?.field;
 
   /** A select for an X or Y role. A saved field the lot lacks, or one this chart type cannot use, stays selectable so the plot can be read. */
-  function fieldSelect(role: 'x' | 'y', ariaLabel: string, opts: { optional?: string } = {}): HTMLElement {
-    const current = plot.fields![role];
-    const options = fieldOptions(role);
+  function fieldSelect(role: 'x' | 'y', ariaLabel: string, opts: { optional?: string; at?: number } = {}): HTMLElement {
+    const at = opts.at ?? 0;
+    const current = role === 'x' ? xLevels()[at] : plot.fields!.y;
+    const options = fieldOptions(role, at);
     if (opts.optional) options.unshift({ value: COUNT, label: opts.optional, group: 'Count' });
-    if (current && !options.some(p => p.value === fieldKey(current))) {
+    // Several tests at once: the values of any chart but a scatter, which needs one value for each axis.
+    const sets = role === 'y' && plot.chart !== 'scatter' && lotTests().length >= 2;
+    if (sets) options.unshift({ value: SET, label: 'Several tests…', group: 'Several tests' });
+    if (current && !isTestSet(current) && !options.some(p => p.value === fieldKey(current))) {
       const inLot = o.catalogue.some(f => sameField(f.field, current));
-      const name = 'test' in current ? (current.name ?? `Test ${current.test}`) : 'meta' in current ? current.meta : current.builtin;
+      const name = 'test' in current ? (current.name ?? `Test ${current.test}`) : 'meta' in current ? current.meta : 'builtin' in current ? current.builtin : '';
       options.unshift({ value: fieldKey(current), label: `${name} (${inLot ? 'not usable here' : 'not in this lot'})`, group: 'Saved' });
     }
-    const value = current ? fieldKey(current) : opts.optional ? COUNT : '';
+    const value = current ? (isTestSet(current) ? SET : fieldKey(current)) : opts.optional ? COUNT : '';
     const sel = makeListSelect(options, value, key => {
       if (key === COUNT) { edit(d => { delete d.fields![role]; }); return; }
-      const f = fieldByKey(key) ?? plot.fields![role];
-      if (f) edit(d => { d.fields![role] = f; });
-    }, { maxWidth: '100%', ownerDocument: doc, ariaLabel, emptyText: 'Choose a field…', searchPlaceholder: 'Filter fields…', hook: `plot-${role}` });
+      if (key === SET) { if (!ySet()) { chooseSet(); build(); } return; }
+      const f = fieldByKey(key) ?? current;
+      if (!f) return;
+      const leavingSet = role === 'y' && !!ySet();
+      edit(d => {
+        if (role === 'x') { const levels = xLevels(d); levels[at] = f; setXLevels(d, levels); } else d.fields!.y = f;
+        if (!leavingSet) return;
+        // One test again: the field that divided the set has nothing left to divide.
+        const levels = xLevels(d), kept = levels.filter(l => !isTestField(l));
+        if (kept.length !== levels.length) setXLevels(d, kept.length || !(d.chart === 'box' || d.chart === 'bar') ? kept : [{ builtin: 'wafer' }]);
+        if (isTestField(d.fields!.color as PlotField | undefined)) delete d.fields!.color;
+      });
+      if (leavingSet) build();
+    }, { maxWidth: '100%', ownerDocument: doc, ariaLabel, emptyText: 'Choose a field…', searchPlaceholder: 'Filter fields…', hook: role === 'x' && at > 0 ? `plot-x-${at + 1}` : `plot-${role}` });
     sel.style.width = '100%';
     return sel;
   }
 
+  /** Y becomes a set of the lot's first tests, divided by test along X for a box or bar (by colour otherwise). */
+  function chooseSet(): void {
+    const defs = lotTests();
+    const set = withTestSetNames({ tests: defs.slice(0, SET_START).map(d => d.testNumber) }, defs);
+    edit(d => {
+      d.fields!.y = set;
+      const levels = xLevels(d);
+      if ((d.chart === 'box' || d.chart === 'bar') && (levels.length === 0 || (levels.length === 1 && sameField(levels[0], { builtin: 'wafer' })))) d.fields!.x = { builtin: 'test' };
+    });
+  }
+
+  /** The tests of a set, typed as a sweep's are: numbers, or ranges of the declared tests between two numbers. */
+  function testSetBox(set: PlotTestSet): HTMLElement {
+    const wrap = doc.createElement('div');
+    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xxs } as Partial<CSSStyleDeclaration>);
+    const input = doc.createElement('input');
+    input.type = 'text';
+    input.value = formatTestList(set.tests);
+    input.placeholder = '1010, 1011, 1020..1030';
+    input.setAttribute('aria-label', 'Tests');
+    input.dataset.wmapPlotTests = '1';
+    Object.assign(input.style, inputStyle(), { width: '100%', fontVariantNumeric: 'tabular-nums' } as Partial<CSSStyleDeclaration>);
+    const error = doc.createElement('div');
+    error.setAttribute('role', 'alert');
+    Object.assign(error.style, { fontSize: FONT.sub, color: CLR.errText } as Partial<CSSStyleDeclaration>);
+    input.addEventListener('input', () => {
+      const r = parseTestList(input.value);
+      const problem = !r.ok ? r.error : r.value.length === 0 ? 'Name at least one test' : undefined;
+      error.textContent = problem ?? '';
+      input.setAttribute('aria-invalid', String(!!problem));
+      input.style.borderColor = problem ? CLR.errText : CLR.menuBorder;
+      if (problem || !r.ok) return;
+      const tests = r.value;
+      edit(d => { d.fields!.y = withTestSetNames({ tests }, lotTests()); });
+    });
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); input.blur(); } });
+    wrap.append(input, error);
+    return wrap;
+  }
+
+  /**
+   * The categories of a box or bar: one field, or several nested, outer first. Each level has its field list and, once
+   * there are two, buttons to move it out or in a level and to remove it; Add a level appends the next. The order is the
+   * nesting: the first level's values are the groups, the last level's are the boxes within them.
+   */
+  function categoriesBlock(): HTMLElement {
+    const levels = xLevels();
+    const wrap = doc.createElement('div');
+    wrap.dataset.wmapPlotLevels = '1';
+    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs, minWidth: '0' } as Partial<CSSStyleDeclaration>);
+    const nameAt = (i: number) => { const f = levels[i]; return (f && o.catalogue.find(c => sameField(c.field, f))?.name) ?? `level ${i + 1}`; };
+    const levelButton = (text: string, label: string, hook: string, disabled: boolean, act: () => void): HTMLButtonElement => {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      b.textContent = text;
+      b.setAttribute('aria-label', label);
+      b.dataset.wmapPlotLevel = hook;
+      b.disabled = disabled;
+      wireTooltip(b, label);
+      Object.assign(b.style, controlStyle('outlined'), { minWidth: '28px', opacity: disabled ? '0.4' : '1' } as Partial<CSSStyleDeclaration>);
+      wireControlHover(b);
+      b.addEventListener('click', act);
+      return b;
+    };
+    /**
+     * Rebuilds and puts focus back on the level that moved, so a keyboard reader can keep moving it: on the same button
+     * when it can still be used, else the first of `hooks` that can (a level moved to the top cannot move further out).
+     */
+    const refocus = (...hooks: string[]) => {
+      build();
+      for (const h of hooks) { const b = root.querySelector<HTMLButtonElement>(`[data-wmap-plot-level="${h}"]`); if (b && !b.disabled) { b.focus(); return; } }
+    };
+    const move = (i: number, by: -1 | 1) => {
+      edit(d => { const l = xLevels(d); [l[i], l[i + by]] = [l[i + by], l[i]]; setXLevels(d, l); });
+      const at = i + by;
+      refocus(`${by < 0 ? 'out' : 'in'}:${at}`, `${by < 0 ? 'in' : 'out'}:${at}`);
+    };
+    const count = Math.max(1, levels.length);
+    for (let i = 0; i < count; i++) {
+      const line = doc.createElement('div');
+      Object.assign(line.style, { display: 'flex', gap: SPACE.xs, alignItems: 'center', minWidth: '0' } as Partial<CSSStyleDeclaration>);
+      const sel = fieldSelect('x', count > 1 ? `Categories, level ${i + 1} of ${count}` : 'Categories', { at: i });
+      Object.assign(sel.style, { flex: '1', minWidth: '0' } as Partial<CSSStyleDeclaration>);
+      line.appendChild(sel);
+      if (levels.length > 1) {
+        line.append(
+          levelButton('↑', `Move ${nameAt(i)} out a level`, `out:${i}`, i === 0, () => move(i, -1)),
+          levelButton('↓', `Move ${nameAt(i)} in a level`, `in:${i}`, i === levels.length - 1, () => move(i, 1)),
+          levelButton('×', `Remove ${nameAt(i)} from the categories`, `remove:${i}`, false, () => {
+            edit(d => { const l = xLevels(d); l.splice(i, 1); setXLevels(d, l); });
+            // One level left has no buttons: focus goes to its field list.
+            refocus(`remove:${Math.min(i, levels.length - 2)}`);
+            if (levels.length - 1 < 2) root.querySelector<HTMLElement>('[data-wmap-select="plot-x"]')?.focus();
+          }),
+        );
+      }
+      wrap.appendChild(line);
+    }
+    // The next level: the first field the plot can take there, so the reader changes it rather than starting blank.
+    const next = levels.length < PLOT_X_LEVELS && levels.length > 0 ? fieldOptions('x', levels.length).find(f => !f.disabled) : undefined;
+    const add = doc.createElement('button');
+    add.type = 'button';
+    add.textContent = '+ Add a level';
+    add.dataset.wmapPlotLevelAdd = '1';
+    add.disabled = !next;
+    const why = levels.length >= PLOT_X_LEVELS ? `At most ${PLOT_X_LEVELS} levels` : !next ? 'No other field can divide these categories' : 'Divide each category by another field, nested inside it';
+    wireTooltip(add, why);
+    Object.assign(add.style, controlStyle('outlined'), { alignSelf: 'flex-start', opacity: add.disabled ? '0.4' : '1' } as Partial<CSSStyleDeclaration>);
+    wireControlHover(add);
+    add.addEventListener('click', () => {
+      const f = next && fieldByKey(next.value);
+      if (!f) return;
+      edit(d => { setXLevels(d, [...xLevels(d), f]); });
+      build();
+      root.querySelector<HTMLElement>(`[data-wmap-select="plot-x-${levels.length + 1}"]`)?.focus();
+    });
+    wrap.appendChild(add);
+    return wrap;
+  }
+
   /** Remembers a field a chart type could not use, so flipping back restores it rather than losing it. */
-  const stash: Partial<Record<'x' | 'y', PlotField>> = {};
+  const stash: Partial<Record<'x' | 'y', PlotField | PlotField[]>> = {};
   /** Fields chosen for the reader when a type needed one, as against fields the reader picked: only the latter are worth keeping. */
   const supplied: Partial<Record<'x' | 'y', PlotField>> = {};
 
@@ -149,19 +323,24 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       d.chart = next;
       for (const role of ['x', 'y'] as const) {
         const options = fieldsForRole(o.catalogue, next, role);
-        const usable = (f: PlotField | undefined) => !!f && options.some(p => sameField(p.field, f));
+        const one = (f: PlotField | undefined) => !!f && (isTestSet(f) ? role === 'y' && next !== 'scatter' : options.some(p => sameField(p.field, f)));
+        // Nested categories belong to a box or bar; any other chart keeps them aside for the way back.
+        const usable = (f: PlotField | PlotField[] | undefined) => (Array.isArray(f) ? (next === 'box' || next === 'bar') && f.every(one) : one(f));
         const current = d.fields![role];
         if (current && !usable(current)) {
-          if (!sameField(current, supplied[role])) stash[role] = current;
+          if (Array.isArray(current) || !sameField(current, supplied[role])) stash[role] = current;
           delete d.fields![role];
         }
         if (d.fields![role] || (role === 'y' && next === 'bar')) continue;
         const back = stash[role];
-        if (usable(back)) { d.fields![role] = back; delete stash[role]; delete supplied[role]; continue; }
+        if (usable(back)) {
+          if (role === 'x') d.fields!.x = back; else d.fields!.y = back as PlotField;
+          delete stash[role]; delete supplied[role]; continue;
+        }
         const pick = role === 'x' && (next === 'box' || next === 'bar') ? { builtin: 'wafer' } as PlotField
           : role === 'x' && next === 'line' ? (options.find(p => p.group === 'Wafer')?.field ?? options[0]?.field)
           : options[0]?.field;
-        if (pick && !(role === 'x' && (next === 'histogram'))) { d.fields![role] = pick; supplied[role] = pick; }
+        if (pick && !(role === 'x' && (next === 'histogram' || next === 'probability'))) { d.fields![role] = pick; supplied[role] = pick; }
       }
     });
     build();
@@ -194,6 +373,28 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         else { const f = fieldByKey(key); if (f) d.fields!.color = f; }
       });
     }, { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Colour', searchPlaceholder: 'Filter fields…', hook: 'plot-color' });
+    sel.style.width = '100%';
+    return sel;
+  }
+
+  /**
+   * Panels: one per value of a category field. Offered: any category the plot does not already use on X or the colour
+   * (Test only when the values are a set of tests); a per-die field is greyed while the plot has one mark per wafer.
+   */
+  function panelsSelect(): HTMLElement {
+    const current = plot.fields!.facet;
+    const used = [...xLevels(), ...(plot.fields!.color && isField(plot.fields!.color) ? [plot.fields!.color] : [])];
+    const options: ListSelectOption[] = [{ value: NONE, label: 'None: one plot', group: 'Panels' }];
+    for (const f of o.catalogue) {
+      if (!f.categorical || used.some(u => sameField(u, f.field))) continue;
+      if (isTestField(f.field) && !ySet()) continue;
+      const why = f.level === 'die' && plot.level === 'wafer' ? `${f.name} is per die: this plot has one mark per wafer` : undefined;
+      options.push({ value: fieldKey(f.field), label: f.label, group: f.group, ...(why ? { disabled: why } : {}) });
+    }
+    const sel = makeListSelect(options, current ? fieldKey(current) : NONE, key => edit(d => {
+      if (key === NONE) delete d.fields!.facet;
+      else { const f = fieldByKey(key); if (f) d.fields!.facet = f; }
+    }), { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Panels', searchPlaceholder: 'Filter fields…', hook: 'plot-facet' });
     sel.style.width = '100%';
     return sel;
   }
@@ -340,12 +541,15 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
         case 'histogram':
           panel.appendChild(row('Values', fieldSelect('y', 'Values')));
           break;
+        case 'probability':
+          panel.appendChild(row('Values (X axis)', fieldSelect('y', 'Values'), 'One curve per colour, each value at its share of its group: a shift is a curve moved sideways, a wider spread a flatter one, a second population a bend.'));
+          break;
         case 'box':
-          panel.appendChild(row('Categories (X axis)', fieldSelect('x', 'Categories'), 'Compare by this field: one box per value, whether it is a wafer attribute (lot, split) or a die region (ring, reticle cell).'));
+          panel.appendChild(row('Categories (X axis)', categoriesBlock(), 'Compare by this field: one box per value, whether it is a wafer attribute (lot, split) or a die region (ring, reticle cell). Add a level to nest another inside it: the first level is the outer groups.'));
           panel.appendChild(row('Values (Y axis)', fieldSelect('y', 'Values')));
           break;
         case 'bar':
-          panel.appendChild(row('Categories (X axis)', fieldSelect('x', 'Categories'), 'Compare by this field: one bar per value, whether it is a wafer attribute (lot, split) or a die region (ring, reticle cell).'));
+          panel.appendChild(row('Categories (X axis)', categoriesBlock(), 'Compare by this field: one bar per value, whether it is a wafer attribute (lot, split) or a die region (ring, reticle cell). Add a level to nest another inside it: the first level is the outer groups.'));
           panel.appendChild(row('Values (Y axis)', fieldSelect('y', 'Values', { optional: `Count of ${noun}` })));
           break;
         case 'line':
@@ -353,7 +557,36 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
           panel.appendChild(row('Y axis', fieldSelect('y', 'Y axis')));
           break;
       }
+      const set = ySet();
+      if (set && plot.chart !== 'scatter') {
+        panel.appendChild(row('Tests', testSetBox(set), 'Test numbers, or a range such as 1010..1030 for the tests declared between them. Put Test on the X axis or the colour to tell them apart.'));
+      }
       panel.appendChild(row('Colour', colourSelect(), 'Compare by this field: each value gets its own colour. Follow Group by takes it from the Group by control.'));
+      panel.appendChild(row('Panels', panelsSelect(), 'One panel per value of this field, on shared axes and colours: split or lot takes whole wafers, ring or site the dies in it.'));
+      // How a box or bar lays out its categories: order, how many, a bar's colours stacked, a pareto line.
+      if (plot.chart === 'box' || plot.chart === 'bar') {
+        const single = xLevels().length <= 1;
+        if (single) {
+          panel.appendChild(row('Order', makeSegmented([[AUTO, 'Field order', 'The field’s own order: wafers as loaded, numbers by value, names naturally'], ['value', 'Largest first', plot.chart === 'box' ? 'By median, largest first' : 'By value, largest first (a pareto)']],
+            plot.sort ?? AUTO, v => { edit(d => { if (v === AUTO) { delete d.sort; delete d.cumulative; } else d.sort = 'value'; }); build(); }, doc)));
+          panel.appendChild(row('Show the first', numberBox(plot.top, 'Categories shown', v => edit(d => {
+            if (v === undefined || !Number.isInteger(v) || v < 1) delete d.top; else d.top = v;
+          })), 'Leave empty for every category; the rest are counted in a note.'));
+        }
+        if (plot.chart === 'bar') {
+          panel.appendChild(row('Colours', makeSegmented([[AUTO, 'Side by side'], ['stack', 'Stacked', 'One bar per category, its colours one on another'], ['percent', '100%', 'Each colour as its share of the category']],
+            plot.stack ?? AUTO, v => edit(d => { if (v === AUTO) delete d.stack; else d.stack = v as 'stack' | 'percent'; }), doc), 'Stacking adds values, so it needs a count or a sum.'));
+          if (single && plot.sort === 'value') {
+            panel.appendChild(makeToggle('Cumulative line (pareto)', !!plot.cumulative, v => edit(d => { if (v) d.cumulative = true; else delete d.cumulative; }), doc));
+          }
+        }
+      }
+      const y = plot.fields!.y;
+      if (plot.chart !== 'scatter' && y && (isTestSet(y) || 'test' in y)) {
+        panel.appendChild(row('Rescale values', makeSegmented(NORMALIZE_OPTIONS, plot.normalize ?? AUTO, v => {
+          edit(d => { if (v === AUTO) delete d.normalize; else d.normalize = v as PlotNormalize; });
+        }, doc), set ? 'Tests in different units share one axis only once they are rescaled.' : undefined));
+      }
       // How values become marks. Hidden where it cannot matter, so the common plot has no extra controls.
       if (plot.chart === 'bar' || plot.chart === 'line' || plot.level === 'wafer') panel.appendChild(row('Combine values by', aggregateSelect()));
       panel.appendChild(row('One mark per', makeSegmented([[AUTO, 'Automatic'], ['die', 'Die'], ['wafer', 'Wafer']], plot.level ?? AUTO, v => {
@@ -372,10 +605,17 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       syncDrift();
       const auto = o.autoText();
       const categorical = plot.chart === 'box' || plot.chart === 'bar';
-      panel.appendChild(axisBlock('x', plot.chart === 'histogram' ? 'Values axis' : categorical ? 'Categories axis' : 'X axis', auto.x,
+      const probability = plot.chart === 'probability';
+      panel.appendChild(axisBlock('x', plot.chart === 'histogram' || probability ? 'Values axis' : categorical ? 'Categories axis' : 'X axis', auto.x,
         { scale: !categorical, limits: !categorical }));
-      panel.appendChild(axisBlock('y', plot.chart === 'histogram' ? 'Count axis' : categorical || plot.chart === 'line' ? 'Values axis' : 'Y axis', auto.y,
-        { scale: plot.chart !== 'histogram' }));
+      // A probability plot's vertical axis is shares, fixed at 0 to 100%: a title, and how the shares are spaced.
+      panel.appendChild(axisBlock('y', plot.chart === 'histogram' ? 'Count axis' : probability ? 'Cumulative share axis' : categorical || plot.chart === 'line' ? 'Values axis' : 'Y axis', auto.y,
+        { scale: plot.chart !== 'histogram' && !probability, limits: !probability }));
+      if (probability) {
+        panel.appendChild(row('Share axis', makeSegmented([['normal', 'Normal probability', 'Shares spaced by the normal quantile: a normal distribution is a straight line'], ['linear', 'Linear', 'Shares spaced evenly, 0 to 100%']],
+          plot.probabilityAxis ?? 'normal', v => edit(d => { if (v === 'normal') delete d.probabilityAxis; else d.probabilityAxis = 'linear'; }), doc),
+          'Normal probability spreads out the tails, where outliers and a second population show.'));
+      }
       if (plot.chart === 'histogram') {
         panel.appendChild(row('Bins', numberBox(plot.bins, 'Number of bins', v => edit(d => {
           if (v === undefined || !Number.isInteger(v) || v < 1) delete d.bins; else d.bins = Math.min(v, 200);
@@ -383,7 +623,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       }
       // The limits of a measured test are drawn on the axis that measures it; the choice appears where there is one.
       const f = plot.fields ?? {};
-      if ((f.x && 'test' in f.x) || (f.y && 'test' in f.y)) {
+      if ((f.x && 'test' in f.x) || (f.y && ('test' in f.y || isTestSet(f.y)))) {
         panel.appendChild(row('Limits', makeSegmented([['both', 'Test + spec'], ['test', 'Test'], ['spec', 'Spec'], ['none', 'None']], plot.limits ?? 'both',
           v => edit(d => { if (v === 'both') delete d.limits; else d.limits = v as PlotLimits; }), doc),
           'Drawn as dashed lines on the axis of a test that has them: short dashes for test limits, long for spec limits.'));

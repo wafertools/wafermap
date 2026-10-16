@@ -26,6 +26,61 @@ under `### Breaking`.
 
 ### Added
 
+- **Several tests in one plot, and rescaled values.** A plot's Y can be a set of tests, `{ tests: [1050, "1060..1080"] }`
+  (numbers or ranges, read as a sweep's tests are), in a box, bar, line or histogram; the new `test` field divides it,
+  on X (a box or bar with no X puts one box per test along it) or as the colour. `PlotSpec.normalize` rescales each
+  test on its own: `'limits'` (0 at the low limit, 1 at the high; spec limits when a test has both, else test limits,
+  as Process capability places them), `'zscore'` (standard deviations from the mean of the values in view) or
+  `'robust'` (from the median, with 1.4826 × the median absolute deviation). Tests in different units are refused until
+  they are rescaled; a test the dies do not hold, or one that cannot be rescaled, is left out and named; a missing value
+  is counted against its own test; and a limit line is drawn only where every test puts it at the same place. A set
+  reads at most four million values (dies × tests). The editor offers **Several tests…** in the values list, a **Tests**
+  box, and **Rescale values**. Plot files stay at version 1.
+- **Radial position, stacked bars and paretos in plots.** A die field **Radial position** gives a die's distance from
+  the wafer centre as a percentage of the radius, from the same centre offset the rings and quadrants use, so a ring is
+  a band of it. A bar's colours can be stacked (`stack: 'stack'`) or shown as shares of each category
+  (`stack: 'percent'`), for counts and sums. Box and bar categories can be sorted by value (`sort: 'value'`; a box by
+  median) and cut to the first `top`, with the rest counted in a note, and a value-sorted bar of counts or sums can
+  carry a cumulative-percentage line (`cumulative: true`) on a 0–100% axis at the right, counting every category.
+- **What divides yield.** With four or more wafers and wafer fields to compare, the Insights Overview ranks every field
+  (the Group by list) by how clearly its groups differ in yield and in the rate of each of the five most common fail
+  bins, with each wafer as one value: Welch's ANOVA and Kruskal–Wallis per field and measure, ranked by
+  Benjamini–Hochberg q. A row gives the worst and best group with their means and the spread in points, and its
+  **Group by** groups the tab by that field. Fields with no two groups of two or more wafers are listed as not compared,
+  and fields that group the wafers identically are named as not separable.
+- **Dynamic PAT in plots.** A die field **PAT** gives each die's part-average-testing verdict on its wafer: for every
+  test with both limits, the wafer's PAT limits are the median ± 6 × (Q3 − Q1) / 1.35 of its passing dies' values inside
+  the test's limits, never wider than those limits (spec first, as capability takes them). A die is Within PAT limits,
+  a PAT outlier (passes its bin and every limit, outside PAT on at least one test) or Fails (bin or limits); a test with
+  fewer than 30 passing values, or no spread, does not judge that wafer. It can be a colour, categories or panels, and
+  the limits are the whole wafer's even in a panel of part of it. A plot of one wafer draws that wafer's PAT limits as
+  dotted *PAT lo* / *PAT hi* lines with whichever limits are shown; the statement says how PAT is set.
+- **Panels (small multiples).** `fields.facet` draws a plot once per value of a category field, up to 24 panels in a
+  grid: a wafer field (split, lot) takes whole wafers, a die field (ring, site) each wafer's dies with that value, and
+  Test, with a set of tests as the values, one test per panel. Every panel shares the whole plot's colours and axis
+  ranges (limit lines included), and rescaling is measured over the whole population. One statement and legend sit
+  above the grid, a legend chip filters every panel, each panel has its own Expand, and Save as PNG saves the whole
+  grid. A wafer or die with no value for the field is in no panel and is counted. The editor has a **Panels** choice.
+- **Comparing splits, wafer by wafer.** With Group by on, Distributions opens with a **Comparison by** table: every
+  measured test compared across the groups with each wafer as one value (the mean of its dies), so n is wafers. Per test:
+  each group's mean, Welch's ANOVA (Welch's t for two groups), Kruskal–Wallis (marked approximate below five wafers a
+  group), the Benjamini–Hochberg q the table is ranked by, and the largest shift in wafer-to-wafer standard deviations
+  and as a share of the limit window. A chosen control adds each group's difference from it with a Holm-adjusted p. A
+  row shows its test in the other Distributions panels; **Comparison CSV** saves the table. A box or bar plot of one
+  test divided by a wafer field states the same wafer-level comparison under the chart. The t, F and chi-square tails
+  behind it are exact (incomplete beta and gamma functions), not normal approximations.
+- **Probability plot.** A new plot chart, `chart: 'probability'`, draws each colour group's values in order against
+  the share of the group at or below them, (rank − ½) / n, on a normal-probability axis (a normal distribution is a
+  straight line) or, with `probabilityAxis: 'linear'`, a plain 0–100% one. It takes what a histogram takes: one test, a
+  set of tests, rescaled or not, per die or per wafer. Limits are drawn on the values axis; a point's tooltip gives its
+  die, its rank and where it is plotted; click opens its wafer, and dragging a box selects every die inside it, though a large group draws a
+  sample of its middle (both tails in full). **Add examples** adds one, and Customise has a **Share axis** choice.
+- **Nested categories in a box or bar.** `fields.x` may be a list of up to three fields, outer first, one category per
+  combination of their values: Test then Ring draws a box per ring within each test. The axis shows the innermost
+  values at the ticks and each outer level as a row of spanning labels with dividers. In the editor, **+ Add a level**
+  adds one under Categories, and each level has buttons to move it out or in a level and to remove it. A field can be
+  one level only; a unit missing a level's value is counted against that level.
+
 - **Clusters of one hard bin.** `analyzeWaferMap` also looks for clusters in each failing hard bin on its own, besides
   the clusters of every fail bin together. A spot of one bin next to other bins' fails (a spot touching an edge ring) is
   reported as that bin's cluster, where the run over every fail bin finds one group with the fails round it. A bin is
@@ -36,6 +91,11 @@ under `### Breaking`.
   left to that cluster. Interior clusters only: edge arcs stay with the run over every fail bin.
 
 ### Changed
+
+- **A box or bar category has places only for the colours it holds.** Each category lays out the colour groups that
+  have a value there, centred, at the width the fullest category needs, so a category one colour fills (a ring
+  coloured by ring, a wafer coloured by its split) draws one full-width mark. A box's tooltip names its colour only
+  when the category does not already.
 
 - **A cluster of one bin lists the region findings it explains.** A rise in its bin in a ring, quadrant or sector that
   the cluster's dies make up at least half of, and that is no more severe than the cluster, is named in the cluster's
@@ -52,6 +112,9 @@ under `### Breaking`.
   pattern's item takes only the findings it explains that no other item holds.
 
 ### Fixed
+
+- **A segmented choice keeps its highlight when the pointer leaves it.** Choosing a segment that does not redraw the
+  editor (a plot's Limits or Rescale values) shows it as selected after the pointer moves away.
 
 - **Cluster and edge-arc detection leave out dies with no bin.** A die with neither a hard nor a soft bin is no data
   there, as it is in the yield: neither a failure nor part of the background, so a block of unbinned dies is not

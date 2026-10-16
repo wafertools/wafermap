@@ -46,6 +46,8 @@ import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
 import { renderBoxplotPanel } from './charts/boxplot.js';
 import { renderTrendPanel } from './charts/trend.js';
+import { renderGroupComparisonPanel } from './charts/groupComparison.js';
+import { renderCommonalityPanel } from './charts/commonality.js';
 import type { SweepSpec } from '../stats/sweep.js';
 import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
@@ -427,6 +429,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // `scopedTestDefs` in `render`), so a scope change has to re-derive it, and
   // section-local state would be discarded on every such change.
   let activeSectionTest: number | null = null;
+  /** The group comparison's control group, kept at tab level so a rebuild or a tab switch keeps the choice. */
+  let compareControl: string | null = null;
+  /** The wafer fields that divide the wafers, as the Group by list offers them: what the commonality card compares. */
+  let dividingFields: Array<{ key: string; label: string }> = [];
   let activeSectionGroup: string | null = null;
   // The shared axis toggles, here for the same reason: `render()` rebuilds every
   // panel, so section-local state is discarded by a scope change — and, less
@@ -1160,6 +1166,16 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const details = renderOverviewDetailsCards(items, testDefs, allTestDefs, groups);
     for (const c of details.elements) yieldBins.card.appendChild(c);
 
+    // Which wafer field divides yield: a lot with fields to compare gets the ranking, and a row groups the tab by it.
+    if (items.length >= 4 && dividingFields.length) {
+      const commonality = renderCommonalityPanel({
+        wafers: items, fields: dividingFields, curation, groupedBy: analysisGroupKey,
+        onGroupBy: key => { analysisGroupKey = key; activeSectionGroup = null; render(); },
+        ownerDocument: doc,
+      });
+      outer.appendChild(commonality.card);
+    }
+
     outer.appendChild(dataTabLink());
 
     return { card: outer, destroy: () => { yieldBins.destroy(); details.destroy(); } };
@@ -1384,7 +1400,25 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // to broadcast a selection while never showing one — the only panel here
       // that could not say which test its siblings were displaying.
       capability.setTest(testNumber);
+      compare?.setTest(testNumber);
     };
+
+    // With Group by on, the comparison of every test across the groups, wafer by wafer: first, since it says which
+    // test to look at in the panels below. Choosing a control rebuilds only this panel.
+    const makeCompare = () => renderGroupComparisonPanel({
+      groups: groups!, testDefs, groupLabelText, control: compareControl,
+      onControlChange: (c) => {
+        compareControl = c;
+        const next = makeCompare();
+        compare!.card.replaceWith(next.card);
+        compare = next;
+      },
+      selectedTestNumber: activeSectionTest ?? undefined,
+      onSelectTest: (n) => selectTestEverywhere(n),
+      onSaveText,
+      ownerDocument: doc,
+    });
+    let compare = groups && groups.length >= 2 ? makeCompare() : undefined;
 
     axisPrefsPanels.set('distribution', [boxplot, histogram, trend]);
 
@@ -1401,12 +1435,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // than a guessed constant. Capability's empty state (no test data at
     // all) never calls that, so it stays sized to its compact message
     // instead of forcing a large dead box next to functional siblings.
+    if (compare) wrap.append(compare.card);
     wrap.append(capability.card, boxplot.card, histogram.card, trend.card);
 
     return {
       card: wrap,
       destroy: () => {
-        capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy();
+        capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); compare?.destroy();
       },
     };
   }
@@ -1480,6 +1515,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const allItems = facetItems();
     renderMetadataStrip(allItems);
     const facetTable = buildFacetTable(allItems, { facetableOnly: true, curation }).filter(f => f.splittable);
+    dividingFields = facetTable.map(f => ({ key: f.key, label: f.label }));
 
     const controlsRow = doc.createElement('div');
     // Rides on the tab bar's row, right-aligned: it is the only control here and

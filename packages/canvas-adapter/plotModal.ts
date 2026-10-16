@@ -56,7 +56,11 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
   } as Partial<CSSStyleDeclaration>);
 
   const left = doc.createElement('div');
-  Object.assign(left.style, { flex: '3 1 420px', minWidth: '0', display: 'flex', flexDirection: 'column', gap: SPACE.md } as Partial<CSSStyleDeclaration>);
+  // Scrolls on its own, as the settings do (the same allowance below): a plot of panels can be taller than the window.
+  Object.assign(left.style, {
+    flex: '3 1 420px', minWidth: '0', display: 'flex', flexDirection: 'column', gap: SPACE.md,
+    maxHeight: 'calc(min(92vh, 800px) - 110px)', overflowY: 'auto',
+  } as Partial<CSSStyleDeclaration>);
   if (o.population) {
     const pop = doc.createElement('div');
     pop.textContent = `Population: ${o.population}`;

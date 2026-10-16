@@ -479,25 +479,25 @@ test('examples: one of each type the lot can show, built from its own tests and 
   const cat = fieldCatalogue(lot(), ctx);
   let n = 0;
   const ex = examplePlots(cat, 3, () => `e${n++}`);
-  assert.deepEqual(ex.map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep']);
+  assert.deepEqual(ex.map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'sweep']);
   assert.deepEqual(ex[0].fields, { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' } });
   assert.deepEqual(ex[3].fields.x, { meta: 'split' }, 'the first lot field that divides the wafers');
   assert.deepEqual(ex[3].fields.y, { builtin: 'yield' });
-  assert.equal(new Set(ex.map(p => p.id)).size, 6);
+  assert.equal(new Set(ex.map(p => p.id)).size, 7);
   for (const p of ex.filter(p => p.chart !== 'sweep')) {
     assert.equal('title' in p, false, 'untitled, so each is named by what it plots');
     const r = resolvePlot(p, lot(), ctx);
     assert.deepEqual(r.issues, [], `${p.chart}: ${r.issues}`);
     assert.ok(r.plotted > 0, p.chart);
   }
-  const sweep = ex[5];
+  const sweep = ex[6];
   assert.equal(sweep.title, 'Example sweep', 'a sweep has no fields to name it, so it is titled');
   assert.deepEqual(sweep.sweep.series, [{ label: 'Series 1', tests: [1050, 1060], testNames: { 1050: 'Vth', 1060: 'Idsat' } }], 'the lot\'s own tests, in test order');
 });
 
 test('examples: a single wafer gets only what makes sense for one', () => {
   const cat = fieldCatalogue([lot()[0]], ctx);
-  assert.deepEqual(examplePlots(cat, 1, () => 'x').map(p => p.chart), ['scatter', 'histogram', 'sweep']);
+  assert.deepEqual(examplePlots(cat, 1, () => 'x').map(p => p.chart), ['scatter', 'histogram', 'probability', 'sweep']);
 });
 
 test('examples: with no tests there is nothing to draw but yield', () => {

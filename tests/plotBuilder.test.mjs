@@ -193,7 +193,7 @@ const chooseMark = (e, mark) => {
 test('every chart type is offered, and a histogram keeps the fields it does not use', () => {
   const { e, emitted } = editor(SCATTER);
   const marks = [...e.el.querySelectorAll('[role="radiogroup"]')][0];
-  assert.deepEqual([...marks.querySelectorAll('input')].map(r => r.value), ['scatter', 'histogram', 'box', 'bar', 'line']);
+  assert.deepEqual([...marks.querySelectorAll('input')].map(r => r.value), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability']);
   chooseMark(e, 'histogram');
   const last = emitted.at(-1);
   assert.equal(last.chart, 'histogram');
@@ -794,12 +794,12 @@ test('Add examples draws one of each type from the lot, and does not add them tw
   const { tab, store, changes } = mountPlot();
   const s = await section(tab);
   click(button(s, 'wmap-plot-examples'));
-  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep']);
-  assert.equal(cards(tab).length, 6);
+  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'sweep']);
+  assert.equal(cards(tab).length, 7);
   for (const c of cards(tab)) assert.ok(c.querySelector('canvas'), c.dataset.wmapChartTitle);
-  assert.match(s.textContent, /Added 6 example plots: scatter, histogram, box, bar, line, sweep/);
+  assert.match(s.textContent, /Added 7 example plots: scatter, histogram, box, bar, line, probability, sweep/);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 6, 'a second click adds nothing');
+  assert.equal(store.get().length, 7, 'a second click adds nothing');
   assert.match(s.textContent, /already in your plots/);
   await tick(10);
   assert.ok(changes.length >= 1, 'the host is told');
@@ -812,7 +812,7 @@ test('Add examples keeps what the reader already has and adds only what is missi
   const second = store.get()[1];
   store.remove(second.id);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 6);
+  assert.equal(store.get().length, 7);
   assert.equal(store.get().at(-1).chart, 'histogram');
 });
 
@@ -1147,6 +1147,144 @@ test('the Y list greys Yield when the X is per die, and the colour list greys a 
   assert.equal(y?.getAttribute('aria-disabled'), 'true');
   assert.match(y.textContent, /^Yield — Yield is per wafer: use a bar or line chart/);
   document.body.click();
+});
+
+test('a set of tests is values per die, so its colour list offers a per-die field such as ring', () => {
+  const { e } = editor({ id: 's', chart: 'box', fields: { x: { builtin: 'test' }, y: { tests: [1050, 1060] }, color: { none: true } }, normalize: 'zscore' });
+  click(e.el.querySelector('[data-wmap-select="plot-color"]'));
+  const ring = optionRows().find(r => r.textContent.startsWith('Ring'));
+  assert.ok(ring, 'Ring is in the list');
+  assert.notEqual(ring.getAttribute('aria-disabled'), 'true', ring.textContent);
+  document.body.click();
+});
+
+/** Whether a field is the lot field named Wafer, which the second level may hold. */
+const sameKind = f => 'meta' in f && f.meta === 'wafer';
+
+test('categories take nested levels: add one, move it out a level, remove it back to one field', () => {
+  const { e, emitted } = editor({ id: 'n', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050, name: 'Vth' }, color: { none: true } } });
+  const add = e.el.querySelector('[data-wmap-plot-level-add]');
+  assert.equal(add.disabled, false);
+  click(add);
+  const two = emitted.at(-1).fields.x;
+  assert.ok(Array.isArray(two) && two.length === 2, 'a second level is added');
+  assert.deepEqual(two[0], { builtin: 'wafer' }, 'the first stays the outer level');
+  assert.ok(e.el.querySelector('[data-wmap-select="plot-x-2"]'), 'with its own field list');
+  // The second level's list does not offer the field the first level already uses (this lot also has a lot field
+  // named Wafer, which is a different field and stays).
+  click(e.el.querySelector('[data-wmap-select="plot-x"]'));
+  const firstList = optionRows().filter(r => r.textContent === 'Wafer').length;
+  document.body.click();
+  click(e.el.querySelector('[data-wmap-select="plot-x-2"]'));
+  assert.equal(optionRows().filter(r => r.textContent === 'Wafer').length, firstList - (sameKind(two[1]) ? 0 : 1), 'the outer level’s field is not offered again');
+  document.body.click();
+
+  const outFirst = e.el.querySelector('[data-wmap-plot-level="out:0"]');
+  assert.equal(outFirst.disabled, true, 'the outer level cannot move further out');
+  click(e.el.querySelector('[data-wmap-plot-level="out:1"]'));
+  assert.deepEqual(emitted.at(-1).fields.x, [two[1], two[0]], 'moving the inner level out swaps them');
+  assert.equal(document.activeElement?.dataset.wmapPlotLevel, 'in:0', 'focus follows the level that moved');
+
+  click(e.el.querySelector('[data-wmap-plot-level="remove:0"]'));
+  assert.deepEqual(emitted.at(-1).fields.x, { builtin: 'wafer' }, 'one level left is written as a single field');
+  assert.ok(!e.el.querySelector('[data-wmap-plot-level="remove:0"]'), 'a single level has no move or remove buttons');
+});
+
+test('nested categories are kept aside for a chart that takes one X, and come back with the box', () => {
+  const nested = [{ builtin: 'wafer' }, { builtin: 'ring' }];
+  const { e, emitted } = editor({ id: 'n', chart: 'box', fields: { x: nested, y: { test: 1050, name: 'Vth' }, color: { none: true } } });
+  chooseMark(e, 'scatter');
+  assert.ok(!Array.isArray(emitted.at(-1).fields.x), 'a scatter has one X');
+  chooseMark(e, 'bar');
+  assert.deepEqual(emitted.at(-1).fields.x, nested, 'the levels come back');
+});
+
+test('a category holds only the colour groups it has values for: one group fills its slot, and widths match across', async () => {
+  const { categoryLayout } = await import('../dist/packages/canvas-adapter/charts/plotChart.js');
+  // A ring axis coloured by ring: each category has one group.
+  const one = categoryLayout([[0], [1], [2], [3]]);
+  assert.equal(one.width, 0.8, 'one mark per category takes the whole band');
+  assert.ok(Math.abs(one.left(1, 1) - 0.1) < 1e-12);
+  assert.equal(one.left(1, 0), undefined, 'no place for a group with no values here');
+  assert.equal(one.groupAt(1, 0.5), 1);
+  assert.equal(one.groupAt(1, 0.05), undefined, 'outside the band is no mark');
+  // Two groups in one category and one in the next: the same width, the lone mark centred.
+  const mixed = categoryLayout([[0, 1], [1]]);
+  assert.equal(mixed.width, 0.4);
+  assert.equal(mixed.left(0, 1), 0.5);
+  assert.ok(Math.abs(mixed.left(1, 1) - 0.3) < 1e-12);
+  assert.equal(mixed.groupAt(0, 0.2), 0);
+  assert.equal(categoryLayout([[], []]).groupAt(0, 0.5), undefined, 'an empty category hits nothing');
+});
+
+test('the group comparison panel: tests ranked, a row picks the test, a control adds contrasts, a CSV is offered', async () => {
+  const { renderGroupComparisonPanel } = await import('../dist/packages/canvas-adapter/charts/groupComparison.js');
+  const defs = [{ testNumber: 1, name: 'Shifted', unit: 'V' }, { testNumber: 2, name: 'Flat', unit: 'V' }];
+  const dies = (a, b) => Array.from({ length: 5 }, (_, k) => ({ x: k, y: 0, hbin: 1, testValues: { 1: a + k * 0.001, 2: b + k * 0.001 } }));
+  const groups = [
+    { key: 'POR', items: [{ dies: dies(1.0, 1) }, { dies: dies(1.01, 1.02) }, { dies: dies(0.99, 0.98) }] },
+    { key: 'NEW', items: [{ dies: dies(1.5, 1.01) }, { dies: dies(1.51, 0.99) }, { dies: dies(1.49, 1) }] },
+  ];
+  const picked = [], controls = [], saved = [];
+  const panel = renderGroupComparisonPanel({
+    groups, testDefs: defs, groupLabelText: 'Split', control: null,
+    onControlChange: c => controls.push(c), onSelectTest: n => picked.push(n), onSaveText: (t, name) => saved.push(name), ownerDocument: document,
+  });
+  document.getElementById('root').replaceChildren(panel.card);
+  const names = [...panel.card.querySelectorAll('[data-wmap-compare-test]')].map(b => b.textContent);
+  assert.deepEqual(names, ['Shifted', 'Flat'], 'the test that differs first');
+  assert.match(panel.card.textContent, /n is wafers \(NEW 3, POR 3\)/);
+  click(panel.card.querySelector('[data-wmap-compare-test="1"]'));
+  assert.deepEqual(picked, [1]);
+  assert.equal(panel.card.querySelector('tr[aria-current="true"] [data-wmap-compare-test]').textContent, 'Shifted');
+  pick(panel.card, 'compare-control', 'Control: POR');
+  assert.deepEqual(controls, ['POR']);
+  click([...panel.card.querySelectorAll('button')].find(b => b.textContent === 'Comparison CSV'));
+  assert.deepEqual(saved, ['group-comparison.csv']);
+  assert.equal(panel.card.querySelector('button[aria-label="Save as PNG"]'), null, 'a table offers its CSV, not an empty PNG');
+
+  const withControl = renderGroupComparisonPanel({ groups, testDefs: defs, groupLabelText: 'Split', control: 'POR', onControlChange: () => {}, onSelectTest: () => {}, ownerDocument: document });
+  assert.match(withControl.card.textContent, /POR \(control\)/);
+  assert.match(withControl.card.textContent, /\(\+\d.*, p (< )?0\.\d+\)/, 'NEW’s cell carries its difference from POR');
+
+  const lone = renderGroupComparisonPanel({ groups: [groups[0]], testDefs: defs, groupLabelText: 'Split', control: null, onControlChange: () => {}, onSelectTest: () => {}, ownerDocument: document });
+  assert.match(lone.card.textContent, /Needs two or more split groups/);
+});
+
+test('a faceted plot draws a panel per value under one statement and legend; Panels in the editor sets the field', async () => {
+  const { renderPlotChart } = await import('../dist/packages/canvas-adapter/charts/plotChart.js');
+  const { resolvePlot } = await import('../dist/packages/stats/plotData.js');
+  const { items } = lotItems();
+  const plotItems = items.map((it, i) => ({ label: it.label, dies: it.dies, waferIndex: i, wafer: it.wafer, metadata: it.wafer.metadata, passBins: [1], ringCount: it.ringCount }));
+  const r = resolvePlot({ id: 'f', chart: 'scatter', fields: { x: { test: 1050 }, y: { test: 1060 }, facet: { meta: 'split' } } }, plotItems, { testDefs: DEFS });
+  assert.deepEqual(r.issues, []);
+  const chart = renderPlotChart({ ownerDocument: document, waferLabel: i => plotItems[i].label });
+  document.getElementById('root').replaceChildren(chart.card);
+  chart.setPlot(r);
+  const panels = [...chart.card.querySelectorAll('[data-wmap-plot-panel]')];
+  assert.deepEqual(panels.map(p => p.dataset.wmapChartTitle), ['FF', 'TT']);
+  for (const p of panels) assert.equal(p.querySelector('button[aria-label="Save as PNG"]'), null, 'a panel is saved with its grid');
+  assert.ok(chart.card.querySelector(':scope > * button[aria-label="Save as PNG"]') || chart.card.querySelector('button[aria-label="Save as PNG"]'), 'the grid has one');
+  assert.match(chart.card.textContent, /2 panels by split, on shared axes/);
+  assert.equal(panels.filter(p => /panels by/.test(p.textContent)).length, 0, 'a panel states only its own population');
+  // As tall as its grid, and across the whole row of a grid of cards; a plain plot on the same card goes back.
+  assert.equal(chart.card.style.flex, '0 0 auto');
+  assert.equal(chart.card.style.gridColumn, '1 / -1');
+  chart.setPlot(resolvePlot({ id: 'g', chart: 'scatter', fields: { x: { test: 1050 }, y: { test: 1060 } } }, plotItems, { testDefs: DEFS }));
+  assert.equal(chart.card.style.gridColumn, '');
+  assert.equal(chart.card.style.flex, '1 1 0px');
+  chart.destroy();
+
+  const { e, emitted } = editor({ id: 'p', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050, name: 'Vth' }, color: { none: true } } });
+  click(e.el.querySelector('[data-wmap-select="plot-facet"]'));
+  const offered = optionRows().map(r => r.textContent);
+  assert.ok(offered.includes('Ring'), 'a category');
+  assert.ok(!offered.includes('Die X'), 'a continuous field cannot make panels');
+  document.body.click();
+  pick(e.el, 'plot-facet', 'Ring');
+  assert.deepEqual(emitted.at(-1).fields.facet, { builtin: 'ring' });
+  pick(e.el, 'plot-facet', 'None: one plot');
+  assert.equal('facet' in emitted.at(-1).fields, false);
 });
 
 test('replacing the list tells the host which sweeps it still supplies were dropped, as removing one does', () => {

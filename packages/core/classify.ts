@@ -23,6 +23,21 @@ export function ringOf(dx: number, dy: number, radius: number, ringCount: number
   return Math.min(ringCount, Math.max(1, Math.floor(normalized * ringCount) + 1));
 }
 
+/**
+ * A die's offset from the wafer centre, in the wafer's own units, from its physical position (which follows the
+ * wafer's orientation, not the view's rotation). The one source of every radial and angular rule: ring, quadrant and
+ * radial position all read it.
+ */
+export function centreOffset(die: PositionedDie, wafer: Wafer): { dx: number; dy: number } {
+  return { dx: die.physX - wafer.center.x, dy: die.physY - wafer.center.y };
+}
+
+/** A die's distance from the wafer centre as a share of the wafer radius: 0 at the centre, 1 at the edge. */
+export function radialPosition(die: PositionedDie, wafer: Wafer): number {
+  const { dx, dy } = centreOffset(die, wafer);
+  return Math.sqrt(dx * dx + dy * dy) / wafer.radius;
+}
+
 const QUADRANT_BY_QUARTER: readonly Quadrant[] = ['NE', 'NW', 'SW', 'SE'];
 
 /**
@@ -41,8 +56,7 @@ const QUADRANT_BY_QUARTER: readonly Quadrant[] = ['NE', 'NW', 'SW', 'SE'];
  */
 export function classifyDie(die: PositionedDie, wafer: Wafer, options: ClassifyOptions): DieClassification {
   const ringCount = Math.max(1, requireRingCount(options, 'classifyDie'));
-  const dx = die.physX - wafer.center.x;
-  const dy = die.physY - wafer.center.y;
+  const { dx, dy } = centreOffset(die, wafer);
   const ring = ringOf(dx, dy, wafer.radius, ringCount);
 
   // A quarter turn each, counter-clockwise from east, including its starting edge and not its end, as the

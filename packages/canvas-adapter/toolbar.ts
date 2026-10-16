@@ -171,8 +171,10 @@ export function wireControlHover(el: HTMLElement, kind: ControlKind = 'outlined'
   // site may still be assigning styles when it wires this up.
   let resting: { background: string; color: string } | null = null;
 
+  // A control selected while under the pointer (a segment just clicked) is painted as selected by its call site, and
+  // putting back the look captured on entry would paint it unselected again.
   const restore = () => {
-    if (!resting) return;
+    if (!resting || el.dataset.on === 'true') return;
     el.style.background = resting.background;
     el.style.color      = resting.color;
   };

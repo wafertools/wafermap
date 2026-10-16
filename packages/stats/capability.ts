@@ -119,8 +119,9 @@ interface CapabilityDefs {
 /** The limits capability is judged against, and which kind they are. */
 interface CapabilityLimits { lsl: number; usl: number; basis: 'spec' | 'test' }
 
-/** Spec limits when both are given, else the test limits when both are, else none. */
-function capabilityLimits(def: TestDef): CapabilityLimits | undefined {
+/** Spec limits when both are given, else the test limits when both are, else none. The plot builder's
+ *  normalisation to limits uses the same rule, so a plot and the capability chart place a test alike. */
+export function capabilityLimits(def: TestDef): CapabilityLimits | undefined {
   if (def.specLow !== undefined && def.specHigh !== undefined && def.specHigh > def.specLow) {
     return { lsl: def.specLow, usl: def.specHigh, basis: 'spec' };
   }

@@ -11,7 +11,7 @@ import { requireRingCount } from '../core/ringCount.js';
 import { hasPosition } from '../core/dies.js';
 import type { Die } from '../core/dies.js';
 import type { Wafer, WaferReticle } from '../core/wafer.js';
-import { getRingLabel } from '../core/classify.js';
+import { getRingLabel, radialPosition } from '../core/classify.js';
 
 export const DIE_REGION_KEYS = ['ring', 'quadrant', 'reticleCell', 'reticleShot'] as const;
 export type DieRegionKey = (typeof DIE_REGION_KEYS)[number];
@@ -53,6 +53,12 @@ export interface DieRegionDef {
 /** The wafer geometry a physical region needs: a die with a position in millimetres, on a wafer that knows its centre. */
 function physical(d: Die, ctx: RegionContext): boolean {
   return !!ctx.wafer && hasPosition(d) && d.physX !== undefined && d.physY !== undefined;
+}
+
+/** A die's distance from the centre as a share of the wafer radius (ring 1 of 4 is 0–0.25), or undefined when it cannot be placed. */
+export function dieRadialPosition(d: Die, ctx: { wafer?: Wafer }): number | undefined {
+  return ctx.wafer && hasPosition(d) && d.physX !== undefined && d.physY !== undefined
+    ? radialPosition(d as Parameters<typeof radialPosition>[0], ctx.wafer) : undefined;
 }
 
 /** The die's ring and quadrant, or undefined when it cannot be placed on this wafer. */

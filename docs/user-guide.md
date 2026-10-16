@@ -770,6 +770,14 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   ring/quadrant regional yield, and with a reticle set a **Reticle cell yield** grid: the stepper field drawn as its cells (row 0 at
   the bottom), each filled by the yield of that position pooled over every field on every wafer and labelled with it. Hover a cell
   for its dies, click it to chart or tabulate them. A cell that is low in all of them points at the mask rather than the wafer.
+
+  With four or more wafers and wafer fields to compare (lot, split, date, probe card…), **What divides yield** ranks
+  every field by how clearly its groups differ in yield and in the rate of each of the five most common fail bins. Each
+  wafer is one value, as in the split comparison, so n is wafers; rows are ranked by q (Welch's p adjusted for every
+  comparison in the table). A row names the worst and best groups with their mean over their wafers and the spread in
+  percentage points; **Group by** groups the whole tab by that field. A low q says the groups differ by more than
+  wafer-to-wafer noise, not why. The card also names fields it could not compare (every wafer its own value) and fields
+  that group the wafers identically, which no ranking can tell apart (a lot and its test date).
 - **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
   lower and upper limit — spec limits where given, otherwise test limits; tests
   without both still appear, normalized
@@ -780,6 +788,18 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   a cassette only reads in the physical sequence, so there is no sort control
   to destroy it. Clicking a capability box drives the box plot, histogram and
   trend onto that same test automatically.
+
+  With **Group by** on (a split, a lot), a **Comparison by** table comes first: every measured test compared across the
+  groups, ranked so the tests that moved are at the top. Each wafer counts once, as the mean of its dies, because dies
+  on one wafer share its processing: counted die by die, a difference no bigger than one wafer's offset would look
+  certain. So n is the number of wafers, and with two or three a group, many differences honestly come out
+  inconclusive. For each test the table gives each group's mean, **Welch p** (Welch's ANOVA, or Welch's t for two
+  groups: do the means differ, without assuming equal spreads), **Rank p** (Kruskal–Wallis, the same question on ranks,
+  which one odd wafer cannot drive; approximate with fewer than five wafers a group), **q** (Welch p adjusted for how
+  many tests were compared, Benjamini–Hochberg; the table is sorted by it), and the **largest shift** in wafer-to-wafer
+  standard deviations and as a share of the limit window. Choose a **Control** (the process of record) and each other
+  group's cell adds its difference from the control with a Holm-adjusted p. Click a test to show it in the panels below.
+  **Comparison CSV** saves the table. Narrowing **Show** to one group leaves nothing to compare, so the table is not shown.
 
   The box plot, histogram, trend and the Correlation tab's scatter draw the
   test's limits as dashed lines. A test can have two kinds: **test limits**
@@ -923,8 +943,8 @@ The **Plot** sub-tab is where you build your own charts. **+ New plot** starts o
 already filled in with the first two tests of the lot, and opens it beside a large
 copy of the chart. **Add examples** draws one plot of each chart type the lot can
 show (a scatter of the first two tests, a histogram, a box, a bar of yield by the
-first lot field that divides the wafers, a line over wafer order, and a sweep of the
-first tests in test order), to start from
+first lot field that divides the wafers, a line over wafer order, a probability plot
+of the first test, and a sweep of the first tests in test order), to start from
 or to see what each type is for; pressing it again adds only what is missing. Every change you make there is drawn at once; there is no Apply
 button, and the plot is kept as you go.
 
@@ -945,6 +965,7 @@ In **Setup**, choose the **chart type**, then the field for each role:
 | **Box** | quartiles, with whiskers to the minimum and maximum, for each category | categories (wafer by default), values |
 | **Bar** | one aggregated value for each category (or a count) | categories, values (optional), how to combine them |
 | **Line** | one aggregated value at each X, joined | X, Y, how to combine them |
+| **Probability** | the share of values at or below each value, one curve per colour | the values |
 
 - **X axis** and **Y axis** (a histogram has one **Values** field; a box or bar has
   **Categories** instead of a numeric X). Any measured test, a die's X or Y position,
@@ -966,6 +987,58 @@ In **Setup**, choose the **chart type**, then the field for each role:
   the title states its range). **Follow Group by** (the default) takes the colours from
   the Group by control above, so changing it recolours every plot that follows it;
   **None** draws one colour.
+- **Several tests** (box, bar, line and histogram): choose **Several tests…** at the top of the values list, then type
+  the tests in the **Tests** box beneath it, as numbers or ranges (`1050, 1060..1080`, a range taking the tests declared
+  between its ends). A box or bar puts one box per test along X; with wafer, split or ring as the categories instead,
+  the colour tells the tests apart. This is how the Process capability chart's view, every test side by side, is made
+  for your own choice of tests, by split or by wafer. Tests in different units cannot share an axis as measured, so the
+  plot asks you to rescale them.
+- **Probability** plots each group's values in order against the share of the group at or below them, at
+  (rank − ½) / n, so 50% is the median. On the default **normal-probability** axis a normal distribution is a
+  straight line and the tails are spread out: a shifted split is a curve moved sideways, a wider one a flatter curve,
+  and outliers or a second population show as a bend or a kink at the ends. Choose **Linear** under Customise ›
+  **Share axis** for a plain 0 to 100% axis. Limits are drawn on the values axis. Hover a point for its die, its rank in
+  its group and where that rank is plotted; click it to open its wafer; drag a box to take every die inside it to the drilldown menu (a curve of many
+  dies draws a sample of its middle, but all of both tails, and a drag still takes every die).
+- **Radial position**, a die field: a die's distance from the wafer centre as a percentage of the radius, 0 at the
+  centre and 100 at the edge. The rings are bands of it (with four rings, ring 4 is 75–100%), so a scatter of a test
+  against radial position shows an edge roll-off the ring chart only buckets.
+- **Order** and **Show the first** (box and bar, one category field): *Largest first* sorts the categories by value (a
+  box by its median); *Show the first* keeps that many and counts the rest in a note.
+- **Colours** (bar): *Stacked* puts a category's colours one on another, *100%* shows each as its share of the
+  category. Stacking adds values, so it needs a count or a sum; a mean or a yield is refused with the reason.
+- **Cumulative line** (a bar sorted largest first, of counts or sums): each category's running share of the whole, on
+  its own 0–100% axis at the right. A bar of hard bins with it is a bin pareto; with Show the first, the line still
+  counts every category.
+- **PAT** (part average testing), a die field: each die's verdict under dynamic PAT, per wafer. For every test with both
+  a low and a high limit, the wafer's PAT limits are the median ± 6 robust standard deviations ((Q3 − Q1) / 1.35) of
+  its passing dies' values, never wider than the test's own limits (spec limits where it has both). A die is
+  **Within PAT limits**, a **PAT outlier** (it passes every limit but is outside PAT limits on at least one test: the
+  dies PAT would reject), or **Fails (bin or limits)** (already rejected, so not counted as a PAT outlier). A test with
+  fewer than 30 passing values on a wafer, or no spread, does not judge that wafer's dies. Use it as the colour, the
+  categories (a bar counts outliers per wafer) or the panels. A plot of one wafer, a panel per wafer included, also
+  draws that wafer's PAT limits as dotted lines labelled *PAT lo* / *PAT hi*; a plot of several wafers has several sets
+  and draws none. The limits are always the whole wafer's, even in a panel of one ring.
+- **Panels**: one small plot per value of a category field, laid out like the gallery's cards, on shared axes and
+  colours with one legend and one statement above them. A wafer field (split, lot) gives each panel its whole wafers; a
+  die field (ring, site, bin) the dies with that value from every wafer; **Test**, with several tests as the values,
+  one test a panel. So "one scatter per split" or "a histogram per ring" is one plot. Rescaled values are measured over
+  the whole population, so a panel is not re-centred on itself and panels compare. Each panel has its own Expand, and
+  the plot's Save as PNG saves the whole grid. At most 24 panels; a field on the X axis or the colour cannot also make
+  the panels.
+- **Wafer-level comparison** (box and bar of one measured test): when the categories or the colour are a wafer field
+  such as split or lot, the line under the plot adds the comparison of those groups with each wafer as one value, as
+  the Distributions table does: the wafers in each group, Welch p and rank p.
+- **Nested categories** (box and bar): **+ Add a level** under Categories divides each category by another field, so
+  Test then Ring gives one box per ring within each test, and the colour is still free for split. The first level is
+  the outer groups, labelled in a row beneath the axis with a line between groups; the last level's values are at the
+  ticks. Move a level out or in with its **↑** and **↓** buttons, or remove it with **×**. Up to three levels.
+- **Rescale values** (box, bar, line and histogram of measured tests), each test on its own: **To limits** puts the low
+  limit at 0 and the high one at 1 (spec limits where a test has both, its test limits otherwise, as in Process
+  capability), so a value near 0 or 1 is near a limit whatever the test measures; **z-score** counts standard deviations
+  from the mean of the values in view; **Robust z** does the same from the median, with the spread taken from the median
+  absolute deviation, so a few outliers do not set the scale. A test that cannot be rescaled (no limits, or every value
+  the same) is left out and named under the plot. The footnote says how the values were rescaled.
 - **Combine values by** (bar and line, and any plot with one mark per wafer): mean,
   median, minimum, maximum, sum or count. **Pooled yield** is offered for Yield: it is
   the passing dies over the judged dies of all the wafers in a bar, not an average of
@@ -992,7 +1065,7 @@ negative) and **reverse direction**. A histogram also has a number of **bins**. 
 
 When a plotted test has limits they are drawn as dashed lines on the axis that measures it (a histogram's values, a scatter's X or
 Y, a box, bar or line's values when they are measured values or their mean, median, minimum or maximum): short dashes for the
-test's own limits, long for its specification limits, each labelled with its value. The axis widens to include them when that
+test's own limits, long for its specification limits, dots for a single wafer's PAT limits, each labelled with its value. The axis widens to include them when that
 leaves the data at least a third of it, as in Insights, and a limit off the edge is marked there instead of vanishing. Choose
 which are drawn under **Limits** in Customise. Where the wafers in view disagree about a test's limits none are drawn, as in
 Insights: the reconciled test list drops conflicting limits.

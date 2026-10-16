@@ -903,6 +903,9 @@ export interface CardShell {
   body: HTMLElement;
   /** What the card's Save as PNG adds under the title, besides the canvas (a caption, a legend). Read at the moment of saving. */
   setPngDecor(read: () => PngDecor | undefined): void;
+  /** The canvas Save as PNG saves, made at the moment of saving, for a card that draws more than one (a grid of panels).
+   *  Absent = the card's first canvas. */
+  setPngCanvas(make: () => HTMLCanvasElement | null): void;
 }
 
 /**
@@ -1057,8 +1060,9 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   } as Partial<CSSStyleDeclaration>);
   wireControlHover(saveBtn);
   attachChartTip(saveBtn, card, headerTip, 'Save as PNG');
+  let pngCanvas: (() => HTMLCanvasElement | null) | undefined;
   saveBtn.addEventListener('click', () => {
-    const canvas = card.querySelector<HTMLCanvasElement>('canvas');
+    const canvas = pngCanvas ? pngCanvas() : card.querySelector<HTMLCanvasElement>('canvas');
     // The heading as it is now: a plot's title follows its fields, so the file is named for what is on screen.
     // Saved under its title, with what the card says around the canvas: a bare canvas is marks with no name.
     if (canvas) saveCanvasPng(canvas, heading.textContent || title, onSaveImage, { card, title: heading.textContent || title, decor: decorFor(card) });
@@ -1123,7 +1127,7 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   Object.assign(body.style, { overflowX: 'hidden', overflowY: 'hidden', minHeight: '0', flex: '1', position: 'relative' } as Partial<CSSStyleDeclaration>);
   card.appendChild(body);
 
-  return { card, heading, controlsRow, body, setPngDecor: read => { decorOf.set(card, read); } };
+  return { card, heading, controlsRow, body, setPngDecor: read => { decorOf.set(card, read); }, setPngCanvas: make => { pngCanvas = make; } };
 }
 
 // ── Segmented control ────────────────────────────────────────────────────────
@@ -1924,7 +1928,8 @@ export interface AxisPrefs {
 // a chart showing both must never let one be read as the other, so each kind has
 // its own label and its own dash pattern — never colour alone.
 
-export type LimitKind = 'test' | 'spec';
+/** `pat`: one wafer's part-average-testing limits (stats/pat.ts), drawn only on a plot of that wafer. */
+export type LimitKind = 'test' | 'spec' | 'pat';
 /** The Insights "Limits" choice. */
 export type LimitsShown = 'test' | 'spec' | 'both' | 'none';
 
@@ -1939,12 +1944,14 @@ export interface LimitLine {
 export const LIMIT_LABEL: Readonly<Record<LimitKind, { lo: string; hi: string }>> = {
   test: { lo: 'Lo limit', hi: 'Hi limit' },
   spec: { lo: 'LSL', hi: 'USL' },
+  pat: { lo: 'PAT lo', hi: 'PAT hi' },
 };
 
-/** Canvas dash pattern per kind: short dashes for test limits, long for spec. */
+/** Canvas dash pattern per kind: short dashes for test limits, long for spec, dots for PAT. */
 export const LIMIT_DASH: Readonly<Record<LimitKind, number[]>> = {
   test: [3, 3],
   spec: [10, 4],
+  pat: [1, 3],
 };
 
 export const LIMITS_SHOWN_OPTIONS: ReadonlyArray<{ value: LimitsShown; label: string }> = [
@@ -1954,10 +1961,10 @@ export const LIMITS_SHOWN_OPTIONS: ReadonlyArray<{ value: LimitsShown; label: st
   { value: 'none', label: 'None' },
 ];
 
-type LimitSource = { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number } | undefined;
+type LimitSource = { limitLow?: number; limitHigh?: number; specLow?: number; specHigh?: number; patLow?: number; patHigh?: number } | undefined;
 
 function linesOfKind(def: LimitSource, kind: LimitKind): LimitLine[] {
-  const [lo, hi] = kind === 'test' ? [def?.limitLow, def?.limitHigh] : [def?.specLow, def?.specHigh];
+  const [lo, hi] = kind === 'test' ? [def?.limitLow, def?.limitHigh] : kind === 'spec' ? [def?.specLow, def?.specHigh] : [def?.patLow, def?.patHigh];
   const out: LimitLine[] = [];
   if (lo !== undefined && Number.isFinite(lo)) out.push({ value: lo, kind, end: 'lo', label: LIMIT_LABEL[kind].lo });
   if (hi !== undefined && Number.isFinite(hi)) out.push({ value: hi, kind, end: 'hi', label: LIMIT_LABEL[kind].hi });
@@ -1983,7 +1990,8 @@ export function limitLines(def: LimitSource, shown: LimitsShown = 'both'): Limit
   const test = linesOfKind(def, 'test');
   const spec = linesOfKind(def, 'spec');
   const chosen = shown === 'test' ? test : shown === 'spec' ? spec : [...test, ...spec];
-  return chosen.length ? chosen : [...test, ...spec];
+  // PAT limits are a screen within the test's limits, not a choice between kinds: drawn whenever limits are.
+  return [...(chosen.length ? chosen : [...test, ...spec]), ...linesOfKind(def, 'pat')];
 }
 
 /** The span the lines cover, for axis-range decisions. */

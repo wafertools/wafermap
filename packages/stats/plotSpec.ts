@@ -28,10 +28,10 @@ export const SWEEPS_FORMAT = 'tsmap-sweeps';
 /** A sweep's own definition: a `SweepSpec` without the `id` and `title` the plot already carries. */
 export type SweepPayload = Omit<SweepSpec, 'id' | 'title'>;
 
-export const PLOT_CHARTS = ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep'] as const;
+export const PLOT_CHARTS = ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep', 'probability'] as const;
 export type PlotChart = (typeof PLOT_CHARTS)[number];
 
-export const PLOT_BUILTINS = ['wafer', 'x', 'y', 'ring', 'quadrant', 'reticleCell', 'reticleShot', 'hbin', 'sbin', 'site', 'yield', 'dieCount', 'waferOrder'] as const;
+export const PLOT_BUILTINS = ['wafer', 'x', 'y', 'ring', 'quadrant', 'reticleCell', 'reticleShot', 'hbin', 'sbin', 'site', 'yield', 'dieCount', 'waferOrder', 'test', 'pat', 'radius'] as const;
 export type PlotBuiltin = (typeof PLOT_BUILTINS)[number];
 
 /** A series a plot can put on an axis or use for colour. */
@@ -41,7 +41,16 @@ export type PlotField =
   | { test: number; name?: string }
   | { builtin: PlotBuiltin }
   /** A wafer or lot metadata key (split, slot, temperature…). */
-  | { meta: string };
+  | { meta: string }
+  /**
+   * Several measured tests read as one series of values, each value labelled with its test: the Y of a box, bar, line
+   * or histogram, divided by the `test` builtin on X or Colour. Entries are test numbers or ranges such as
+   * `"1010..1030"`, the syntax a sweep's tests use. `names` holds the name each test had when the plot was made, the
+   * same check a single test's `name` is.
+   */
+  | PlotTestSet;
+
+export interface PlotTestSet { tests: Array<number | string>; names?: Record<string, string> }
 
 export interface PlotAxis {
   /** Replaces the automatic axis title. Absent = automatic. */
@@ -60,6 +69,17 @@ export type PlotLimits = (typeof PLOT_LIMITS)[number];
 
 export type PlotColor = PlotField | { follow: 'groupBy' } | { none: true };
 
+export const PLOT_NORMALIZE = ['limits', 'zscore', 'robust'] as const;
+/**
+ * How a measured test's values are rescaled before they are drawn, each test on its own:
+ *   - `limits`: 0 at the low limit, 1 at the high one (spec limits when the test has both, else test limits), as the
+ *     capability chart draws them. A test without both limits cannot be placed and is left out.
+ *   - `zscore`: standard deviations from the mean of the values in view.
+ *   - `robust`: the same from the median, with the spread read from the median absolute deviation (×1.4826), so a few
+ *     outliers do not set the scale.
+ */
+export type PlotNormalize = (typeof PLOT_NORMALIZE)[number];
+
 export interface PlotSpec {
   /** Stable, generated once, never reused; survives rename and reorder. */
   id: string;
@@ -69,10 +89,20 @@ export interface PlotSpec {
   chart: PlotChart;
   /** Which field stands for each role. Absent for a sweep, which names runs of tests instead. */
   fields?: {
-    x?: PlotField;
+    /**
+     * A box or bar may take a list, outer level first: one category per combination of their values, drawn as a nested
+     * axis (test, then ring within each test). Every other chart takes one field.
+     */
+    x?: PlotField | PlotField[];
     y?: PlotField;
     /** Absent = follow the tab's Group by. */
     color?: PlotColor;
+    /**
+     * One panel per value of this category field, each drawing the plot over that part of the population, on shared
+     * axes and colours: a wafer field (split, lot) takes whole wafers, a die field (ring, site) the dies in it, and Test,
+     * with a set of tests on Y, one test per panel. Absent = one plot.
+     */
+    facet?: PlotField;
   };
   /** The unit one mark stands for. Absent = the finest level the X and Y fields allow. */
   level?: 'die' | 'wafer';
@@ -83,6 +113,23 @@ export interface PlotSpec {
   bins?: number;
   /** Which of a plotted test's limits are drawn: `test` limits, `spec` limits (LSL/USL), `both` or `none`. Absent = both. */
   limits?: PlotLimits;
+  /**
+   * A probability plot's vertical axis: `normal` spaces the cumulative share by the normal quantile, so a normal
+   * distribution is a straight line and its tails are spread out; `linear` is the plain cumulative share, 0 to 100%.
+   * Absent = normal.
+   */
+  probabilityAxis?: 'normal' | 'linear';
+  /** A bar's colours stacked into one bar per category (`stack`), or each as its share of the category (`percent`).
+   *  Only for counts and sums, which add up. Absent = side by side. */
+  stack?: 'stack' | 'percent';
+  /** Categories in order of their value, largest first (a box by its median). Absent = the field's own order. */
+  sort?: 'value';
+  /** Only the first this many categories, after sorting; the rest are counted in a note. Absent = all. */
+  top?: number;
+  /** A cumulative-percentage line over a value-sorted bar of counts or sums: a pareto chart. */
+  cumulative?: boolean;
+  /** Rescale the measured values on Y, each test on its own. Absent = the values as measured. */
+  normalize?: PlotNormalize;
   /** The definition of a `sweep` chart: ordered runs of tests read as curves. Such a plot has no `fields`. */
   sweep?: SweepPayload;
 }
@@ -97,20 +144,36 @@ export interface ReadPlotsResult {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const RANGE_TEXT = /^\s*\d+\s*(\.\.\s*\d+\s*)?$/;
+const isTestEntry = (v: unknown): boolean => (typeof v === 'number' && Number.isInteger(v)) || (typeof v === 'string' && RANGE_TEXT.test(v));
+
+/** Most panels a faceted plot draws. */
+export const PLOT_FACET_LIMIT = 24;
+
+/** Most levels a nested X takes. */
+export const PLOT_X_LEVELS = 3;
+
+/** The X field or fields of a plot as a list, outer first; empty when it has none. */
+export const xFieldsOf = (x: PlotField | PlotField[] | undefined): PlotField[] => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
 
 /** Two fields name the same series. */
 export function sameField(a: PlotField | undefined, b: PlotField | undefined): boolean {
   if (!a || !b) return a === b;
   if ('test' in a) return 'test' in b && a.test === b.test;
   if ('builtin' in a) return 'builtin' in b && a.builtin === b.builtin;
+  if ('tests' in a) return 'tests' in b && a.tests.length === b.tests.length && a.tests.every((t, i) => String(t) === String(b.tests[i]));
   return 'meta' in b && a.meta === b.meta;
 }
+
+/** A field that names several tests. */
+export const isTestSet = (f: unknown): f is PlotTestSet => isObject(f) && 'tests' in f && Array.isArray(f.tests);
 
 export function isField(v: unknown): v is PlotField {
   if (!isObject(v)) return false;
   if ('test' in v) return Number.isInteger(v.test);
   if ('builtin' in v) return (PLOT_BUILTINS as readonly unknown[]).includes(v.builtin);
   if ('meta' in v) return typeof v.meta === 'string' && v.meta !== '';
+  if ('tests' in v) return Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isTestEntry);
   return false;
 }
 
@@ -136,6 +199,14 @@ function readField(raw: unknown, where: string, warnings: string[]): PlotField |
     if (typeof raw.meta !== 'string' || raw.meta === '') { warnings.push(`${where}: metadata key is empty, left out`); return undefined; }
     return { ...raw, meta: raw.meta } as unknown as PlotField;
   }
+  if ('tests' in raw) {
+    if (!Array.isArray(raw.tests) || raw.tests.length === 0 || !raw.tests.every(isTestEntry)) {
+      warnings.push(`${where}: its tests must be test numbers or ranges such as "1010..1030", left out`); return undefined;
+    }
+    const out: Record<string, unknown> = { ...raw, tests: raw.tests };
+    if ('names' in raw && !(isObject(raw.names) && Object.values(raw.names).every(v => typeof v === 'string'))) { warnings.push(`${where}.names: not a list of names, left out`); delete out.names; }
+    return out as unknown as PlotField;
+  }
   return raw as unknown as PlotField; // a kind from a newer build
 }
 
@@ -152,8 +223,6 @@ function readAxis(raw: unknown, where: string, warnings: string[]): PlotAxis | u
   return out;
 }
 
-const RANGE_TEXT = /^\s*\d+\s*(\.\.\s*\d+\s*)?$/;
-const isTestEntry = (v: unknown): boolean => (typeof v === 'number' && Number.isInteger(v)) || (typeof v === 'string' && RANGE_TEXT.test(v));
 
 /**
  * A sweep's definition from parsed JSON. Lenient like the rest of the file: a series that cannot be read is named and
@@ -222,8 +291,17 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
   if (raw.fields !== undefined && !isObject(raw.fields)) warnings.push(`${where}.fields: not an object, left empty`);
   const fields: Record<string, unknown> = { ...enc };
   for (const role of ['x', 'y'] as const) {
+    if (role === 'x' && Array.isArray(enc.x)) {
+      const levels = enc.x.map((raw, i) => readField(raw, `${where}.fields.x ${i + 1}`, warnings)).filter((f): f is PlotField => !!f);
+      if (levels.length) fields.x = levels; else delete fields.x;
+      continue;
+    }
     const f = readField(enc[role], `${where}.fields.${role}`, warnings);
     if (f) fields[role] = f; else delete fields[role];
+  }
+  if (enc.facet !== undefined) {
+    const f = readField(enc.facet, `${where}.fields.facet`, warnings);
+    if (f) fields.facet = f; else delete fields.facet;
   }
   if (enc.color !== undefined) {
     const c = enc.color;
@@ -240,6 +318,16 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
   if ('level' in raw && raw.level !== 'die' && raw.level !== 'wafer') { warnings.push(`${where}.level: "${String(raw.level)}" is not die or wafer, left out`); delete out.level; }
   if ('aggregate' in raw && !(PLOT_AGGREGATES as readonly unknown[]).includes(raw.aggregate)) {
     warnings.push(`${where}.aggregate: "${String(raw.aggregate)}" is not known to this version, left out`); delete out.aggregate;
+  }
+  if ('stack' in raw && raw.stack !== 'stack' && raw.stack !== 'percent') { warnings.push(`${where}.stack: "${String(raw.stack)}" is not stack or percent, left out`); delete out.stack; }
+  if ('sort' in raw && raw.sort !== 'value') { warnings.push(`${where}.sort: "${String(raw.sort)}" is not known to this version, left out`); delete out.sort; }
+  if ('top' in raw && !(Number.isInteger(raw.top) && (raw.top as number) >= 1)) { warnings.push(`${where}.top: not a whole number of at least 1, left out`); delete out.top; }
+  if ('cumulative' in raw && typeof raw.cumulative !== 'boolean') { warnings.push(`${where}.cumulative: not true or false, left out`); delete out.cumulative; }
+  if ('probabilityAxis' in raw && raw.probabilityAxis !== 'normal' && raw.probabilityAxis !== 'linear') {
+    warnings.push(`${where}.probabilityAxis: "${String(raw.probabilityAxis)}" is not normal or linear, left out`); delete out.probabilityAxis;
+  }
+  if ('normalize' in raw && !(PLOT_NORMALIZE as readonly unknown[]).includes(raw.normalize)) {
+    warnings.push(`${where}.normalize: "${String(raw.normalize)}" is not known to this version, left out`); delete out.normalize;
   }
   if ('limits' in raw && !(PLOT_LIMITS as readonly unknown[]).includes(raw.limits)) { warnings.push(`${where}.limits: "${String(raw.limits)}" is not both, test, spec or none, left out`); delete out.limits; }
   if ('bins' in raw && !(Number.isInteger(raw.bins) && (raw.bins as number) >= 1)) { warnings.push(`${where}.bins: not a whole number of at least 1, left out`); delete out.bins; }
@@ -342,7 +430,7 @@ export function addPlots(existing: readonly PlotSpec[], incoming: readonly PlotS
 export function plotIssue(plot: PlotSpec): string | undefined {
   if (!(PLOT_CHARTS as readonly unknown[]).includes(plot.chart)) return 'Needs a newer version of this tool';
   const given = plot.fields ?? {};
-  for (const f of [given.x, given.y, given.color]) {
+  for (const f of [...xFieldsOf(given.x), given.y, given.color, given.facet]) {
     if (f === undefined || (isObject(f) && ('follow' in f || 'none' in f))) continue;
     if (!isField(f)) return 'Needs a newer version of this tool';
   }

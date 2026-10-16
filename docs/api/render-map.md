@@ -558,19 +558,27 @@ them as a file (`onSaveText` receives the export; `onPickPlotsFile` supplies the
 {
   id: 'plot-lq1x-0f3a-0',                   // generated once, never reused; survives rename and reorder
   title?: 'Vth vs Idsat',                    // only when the reader typed one; absent = an automatic title
-  chart: 'scatter' | 'histogram' | 'box' | 'bar' | 'line' | 'sweep',   // the kind of chart; a sweep has `sweep` (below) instead of `fields`
+  chart: 'scatter' | 'histogram' | 'box' | 'bar' | 'line' | 'probability' | 'sweep',   // a sweep has `sweep` (below) instead of `fields`
   fields: {
-    x?: Field, y?: Field,                    // a histogram reads y (or x) as its values; a box or bar's x is its categories (default wafer)
+    x?: Field | Field[], y?: Field,          // a histogram reads y (or x) as its values; a box or bar's x is its categories (default wafer),
+                                             // or up to 3 fields nested, outer first: one category per combination
     color?: Field | { follow: 'groupBy' } | { none: true },   // absent = follow the tab's Group by; a measured value or wafer figure
                                              // colours a scatter on a gradient, anything else is a category
+    facet?: Field,                           // one panel per value of this category field (at most 24), on shared axes and colours
   },
   level?: 'die' | 'wafer',                   // the unit one mark stands for; absent = the finest the fields allow
   aggregate?: 'mean' | 'median' | 'min' | 'max' | 'sum' | 'count' | 'yield',
   axes?: { x?: Axis, y?: Axis },             // Axis = { label?, scale?: 'linear' | 'log', min?, max?, reverse? }
   bins?: 16,
   limits?: 'both' | 'test' | 'spec' | 'none',   // which of a plotted test's limits are drawn; absent = both
+  normalize?: 'limits' | 'zscore' | 'robust',   // rescale the measured values on Y, each test on its own; absent = as measured
+  probabilityAxis?: 'normal' | 'linear',     // a probability plot's share axis; absent = normal
+  stack?: 'stack' | 'percent',               // a bar's colours stacked, or as shares of each category (counts and sums only)
+  sort?: 'value', top?: 10,                  // categories largest first (a box by median), and only the first `top`
+  cumulative?: true,                         // a pareto line over a value-sorted bar of counts or sums
 }
-// Field = { test: 1050, name?: 'Vth' } | { builtin: 'wafer' | 'x' | 'y' | 'ring' | 'quadrant' | 'hbin' | 'sbin' | 'site' | 'yield' | 'dieCount' | 'waferOrder' } | { meta: 'split' }
+// Field = { test: 1050, name?: 'Vth' } | { tests: [1050, '1060..1080'], names?: { 1050: 'Vth' } }
+//       | { builtin: 'wafer' | 'x' | 'y' | 'radius' | 'ring' | 'quadrant' | 'hbin' | 'sbin' | 'site' | 'yield' | 'dieCount' | 'waferOrder' | 'test' | 'pat' } | { meta: 'split' }
 ```
 
 Things that hold for every plot:
@@ -582,6 +590,33 @@ Things that hold for every plot:
   count of dies missing a value.
 - **One unit per mark.** With `level: 'wafer'`, die-level values are combined per wafer with `aggregate`, and a
   per-wafer field (yield) can be split by a per-die one (ring, hard bin) only in a bar of pooled yield or a line, which take the pass verdict per die; any other chart of it is reported, not drawn. A field that cannot be a role's value (a category as a scatter's Y) is reported with what to use instead, never thrown.
+- **Several tests in one plot.** `{ tests: [...] }` as the Y of a box, bar, line or histogram reads each named test
+  as its own series of values, and `{ builtin: 'test' }` on X or the colour tells them apart (a box or bar without an
+  X puts the tests along X; otherwise the colour is the test). Entries are test numbers or ranges such as
+  `"1010..1030"`, read as a sweep's tests are; `names` holds each test's name for the same check a single test has.
+  Tests in different units are refused until `normalize` puts them on one scale. A test the dies do not hold, or one
+  that cannot be rescaled (no limits to place it by, no spread), is left out and said to be.
+- **PAT.** `{ builtin: 'pat' }` is each die's dynamic-PAT verdict on its wafer (median ± 6 × IQR/1.35 of the passing
+  dies, per test with both limits, bounded by the test's limits): within, PAT outlier (passes its limits, outside PAT on
+  a test) or fails (its bin or a limit). A plot of one wafer carries that wafer's PAT limits on the test's axis.
+- **Panels.** `fields.facet` draws the plot once per value of a category field: a wafer field takes whole wafers, a die
+  field the dies with that value, `{ builtin: 'test' }` with a set of tests on Y one test per panel. The whole plot is
+  resolved first and fixes the colours, the axis ranges and the statement; each panel is drawn on them, and rescaling is
+  measured over the whole population.
+- **Probability plots.** `chart: 'probability'` reads its values as a histogram does (`y`, a test, a set, rescaled or
+  not) and draws each colour group's values in order at the share (rank − ½) / n, on a normal-quantile axis unless
+  `probabilityAxis: 'linear'`. One mark per wafer makes it a curve of wafer means.
+- **Nested categories.** A box or bar's `x` may be a list of up to three fields, outer first: one category per
+  combination of their values, drawn as a nested axis (the innermost values at the ticks, each outer level as a row of
+  labels spanning its groups, divided by lines). The order is the nesting. Each level orders its own values as a single
+  X would (a wafer in the population's order, a test in the set's, anything else naturally), and a unit with no value
+  at a level is counted against that level. A field can be one level only. Any other chart takes one X field; a reader
+  that does not know a level's field reports the plot as needing a newer version.
+- **Rescaling.** `normalize: 'limits'` places each test 0 at its low limit and 1 at its high one (spec limits when it
+  has both, else test limits, the capability chart's rule); `'zscore'` measures standard deviations from the mean of
+  the values in view, and `'robust'` the same from the median with 1.4826 × the median absolute deviation. The scale is
+  read from every die in view before values are combined, the axis carries no unit, and the footnote says what was
+  done. A limit line is drawn only where every test of the plot puts that limit at the same place.
 - **Grouping has three places.** The categories on an axis are the plot's X; the series within them are its colour;
   which wafers are in view is the tab's **Show**, and is not part of the plot.
 - **A plot this lot cannot draw is kept.** It is listed, dimmed, with the reason, and draws again on a lot that has

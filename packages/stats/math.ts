@@ -56,6 +56,36 @@ export function normalUpperTail(value: number): number {
   return 0.5 * complementaryErrorFunction(value / Math.SQRT2);
 }
 
+/**
+ * The standard normal quantile Φ⁻¹(p) for 0 < p < 1 (±Infinity at 0 and 1, NaN outside): Acklam's rational
+ * approximation, then one Halley step against `normalUpperTail`, which brings it to near machine precision in the
+ * tails a probability plot reads.
+ */
+export function normalQuantile(p: number): number {
+  if (!(p >= 0 && p <= 1)) return NaN;
+  if (p === 0) return -Infinity;
+  if (p === 1) return Infinity;
+  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.383577518672690e2, -3.066479806614716e1, 2.506628277459239];
+  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+  const lowTail = 0.02425;
+  let x: number;
+  if (p < lowTail || p > 1 - lowTail) {
+    const q = Math.sqrt(-2 * Math.log(p < lowTail ? p : 1 - p));
+    x = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+    if (p > 1 - lowTail) x = -x;
+  } else {
+    const q = p - 0.5, r = q * q;
+    x = (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  }
+  // One Halley step on e = Φ(x) − p, with Φ read from whichever tail p is in (Φ(x) = Q(−x)), so it stays exact where p
+  // or 1 − p is small.
+  const e = p < 0.5 ? normalUpperTail(-x) - p : (1 - p) - normalUpperTail(x);
+  const u = e * Math.sqrt(2 * Math.PI) * Math.exp((x * x) / 2);
+  return x - u / (1 + (x * u) / 2);
+}
+
 /** Two-sided p-value of a z statistic: the one rule every z-based test in the library reads its p from. */
 export function zPValue(z: number): number {
   return Math.min(1, 2 * normalUpperTail(Math.abs(z)));
@@ -151,6 +181,94 @@ export function benjaminiHochberg(pValues: readonly number[]): number[] {
     adjusted[i] = runningMin;
   }
   return adjusted;
+}
+
+/**
+ * Holm's step-down adjustment of a family of p-values: the family-wise error rule for a few comparisons against one
+ * control, where every one of them is read as a claim (BH, above, is for ranking many). Order of the input is kept.
+ */
+export function holm(pValues: readonly number[]): number[] {
+  const m = pValues.length;
+  const order = pValues.map((_, i) => i).sort((a, b) => pValues[a] - pValues[b]);
+  const adjusted = new Array<number>(m);
+  let runningMax = 0;
+  order.forEach((i, rank) => {
+    runningMax = Math.max(runningMax, Math.min(1, (m - rank) * pValues[i]));
+    adjusted[i] = runningMax;
+  });
+  return adjusted;
+}
+
+/**
+ * The regularised incomplete beta function I_x(a, b), by Lentz's continued fraction on whichever side of the mean it
+ * converges fast. The one source of the t and F tails below.
+ */
+export function incompleteBeta(x: number, a: number, b: number): number {
+  if (!(x > 0)) return 0;
+  if (!(x < 1)) return 1;
+  const front = Math.exp(logGamma(a + b) - logGamma(a) - logGamma(b) + a * Math.log(x) + b * Math.log1p(-x));
+  if (x > (a + 1) / (a + b + 2)) return 1 - incompleteBeta(1 - x, b, a);
+  const TINY = 1e-300;
+  let c = 1, d = 1 - ((a + b) * x) / (a + 1);
+  if (Math.abs(d) < TINY) d = TINY;
+  d = 1 / d;
+  let f = d;
+  for (let m = 1; m <= 300; m++) {
+    for (const even of [true, false]) {
+      const num = even
+        ? (m * (b - m) * x) / ((a + 2 * m - 1) * (a + 2 * m))
+        : -((a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1));
+      d = 1 + num * d; if (Math.abs(d) < TINY) d = TINY; d = 1 / d;
+      c = 1 + num / c; if (Math.abs(c) < TINY) c = TINY;
+      f *= c * d;
+    }
+    if (Math.abs(c * d - 1) < 1e-15) break;
+  }
+  return (front * f) / a;
+}
+
+/**
+ * The regularised upper incomplete gamma Q(a, x) = Γ(a, x) / Γ(a): a series below a + 1, a continued fraction above.
+ * The chi-square tail below reads it.
+ */
+export function upperIncompleteGamma(a: number, x: number): number {
+  if (!(x > 0)) return 1;
+  const lead = -x + a * Math.log(x) - logGamma(a);
+  if (x < a + 1) {
+    let sum = 1 / a, term = sum;
+    for (let n = 1; n < 500; n++) { term *= x / (a + n); sum += term; if (Math.abs(term) < Math.abs(sum) * 1e-16) break; }
+    return Math.max(0, 1 - sum * Math.exp(lead));
+  }
+  const TINY = 1e-300;
+  let b = x + 1 - a, c = 1 / TINY, d = 1 / b, h = d;
+  for (let i = 1; i < 500; i++) {
+    const an = -i * (i - a);
+    b += 2;
+    d = an * d + b; if (Math.abs(d) < TINY) d = TINY;
+    c = b + an / c; if (Math.abs(c) < TINY) c = TINY;
+    d = 1 / d;
+    const step = d * c;
+    h *= step;
+    if (Math.abs(step - 1) < 1e-16) break;
+  }
+  return Math.exp(lead) * h;
+}
+
+/** Two-sided p-value of Student's t with `df` degrees of freedom (fractional, as Welch's are, is fine). */
+export function tTwoSided(t: number, df: number): number {
+  if (!Number.isFinite(t)) return Number.isNaN(t) ? NaN : 0;
+  return incompleteBeta(df / (df + t * t), df / 2, 0.5);
+}
+
+/** Upper tail P(F ≥ f) of the F distribution with (df1, df2) degrees of freedom. */
+export function fUpperTail(f: number, df1: number, df2: number): number {
+  if (!(f > 0)) return 1;
+  return incompleteBeta(df2 / (df2 + df1 * f), df2 / 2, df1 / 2);
+}
+
+/** Upper tail P(X ≥ x) of the chi-square distribution with `df` degrees of freedom. */
+export function chiSquareUpperTail(x: number, df: number): number {
+  return upperIncompleteGamma(df / 2, x / 2);
 }
 
 /** Linear-interpolation quantile of a pre-sorted array (`q` in [0, 1]).
