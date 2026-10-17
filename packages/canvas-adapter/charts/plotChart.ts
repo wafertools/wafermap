@@ -12,6 +12,7 @@
 import { escHtml, maxOf, minOf } from '../../core/utils.js';
 import { fiveNumberSummary, normalQuantile, sampleVariance } from '../../stats/math.js';
 import { CONTROL_RULE_TEXT } from '../../stats/control.js';
+import { PAT_VERDICT_LABEL } from '../../stats/pat.js';
 import { fmt } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { plotFootnote, plotTestNumber, plotTitle, probabilityPosition, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
@@ -19,7 +20,7 @@ import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
   cardShell, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
-  renderEmptyState, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
+  renderEmptyState, isExpandedCard, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
   type LimitLine, type SaveImageHandler, type SeriesLegendItem,
 } from './chartShell.js';
 import { categorical } from './palette.js';
@@ -251,7 +252,9 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   /** Where this draw's limit labels are, so a label on one axis does not land on one on the other. Reset by `drawFrame`. */
   let limitLabelBoxes: LabelBox[] = [];
   let bottomMargin = BOTTOM;
-  const colorOf = (g: number): string => categorical(g);
+  /** A PAT verdict has a colour that says what it is (the outliers amber, the fails red); any other value takes the palette's. */
+  const VERDICT_COLOUR: Record<string, string> = { [PAT_VERDICT_LABEL.outlier]: '#e69f00', [PAT_VERDICT_LABEL.fails]: '#c0392b' };
+  const colorOf = (g: number): string => VERDICT_COLOUR[resolved?.groups[g] ?? ''] ?? categorical(g);
   const groupLabel = (g: number): string => resolved?.groups[g] || '';
 
   function dims(): { w: number; h: number; plotW: number; plotH: number } {
@@ -479,17 +482,35 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     drawLimits(ctx, theme.limitLine, plotW, plotH, x, xLines, resolved.x, 'x');
     drawLimits(ctx, theme.limitLine, plotW, plotH, y, yLines, resolved.y, 'y');
 
-    const step = visible.length > SAMPLE_LIMIT ? Math.ceil(visible.length / SAMPLE_LIMIT) : 1;
-    ctx.globalAlpha = Math.max(0.15, Math.min(0.7, 200 / (visible.length / step)));
+    // Colour by colour in legend order, so a later colour (the PAT outliers after the dies within, a rare bin after the
+    // common ones) is drawn over an earlier one and not hidden under it where dies of several wafers share a position.
+    let ordered = visible;
+    if (!scale && resolved.groups.length > 1) {
+      const byGroup: PlotPoint[][] = resolved.groups.map(() => []);
+      for (const p of visible) byGroup[p.group].push(p);
+      ordered = byGroup.flat();
+    }
+    const step = ordered.length > SAMPLE_LIMIT ? Math.ceil(ordered.length / SAMPLE_LIMIT) : 1;
+    // Opacity follows how many dots a colour has: thousands overlap and stay translucent, a handful (the outliers) are solid.
+    const perColour = new Map<number, number>();
+    for (let i = 0; i < ordered.length; i += step) perColour.set(ordered[i].group, (perColour.get(ordered[i].group) ?? 0) + 1);
+    const alphaOf = (g: number) => Math.max(0.15, Math.min(scale || resolved!.groups.length < 2 ? 0.7 : 0.9, 200 / (scale ? ordered.length / step : (perColour.get(g) ?? 1))));
+    // Dots grow as they thin out, and a colour with few dots beside a common one is larger again, so it is seen at once.
+    const drawnCount = Math.ceil(ordered.length / step), mostOfOne = Math.max(1, ...perColour.values());
+    const baseR = drawnCount <= 600 ? 3.5 : drawnCount <= 3000 ? 3 : 2.5;
+    const radiusOf = (g: number) => baseR + (perColour.size > 1 && (perColour.get(g) ?? 0) < mostOfOne * 0.1 ? 1.5 : 0);
+    ctx.globalAlpha = alphaOf(ordered[0]?.group ?? 0);
+    let alphaGroup = ordered[0]?.group;
     drawn = [];
     const clipLeft = LEFT, clipRight = LEFT + plotW, clipTop = TOP, clipBottom = TOP + plotH;
-    for (let i = 0; i < visible.length; i += step) {
-      const p = visible[i];
+    for (let i = 0; i < ordered.length; i += step) {
+      const p = ordered[i];
       const cx = LEFT + x.frac(p.x) * plotW, cy = TOP + (1 - y.frac(p.y)) * plotH;
       if (cx < clipLeft || cx > clipRight || cy < clipTop || cy > clipBottom) continue;
       drawn.push({ p, cx, cy });
+      if (p.group !== alphaGroup) { alphaGroup = p.group; ctx.globalAlpha = alphaOf(p.group); }
       ctx.beginPath();
-      ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+      ctx.arc(cx, cy, radiusOf(p.group), 0, Math.PI * 2);
       ctx.fillStyle = scale && p.value !== undefined ? gradient((p.value - scale.lo) / (scale.hi - scale.lo || 1)) : colorOf(p.group);
       ctx.fill();
     }
@@ -1163,12 +1184,30 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     }
     ctx.restore();
     drawn = [];
-    for (const p of m.points) {
-      if (active.size > 0 && !active.has(p.group)) continue;
+    const shown = m.points.filter(p => active.size === 0 || active.has(p.group));
+    for (const p of shown) {
       ctx.beginPath(); ctx.arc(px(p.x), py(p.y), 4, 0, Math.PI * 2); ctx.fillStyle = colorOf(p.group); ctx.fill();
-      // The tests short of Ppk 1.33 are named: they are what the plot is read for.
-      if (p.ppk < 1.33) { ctx.fillStyle = theme.text; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(p.label, px(p.x) + 6, py(p.y)); }
       drawn.push({ p: { x: p.x, y: p.y, group: p.group, item: -1, value: p.testNumber }, cx: px(p.x), cy: py(p.y) });
+    }
+    // The tests short of Ppk 1.33 are named, worst first, each beside its point where the text clears every point and
+    // every name already placed; a crowded one goes unnamed (hover names it), so the names that are drawn can be read.
+    const taken: LabelBox[] = shown.map(p => ({ x0: px(p.x) - 5, x1: px(p.x) + 5, y0: py(p.y) - 5, y1: py(p.y) + 5 }));
+    const fit = { x0: LEFT, x1: LEFT + plotW, y0: TOP, y1: TOP + plotH };
+    const clear = (b: LabelBox) => b.x0 >= fit.x0 && b.x1 <= fit.x1 && b.y0 >= fit.y0 && b.y1 <= fit.y1
+      && !taken.some(t => b.x0 < t.x1 && b.x1 > t.x0 && b.y0 < t.y1 && b.y1 > t.y0);
+    const rowH = fontPx(-1) + 2;
+    ctx.fillStyle = theme.text; ctx.textBaseline = 'middle';
+    for (const p of [...shown].filter(q => q.ppk < 1.33).sort((a, b) => a.ppk - b.ppk)) {
+      const cx = px(p.x), cy = py(p.y), tw = ctx.measureText(p.label).width;
+      const spots: Array<[number, number, CanvasTextAlign]> = [[cx + 7, cy, 'left'], [cx - 7, cy, 'right'], [cx, cy - 13, 'center'], [cx, cy + 13, 'center']];
+      for (const [tx, ty, align] of spots) {
+        const x0 = align === 'left' ? tx : align === 'right' ? tx - tw : tx - tw / 2;
+        const box = { x0, x1: x0 + tw, y0: ty - rowH / 2, y1: ty + rowH / 2 };
+        if (!clear(box)) continue;
+        taken.push(box);
+        ctx.textAlign = align; ctx.fillText(p.label, tx, ty);
+        break;
+      }
     }
     const hot = hovered ? drawn.find(d => d.p === hovered) : undefined;
     if (hot) { ctx.beginPath(); ctx.arc(hot.cx, hot.cy, 6, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = theme.text; ctx.stroke(); }
@@ -1185,6 +1224,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   }
 
   function draw(): void {
+    if (legend && options.panel) legend.style.display = isExpandedCard(card) ? 'flex' : 'none';
     const t = resolved?.marks?.type;
     if (t === 'scatter') drawScatter();
     else if (t === 'control') drawControl();
@@ -1315,9 +1355,14 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     }
     if (r.plotted === 0) { renderEmptyState(body, 'Nothing to plot: no mark has every value this plot needs.'); return; }
 
-    if (r.groups.length > 1 && !options.panel) {
+    // A panel keeps its legend out of sight in the grid, where the card's own filters every panel; expanded alone, it shows.
+    if (r.groups.length > 1) {
       legend = doc.createElement('div');
-      Object.assign(legend.style, { display: 'flex', flexWrap: 'wrap', gap: SPACE.sm, marginTop: SPACE.md, marginBottom: SPACE.xl } as Partial<CSSStyleDeclaration>);
+      Object.assign(legend.style, { display: options.panel ? 'none' : 'flex', flexWrap: 'wrap', gap: SPACE.sm, marginTop: SPACE.md, marginBottom: SPACE.xl } as Partial<CSSStyleDeclaration>);
+      // Kept in view while a tall grid of panels scrolls beneath it, so a colour can be switched off from anywhere in it.
+      // Stacking context: the grid below is `isolation: isolate`, so nothing inside a panel (its own toolbar and expand
+      // button) can rise above this legend whatever z-index it carries; the legend's 2 only has to beat the grid as a whole.
+      if (r.facets) Object.assign(legend.style, { position: 'sticky', top: '0', zIndex: '2', background: CLR.menuBg, paddingBottom: SPACE.sm, marginBottom: SPACE.md } as Partial<CSSStyleDeclaration>);
       r.groups.forEach((g, i) => {
         const chip = makeSeriesLegendItem(g || '(none)', colorOf(i), doc);
         attachChartTip(chip.el, card, tooltip, `${g || '(none)'} — click to filter`);
@@ -1341,6 +1386,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     if (r.facets) {
       const grid = doc.createElement('div');
       grid.dataset.wmapPlotPanels = '1';
+      grid.style.isolation = 'isolate';   // a stacking context of its own: see the sticky legend above
       Object.assign(grid.style, { display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${PANEL_MIN_PX}px, 1fr))`, gap: SPACE.md } as Partial<CSSStyleDeclaration>);
       body.appendChild(grid);
       for (const f of r.facets) {
@@ -1552,6 +1598,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     setActiveGroups(groups) {
       active.clear();
       for (const g of groups) active.add(g);
+      chips.forEach((c, k) => c.setState({ selected: active.has(k), dimmed: active.size > 0 && !active.has(k) }));
       draw();
     },
     destroy() { resizeHandle.disconnect(); pointer?.destroy(); for (const p of panels) p.destroy(); },

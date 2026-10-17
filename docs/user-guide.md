@@ -958,7 +958,7 @@ normal curve, a box of the lead test by wafer, a bar of yield by the split, a li
 feature the lot can show: the most telling tests as one set rescaled to z-scores (a box per test, and a heatmap of
 tests by wafer), the lead test by split and by wafer nested in split, panels by ring, the lead test by ranges of its
 partner and of the distance from the centre, a pareto of the hard bins and each wafer's bin mix, the
-lead test by PAT verdict and a map of the dies coloured by PAT verdict (where the outliers are), an individuals control chart (five or more wafers), a capability goal plot and a
+lead test by PAT verdict, an individuals control chart (five or more wafers), a capability goal plot and a
 pass-rate bar when tests have limits, and a sweep of the first
 tests in test order. Edit any of them to see how it is set. Pressing the button again adds only what is missing. Every change you make there is drawn at once; there is no Apply
 button, and the plot is kept as you go.
@@ -1090,7 +1090,10 @@ In **Setup**, choose the **chart type**, then the field for each role:
   The Overview shows the same verdicts as a **Part average testing (PAT)** card: for each wafer, the dies within the PAT
   limits, the outliers and the rate, the dies that fail anyway, and which tests the outliers are outside on. The Dies
   table (Data tab) has a **PAT** column, and **PAT tests** where there are outliers, in the CSV too; a selection that
-  is only part of a wafer has neither, since the limits belong to the whole wafer.
+  is only part of a wafer has neither, since the limits belong to the whole wafer. **Map the verdicts** on the card opens a
+  gallery with a map of each wafer, its dies coloured by their PAT verdict (within the limits, outlier, fails anyway), so
+  the gallery's legend and value toggles show where the outliers are on each wafer. The maps state no yield: a verdict is
+  not a bin.
 - **Panels**: one small plot per value of a category field, laid out like the gallery's cards, on shared axes and
   colours with one legend and one statement above them. A wafer field (split, lot) gives each panel its whole wafers; a
   die field (ring, site, bin) the dies with that value from every wafer; **Test**, with several tests as the values,

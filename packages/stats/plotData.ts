@@ -2036,8 +2036,6 @@ export function examplePlots(catalogue: readonly FieldOption[], waferCount: numb
   if (has('hbin') && manyWafers) add({ chart: 'bar', fields: { x: { builtin: 'wafer' }, color: { builtin: 'hbin' } }, stack: 'percent' });
   // Part-average testing: the first test by each die's verdict, so outliers inside the limits stand apart.
   if (tests.length >= 1 && has('pat')) add({ chart: 'box', fields: { x: { builtin: 'pat' }, y: tests[0], color: { builtin: 'pat' } } });
-  // Where on the wafer the PAT outliers are: every die at its position, coloured by its verdict.
-  if (has('pat') && has('x') && has('y')) add({ chart: 'scatter', fields: { x: { builtin: 'x' }, y: { builtin: 'y' }, color: { builtin: 'pat' } } });
   // Wafer by wafer on an individuals chart with control limits and rule breaks.
   if (tests.length >= 1 && waferCount >= 5) add({ chart: 'control', fields: { x: { builtin: 'waferOrder' }, y: tests[0] } });
   // Which tests meet their limits: every test with both limits on a goal plot (a split moves its points), and the lead

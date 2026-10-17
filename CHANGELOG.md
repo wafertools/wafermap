@@ -56,14 +56,14 @@ under `### Breaking`.
   dies that fail anyway, with the wafers with the most outliers first, the tests the outliers are outside on, and the tests
   whose values are lopsided (quartile skewness of 0.2 or more), where symmetric limits fit less well. The Dies
   table and its CSV gain a **PAT** column, and **PAT tests** when there are outliers, for whole wafers (a part of a wafer
-  has none: its limits are the whole wafer's).
+  has none: its limits are the whole wafer's). **Map the verdicts** on the card opens a gallery of the wafers, each die coloured by its PAT verdict (within the limits, outlier, fails anyway), so the gallery's legend, value toggles, expand and tooltips show where on each wafer the outliers are. The maps state no yield, as a verdict is not a bin.
 - **More example plots, chosen from the lot.** The Plot tab's **Add examples** takes its tests and split from the data in view: the lead
   test varies most between wafers (for one wafer, follows radial position most), its partner tracks it best, and the split
   is the lot field that explains most of the lead test's wafer-to-wafer spread (`stats/examplePicks.ts`, which reads a sample of
   at most 4,000 dies and 60 tests). The examples are coloured by the split (by ring where the lot has no split), so groups are told apart at a glance. It also draws, where the lot has the data for them, the first
   tests as a rescaled set (a box per test, and a heatmap of tests by wafer), the first test by split and by wafer
   nested in split, panels by ring, the first test by ranges of the second and of radial position, a pareto of the hard
-  bins, each wafer's bin mix, the first test by PAT verdict, die positions coloured by PAT verdict, an individuals control chart (five or more wafers), and,
+  bins, each wafer's bin mix, the first test by PAT verdict, an individuals control chart (five or more wafers), and,
   where the test definitions carry limits, a capability goal plot and a pass-rate bar. The
   scatter carries a fitted line, the histogram its normal curve and the line a ±1 SD band.
 - **A measured value in ranges, as a category.** A field `{ binned: field, bins?, by? }` cuts a test, a die position
@@ -157,6 +157,7 @@ under `### Breaking`.
 
 ### Changed
 
+- **A plot's scatter draws its colours in legend order, each at an opacity set by its own count.** Where dies of several wafers share a position, a rare colour (PAT outliers, a small bin) is drawn over the common ones instead of under them, and a handful of dots are solid where thousands stay translucent. A PAT verdict has its own colour in a plot (outliers amber, fails red), and dots are larger the fewer there are. A goal plot names the tests short of Ppk 1.33 only where the name fits beside its point without covering another; hovering names the rest.
 - **A box or bar category has places only for the colours it holds.** Each category lays out the colour groups that
   have a value there, centred, at the width the fullest category needs, so a category one colour fills (a ring
   coloured by ring, a wafer coloured by its split) draws one full-width mark. A box's tooltip names its colour only
@@ -178,6 +179,7 @@ under `### Breaking`.
 
 ### Fixed
 
+- **Typing in a text box inside a window is typing.** The E (close, in a modal) and F (maximise, in a window) shortcuts apply only when focus is not in a text box, text area or list; a letter typed into a plot's title, tests or reference-lines box goes into the box.
 - **A segmented choice keeps its highlight when the pointer leaves it.** Choosing a segment that does not redraw the
   editor (a plot's Limits or Rescale values) shows it as selected after the pointer moves away.
 

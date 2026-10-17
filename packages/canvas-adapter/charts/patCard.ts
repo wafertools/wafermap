@@ -5,11 +5,12 @@ import { summarisePat } from '../../stats/patSummary.js';
 import { PAT_K, PAT_MIN_DIES, PAT_SKEW_WARN } from '../../stats/pat.js';
 import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
+import type { RenderableWaferMap } from '../renderWaferMap.js';
 import { CLR, FONT, SPACE, controlStyle, wireControlHover, wireTooltip } from '../toolbar.js';
 import { cardShell } from './chartShell.js';
 
 export interface PatCardOptions {
-  items: ReadonlyArray<{ label: string; dies: readonly Die[]; allDies?: readonly Die[]; passBins: readonly number[] }>;
+  items: ReadonlyArray<{ label: string; dies: readonly Die[]; allDies?: readonly Die[]; passBins: readonly number[]; source?: RenderableWaferMap }>;
   testDefs: readonly TestDef[];
   ownerDocument?: Document;
 }
@@ -82,6 +83,18 @@ export function renderPatCard(o: PatCardOptions): { card: HTMLElement; destroy: 
   wrap.style.overflowX = 'auto';
   wrap.appendChild(wt);
   body.append(wrap, more);
+  // The verdicts as a map of each wafer, in a gallery: where on each wafer the outliers are, and whether they recur.
+  if (o.items.some(it => it.source)) {
+    const maps = doc.createElement('button');
+    maps.type = 'button';
+    maps.textContent = 'Map the verdicts';
+    maps.dataset.wmapPatMaps = '1';
+    wireTooltip(maps, 'Open a map of each wafer with its dies coloured by PAT verdict: within the limits, outlier, fails anyway');
+    Object.assign(maps.style, { ...controlStyle('outlined'), marginTop: SPACE.sm, marginLeft: SPACE.sm } as Partial<CSSStyleDeclaration>);
+    wireControlHover(maps);
+    maps.addEventListener('click', () => { void import('../patMaps.js').then(m => m.openPatMaps({ anchor: maps, items: o.items, testDefs: o.testDefs })); });
+    body.appendChild(maps);
+  }
 
   if (sum.byTest.length) {
     const h = doc.createElement('div');

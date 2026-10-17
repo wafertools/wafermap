@@ -2770,9 +2770,11 @@ function openOverlay(opts: OverlayOptions): OverlayHandle {
     // An Escape something inside has already handled (a menu closing itself, a filter box
     // clearing) must not also close the window the menu sits in.
     if (e.key === 'Escape') { if (!e.defaultPrevented) close(); return; }
-    if (isModal && (e.key === 'e' || e.key === 'E')) { close(); return; }
+    // E closes a modal and F maximises a window, but a letter typed into a text box is text: not a shortcut.
+    const typing = isTextEntry(e.target);
+    if (isModal && !typing && (e.key === 'e' || e.key === 'E')) { close(); return; }
     if (isModal && e.key === 'Tab') { trapTab(e); return; }
-    if (canMaximize && (e.key === 'f' || e.key === 'F') && !minimized) { setMaximized(!maximized); }
+    if (canMaximize && !typing && (e.key === 'f' || e.key === 'F') && !minimized) { setMaximized(!maximized); }
   };
 
   function close() {
@@ -2996,6 +2998,16 @@ body>*:not(.wmap-overlay-box):not(#wmap-modal-backdrop):not(.wmap-overlay-ancest
 
 /** Create and open a resizable, maximizable, exclusive expand modal — dims and
  * blocks the rest of the page. See `openFloatingWindow` for the non-modal form. */
+/** Whether a key event's target takes typed text (a text box, a text area, a list's filter box, an editable region). */
+export function isTextEntry(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'INPUT') return !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file', 'image'].includes((el as HTMLInputElement).type);
+  return el.isContentEditable === true;
+}
+
 export function openModal(opts: Omit<OverlayOptions, 'mode'>): OverlayHandle {
   return openOverlay({ ...opts, mode: 'modal' });
 }
