@@ -26,6 +26,14 @@ under `### Breaking`.
 
 ### Added
 
+- **A group shift is an item in What stands out and Worth a look.** In a lot, every wafer field Group by offers is
+  compared test by test, each wafer one value (Welch, or Kruskal–Wallis where Welch cannot be computed), adjusted over
+  every field and test (Benjamini–Hochberg). A field whose groups differ is one item, however many tests it moves, so a
+  corner lot's split lists once: it names the largest shift as the group furthest from the other wafers ("Vth is higher
+  on Process split Hi-dose than on Process split POR (3 and 3 wafers): a shift of 1.4σ"), then how many tests differ and
+  the next ones, with a chip for each of the first tests. Each shift is sized in within-wafer standard deviations and
+  weighted by that group's dies as a region shift is, and charted as a box of the test by the field. A field that moves
+  one test an item already names is said within that item. The Compared line names the fields.
 - **Worth a look on the Insights Overview.** The items What stands out lists beside the map are drawn on the
   Overview, below the yield, bin and region cards, as the charts that show them (a region's loss as yield by that kind
   of region, a fail bin as the bins' shares by it, a shifted test by region, a failing or too-wide test as its
@@ -216,6 +224,8 @@ under `### Breaking`.
 
 ### Changed
 
+- **The lot summary report's comparison of wafer fields is headed Group Comparison**, as it compares the wafers by
+  any field Group by offers (lot, program, process split).
 - **What stands out ranks parametric signals with yield loss.** A test whose values shift in a region (a test-value
   finding of at least half a standard deviation), a trend across the wafers, a test whose spread is too wide for its
   limits (Ppk under 1.0) and dies outside a test's limits but binned as passing are items like a region's loss, so a

@@ -241,7 +241,8 @@ function problems(s, summary, passBins) {
     if (it.kind === 'loss' && it.target.kind === 'finding' && testChips.length + shiftChips + (it.moreTests ?? 0) !== it.testNumbers.length) {
       out.push(`tests folded and tests shown disagree: ${it.brief}`);
     }
-    for (let i = 1; i < testChips.length; i++) {
+    // A group shift's chips are its tests by size of shift, not by failing dies.
+    for (let i = 1; it.kind === 'loss' && i < testChips.length; i++) {
       if ((failDies.get(testChips[i]) ?? 0) > (failDies.get(testChips[i - 1]) ?? 0)) out.push(`test chips not ranked by failing dies: ${it.brief}`);
     }
   }

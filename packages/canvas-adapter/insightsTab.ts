@@ -1245,7 +1245,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       line('Worth a look describes the whole lot, as What stands out beside the map does. Switch the Insights filter off, or Show all groups, to see it here.', 'wmapWorthNarrowed');
       return { el, destroy: () => {} };
     }
-    const synthesis = buildSynthesis(summary, { passBins: commonPassBins(items.map(it => it.passBins)) });
+    const synthesis = buildSynthesis(summary, { passBins: commonPassBins(items.map(it => it.passBins)), attributes: deps.attributes });
     if (synthesis.items.length === 0) {
       line(synthesis.nothing ?? 'Nothing stands out.', 'wmapWorthNothing');
       return { el, destroy: () => {} };

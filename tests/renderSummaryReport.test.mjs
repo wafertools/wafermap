@@ -43,38 +43,36 @@ test('renderLotSummaryReportHtml — Process Capability section absent when no p
   assert.ok(!html.includes('Process Capability'));
 });
 
-test('renderLotSummaryReportHtml — split comparison appears when a field actually splits the lot', () => {
+test('renderLotSummaryReportHtml — Group Comparison appears when a field divides the lot', () => {
   const items = [
     waferItem('W1', [1, 1, 2], undefined, { split: 'TT' }),
     waferItem('W2', [1, 2, 2], undefined, {}),
   ];
   const html = renderLotSummaryReportHtml({ items, testDefs: [] });
-  // Was a roster listing each wafer against `metadata.split`; it compared nothing
-  // and only ever recognised a key literally named `split`. Facets are now
-  // discovered the same way the Insights "Group by" control discovers them.
-  assert.ok(html.includes('Split Comparison'));
+  // Facets are discovered the same way the Insights "Group by" control discovers them.
+  assert.ok(html.includes('Group Comparison'));
   assert.ok(html.includes('TT'));
   // The comparison itself: yield per arm, not just a membership list.
   assert.ok(html.includes('Yield'));
 });
 
-test('renderLotSummaryReportHtml — split comparison finds a field NOT named "split"', () => {
+test('renderLotSummaryReportHtml — Group Comparison finds a split field NOT named "split"', () => {
   const items = [
     waferItem('W1', [1, 1, 2], undefined, { processSplit: 'POR' }),
     waferItem('W2', [1, 2, 2], undefined, { processSplit: 'Hi-dose' }),
   ];
   const html = renderLotSummaryReportHtml({ items, testDefs: [] });
-  assert.ok(html.includes('Split Comparison'));
+  assert.ok(html.includes('Group Comparison'));
   assert.ok(html.includes('POR'));
   assert.ok(html.includes('Hi-dose'));
   // And it labels the field readably rather than printing the raw key.
   assert.ok(html.includes('Process Split'), 'uncurated facet keys are prettified');
 });
 
-test('renderLotSummaryReportHtml — Splits section absent when no item has a split', () => {
+test('renderLotSummaryReportHtml — Group Comparison absent when no field divides the wafers', () => {
   const items = [waferItem('W1', [1, 1, 2])];
   const html = renderLotSummaryReportHtml({ items, testDefs: [] });
-  assert.ok(!html.includes('>Splits<'));
+  assert.ok(!html.includes('Group Comparison'));
 });
 
 test('renderLotSummaryReportHtml — uniform lot produces a single <main> and no group banner', () => {
@@ -135,7 +133,7 @@ test('renderLotSummaryReportHtml — each group only shows its own capability/sp
   assert.ok(!groupB.includes('TT'));
 });
 
-test('renderSummaryReportHtml (single-wafer) — gets a Process Capability section but never a Splits section', () => {
+test('renderSummaryReportHtml (single-wafer) — gets a Process Capability section but never a Group Comparison', () => {
   const built = buildWaferMap({
     results: [1, 1, 2].map((bin, i) => ({ x: i, y: 0, hbin: bin, testValues: { 1: [3, 5, 7][i] } })),
     waferConfig: { diameter: 300, metadata: { split: 'TT' } },
@@ -152,7 +150,7 @@ test('renderSummaryReportHtml (single-wafer) — gets a Process Capability secti
     testDefs: testDefsWithLimits,
   });
   assert.ok(html.includes('Process Capability'));
-  assert.ok(!html.includes('>Splits<'));
+  assert.ok(!html.includes('Group Comparison'));
 });
 
 test('report includes a Functional Tests section with pass rates; functional tests stay out of Test Values', () => {

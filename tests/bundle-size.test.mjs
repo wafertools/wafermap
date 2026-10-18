@@ -91,6 +91,12 @@
 //   2026-10-18: root raised 227,000 -> 235,000 minified (measured 228,814; 220,247 at the last entry). The plot
 //   filters' shared evaluator and condition text, and the results synthesis ranking parametric signals (shifts,
 //   drifts, spreads too wide for their limits) with yield loss. Legitimate library growth, not bloat.
+//   2026-10-18 (later): root raised 235,000 -> 244,000 minified (measured 236,568; 228,814 at the last entry). The
+//   results synthesis finds a split's test shift with the wafer-as-unit group comparison (Welch, Kruskal–Wallis,
+//   Benjamini–Hochberg), so the t, F and chi-square tails now ship with the data layer. Legitimate library growth.
+//   2026-10-18: render raised 449,000 -> 462,000 minified (measured 449,167; 435,551 at the last entry). The plot
+//   filter line on cards, What stands out's signals, charts, Chart links and split shifts (the synthesis rides in the
+//   Summary panel, which is first paint). Legitimate library growth.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -112,8 +118,8 @@ const dist = resolve(root, 'dist');
 // work does not need a raise; the lazy-import tests below are what catch a heavy module landing in the chunk.
 // Gzipped sizes in the history above are the earlier measure.
 const THRESHOLDS = {
-  'wafermap (root)':            235_000,  // minified bytes — measured 228,814 (78.7 KB gzipped)
-  'wafermap/render (initial)':  449_000,  // minified bytes — measured 435,551 (146.8 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
+  'wafermap (root)':            244_000,  // minified bytes — measured 236,568 (81.7 KB gzipped)
+  'wafermap/render (initial)':  462_000,  // minified bytes — measured 449,167 (151.8 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
 };
 
 async function bundleSize(entryPoint, plugins = []) {

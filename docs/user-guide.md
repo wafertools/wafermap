@@ -590,11 +590,17 @@ Sections, top to bottom:
   failing). A **signal** costs no dies of its own but moves the values, which is often all a
   characterisation lot has to show: a test whose mean shifts in a region by at least half a standard
   deviation, a trend across the wafers *in the order given* (said as "input order": the order is only a
-  physical one if you know it is), a test whose Ppk against its limits is under 1.0, or a test outside
-  its limits on dies binned as passing. Both are ranked on one scale, the share of the dies an item
+  physical one if you know it is), a test whose Ppk against its limits is under 1.0, a test outside
+  its limits on dies binned as passing, or, in a lot, a test that differs between the values of a wafer
+  field Group by offers (a process split, a lot, a test program). A group is judged with each wafer as
+  one value, the way Insights compares groups, adjusted over every field and test compared, and its size
+  is the shift in the test's within-wafer standard deviations, the scale a region's shift is measured on.
+  A field is one item however many tests it moves ("34 tests differ by Split. Largest: …; next: …"), with the tests
+  that moved most as its chips, so a corner lot does not fill the list with one split. Both are ranked on one scale, the share of the dies an item
   affects: a loss by the dies it cost; a shift by its dies, counted in full from two standard deviations
   and by the square of its size below that (a one-sigma shift counts a quarter of its dies); a trend by
-  how far it moved; a Ppk under 1.0 by the share of dies its spread would put outside its limits.
+  how far it moved; a group's shift by the dies of the wafers that moved, weighted as a shift is; a Ppk under 1.0 by
+  the share of dies its spread would put outside its limits.
   Anything affecting less than 1% of the dies is left to the findings list. A line says what was
   compared. Its three dots and word (High, Moderate or Low impact) say how much of the lot an item
   affects: the higher of its share of all the dies (2% moderate, 4% high) and, for a loss, its share of

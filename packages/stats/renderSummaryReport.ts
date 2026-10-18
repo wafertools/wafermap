@@ -508,27 +508,23 @@ function perWaferFindingsSection(lotSummary: LotStatsSummary): string {
   return renderSection('Findings by Wafer', note + blocks.join('\n'));
 }
 
-/** How many splittable facets get their own comparison before the report stops.
+/** How many groupable facets get their own comparison before the report stops.
  *  A load can carry many incidental facets (operator, tester, test date); past a
  *  few the report becomes a cross-product nobody reads. */
 const MAX_SPLIT_FACETS = 3;
 
 /**
- * Split comparison — the one thing a lot report could not express.
+ * Group comparison: the lot's wafers compared by each wafer field.
  *
- * This replaces a roster that listed each wafer against `metadata.split`: it
- * compared nothing, and it was hardcoded to a key literally named `split`, so any
- * other naming (`processSplit`, `implant`, `anneal`) produced no section at all.
- * Facets are now discovered with `buildFacetTable` — the same function the
- * Insights tab's "Group by" uses, so the report offers the comparisons the app
- * offers rather than a different, narrower set.
+ * Facets are discovered with `buildFacetTable`, the same function the Insights
+ * tab's "Group by" uses, so the report offers the comparisons the app offers
+ * (a process split, whatever its key is called, as well as lot or program).
  *
- * For each splittable facet: which wafers are in which arm, the yield per arm,
+ * For each groupable facet: which wafers are in which arm, the yield per arm,
  * and per-test pass rates per arm for every judgement the data supports. That is
- * what a split experiment is run to read, and until now it could be seen on
- * screen but never exported.
+ * what a split experiment is run to read.
  */
-function splitsSection(
+function groupComparisonSection(
   items: LotSummaryReportParams['items'],
   testDefs: TestDef[],
   passBins: readonly number[] | undefined,
@@ -609,9 +605,9 @@ function splitsSection(
 
   if (!blocks.length) return '';
   const omitted = facets.length > shown.length
-    ? `<p class="report-note">${facets.length - shown.length} further splittable field(s) not shown.</p>`
+    ? `<p class="report-note">${facets.length - shown.length} further wafer field(s) not shown.</p>`
     : '';
-  return renderSection('Split Comparison', blocks.join('\n') + omitted);
+  return renderSection('Group Comparison', blocks.join('\n') + omitted);
 }
 
 /**
@@ -873,7 +869,7 @@ function renderLotGroupSections(
   const waferYieldSection = renderSection('Per-Wafer Yield', lotWaferYieldTable(lotSummary, items));
   // The lot-level ring tables use one ring count: the caller's own, else the first wafer's (mixed counts are named elsewhere).
   const lotRing = ringCount ?? itemRingCount(items[0]);
-  const splitsSectionHtml = splitsSection(items, testDefs, passBins);
+  const groupComparisonHtml = groupComparisonSection(items, testDefs, passBins);
   const perWaferSummaries = lotSummary.perWafer.map((pw) => pw.summary);
   const binSection = hasBins ? lotBinSections(allDies, hbinDefs, sbinDefs, perWaferSummaries, passGroups, binColorsFor) : '';
   const ringSection = hasBins && allWafers.length
@@ -894,7 +890,7 @@ function renderLotGroupSections(
       testSectionMap(testDefs, scope, !!testSectionHtml, !!functionalSectionHtml)),
     metadataSection,
     waferYieldSection,
-    splitsSectionHtml,
+    groupComparisonHtml,
     binSection,
     ringSection,
     quadSection,

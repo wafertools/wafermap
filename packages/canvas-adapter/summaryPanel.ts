@@ -2217,6 +2217,8 @@ export interface SynthesisSectionActions {
    * items that have a card (the top ones), never on the "also" list. Omitted ⇒ no Chart links (no Insights).
    */
   onShowChart?: (key: string) => void;
+  /** The host's wafer attributes: which fields groups are compared in, and what they are called. */
+  attributes?: Record<string, FacetCuration>;
 }
 
 /** The marker every acting row ends with: this row shows something on the map. */
@@ -2253,8 +2255,8 @@ export function buildSynthesisSection(
   /** Opens the full report, which begins with this same section. Omitted ⇒ no link. */
   onOpenReport?: () => void,
 ): HTMLDivElement {
-  const { onFindingClick, activeFindingId = null, onTestClick, activeTest = null, binColors, onShowChart } = actions;
-  const synthesis = buildSynthesis(source, { passBins });
+  const { onFindingClick, activeFindingId = null, onTestClick, activeTest = null, binColors, onShowChart, attributes } = actions;
+  const synthesis = buildSynthesis(source, { passBins, attributes });
   const byId = new Map(synthesisSource(source).findings.map(f => [f.id, f]));
   const { outer, content } = collapsibleSection('What stands out', true, { stateKey: 'synthesis', panel });
 
@@ -3207,7 +3209,7 @@ export function* renderWaferSummaryContentSteps(
   // of the panel: they used to be reachable only after scrolling past two full test tables — the
   // panel's most important content behind its densest.
   if (statsSummary) {
-    append(buildSynthesisSection(statsSummary, passBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors, onShowChart }, panel, openReport ?? undefined));
+    append(buildSynthesisSection(statsSummary, passBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors, onShowChart, attributes }, panel, openReport ?? undefined));
     yield;
   }
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
@@ -3477,7 +3479,7 @@ export function* renderLotSummaryContentSteps(
   const lotBinColors = binColors ?? resolveBinColorsByWafer(
     items.flatMap((it) => it ? [{ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }] : []),
     { hbinDefs, sbinDefs }).colors;
-  append(buildSynthesisSection(lotSummary, lotPassBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors: lotBinColors, onShowChart }, panel, openReport));
+  append(buildSynthesisSection(lotSummary, lotPassBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors: lotBinColors, onShowChart, attributes }, panel, openReport));
   yield;
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {
     append(buildFindingsSectionWithFilter(

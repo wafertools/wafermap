@@ -587,3 +587,92 @@ test('a region\'s loss charts yield by that kind of region, each bar with its va
   assert.equal(region.chart.valueLabels, true);
   assert.deepEqual(region.chart.axes.y.references, [{ stat: 'median' }]);
 });
+
+// ── Group shifts: a wafer field whose groups differ in tests ──────────────────────
+
+function splitLot({ shift = 1.5, split = ['A', 'A', 'A', 'B', 'B', 'B'], more = 0 } = {}) {
+  // Vth: within-wafer σ 0.01 V, wafer means 0.50 V (± a little) on split A and 0.50 + shift × 0.01 V on split B.
+  // Idd: the same on both splits. `more` adds tests 3, 4, … that also move on split B, each a little less than the last.
+  const wobble = [0.0004, -0.0003, 0.0001, -0.0002, 0.0003, -0.0001];
+  const perWafer = split.map((g, i) => ({
+    waferIndex: i,
+    summary: {
+      level: 'wafer', hasNotableFindings: false, findings: [],
+      wafer: { lot: 'L1', waferId: `W${i + 1}`, split: g },
+      stats: {
+        totalDies: 1000, analyzedDies: 1000, yieldPercent: 95, testsConsidered: [1, 2, ...Array.from({ length: more }, (_, k) => 3 + k)], hardBinsConsidered: [],
+        perTestStats: [
+          { testNumber: 1, label: 'Vth', count: 1000, mean: 0.5 + wobble[i] + (g === 'B' ? shift * 0.01 : 0), stddev: 0.01, min: 0, max: 1, median: 0.5, q1: 0.49, q3: 0.51 },
+          { testNumber: 2, label: 'Idd', count: 1000, mean: 2 + wobble[i], stddev: 0.05, min: 0, max: 3, median: 2, q1: 1.9, q3: 2.1 },
+          ...Array.from({ length: more }, (_, k) => ({ testNumber: 3 + k, label: `T${3 + k}`, count: 1000, mean: 1 + wobble[i] + (g === 'B' ? (1.4 - 0.1 * k) * 0.01 : 0), stddev: 0.01, min: 0, max: 2, median: 1, q1: 0.99, q3: 1.01 })),
+        ],
+      },
+    },
+  }));
+  return { level: 'lot', hasNotableFindings: false, findings: [], stats: { waferCount: split.length }, lotYieldSeries: perWafer.map(w => ({ waferIndex: w.waferIndex, yieldPercent: 95 })), perWafer };
+}
+
+test('a split that moves a test is an item, each wafer one value, sized in within-wafer σ on the split\'s dies', () => {
+  const s = buildSynthesis(splitLot(), { passBins: [1] });
+  const all = [...s.items, ...(s.also?.items ?? [])];
+  const it = all.find(i => i.testNumbers[0] === 1);
+  assert.ok(it, `Vth's split is an item: ${synthesisText(s)}`);
+  assert.equal(it.kind, 'signal');
+  assert.match(it.text, /^Vth is higher on Split B than on Split A \(3 and 3 wafers\): a shift of 1\.5σ, each wafer one value \(q [^)]+\)$/);
+  assert.equal(it.measure, '1.5σ');
+  assert.deepEqual(it.target, { kind: 'test', testNumber: 1 });
+  assert.deepEqual(it.chart.fields.x, { meta: 'split' });
+  // 3,000 dies of 6,000, weighted by (1.5 / 2)².
+  assert.ok(Math.abs(it.affected / 3000 - (1.5 / 2) ** 2) < 0.02, `about ${3000 * 0.5625} dies: ${it.affected}`);
+  assert.ok(!all.some(i => i.testNumbers[0] === 2), 'Idd does not move between the splits');
+  assert.match(s.checked, /the tests between the groups of Split \(each wafer one value\)/);
+});
+
+test('a small split shift is not listed, and the host names the field', () => {
+  assert.ok(![...buildSynthesis(splitLot({ shift: 0.3 })).items].some(i => i.testNumbers[0] === 1), 'under half a σ');
+  const named = buildSynthesis(splitLot(), { attributes: { split: { label: 'Process split' } } });
+  assert.match(named.items.find(i => i.testNumbers[0] === 1).text, /on Process split B/);
+});
+
+test('a field that names every wafer, or holds one value, is not a split', () => {
+  const each = splitLot({ split: ['A', 'B', 'C', 'D', 'E', 'F'] });
+  assert.ok(!buildSynthesis(each).items.some(i => i.testNumbers[0] === 1));
+  const one = splitLot({ split: ['A', 'A', 'A', 'A', 'A', 'A'] });
+  assert.ok(!buildSynthesis(one).items.some(i => i.testNumbers[0] === 1));
+});
+
+test('with three splits, the one furthest from the other wafers is named against them', () => {
+  const lot = splitLot({ split: ['A', 'A', 'C', 'C', 'B', 'B'] });   // only split B is shifted
+  const it = buildSynthesis(lot).items.find(i => i.testNumbers[0] === 1);
+  assert.match(it.text, /^Vth is higher on Split B \(2 of 6 wafers\) than on the other wafers/);
+});
+
+test('a field that moves many tests is one item: its largest shift leads, the next are named and chipped, the rest counted', () => {
+  const s = buildSynthesis(splitLot({ more: 6 }), { passBins: [1] });
+  const all = [...s.items, ...(s.also?.items ?? [])];
+  const of = all.filter(i => i.testNumbers.includes(1));
+  assert.equal(of.length, 1, `one item for the field: ${synthesisText(s)}`);
+  const it = of[0];
+  assert.equal(all.filter(i => i.subject === 'Split').length, 1, 'no other item for Split');
+  assert.deepEqual([...it.testNumbers].sort((a, b) => a - b), [1, 3, 4, 5, 6, 7, 8], 'every test that moved, Idd not among them');
+  assert.match(it.text, /^7 tests differ by Split\. Largest: Vth is higher on Split B than on Split A \(3 and 3 wafers\): a shift of 1\.5σ, each wafer one value \(q [^)]+\); next: T3 higher on B \(1\.4σ\), T4 higher on B \(1\.3σ\), and 4 more$/);
+  assert.equal(it.brief, 'Split: 7 tests differ');
+  assert.match(it.reason, /^7 tests differ by Split\. Largest: Vth is higher/);
+  assert.ok(it.text.startsWith(it.reason), 'the card\'s reason is the start of the panel\'s sentence');
+  assert.deepEqual(it.target, { kind: 'test', testNumber: 1 });
+  const chips = it.chips.map(c => c.target.testNumber);
+  assert.deepEqual(chips, [1, 3, 4, 5, 6, 7, 8].slice(0, chips.length), 'chips largest shift first');
+  assert.equal(chips.length + (it.moreTests ?? 0), 7, 'every test chipped or counted');
+});
+
+test('a field\'s tests are led by the largest shift, though the weight is the same from 2σ', () => {
+  // Vth 2.5σ; T3 3.0σ: both count in full, so only the size of the shift can say which is the largest.
+  const lot = splitLot({ shift: 2.5, more: 1 });
+  for (const w of lot.perWafer) {
+    const t3 = w.summary.stats.perTestStats.find(t => t.testNumber === 3);
+    if (w.summary.wafer.split === 'B') t3.mean += 0.016;   // 1.4σ + 1.6σ
+  }
+  const it = buildSynthesis(lot).items.find(i => i.testNumbers.includes(1));
+  assert.match(it.text, /^2 tests differ by Split\. Largest: T3 is higher on Split B than on Split A \(3 and 3 wafers\): a shift of 3\.0σ/);
+  assert.deepEqual(it.target, { kind: 'test', testNumber: 3 });
+});

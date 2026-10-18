@@ -346,7 +346,7 @@ Named fields with an open index signature — any extra key is accepted and disp
   split?:       string          // user-assigned experiment/process-corner tag (e.g. "TT", "FF"),
                                  // distinct from any parser-derived field — a first-class slot so hosts that
                                  // support wafer-split assignment get it picked up by the Insights tab's
-                                 // "Group by" (§6.10) and lot summary reports' Splits section (§7.6) automatically
+                                 // "Group by" (§6.10) and lot summary reports' Group Comparison (§7.6) automatically
   [key: string]: unknown        // custom fields — shown in summary panel header
 }
 ```
