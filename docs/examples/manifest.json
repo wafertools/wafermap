@@ -132,7 +132,7 @@
       "blurb": "the Plot tab kept by the host with `insights.plots` and `onPlotsChange`, the Data tab, drilldown, and your own names for wafer attributes with `attributes`",
       "guide": {
         "label": "Guide: Saved plots, the Data tab and attribute names",
-        "href": "../guide/galleries.md#saved-plots-the-plot-tab-kept-by-the-host"
+        "href": "../guide/galleries.md#saved-plots-the-my-plots-tab-kept-by-the-host"
       },
       "dataFiles": []
     },

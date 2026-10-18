@@ -10,8 +10,11 @@
 
 import type { Die } from '../core/dies.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
+import type { BinColors } from '../renderer/binColors.js';
+import type { WaferContextMenuHandler } from './charts/chartShell.js';
 import { defaultPlot, defaultSweep, describeTitleDrift, examplePlots, fieldCatalogue, resolvePlot, titleDrift, type PlotContext, type PlotPoint } from '../stats/plotData.js';
-import { addPlots, newPlotId, readPlotsFile, writePlotsFile, type PlotSpec } from '../stats/plotSpec.js';
+import { addPlots, newPlotId, readPlotsFile, writePlotsFile, type PlotFilter, type PlotSpec } from '../stats/plotSpec.js';
+import { buildFilterStrip } from './filterEditor.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
 import { sweepAppliesTo } from '../stats/sweep.js';
@@ -42,6 +45,10 @@ export interface PlotSectionDeps {
   groupLabel?: string;
   onSaveImage?: SaveImageHandler;
   onSaveText?: SaveTextHandler;
+  /** The maps' bin colours: a plot coloured by bin draws each bin in its map colour. */
+  getBinColors?: () => BinColors;
+  /** Right-click a wafer's own mark: that wafer's menu, by its index in the host's list. */
+  waferMenu?: WaferContextMenuHandler;
   /** Click a point: open its wafer, on a test's values when the plot is about one. */
   openWafer?: (waferIndex: number, label: string, testNumber?: number) => void;
   /** A single-wafer host's version of the same: show the test on the map that is already there. */
@@ -136,6 +143,8 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
 
   const chartHooks = () => ({
     onSaveImage: d.onSaveImage,
+    binColors: d.getBinColors?.(),
+    onWaferMenu: d.waferMenu ? (i: number, testNumber: number | undefined, e: MouseEvent) => d.waferMenu!(items[i].waferIndex ?? i, testNumber, e) : undefined,
     // The wafer opens on the plot's own test, so its map shows the values the plot is about and not the bins. A
     // single-wafer host has no wafer to open: it shows the test on its own map.
     onOpenWafer: d.openWafer
@@ -147,7 +156,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     onSelectPoints: (points: PlotPoint[], at: { x: number; y: number }, anchor: HTMLElement) => selectPoints(points, at, anchor),
   });
 
-  const menuContext = () => ({ plots: store, onSaveImage: d.onSaveImage, onSaveText: d.onSaveText, onLocateDie: d.locateDie });
+  const menuContext = () => ({ plots: store, getBinColors: d.getBinColors, onSaveImage: d.onSaveImage, onSaveText: d.onSaveText, onLocateDie: d.locateDie });
 
   function selectPoints(points: PlotPoint[], at: { x: number; y: number }, anchor: HTMLElement): void {
     const source = sourceFromPoints(points, items, d.testDefs);
@@ -214,12 +223,16 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     driftNote.dataset.wmapPlotTitleDrift = '1';
     Object.assign(driftNote.style, { display: 'none', flexWrap: 'wrap', gap: SPACE.md, alignItems: 'center', flexBasis: '100%', padding: `${SPACE.xs} ${SPACE.md}`,
       background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, color: CLR.warnText, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
-    chart.actions.appendChild(driftNote);
+    // The plot's filter, shown on the card whenever it has one, on or off: filtering is never hidden.
+    const filterLine = doc.createElement('div');
+    filterLine.style.flexBasis = '100%';
+    chart.actions.append(filterLine, driftNote);
     const entry: Entry = {
       card: chart.card, actions: chart.actions, json: '', driftNote, destroy: () => chart.destroy(),
       update: p => {
         const r = resolve(p);
         chart.setPlot(r);
+        showFilter(filterLine, p);
         // A plot this lot cannot draw is kept, and looks it.
         chart.card.style.opacity = r.issues.length ? '0.7' : '1';
         showDrift(driftNote, p);
@@ -254,6 +267,24 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     };
     entries.set(plot.id, entry);
     return entry;
+  }
+
+  /** The card's filter line, with its switch writing `off` back to the saved plot. */
+  function showFilter(el: HTMLElement, plot: PlotSpec): void {
+    const f = plot.where;
+    el.replaceChildren();
+    if (!f) return;
+    el.appendChild(buildFilterStrip({
+      doc, filter: f, testDefs: d.testDefs, attributes: d.attributes, label: 'Filter',
+      onToggle: on => {
+        const cur = store.get().find(x => x.id === plot.id);
+        const cf = cur?.where;
+        if (!cur || !cf) return;
+        const next: PlotFilter = { ...cf };
+        if (on) delete next.off; else next.off = true;
+        store.upsert({ ...cur, where: next });
+      },
+    }));
   }
 
   /** A title the reader typed that no longer describes its plot: say so on the card, and offer the automatic one. */

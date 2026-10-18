@@ -103,6 +103,31 @@ function boxOf({ t, x, y, align, base }) {
 }
 const overlaps = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
 
+test('a limit off the axis is marked at the edge clear of the other axis\'s limit labels', () => {
+  // X's limits lie beyond its axis (the data fill too little of their window), so they are "← Lo limit" markers in the
+  // top-left corner; Y's high limit is the top line of the plot, labelled in the same corner.
+  const defs = [
+    { testNumber: 3001, name: 'leakage', unit: 'A', limitLow: 0.5e-9, limitHigh: 5.5e-9 },
+    { testNumber: 3002, name: 'voltage', unit: 'V', limitLow: 1.6, limitHigh: 2.0 },
+  ];
+  const built = buildWaferMap({
+    results: Array.from({ length: 40 }, (_, k) => ({ x: k % 8, y: Math.floor(k / 8), hbin: 1, testValues: { 3001: 2e-9 + (k / 40) * 1.6e-9, 3002: 1.72 + (k % 9) * 0.02 } })),
+    testDefs: defs, waferConfig: { diameter: 100 }, dieConfig: { width: 10, height: 10 }, passBins: [1],
+  });
+  const own = [{ label: 'W1', dies: built.dies, wafer: built.wafer, waferIndex: 0, metadata: built.wafer.metadata, passBins: [1], ringCount: 4 }];
+  dashes = []; texts = []; placed = [];
+  const host = document.getElementById('root'); host.innerHTML = '';
+  const chart = renderPlotChart({ waferLabel: () => 'W1' });
+  host.appendChild(chart.card);
+  chart.setPlot(resolvePlot({ id: 's', chart: 'scatter', fields: { x: { test: 3001, name: 'leakage' }, y: { test: 3002, name: 'voltage' }, color: { none: true } } }, own, { testDefs: defs }));
+  chart.destroy();
+  const labels = placed.filter(p => /limit/i.test(p.t)).map(boxOf);
+  assert.ok(labels.some(l => l.t.startsWith('←')) && labels.some(l => /Hi limit 2/.test(l.t)), `both kinds were drawn: ${labels.map(l => l.t).join(' | ')}`);
+  for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) {
+    assert.ok(!overlaps(labels[i], labels[j]), `"${labels[i].t}" and "${labels[j].t}" overlap`);
+  }
+});
+
 test('a scatter with a high limit on Y and a low limit on X does not draw their labels on top of each other', () => {
   // Y's high limit is the top line of the plot and X's low limit is its left line: both labels want the top-left corner.
   const defs = [

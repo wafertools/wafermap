@@ -157,3 +157,46 @@ test('the withheld note tells the reader how to get the tests back', () => {
   assert.match(state(tab).noteText, /Pick one Lot under "Show:"/);
   tab.destroy();
 });
+
+test('a group clicked in the value histogram’s legend narrows the section to it, and Back shows every group', () => {
+  const tab = mount('distributions');
+  pickFrom(tab, 'Group by', 'Lot');
+  const card = () => tab.el.querySelector('[data-wmap-chart-title="Value histogram"]');
+  const chip = [...card().querySelectorAll('button')].find(b => b.textContent.trim() === 'LOT-A');
+  chip.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.ok(state(tab).hasA, 'the section is narrowed to LOT-A, so its own name for 1001 is back');
+  const back = [...card().querySelectorAll('button')].find(b => /Back/.test(b.textContent));
+  assert.ok(back && back.style.display !== 'none', 'the histogram offers Back');
+  back.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(state(tab).withheld, 1, 'every group again');
+  tab.destroy();
+});
+
+test('grouped, the bin pareto opens on each group’s share of its own dies', () => {
+  const tab = mount('overview');
+  pickFrom(tab, 'Group by', 'Lot');
+  const pareto = tab.el.querySelector('[data-wmap-chart-title$="bin pareto"]');
+  assert.ok(pareto, 'the pareto card');
+  const checked = [...pareto.querySelectorAll('input[type="radio"]:checked')].map(r => r.value);
+  assert.ok(checked.includes('share'), `share chosen: ${checked}`);
+  tab.destroy();
+});
+
+test('grouped, Distributions puts the comparison cards first, under their own heading', () => {
+  const tab = mount('distributions');
+  pickFrom(tab, 'Group by', 'Lot');
+  const order = [...tab.el.querySelectorAll('[data-wmap-row-heading], [data-wmap-chart-card]')]
+    .map(el => el.dataset.wmapRowHeading ? `# ${el.textContent}` : el.dataset.wmapChartTitle);
+  const tests = order.indexOf('# Test by test');
+  assert.equal(order[0], '# Comparing Lot', order.join(' | '));
+  assert.ok(tests > 1, 'the comparison cards sit between the two headings');
+  assert.ok(order.slice(1, tests).some(t => /^Comparison by/.test(t)), 'the comparison table among them');
+  assert.ok(order.slice(tests).includes('Process capability'), 'the per-test cards after');
+  tab.destroy();
+});
+
+test('ungrouped, Distributions has no headings', () => {
+  const tab = mount('distributions');
+  assert.equal(tab.el.querySelectorAll('[data-wmap-row-heading]').length, 0);
+  tab.destroy();
+});

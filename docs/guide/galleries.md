@@ -280,9 +280,9 @@ renderWaferGallery(container, items, { insights: { enabled: true } });
 
 Either way, a **Maps | Insights** switch appears at the far right of the toolbar row, after the toolbar, and stays in the same place in both views. Choosing **Insights** swaps the map (or gallery grid) for the chart suite; choosing **Maps** — the toolbar stays visible and usable throughout — returns to the map. Pass `defaultOpen: true` to land on the charts instead of the map, for a surface where the analysis is the point rather than an option — the [Insights example](../examples/insights.html) does exactly that. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want the pass-rate chart, capability, box plots, histograms, the trend chart, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
 
-The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own expand button instead, for enlarging just that chart.
+The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own Expand, in its ⋯ menu, for enlarging just that chart.
 
-The tab lays out three chart sub-tabs, then **Data** and **Plot**. Sweeps are cards on the Plot tab (see [Derived tests and sweeps](#derived-tests-and-sweeps)):
+The tab lays out three chart sub-tabs, then **Data** and **My plots**. Sweeps are cards on the My plots tab (see [Derived tests and sweeps](#derived-tests-and-sweeps)):
 
 - **Overview** — headline tiles naming the population (wafers, dies analysed and excluded, and for a lot the mean wafer yield), a **per-test pass rate** chart (worst test first, one sub-bar per group when grouping is active), a yield bar labelled with the actual pass bins in use and marked with a dashed median reference, and a hard/soft bin pareto.
 - **Distributions** — process capability, a test-value box plot, a value histogram, and a **wafer-to-wafer trend** (one point per wafer at its mean, ±1σ whiskers, the die-weighted lot mean as a centre line, and spec limits where the test has them). The trend is always in slot order and has no sort control by design — drift only reads in the population's own sequence.
@@ -317,9 +317,9 @@ Clicking a leaf row in the yield bar or the box plot — or a point on the trend
 
 **→ [Demo: Your first wafer map](../examples/first-map.html)** and **[Demo: Building a lot gallery](../examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
 
-### Saved plots: the Plot tab, kept by the host
+### Saved plots: the My plots tab, kept by the host
 
-The **Plot** tab is a chart builder: **+ New plot** opens a scatter, histogram, box, bar or line over any parametric test, a die's position,
+The **My plots** tab is a chart builder: **+ New plot** opens a scatter, histogram, box, bar or line over any parametric test, a die's position,
 ring, quadrant, bin, site, reticle cell or shot, a pass/fail test (under **Verdicts**), or a wafer or lot attribute, and **+ New sweep** draws a
 response curve. The library stores nothing itself. A plot is a recipe with no lot in it (`PlotSpec`), so you keep the list wherever you keep settings
 and hand it back on the next render:
@@ -340,6 +340,24 @@ renderWaferGallery(container, items, {
 it; a test is matched by number and checked by name, so a plot saved against another test program is reported instead of being drawn against the wrong measurement.
 **Export plots…** and **Import plots…** move a set of plots between machines as a `wafermap-plots` file (`writePlotsFile` / `readPlotsFile`; a desktop host passes
 its native dialog as `onPickPlotsFile`). The reader is lenient: it keeps every readable plot, names each setting it dropped, and keeps settings a newer version wrote.
+
+### The Insights filter
+
+**Filter…** narrows every Insights tab to the wafers and dies that meet conditions the reader sets, and is shown above
+every tab while it exists. It is view state, like Group by: it is never written into a plots file. Keep it if you want
+it restored:
+
+```js
+renderWaferGallery(el, items, {
+  insights: {
+    filter: JSON.parse(localStorage.getItem('insightsFilter') ?? 'null') ?? undefined,
+    onFilterChange: f => localStorage.setItem('insightsFilter', JSON.stringify(f ?? null)),   // undefined once removed
+  },
+});
+```
+
+A filter is `{ conditions, off? }`, the same shape as a plot's own `where`: each condition names a `field` and either
+`values` to keep (a category) or `min`/`max` (a number, either end open), with `not: true` to keep the rest.
 `insights.sweeps` and `onRemoveSweeps` are deprecated: give sweeps in `plots` as `chart: 'sweep'` plots.
 
 The plot editor refuses a combination that cannot be drawn, with the reason: in the field lists such a field is dimmed ("Yield is per wafer: use a bar or line
@@ -444,7 +462,7 @@ renderWaferGallery(container, items, {
 });
 ```
 
-A sweep is a plot with `chart: 'sweep'`, so it is a card on the **Plot** sub-tab, kept and shared like any other plot (`plots`, `onPlotsChange`, Export and Import) — on a single map or a gallery alike. **+ New sweep** starts one in the app and **Edit** opens a sweep editor beside the curve; pass `defaultView: 'plot'` to open on the tab. `insights.sweeps` still works but is deprecated: each entry is drawn as a sweep plot under its own `id`, and `readPlotsFile` reads a `tsmap-sweeps` file.
+A sweep is a plot with `chart: 'sweep'`, so it is a card on the **My plots** sub-tab, kept and shared like any other plot (`plots`, `onPlotsChange`, Export and Import) — on a single map or a gallery alike. **+ New sweep** starts one in the app and **Edit** opens a sweep editor beside the curve; pass `defaultView: 'plot'` to open on the tab. `insights.sweeps` still works but is deprecated: each entry is drawn as a sweep plot under its own `id`, and `readPlotsFile` reads a `tsmap-sweeps` file.
 
 **→ [Example: Parametric sweeps](../examples/sweeps.html)** — five characterisation sweeps: temperature inversion, DIBL, data retention, output drive, and an RRAM resistance distribution read from test names on a log axis.
 

@@ -5,8 +5,9 @@
 // wmap's own `--wmap-*` theme tokens (`CLR`, canvas-adapter/toolbar.ts) so
 // panels match the surrounding chrome for free, in any host's theme.
 
-import { SHADOW, LEADING, wireTooltip, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, saveImageBlob, openReparentedModal, type OverlayHandle, type SaveImageHandler } from '../toolbar.js';
+import { SHADOW, LEADING, wireTooltip, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, openCommandMenu, type CheckMenuRow, saveImageBlob, openReparentedModal, type OverlayHandle, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
+import type { CardAboutLine } from './cardAbout.js';
 import { minOf, maxOf } from '../../core/utils.js';
 import { robustFence } from '../../stats/math.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
@@ -24,14 +25,10 @@ export type { SaveImageHandler };
 // free this way too, matching the wafer-map popups' own feature set.
 
 /**
- * The card's own expand button is hidden for the modal's duration and shown
- * again on close — a card already sitting inside its own expand modal must
- * not offer a second "expand" of itself: clicking it would reparent the same
- * card into a *second*, nested modal, leaving the first one open but empty
- * (found via exactly that — every card kept its expand icon once expanded).
- * The button is found on the card (`data-wmap-chart-expand`) rather than
- * passed in, so a card opened straight into a modal by something other than
- * its own button — a drilldown — gets the same treatment.
+ * Opens a card in its own resizable window. While it is there (`data-wmap-expanded`) the card's ⋯ menu leaves out
+ * Expand: expanding a card already in its window would reparent it into a second, nested window and leave the first
+ * one empty. The flag is on the card, so a card opened straight into a window by something other than its own menu (a
+ * drilldown) gets the same treatment.
  *
  * `opts.anchor` is for a card that is not on the page yet (see
  * `ReparentModalOptions.anchor`); `opts.onClosed` runs once the modal has
@@ -49,7 +46,6 @@ export function openChartExpandModal(
   for (const tip of card.querySelectorAll<HTMLElement>('div[style*="position: absolute"]')) {
     if (tip.style.display === 'block' && tip.style.pointerEvents === 'none') tip.style.display = 'none';
   }
-  const expandBtn = card.querySelector<HTMLElement>('[data-wmap-chart-expand]');
   const savedStyle = card.getAttribute('style') ?? '';
   const grow = (card.dataset.wmapChartGrow ?? 'plot') as ChartGrow;
   // `alignSelf: 'stretch'` undoes a grid-only `start` — several panels opt out
@@ -66,13 +62,10 @@ export function openChartExpandModal(
     onClosed: () => {
       delete card.dataset.wmapExpanded;
       card.setAttribute('style', savedStyle);
-      if (expandBtn) expandBtn.style.display = 'flex';
       opts.onClosed?.();
     },
   });
   if (!handle) { delete card.dataset.wmapExpanded; card.setAttribute('style', savedStyle); return null; } // already expanded — re-entrancy guard
-
-  if (expandBtn) expandBtn.style.display = 'none';
 
   // A list of rows opens tall enough to show every row (within the viewport)
   // rather than at a fixed size that is mostly empty for a short list. Its
@@ -910,6 +903,18 @@ export interface CardShell {
   /** The canvas Save as PNG saves, made at the moment of saving, for a card that draws more than one (a grid of panels).
    *  Absent = the card's first canvas. */
   setPngCanvas(make: () => HTMLCanvasElement | null): void;
+  /** The one line "About this chart" (or "About this table") shows (`cardAbout`). Absent = the menu has no About row. */
+  setAbout(line: CardAboutLine | undefined): void;
+  /** Rows of the card's own in its ⋯ menu, after Save as PNG and Expand (Edit as plot). Read each time the menu opens. */
+  setMenuRows(read: () => CardMenuRow[]): void;
+}
+
+/** A row of a card's own in its ⋯ menu: an action, or one greyed with the reason it cannot run now. */
+export interface CardMenuRow { label: string; onClick: () => void; disabledHint?: string }
+
+export interface CardShellOptions {
+  /** Default true. False for a card whose image is saved by something else (a panel of a grid, saved with the grid). */
+  png?: boolean;
 }
 
 /**
@@ -1025,7 +1030,7 @@ export function cardFrameStyle(): Partial<CSSStyleDeclaration> {
   };
 }
 
-export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDocument: Document = document): CardShell {
+export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDocument: Document = document, opts: CardShellOptions = {}): CardShell {
   const card = ownerDocument.createElement('div');
   // Stable test/tooling hooks — this card carries no other id/class, and
   // its heading is a bare div otherwise matched only by user-visible text.
@@ -1053,43 +1058,65 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   // only serves the header, so the two never fight over the same element.
   const headerTip = makeTooltip(card);
 
-  const saveBtn = card.ownerDocument.createElement('button');
-  saveBtn.type = 'button';
-  saveBtn.setAttribute('aria-label', 'Save as PNG');
-  saveBtn.innerHTML = ICONS.download;
-  Object.assign(saveBtn.style, {
+  // One ⋯ menu for everything the card offers about itself, rather than an icon each: a header of icons grows with every
+  // new action, and the reader had to learn each glyph. Its rows are built when it opens, from what the card holds then.
+  const menuBtn = card.ownerDocument.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.setAttribute('aria-label', 'Chart actions');
+  menuBtn.innerHTML = ICONS.more;
+  menuBtn.dataset.wmapCardMenu = '1';
+  Object.assign(menuBtn.style, {
     ...controlStyle('outlined'),
     color: CLR.label, padding: '0', width: '22px', height: '22px', lineHeight: LEADING.none, flexShrink: '0',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   } as Partial<CSSStyleDeclaration>);
-  wireControlHover(saveBtn);
-  attachChartTip(saveBtn, card, headerTip, 'Save as PNG');
+  wireControlHover(menuBtn);
+  attachChartTip(menuBtn, card, headerTip, 'Chart actions');
+  markMenuTrigger(menuBtn, false);
+  markNoPrint(menuBtn);
+  headingRow.appendChild(menuBtn);
+
+  // "About this chart": one line under the heading, shown and hidden from the menu.
+  const aboutLine = card.ownerDocument.createElement('div');
+  aboutLine.dataset.wmapCardAbout = '1';
+  aboutLine.setAttribute('role', 'note');
+  Object.assign(aboutLine.style, { display: 'none', color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.md } as Partial<CSSStyleDeclaration>);
+  markNoPrint(aboutLine);
+  let about: CardAboutLine | undefined;
+  // The text is in the card only while it shows, so a hidden line is not read as part of the card (its text, a saved image).
+  const showAbout = (on: boolean): void => { aboutLine.textContent = on ? about?.text ?? '' : ''; aboutLine.style.display = on ? '' : 'none'; };
   let pngCanvas: (() => HTMLCanvasElement | null) | undefined;
-  saveBtn.addEventListener('click', () => {
+  let extraRows: (() => CardMenuRow[]) | undefined;
+  const savePng = (): void => {
     const canvas = pngCanvas ? pngCanvas() : card.querySelector<HTMLCanvasElement>('canvas');
     // The heading as it is now: a plot's title follows its fields, so the file is named for what is on screen.
     // Saved under its title, with what the card says around the canvas: a bare canvas is marks with no name.
     if (canvas) saveCanvasPng(canvas, heading.textContent || title, onSaveImage, { card, title: heading.textContent || title, decor: decorFor(card) });
+  };
+  const menuRows = (): CheckMenuRow[] => {
+    const rows: CheckMenuRow[] = [];
+    const act = (label: string, run: () => void, disabledHint?: string): CheckMenuRow =>
+      ({ label, active: false, action: true, enabled: !disabledHint, disabledHint, onClick: () => { closeMenu?.(); run(); } });
+    // A card that draws no canvas (a table) has no image to save; a panel of a grid is saved with its grid.
+    if (opts.png !== false && (pngCanvas || card.querySelector('canvas'))) rows.push(act('Save as PNG', savePng));
+    // A card already in its expand window does not offer to expand again (that would nest a second, empty window).
+    if (!isExpandedCard(card)) rows.push(act('Expand', () => openChartExpandModal(card, heading.textContent ?? title)));
+    for (const r of extraRows?.() ?? []) rows.push(act(r.label, r.onClick, r.disabledHint));
+    if (about) {
+      const shown = aboutLine.style.display !== 'none';
+      rows.push({ label: `About this ${about.noun}`, active: shown, onClick: () => { closeMenu?.(); showAbout(!shown); } });
+    }
+    return rows;
+  };
+  let closeMenu: (() => void) | undefined;
+  menuBtn.addEventListener('click', () => {
+    if (menuBtn.getAttribute('aria-expanded') === 'true') { closeMenu?.(); return; }
+    const rows = menuRows();
+    if (rows.length === 0) return;
+    closeMenu = openCommandMenu(menuBtn.getBoundingClientRect(), menuBtn, rows, `${heading.textContent || title}: chart actions`, { trigger: menuBtn, hook: 'wmapCardMenuList' });
   });
-  markNoPrint(saveBtn);
-  headingRow.appendChild(saveBtn);
-
-  const expandBtn = card.ownerDocument.createElement('button');
-  expandBtn.type = 'button';
-  expandBtn.setAttribute('aria-label', 'Expand');
-  expandBtn.innerHTML = ICONS.expand;
-  Object.assign(expandBtn.style, {
-    ...controlStyle('outlined'),
-    color: CLR.label, padding: '0', width: '22px', height: '22px', lineHeight: LEADING.none, flexShrink: '0',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  } as Partial<CSSStyleDeclaration>);
-  wireControlHover(expandBtn);
-  attachChartTip(expandBtn, card, headerTip, 'Expand');
-  expandBtn.dataset.wmapChartExpand = '1';
-  expandBtn.addEventListener('click', () => openChartExpandModal(card, heading.textContent ?? title));
-  markNoPrint(expandBtn);
-  headingRow.appendChild(expandBtn);
   card.appendChild(headingRow);
+  card.appendChild(aboutLine);
 
   // Hidden on screen, shown in print, filled from the card's state just before printing (see ensurePrintCaptions).
   const printBlock = card.ownerDocument.createElement('div');
@@ -1131,7 +1158,21 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   Object.assign(body.style, { overflowX: 'hidden', overflowY: 'hidden', minHeight: '0', flex: '1', position: 'relative' } as Partial<CSSStyleDeclaration>);
   card.appendChild(body);
 
-  return { card, heading, controlsRow, body, setPngDecor: read => { decorOf.set(card, read); }, setPngCanvas: make => { pngCanvas = make; } };
+  return {
+    card, heading, controlsRow, body,
+    setPngDecor: read => { decorOf.set(card, read); },
+    setPngCanvas: make => { pngCanvas = make; },
+    setAbout: line => { about = line; showAbout(!!line && aboutLine.style.display !== 'none'); },
+    setMenuRows: read => { extraRows = read; },
+  };
+}
+
+/** A text box's look in an editor: the one style the plot, sweep and filter editors' boxes share. */
+export function inputStyle(): Partial<CSSStyleDeclaration> {
+  return {
+    background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control,
+    padding: `${SPACE.xs} ${SPACE.sm}`, fontSize: FONT.body, fontFamily: FONT.family, boxSizing: 'border-box', minWidth: '0',
+  };
 }
 
 // ── Segmented control ────────────────────────────────────────────────────────
@@ -1150,7 +1191,11 @@ export function makeSegmented(
 ): HTMLElement {
   const group = ownerDocument.createElement('div');
   group.setAttribute('role', 'radiogroup');
-  Object.assign(group.style, { display: 'inline-flex', border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control, overflow: 'hidden' } as Partial<CSSStyleDeclaration>);
+  // Each segment draws its own border and overlaps its neighbours by a pixel
+  // (the padding takes the overlap back), so a row too long for its column
+  // wraps onto a second line with every edge still drawn.
+  Object.assign(group.style, { display: 'inline-flex', flexWrap: 'wrap', maxWidth: '100%', padding: '1px 0 0 1px' } as Partial<CSSStyleDeclaration>);
+  const last = options.length - 1;
   const name = `seg-${Math.random().toString(36).slice(2, 9)}`;
   const paints: Array<() => void> = [];
 
@@ -1162,7 +1207,9 @@ export function makeSegmented(
       fontSize: FONT.body,
       padding:  compact ? '1px 6px' : '3px 10px',
       cursor: 'pointer', userSelect: 'none',
-      borderLeft: i > 0 ? `1px solid ${CLR.menuBorder}` : 'none',
+      border: `1px solid ${CLR.menuBorder}`, margin: '-1px 0 0 -1px',
+      borderTopLeftRadius: i === 0 ? RADIUS.control : '0', borderBottomLeftRadius: i === 0 ? RADIUS.control : '0',
+      borderTopRightRadius: i === last ? RADIUS.control : '0', borderBottomRightRadius: i === last ? RADIUS.control : '0',
     } as Partial<CSSStyleDeclaration>);
 
     wireControlHover(label, 'bare');
@@ -1195,6 +1242,37 @@ export function makeSegmented(
   });
 
   return group;
+}
+
+// ── First rows, then all of them ─────────────────────────────────────────────
+
+/** The most a listed-in-full table is tall in a card before it scrolls: about twelve rows. */
+const ALL_ROWS_MAX_PX = 360;
+
+/**
+ * A table that lists its first `first` rows, with a button to list every one and back. Listed in full it scrolls inside
+ * `scroller` after `ALL_ROWS_MAX_PX`, so a lot of a hundred wafers is a scrolling table in a card of the usual size,
+ * never a card as tall as all its rows (which also stretches every card beside it in the grid). `fill(all)` writes the
+ * rows; the button is returned for the caller to place under the table. No button shows when every row fits the first.
+ */
+export function firstRowsToggle(
+  doc: Document,
+  o: { total: number; first: number; noun: string; scroller: HTMLElement; fill: (all: boolean) => void },
+): HTMLButtonElement {
+  let all = false;
+  const more = doc.createElement('button');
+  more.type = 'button';
+  Object.assign(more.style, { ...controlStyle('outlined'), marginTop: SPACE.sm } as Partial<CSSStyleDeclaration>);
+  wireControlHover(more);
+  const apply = () => {
+    o.fill(all);
+    Object.assign(o.scroller.style, { maxHeight: all ? `${ALL_ROWS_MAX_PX}px` : '', overflowY: all ? 'auto' : '' } as Partial<CSSStyleDeclaration>);
+    more.textContent = all ? `Show the first ${o.noun}` : `Show all ${o.total} ${o.noun}`;
+    more.style.display = o.total > o.first ? '' : 'none';
+  };
+  more.addEventListener('click', () => { all = !all; apply(); });
+  apply();
+  return more;
 }
 
 // ── Drill-down back button ──────────────────────────────────────────────────
@@ -2248,6 +2326,9 @@ export function drawOffAxisLimits(
   /** Panel colour to back each marker with (`fillTextOnHalo`), for charts
    *  where lines can run under the markers. */
   halo?: string,
+  /** Labels already on the plot (the other axis's limits): each marker steps inward clear of them, and is added, so a
+   *  label placed after it keeps clear of it too. */
+  taken?: LabelBox[],
 ): void {
   if (!offAxis.length) return;
   ctx.save();
@@ -2262,14 +2343,23 @@ export function drawOffAxisLimits(
     // The arrow points OUT of the plot, toward where the limit actually lies.
     const arrow = orient === 'horizontal' ? (side === 'lo' ? '←' : '→') : (side === 'lo' ? '↓' : '↑');
     const text = side === 'lo' ? `${arrow} ${label} ${format(value)}` : `${label} ${format(value)} ${arrow}`;
+    const w = ctx.measureText(text).width;
     if (orient === 'horizontal') {
+      // Along the top, from the edge the limit lies beyond.
+      const x0 = side === 'lo' ? axis.left + 2 : axis.right - 2 - w;
+      const box = { x0, x1: x0 + w, y0: axis.top + 2 + dy, y1: axis.top + 2 + dy + rowH };
+      const at = taken ? placeClearOf(taken, box, rowH) : box;
       ctx.textBaseline = 'top';
       ctx.textAlign = side === 'lo' ? 'left' : 'right';
-      fillTextOnHalo(ctx, text, side === 'lo' ? axis.left + 2 : axis.right - 2, axis.top + 2 + dy, halo);
+      fillTextOnHalo(ctx, text, side === 'lo' ? axis.left + 2 : axis.right - 2, at.y0, halo);
     } else {
-      ctx.textBaseline = side === 'lo' ? 'bottom' : 'top';
+      // At the left, from the edge the limit lies beyond: up from the bottom, down from the top.
+      const y0 = side === 'lo' ? axis.bottom - 2 - dy - rowH : axis.top + 2 + dy;
+      const box = { x0: axis.left + 4, x1: axis.left + 4 + w, y0, y1: y0 + rowH };
+      const at = taken ? placeClearOf(taken, box, side === 'lo' ? -rowH : rowH) : box;
+      ctx.textBaseline = 'top';
       ctx.textAlign = 'left';
-      fillTextOnHalo(ctx, text, axis.left + 4, side === 'lo' ? axis.bottom - 2 - dy : axis.top + 2 + dy, halo);
+      fillTextOnHalo(ctx, text, axis.left + 4, at.y0, halo);
     }
   }
   ctx.restore();

@@ -22,6 +22,7 @@ import { yieldFill } from './palette.js';
 import { fontPx } from '../toolbar.js';
 import { escHtml } from '../../core/utils.js';
 import { makeTooltip, positionChartTooltip, cardShell, resolveChartCanvasColors, observeResize, growCardToFitContent, setChartGrow, isExpandedCard, bodyRoom, renderEmptyState, type SaveImageHandler, type ChartCanvasColors, prepareCanvas } from './chartShell.js';
+import { cardAbout } from './cardAbout.js';
 
 export type RegionYieldMode = 'ring' | 'quadrant' | 'reticleCell';
 
@@ -117,7 +118,8 @@ function drawPercentChip(ctx: CanvasRenderingContext2D, x: number, y: number, te
 export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): RegionYieldDiagramHandle {
   const { mode, rows, onSaveImage } = options;
   const title = options.title ?? (mode === 'ring' ? 'Ring yield' : mode === 'quadrant' ? 'Quadrant yield' : 'Reticle cell yield');
-  const { card, body } = cardShell(title, onSaveImage, options.ownerDocument);
+  const { card, body, setAbout } = cardShell(title, onSaveImage, options.ownerDocument);
+  setAbout(cardAbout(mode === 'ring' ? 'ring-yield' : mode === 'quadrant' ? 'quadrant-yield' : 'reticle-yield'));
   setChartGrow(card, 'square');
 
   const hasData = rows.length > 0;

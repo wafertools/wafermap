@@ -171,7 +171,7 @@ is hidden — none of the others (download, zoom/pan/select, mode, palette, over
 orientation, Expand) apply to the chart suite underneath, and Findings specifically toggles the
 map's own findings panel, which sits behind the Insights tab's opaque overlay with no visible
 effect while it's open. Expand is hidden rather than repurposed: each chart panel inside
-Insights has its own expand button for enlarging that one chart instead.
+Insights has its own Expand, in its ⋯ menu, for enlarging that one chart instead.
 
 #### Gallery control bar
 

@@ -299,6 +299,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
     getWafer: anyWafer ? (d => waferByDie.get(d)) : undefined,
     ringCount: deps.ringCount,
     waferMetadata: items.some(it => it.wafer) ? commonMetadata(items.map(it => ({ metadata: it.wafer?.metadata }))) : undefined,
+    attributes: deps.attributes,
     ownerDocument: doc,
   });
 

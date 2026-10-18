@@ -10,7 +10,7 @@ import type { RenderableWaferMap } from './renderWaferMap.js';
 import { openModal } from './toolbar.js';
 import { renderWaferGallery, type WaferMapDisplayItem } from './renderWaferGallery.js';
 
-export interface PatMapItem { label: string; dies: readonly Die[]; allDies?: readonly Die[]; passBins: readonly number[]; source?: RenderableWaferMap }
+export interface PatMapItem { label: string; dies: readonly Die[]; allDies?: readonly Die[]; passBins: readonly number[]; ringCount: number; source?: RenderableWaferMap }
 
 /** The die metadata key the verdict is carried in, and the name the maps call it by. */
 const KEY = 'pat';
@@ -40,7 +40,7 @@ export function patVerdictMaps(items: readonly PatMapItem[], testDefs: readonly 
       const v = verdicts[i].verdict;
       return copyDie(d as Die, { hbin: undefined, sbin: undefined, testValues: undefined, testPass: undefined, metadata: v ? { [KEY]: PAT_VERDICT_LABEL[v] } : undefined });
     });
-    out.push({ ...it.source, label: it.label, dies, passBins: [], hbinDefs: [], sbinDefs: [], testDefs: [], metadataFields: [FIELD] });
+    out.push({ ...it.source, label: it.label, dies, ringCount: it.ringCount, passBins: [], hbinDefs: [], sbinDefs: [], testDefs: [], metadataFields: [FIELD] });
   }
   return out;
 }

@@ -430,12 +430,16 @@ test('a test is costed by the dies it fails that also fail yield', () => {
   assert.equal(t.brief, 'FREQ: outside limits, 150 dies lost');
 });
 
-test('dies outside a test\'s limits but binned as passing are watched, naming only those dies', () => {
+test('dies outside a test\'s limits but binned as passing are a signal, naming only those dies', () => {
   const l = regionWithTest({ inside: 0, outside: 600, lostShare: 0 });
   l.stats.testSpecYield[0].failHighDies = 0;
   const s = buildSynthesis(l);
-  assert.ok(!s.items.some(i => i.target.kind === 'test'), 'it costs no yield, so it is not an item');
-  assert.deepEqual(s.watch.map(w => [w.text, w.target]), [['FREQ is below its low limit on 600 dies binned as passing', { kind: 'test', testNumber: 7 }]]);
+  const all = [...s.items, ...(s.also?.items ?? [])];
+  assert.ok(!all.some(i => i.kind === 'loss' && i.target.kind === 'test'), 'it costs no yield, so it is not a loss');
+  const signal = all.find(i => i.target.kind === 'test');
+  assert.deepEqual([signal.kind, signal.text, signal.target], ['signal', 'FREQ is below its low limit on 600 dies binned as passing', { kind: 'test', testNumber: 7 }]);
+  assert.equal(signal.diesLost, 0);
+  assert.equal(signal.affected, 600, 'ranked by the dies the limits and the binning disagree about');
 });
 
 test('"also seen as" counts a long family instead of naming each', () => {
@@ -561,4 +565,25 @@ test('a jump inside an embedded report can be undone with Back or Alt+Left', asy
   document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }));
   assert.equal(scrollY, 120, 'Alt+Left does the same');
   dom.window.close();
+});
+
+test('a pass/fail test\'s item charts its pass rate, a measured test\'s its histogram', () => {
+  const l = regionWithTest({ inside: 0, outside: 600, lostShare: 1 });
+  const lot = { ...l, stats: { ...l.stats, testSpecYield: [], functionalYield: [{ testNumber: 9, label: 'SCAN', failDies: 600, totalDies: l.stats.testSpecYield[0].totalDies }] } };
+  const it = [...buildSynthesis(lot).items, ...(buildSynthesis(lot).also?.items ?? [])].find(i => i.target.kind === 'test');
+  assert.ok(it, 'the failing pass/fail test is an item');
+  assert.equal(it.chart.chart, 'bar');
+  assert.deepEqual(it.chart.fields.y, { passRate: 9 });
+  assert.equal(it.chart.valueLabels, true, 'each bar says its rate');
+  assert.deepEqual(it.chart.axes.y.references, [{ stat: 'median' }], 'against the median of the bars');
+  const measured = [...buildSynthesis(l).items, ...(buildSynthesis(l).also?.items ?? [])].find(i => i.target.kind === 'test');
+  assert.deepEqual([measured.chart.chart, measured.chart.fields.y], ['histogram', { test: 7 }]);
+});
+
+test('a region\'s loss charts yield by that kind of region, each bar with its value, against the median', () => {
+  const l = regionWithTest({ inside: 0, outside: 600, lostShare: 1 });
+  const region = buildSynthesis(l).items.find(i => i.kind === 'loss' && i.target.kind === 'finding' && i.chart.fields.y?.builtin === 'yield');
+  assert.ok(region, 'a region item charted as yield');
+  assert.equal(region.chart.valueLabels, true);
+  assert.deepEqual(region.chart.axes.y.references, [{ stat: 'median' }]);
 });

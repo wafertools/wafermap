@@ -300,15 +300,24 @@ function countTests(dies: readonly Die[], tests: readonly TestDef[], cache: Map<
  * (`classifySpec`, `getTestPassStatus`), for picking out the failing dies a pass-rate row counts.
  */
 export function dieFailsTest(die: Die, def: TestDef, kind: TestPassKind): boolean | undefined {
+  const v = dieTestVerdict(die, def, kind);
+  return v === undefined ? undefined : v !== 'pass';
+}
+
+/**
+ * `dieFailsTest`'s judgement with the side a die failed on: judged by test limits, `failLow` or `failHigh`; by a
+ * recorded verdict, `fail`. Undefined where the die cannot be judged.
+ */
+export function dieTestVerdict(die: Die, def: TestDef, kind: TestPassKind): 'pass' | 'fail' | 'failLow' | 'failHigh' | undefined {
   const tn = def.testNumber;
   if (tn === undefined || !isYieldEligibleDie(die)) return undefined;
   if (kind === 'spec') {
     const v = testValue(die, tn);
     const cat = v === undefined ? null : classifySpec(v, def);
-    return cat === null ? undefined : cat !== 'pass';
+    return cat === null ? undefined : cat;
   }
   const verdict = getTestPassStatus(die, tn, def);
-  return verdict === undefined ? undefined : !verdict;
+  return verdict === undefined ? undefined : verdict ? 'pass' : 'fail';
 }
 
 
@@ -336,6 +345,11 @@ function testMatchesKind(d: TestDef, kind: TestPassKind): boolean {
  * every parametric test *could* have one, so a definition-only check would offer
  * a mode that renders empty on the (common) data that has none.
  */
+/** The tests a pass rate under `kind` covers: parametric tests with limits, parametric tests, or functional tests. */
+export function testsForPassKind(testDefs: readonly TestDef[] | undefined, kind: TestPassKind): TestDef[] {
+  return (testDefs ?? []).filter(d => d.testNumber !== undefined && testMatchesKind(d, kind));
+}
+
 export function hasJudgeableTests(
   testDefs: TestDef[] | undefined,
   kind: TestPassKind,

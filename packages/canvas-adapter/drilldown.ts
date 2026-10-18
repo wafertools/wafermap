@@ -13,16 +13,17 @@
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
-import { isParametricTest } from '../renderer/buildWaferMap.js';
+import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
+import type { BinColors } from '../renderer/binColors.js';
 import { buildSweepData, type SweepSpec } from '../stats/sweep.js';
 import type { FacetCuration } from '../stats/facets.js';
 import { plotToSweep } from '../stats/plotSpec.js';
-import { renderHistogramPanel } from './charts/histogram.js';
+import { renderPlotCard } from './plotCard.js';
 import { renderCapabilityPanel } from './charts/capability.js';
-import { openChartExpandModal, populationPhrase } from './charts/chartShell.js';
+import { makeTestSelect, openChartExpandModal, populationPhrase } from './charts/chartShell.js';
 import {
-  buildCheckMenuEl, createToolbarHelpers, getTooltip, menuLayerFor, wireMenuA11y, CLR, FONT, SPACE,
-  openReparentedModal, controlStyle, wireControlHover, type CheckMenuRow, type SaveImageHandler, type SaveTextHandler,
+  openCommandMenu, CLR, FONT, SPACE,
+  openReparentedModal, type CheckMenuRow, type SaveImageHandler, type SaveTextHandler,
 } from './toolbar.js';
 import type { DrilldownSource, DrilldownItem } from './chartPopulation.js';
 import { requireRingCount } from '../core/ringCount.js';
@@ -39,6 +40,8 @@ export interface DrilldownContext {
   attributes?: Record<string, FacetCuration>;
   /** The reader's saved plots: each is a row in the menu, opened on the selection. */
   plots?: PlotStore;
+  /** The maps' bin colours, read when a plot is drawn: a plot coloured by bin draws each bin in its map colour. */
+  getBinColors?: () => BinColors;
   onSaveImage?: SaveImageHandler;
   /** The host's CSV save hook, for the tables' Export CSV. */
   onSaveText?: SaveTextHandler;
@@ -85,36 +88,20 @@ function testsWithValues(source: DrilldownSource, dies: Die[], min: number): num
   });
 }
 
-/** A card built for the modal, with its population stated under the heading
- *  — the one line that tells an engineer this is not the whole lot. */
-function openCard(card: HTMLElement, title: string, line: string, anchor: Element, destroy: () => void,
-  /** A button beside the population line; `run` is handed the modal's close, to leave it before doing something else. */
-  action?: { label: string; hook: string; run: (close: () => void) => void }): void {
-  const doc = card.ownerDocument;
-  const el = doc.createElement('div');
-  const text = doc.createElement('span');
-  text.textContent = line;
-  // The population line is read by its own text, so it is its own element and the button is its sibling.
-  text.dataset.wmapPopulation = '1';
-  Object.assign(el.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm, display: 'flex', alignItems: 'center', gap: SPACE.lg, flexWrap: 'wrap' } as Partial<CSSStyleDeclaration>);
-  el.appendChild(text);
-  let modal: ReturnType<typeof openChartExpandModal> = null;
-  if (action) {
-    const btn = doc.createElement('button');
-    btn.type = 'button';
-    btn.textContent = action.label;
-    btn.dataset[action.hook] = '1';
-    Object.assign(btn.style, controlStyle('outlined') as Partial<CSSStyleDeclaration>);
-    wireControlHover(btn);
-    btn.addEventListener('click', () => action.run(() => modal?.close()));
-    el.appendChild(btn);
-  }
-  // Directly under the heading — found by the card's own expand button, not by
+/** A card built for the modal, with its population stated under the heading — the one line that tells an engineer
+ *  this is not the whole lot. Returns the window's close. */
+function openCard(card: HTMLElement, title: string, line: string, anchor: Element, destroy: () => void): () => void {
+  const el = card.ownerDocument.createElement('div');
+  el.textContent = line;
+  el.dataset.wmapPopulation = '1';
+  Object.assign(el.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
+  // Directly under the heading — found by the card's own ⋯ menu button, not by
   // position: panels insert their own hints ahead of the body.
-  const headingRow = card.querySelector('[data-wmap-chart-expand]')?.parentElement;
+  const headingRow = card.querySelector('[data-wmap-card-menu]')?.parentElement;
   if (headingRow?.parentElement === card) headingRow.after(el);
   else card.prepend(el);
-  modal = openChartExpandModal(card, title, { anchor, onClosed: destroy });
+  const modal = openChartExpandModal(card, title, { anchor, onClosed: destroy });
+  return () => modal?.close();
 }
 
 /** Why a saved sweep cannot be drawn over this population, or `null` when it can. */
@@ -144,24 +131,24 @@ function distributionTargets(source: DrilldownSource, ctx: DrilldownContext, anc
     section: 'Distributions', label: 'Value histogram',
     unavailable: reasonFor(1, 'These dies have no parametric test values'),
     open: () => {
-      // The test the histogram is on, followed as the reader changes it, so the plot made from it is the one on screen.
+      // A plot (plotCard.ts) of one test's values over these dies, with a test picker. The test it is on is followed
+      // as the reader changes it, so the plot made from it is the one on screen.
       let test = source.activeTest ?? defs[0]?.testNumber;
-      const panel = renderHistogramPanel({
-        title: 'Value histogram', items, testDefs: defs, selectedTestNumber: source.activeTest,
-        onTestChange: n => { test = n; },
-        onSaveImage: ctx.onSaveImage, ownerDocument: doc,
-      });
+      const pickable = defs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
+      const picker = makeTestSelect(pickable, test ?? null, n => { test = n; panel.refresh(); }, { ownerDocument: doc });
+      const plotItems = toPlotItems(items);
       const openPlot = plotOpener(source, ctx, anchor);
-      // The same values as a plot of its own, over the same dies, to change the axes, colour or limits, and to keep.
-      const action = openPlot && test !== undefined ? {
-        label: 'Edit as new plot', hook: 'wmapEditAsPlot',
-        run: (close: () => void) => {
-          const def = defs.find(d => d.testNumber === test);
-          close();
-          openPlot({ id: newPlotId(), chart: 'histogram', fields: { y: { test: test!, ...(def?.name ? { name: def.name } : {}) }, color: { none: true } } }, true)();
-        },
-      } : undefined;
-      openCard(panel.card, `Value histogram — ${phrase}`, `Population: ${phrase}`, anchor, () => panel.destroy(), action);
+      let closeWindow: (() => void) | undefined;
+      const panel = renderPlotCard({
+        doc, items: plotItems, ctx: { testDefs: defs, curation: ctx.attributes }, extras: [picker],
+        spec: { choices: [], build: () => ({ id: 'drill-histogram', title: 'Value histogram', chart: 'histogram', fields: { y: { slot: 'test' }, color: { none: true } } }) },
+        slots: () => ({ test }),
+        chart: { onSaveImage: ctx.onSaveImage, binColors: ctx.getBinColors?.() },
+        // The same values as a plot of its own, over the same dies, to change the axes, colour or limits, and to keep.
+        // The histogram's window closes first, so the editor is not stacked on a copy of what it shows.
+        editAsPlot: openPlot ? plot => { closeWindow?.(); openPlot(plot, true)(); } : undefined,
+      });
+      closeWindow = openCard(panel.card, `Value histogram — ${phrase}`, `Population: ${phrase}`, anchor, () => panel.destroy());
     },
   };
 
@@ -213,6 +200,7 @@ function plotOpener(source: DrilldownSource, ctx: DrilldownContext, anchor: Elem
       title: `${draft ? (isSweep ? 'New sweep' : 'New plot') : (isSweep ? 'Sweep' : 'Plot')} — ${shown}`,
       chart: {
         onSaveImage: ctx.onSaveImage,
+        binColors: ctx.getBinColors?.(),
         // A drag on the plot opens this menu again on the dies inside it.
         onSelectPoints: (points, at, el) => {
           const sub = sourceFromPoints(points, items, source.testDefs);
@@ -312,9 +300,6 @@ function targetsFor(source: DrilldownSource, ctx: DrilldownContext, anchor: Elem
   ];
 }
 
-/** The one open drilldown menu per document — opening another closes it. */
-const openMenus = new WeakMap<Document, () => void>();
-
 /**
  * Open the drilldown menu for `source` at viewport point `at`.
  *
@@ -330,10 +315,6 @@ export function openDrilldownMenu(
   source: DrilldownSource,
   ctx: DrilldownContext,
 ): () => void {
-  const doc = anchor.ownerDocument;
-  const win = doc.defaultView ?? window;
-  openMenus.get(doc)?.();
-
   const targets = targetsFor(source, ctx, anchor);
   const rows: CheckMenuRow[] = [];
   if (ctx.narrower) {
@@ -359,35 +340,8 @@ export function openDrilldownMenu(
     });
   }
 
-  const { makeMenuSection } = createToolbarHelpers(getTooltip(doc));
-  const menu = buildCheckMenuEl(new DOMRect(at.x, at.y - 4, 0, 0), rows, { makeMenuSection }, win);
   const n = allDies(source).length;
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', `Open a chart or table of ${populationPhrase(n, n, source.population)}`);
-  menu.dataset.wmapDrilldownMenu = '1';
-  menuLayerFor(anchor).appendChild(menu);
-
-  // Keep it on screen: a menu opened near the bottom or right edge flips to
-  // the other side of the point rather than running out of the viewport.
-  const r = menu.getBoundingClientRect();
-  if (r.bottom > win.innerHeight - 4) menu.style.top = `${Math.max(4, at.y - r.height)}px`;
-  if (r.right > win.innerWidth - 4) menu.style.left = `${Math.max(4, win.innerWidth - r.width - 4)}px`;
-
-  let closed = false;
-  function close(): void {
-    if (closed) return;
-    closed = true;
-    menu.remove();
-    doc.removeEventListener('pointerdown', onOutside, true);
-    win.removeEventListener('blur', close);
-    if (openMenus.get(doc) === close) openMenus.delete(doc);
-  }
-  function onOutside(e: PointerEvent): void {
-    if (!menu.contains(e.target as Node)) close();
-  }
-  doc.addEventListener('pointerdown', onOutside, true);
-  win.addEventListener('blur', close);
-  wireMenuA11y(menu, anchor, close);
-  openMenus.set(doc, close);
+  const close = openCommandMenu(new DOMRect(at.x, at.y - 4, 0, 0), anchor, rows,
+    `Open a chart or table of ${populationPhrase(n, n, source.population)}`, { hook: 'wmapDrilldownMenu' });
   return close;
 }

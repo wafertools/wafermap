@@ -27,6 +27,7 @@ import { exportCsv } from '../tableExport.js';
 import { attachChartTip, cardShell, setChartGrow, isExpandedCard, bodyRoom, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
 import { escHtml } from '../../core/utils.js';
 import { unmarkedLabel, derivedCsvCell, DERIVED_CSV_HEADER, DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
+import { cardAbout } from './cardAbout.js';
 
 const MATRIX_LIMIT_MIN = 5;
 const MATRIX_LIMIT_MAX = 100;
@@ -107,7 +108,8 @@ function blendTowardBg(colour: string, bg: [number, number, number], t: number):
 export function renderCorrelationPanel(options: CorrelationPanelOptions): CorrelationPanelHandle {
   // Cells use the fixed sign-aware correlation hues (palette.ts).
   const { title = 'Test correlation matrix', items, testDefs, onSaveImage, onSelectPair } = options;
-  const { card, body, controlsRow, setPngDecor } = cardShell(title, onSaveImage, options.ownerDocument);
+  const { card, body, controlsRow, setPngDecor, setAbout } = cardShell(title, onSaveImage, options.ownerDocument);
+  setAbout(cardAbout('correlation'));
   // The sign scale is page markup under the matrix; a saved image gets it as a colour bar so the hues can be read.
   setPngDecor(() => {
     const bg = parseCssRgb(card.ownerDocument.defaultView?.getComputedStyle(card).backgroundColor ?? '') ?? [255, 255, 255];

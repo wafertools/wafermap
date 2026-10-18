@@ -11,12 +11,15 @@
 // box brings the automatic one back.
 
 import { combinationIssue, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, withTestSetNames, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
-import { isBinned, isField, isTestSet, sameField, xFieldsOf, PLOT_BINS_DEFAULT, PLOT_BINS_MAX, PLOT_BINS_MIN, PLOT_X_LEVELS, type PlotAxis, type PlotBinnedField, type PlotField, type PlotLimits, type PlotNormalize, type PlotSpec, type PlotTestSet } from '../stats/plotSpec.js';
+import { isBinned, isField, isPassRateSet, isTestSet, sameField, xFieldsOf, PLOT_BINS_DEFAULT, PLOT_BINS_MAX, PLOT_BINS_MIN, PLOT_X_LEVELS, type PlotAxis, type PlotBinnedField, type PlotField, type PlotLimits, type PlotNormalize, type PlotSpec, type PlotTestSet } from '../stats/plotSpec.js';
 import { formatTestList, parseTestList } from '../stats/sweepText.js';
 import { formatReferences, parseReferences } from '../stats/plotReferences.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
+import type { FacetCuration } from '../stats/facets.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip } from './toolbar.js';
-import { makeListSelect, makeSegmented, makeToggle, type ListSelectOption } from './charts/chartShell.js';
+import { inputStyle, makeListSelect, makeSegmented, makeToggle, type ListSelectOption } from './charts/chartShell.js';
+export { inputStyle };
+import { buildFilterEditor } from './filterEditor.js';
 
 export interface PlotEditorOptions {
   doc: Document;
@@ -28,8 +31,14 @@ export interface PlotEditorOptions {
   autoText: () => { title: string; x?: string; y?: string };
   /** Called with the new spec after every change. */
   onChange: (next: PlotSpec) => void;
-  /** The values a category field takes on the population, in order: what "Only dies where" offers. */
+  /** The values a category field takes on the population, in order: what a filter condition offers. */
   valuesOf?: (field: PlotField) => string[];
+  /** The range a number field spans on the population: where a new range condition starts. */
+  extentOf?: (field: PlotField) => [number, number] | undefined;
+  /** The population's test definitions, so a condition on a test is stated with its name and unit. */
+  testDefs?: readonly TestDef[];
+  /** The host's names for wafer attributes, so a condition names a field as the field list does. */
+  attributes?: Record<string, FacetCuration>;
 }
 
 export interface PlotEditorHandle {
@@ -68,13 +77,6 @@ const NORMALIZE_OPTIONS: Array<[string, string, string]> = [
 ];
 
 const AGGREGATE_LABEL: Record<string, string> = { mean: 'Mean', median: 'Median', min: 'Minimum', max: 'Maximum', sum: 'Sum', count: 'Count', yield: 'Pooled yield (passing over judged dies)' };
-
-export function inputStyle(): Partial<CSSStyleDeclaration> {
-  return {
-    background: CLR.menuBg, color: CLR.text, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control,
-    padding: `${SPACE.xs} ${SPACE.sm}`, fontSize: FONT.body, fontFamily: FONT.family, boxSizing: 'border-box', minWidth: '0',
-  };
-}
 
 /** A labelled control with an optional hint beneath it: the one layout every editor field uses. */
 export function fieldRow(doc: Document, label: string, control: HTMLElement, hint?: string): HTMLElement {
@@ -482,48 +484,15 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     return withRanges(sel, current, 'facet', (d, fn) => { const b = d.fields!.facet; if (b && isBinned(b)) fn(b); });
   }
 
-  /**
-   * Only dies where: a category field and the values to keep, as a list of checkboxes. Choosing the field keeps every
-   * value until some are cleared; clearing them all is not a filter, so the last one stays.
-   */
+  /** The plot's filter: conditions that must all hold, edited by the one filter editor (filterEditor.ts). */
   function whereBlock(): HTMLElement {
-    const wrap = doc.createElement('div');
-    wrap.dataset.wmapPlotWhere = '1';
-    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
-    const w = plot.where;
-    const options: ListSelectOption[] = [{ value: NONE, label: 'Every die', group: 'Filter' },
-      ...o.catalogue.filter(f => f.categorical && !isTestField(f.field)).map(f => ({ value: fieldKey(f.field), label: f.label, group: f.group }))];
-    const sel = makeListSelect(options, w ? fieldKey(w.field) : NONE, key => {
-      if (key === NONE) { edit(d => { delete d.where; }); build(); return; }
-      const f = fieldByKey(key);
-      if (!f) return;
-      const values = o.valuesOf?.(f) ?? [];
-      if (values.length) { edit(d => { d.where = { field: f, values }; }); build(); }
-    }, { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Only dies where', searchPlaceholder: 'Filter fields…', hook: 'plot-where' });
-    sel.style.width = '100%';
-    wrap.appendChild(sel);
-    if (w) {
-      const all = o.valuesOf?.(w.field) ?? w.values;
-      const list = doc.createElement('div');
-      list.setAttribute('role', 'group');
-      list.setAttribute('aria-label', 'Values kept');
-      Object.assign(list.style, { display: 'flex', flexWrap: 'wrap', gap: `${SPACE.xs} ${SPACE.md}`, maxHeight: '120px', overflowY: 'auto' } as Partial<CSSStyleDeclaration>);
-      for (const v of all) {
-        const t = makeToggle(v, w.values.includes(v), on => {
-          // The last value kept stays: no value at all would not be a filter but an empty plot.
-          if (!on && (plot.where?.values.length ?? 0) <= 1) { build(); return; }
-          edit(d => {
-            const kept = new Set(d.where!.values);
-            if (on) kept.add(v); else kept.delete(v);
-            d.where!.values = all.filter(x => kept.has(x));
-          });
-        }, doc);
-        t.dataset.wmapPlotWhereValue = v;
-        list.appendChild(t);
-      }
-      wrap.appendChild(list);
-    }
-    return wrap;
+    const ed = buildFilterEditor({
+      doc, catalogue: o.catalogue, filter: plot.where, testDefs: o.testDefs, attributes: o.attributes, switchLabel: 'Filter this plot',
+      valuesOf: f => o.valuesOf?.(f) ?? [], extentOf: f => o.extentOf?.(f),
+      onChange: f => edit(d => { if (f) d.where = f; else delete d.where; }),
+    });
+    ed.el.dataset.wmapPlotWhere = '1';
+    return ed.el;
   }
 
   function textBox(value: string, placeholder: string, label: string, commit: (v: string) => void): HTMLInputElement {
@@ -594,7 +563,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     wrap.appendChild(makeToggle('Reverse direction', !!ax.reverse, v => setAxis(a => { a.reverse = v; }), doc));
     // Lines and bands the reader adds: `0.45 Target, 0.3..0.5 Window`, in the axis's own unit. Only on an axis the chart draws them on.
     if (opts.references === false) return wrap;
-    const refs = textBox(formatReferences(ax.references), '0.45 Target, 0.3..0.5 Window', `${title} reference lines`, v => {
+    const refs = textBox(formatReferences(ax.references), '0.45 Target, 0.3..0.5 Window, median', `${title} reference lines`, v => {
       const parsed = parseReferences(v);
       if (!parsed.ok) { refsError.textContent = parsed.error; refs.setAttribute('aria-invalid', 'true'); return; }
       refsError.textContent = ''; refs.removeAttribute('aria-invalid');
@@ -717,9 +686,29 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       const set = ySet();
       if (set && plot.chart !== 'scatter') {
         panel.appendChild(row('Tests', testSetBox(set), 'Test numbers, or a range such as 1010..1030 for the tests declared between them. Put Test on the X axis or the colour to tell them apart.'));
+        if (plot.chart === 'bar' || plot.chart === 'line') {
+          panel.appendChild(row('Read as', makeSegmented([[AUTO, 'Values', 'Each test’s measured values'], ['passRate', 'Pass rates', 'Each test’s share of judged dies that pass it']],
+            set.passRate ? 'passRate' : AUTO, v => { edit(d => {
+              const y = d.fields!.y;
+              if (!isTestSet(y)) return;
+              const next: PlotTestSet = { ...y };
+              if (v === AUTO) { delete next.passRate; delete next.judge; } else { next.passRate = true; delete d.normalize; }
+              d.fields!.y = next;
+            }); build(); }, doc)));
+        }
+      }
+      // A pass rate (one test's or a set's) is judged by the test limits or by the tester's recorded flag.
+      const judged = plot.fields!.y;
+      if (judged && (isPassRateSet(judged) || (!isTestSet(judged) && 'passRate' in judged))) {
+        panel.appendChild(row('Judged by', makeSegmented([[AUTO, 'Test limits', 'A parametric test’s measured value against its test limits'], ['flag', 'Tester flag', 'The pass or fail the tester recorded for each die']],
+          (judged as { judge?: string }).judge ?? AUTO, v => edit(d => {
+            const y = { ...(d.fields!.y as Record<string, unknown>) };
+            if (v === AUTO) delete y.judge; else y.judge = 'flag';
+            d.fields!.y = y as unknown as PlotField;
+          }), doc), 'A functional test is judged by its recorded verdict either way.'));
       }
       panel.appendChild(row('Colour', colourSelect(), 'Compare by this field: each value gets its own colour. Follow Group by takes it from the Group by control.'));
-      panel.appendChild(row('Only dies where', whereBlock(), 'Keep the dies with these values of a field (bin 1, the edge ring, one split); a wafer field keeps whole wafers.'));
+      panel.appendChild(row('Filter', whereBlock(), 'Keep only the dies that meet every condition: bin 1, the edge ring, a range of a test. A condition on a wafer field (split, yield) keeps whole wafers.'));
       if (plot.chart === 'line') {
         panel.appendChild(row('Band', makeSegmented([[AUTO, 'None'], ['sd', '±1 SD', 'Mean ± one standard deviation of the values at each X'], ['ci95', '95% CI', 'The mean’s 95% confidence interval (Student’s t)'], ['iqr', 'Quartiles'], ['minmax', 'Range']],
           plot.spread ?? AUTO, v => edit(d => { if (v === AUTO) delete d.spread; else d.spread = v as PlotSpec['spread']; }), doc), 'Round a line of means or medians.'));
@@ -751,20 +740,29 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       }
       // How a box or bar lays out its categories: order, how many, a bar's colours stacked, a pareto line.
       if (plot.chart === 'box' || plot.chart === 'bar') {
+        panel.appendChild(row('Orientation', makeSegmented([[AUTO, 'Vertical', 'Categories along the bottom'], ['horizontal', 'Horizontal', 'Categories down the left: for many categories or long names']],
+          plot.orientation === 'horizontal' ? 'horizontal' : AUTO, v => edit(d => { if (v === AUTO) delete d.orientation; else d.orientation = 'horizontal'; }), doc)));
         const single = xLevels().length <= 1;
         if (single) {
-          panel.appendChild(row('Order', makeSegmented([[AUTO, 'Field order', 'The field’s own order: wafers as loaded, numbers by value, names naturally'], ['value', 'Largest first', plot.chart === 'box' ? 'By median, largest first' : 'By value, largest first (a pareto)']],
-            plot.sort ?? AUTO, v => { edit(d => { if (v === AUTO) { delete d.sort; delete d.cumulative; } else d.sort = 'value'; }); build(); }, doc)));
+          panel.appendChild(row('Order', makeSegmented([[AUTO, 'Field order', 'The field’s own order: wafers as loaded, numbers by value, names naturally'], ['value', 'Largest first', plot.chart === 'box' ? 'By median, largest first' : 'By value, largest first (a pareto)'],
+            ['ascending', 'Smallest first', plot.chart === 'box' ? 'By median, smallest first' : 'By value, smallest first (the worst pass rate at the top)']],
+            plot.sort ?? AUTO, v => { edit(d => { if (v === AUTO) { delete d.sort; delete d.cumulative; } else { d.sort = v as 'value' | 'ascending'; if (v === 'ascending') delete d.cumulative; } }); build(); }, doc)));
           panel.appendChild(row('Show the first', numberBox(plot.top, 'Categories shown', v => edit(d => {
             if (v === undefined || !Number.isInteger(v) || v < 1) delete d.top; else d.top = v;
           })), 'Leave empty for every category; the rest are counted in a note.'));
         }
         if (plot.chart === 'bar') {
-          panel.appendChild(row('Colours', makeSegmented([[AUTO, 'Side by side'], ['stack', 'Stacked', 'One bar per category, its colours one on another'], ['percent', '100%', 'Each colour as its share of the category']],
-            plot.stack ?? AUTO, v => edit(d => { if (v === AUTO) delete d.stack; else d.stack = v as 'stack' | 'percent'; }), doc), 'Stacking adds values, so it needs a count or a sum.'));
+          panel.appendChild(row('Colours', makeSegmented([[AUTO, 'Side by side'], ['share', 'Share of colour', 'Side by side, each colour as its share of its own total, so groups of different sizes compare'],
+            ['stack', 'Stacked', 'One bar per category, its colours one on another'], ['percent', '100%', 'Each colour as its share of the category']],
+            plot.stack ?? (plot.barNorm === 'percent' ? 'share' : AUTO), v => edit(d => {
+              delete d.stack; delete d.barNorm;
+              if (v === 'share') d.barNorm = 'percent'; else if (v !== AUTO) d.stack = v as 'stack' | 'percent';
+            }), doc), 'Shares and stacking add values, so they need a count or a sum.'));
           if (single && plot.sort === 'value') {
             panel.appendChild(makeToggle('Cumulative line (pareto)', !!plot.cumulative, v => edit(d => { if (v) d.cumulative = true; else delete d.cumulative; }), doc));
           }
+          panel.appendChild(makeToggle('Values on the bars', !!plot.valueLabels, v => edit(d => { if (v) d.valueLabels = true; else delete d.valueLabels; }), doc,
+            'Each bar’s value at its end. Shown only when every value fits its bar, so none is left unlabelled.'));
         }
       }
       const y = plot.fields!.y;

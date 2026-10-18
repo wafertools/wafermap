@@ -1595,7 +1595,7 @@ export function buildView(
     if (len > 0) notchDir = { x: tv.x / len, y: tv.y / len };
   }
 
-  // Cap the visual kerf gap at 12 % of the smallest die dimension so that
+  // Cap the visual kerf gap at 12% of the smallest die dimension so that
   // normalized-unit scenes (die pitch ≈ 1) remain visible. No effect for
   // standard 10 mm dies: min(1, 10 × 0.12 = 1.2) = 1.
   let minDim = Infinity;

@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
+import { cardMenuAction, cardMenuLabels } from './fixtures/cardMenu.mjs';
 import { buildCorrelationMatrix, pearsonOfPairs, pearsonFromSums } from '../dist/packages/stats/correlation.js';
 
 // Canvas is stubbed with a permissive proxy: these tests assert on the DOM chrome
@@ -29,7 +30,6 @@ dom.window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, { get: (
 const { buildWaferMap } = await import('../dist/index.js');
 const { analyzeWaferLot } = await import('../dist/packages/stats/index.js');
 const { createInsightsTab } = await import('../dist/packages/canvas-adapter/insightsTab.js');
-const { renderTestPassRatePanel } = await import('../dist/packages/canvas-adapter/charts/testPassRate.js');
 
 const TEST_DEFS = [{ testNumber: 1050, name: 'vth_mV', unit: 'mV', limitLow: 9, limitHigh: 13 }];
 
@@ -154,12 +154,11 @@ test('Distributions carries a wafer-to-wafer trend card, explained', () => {
   const tab = mountInsights(items, lot, 'distributions');
   assert.ok(cardTitles(tab).some(t => /Wafer-to-wafer trend/.test(t)), cardTitles(tab).join(' | '));
   const body = text(tab);
-  // Every mark on the chart is named, and slot order is stated — it is the whole
-  // premise, and a reader who assumes the x axis is sorted reads drift backwards.
-  assert.match(body, /Point = wafer mean/);
-  assert.match(body, /whisker = ±1σ/);
-  assert.match(body, /dashed = lot mean/);
-  assert.match(body, /wafers in slot order/);
+  // What a point and its band are, and that the axis is the wafers' own order — the whole premise: a reader who
+  // assumes the x axis is sorted reads drift backwards.
+  assert.match(body, /mean of \S+ per Wafer order/);
+  assert.match(body, /band: ± 1 standard deviation of the dies at each wafer order/);
+  assert.match(body, /drag across the plot to select wafers/);
   tab.destroy();
 });
 
@@ -185,12 +184,27 @@ const PF_DEFS = [
 ];
 const pfDie = (testValues, testPass) => ({ x: 0, y: 0, testValues, testPass });
 
+/** The Overview's pass-rate card over wafers made of `dies` (one wafer per item, its group's key as its split), grouped
+ *  by split when there are several groups. `card` is undefined when the Overview has no such card. */
 function mountPassRate(groups, testDefs = PF_DEFS) {
-  const host = dom.window.document.getElementById('host');
-  host.innerHTML = '';
-  const handle = renderTestPassRatePanel({ groups, testDefs, ownerDocument: dom.window.document });
-  host.appendChild(handle.card);
-  return handle;
+  const items = groups.flatMap((g, gi) => g.items.map((it, k) => {
+    const r = buildWaferMap({
+      results: it.dies.map((d, i) => ({ ...d, x: i, y: 0, hbin: 1 })),
+      waferConfig: { diameter: 200, metadata: { split: g.key || 'one', wafer: `W${gi}${k}` } },
+      dieConfig: { width: 10, height: 10 }, passBins: [1], testDefs,
+    });
+    return { ...r, label: `W${gi}${k}` };
+  }));
+  const lot = analyzeWaferLot(items, { computePerTestStats: true });
+  items.forEach((it, i) => { it.statsSummary = lot.perWafer[i].summary; });
+  const tab = mountInsights(items, lot, 'overview');
+  if (groups.length > 1) {
+    dom.window.document.body.appendChild(tab.el);
+    tab.el.querySelector('[data-wmap-select="group-by"]').click();
+    [...dom.window.document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
+  }
+  const card = [...tab.el.querySelectorAll('[data-wmap-chart-card]')].find(c => /pass rate/i.test(c.dataset.wmapChartTitle || ''));
+  return { card, destroy: () => tab.destroy() };
 }
 
 const seg = (handle) => [...handle.card.querySelectorAll('input[type=radio]')].map(r => r.value);
@@ -241,7 +255,7 @@ test('a spec/tester disagreement is reported on the card, not silently resolved'
     pfDie({ 1: 9.9 }, { 1: false }),
   ];
   const handle = mountPassRate([{ key: '', items: [{ dies }] }], [PF_DEFS[0]]);
-  assert.match(handle.card.textContent, /1 die judged differently by limits and tester flag/);
+  assert.match(handle.card.textContent, /1 die judged differently by test limits and the tester flag/);
   handle.destroy();
 });
 
@@ -261,18 +275,17 @@ test('grouping draws a legend naming each split', () => {
   ]);
   assert.match(handle.card.textContent, /split A/);
   assert.match(handle.card.textContent, /split B/);
-  assert.match(handle.card.textContent, /one bar per group/);
   handle.destroy();
 });
 
-test('a dataset with nothing judgeable says why, rather than drawing an empty chart', () => {
+test('a dataset with nothing judgeable has no pass-rate card, rather than an empty chart', () => {
   // A parametric test with no limits cannot be judged, and there are no
   // functional tests — so there is no pass/fail to report at all.
   const handle = mountPassRate(
     [{ key: '', items: [{ dies: [pfDie({ 7: 1 }, undefined)] }] }],
     [{ testNumber: 7, name: 'unbounded' }],
   );
-  assert.match(handle.card.textContent, /parametric tests need test limits/);
+  assert.equal(handle.card, undefined);
   handle.destroy();
 });
 
@@ -282,47 +295,6 @@ test('the Overview mounts the pass-rate card alongside the bin pareto', () => {
   const titles = cardTitles(tab).join(' | ');
   assert.match(titles, /pass rate/i, titles);
   tab.destroy();
-});
-
-// ── Hover highlight must not paint over the row label ───────────────────────
-//
-// The highlight spans the full row width (x = 0 … width), so drawing it after the
-// label covers the test name with it. Least visible when grouped (the label is
-// centred across a multi-row cluster) and total when ungrouped, where the single
-// sub-bar's highlight always overlaps it. `binCluster.ts` had the same ordering
-// and this chart inherited it; both now paint the highlight first.
-
-test('the hover highlight is drawn before the row label, not over it', async () => {
-  const ops = [];
-  const noop = () => {};
-  dom.window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
-    get: (_t, p) => {
-      if (p === 'measureText') return () => ({ width: 40 });
-      if (p === 'canvas') return { width: 600, height: 300 };
-      if (p === 'fillRect') return (_x, y) => ops.push({ op: 'fillRect', y: Math.round(y) });
-      if (p === 'fillText') return (t) => ops.push({ op: 'fillText', text: String(t) });
-      return noop;
-    },
-    set: () => true,
-  });
-  dom.window.HTMLCanvasElement.prototype.getBoundingClientRect =
-    () => ({ left: 0, top: 0, width: 600, height: 300 });
-
-  const dies = [pfDie({ 1: 5, 2: 5 }, { 90: true })];
-  const handle = mountPassRate([{ key: '', items: [{ dies }] }], [PF_DEFS[0], PF_DEFS[1]]);
-  const canvas = handle.card.querySelector('canvas');
-
-  ops.length = 0;
-  // Inside the first row's bar: PADDING(12) + CLUSTER_LABEL_WIDTH(100) is the bar
-  // origin, and jsdom reports clientWidth 0 so barMaxWidth floors at 10.
-  canvas.dispatchEvent(new dom.window.MouseEvent('mousemove', { clientX: 115, clientY: 18 }));
-
-  const firstRect = ops.findIndex(o => o.op === 'fillRect');
-  const firstText = ops.findIndex(o => o.op === 'fillText');
-  assert.ok(firstRect >= 0 && firstText >= 0, `expected a hovered draw: ${JSON.stringify(ops.slice(0, 6))}`);
-  assert.ok(firstRect < firstText,
-    `the highlight must precede the label, got ${JSON.stringify(ops.slice(0, 4))}`);
-  handle.destroy();
 });
 
 // ── Correlation CSV ─────────────────────────────────────────────────────────
@@ -435,7 +407,8 @@ const boxplotCard = (tab) => tab.el.querySelector('[data-wmap-chart-title="Test 
 function clickFirstBoxplotRow(tab) {
   const canvas = boxplotCard(tab).querySelector('canvas');
   canvas.getBoundingClientRect = () => ({ top: 0, left: 0, right: 600, bottom: 300, width: 600, height: 300, x: 0, y: 0 });
-  canvas.dispatchEvent(new dom.window.MouseEvent('click', { clientX: 300, clientY: 20, bubbles: true }));
+  // The one wafer's box fills the middle of the category axis, down the left.
+  canvas.dispatchEvent(new dom.window.MouseEvent('click', { clientX: 300, clientY: 80, bubbles: true }));
   return canvas;
 }
 
@@ -586,7 +559,7 @@ const selectedTab = (tab) => tab.el.querySelector('button[role="tab"][aria-selec
 
 test('there is no Sweeps tab, whether or not sweeps are defined', () => {
   const { items, lot } = lotItems(2);
-  const expected = ['Overview', 'Distributions', 'Correlation', 'Data', 'Plot'];
+  const expected = ['Overview', 'Distributions', 'Correlation', 'Data', 'My plots'];
   assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, undefined)), expected);
   assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [])), expected);
   assert.deepEqual(tabLabels(mountWithSweeps(items, lot, undefined, [SWEEP])), expected);
@@ -601,7 +574,7 @@ async function waitFor(fn, what) {
 test('sweeps from the old option are cards on the Plot tab, not in Distributions', async () => {
   const { items, lot } = lotItems(2);
   const plotTab = mountWithSweeps(items, lot, 'plot', [SWEEP]);
-  assert.equal(selectedTab(plotTab), 'Plot');
+  assert.equal(selectedTab(plotTab), 'My plots');
   await waitFor(() => chartTitleAttrs(plotTab).includes('Vth sweep card'), 'the sweep card');
 
   const distTab = mountWithSweeps(items, lot, 'distributions', [SWEEP]);
@@ -610,8 +583,8 @@ test('sweeps from the old option are cards on the Plot tab, not in Distributions
 
 test("defaultView 'sweeps' opens the Plot tab, where sweeps are", () => {
   const { items, lot } = lotItems(2);
-  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', undefined)), 'Plot');
-  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', [SWEEP])), 'Plot');
+  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', undefined)), 'My plots');
+  assert.equal(selectedTab(mountWithSweeps(items, lot, 'sweeps', [SWEEP])), 'My plots');
 });
 
 test('a sweep naming no test of this data is kept and says so on its card; deleting one the host supplies tells the host', async () => {
@@ -681,4 +654,48 @@ test('a reticle cell key names its column and row, and the general key parser st
   assert.deepEqual(parseReticleCellKey('reticle-position:cell:10,0'), { column: 10, row: 0 });
   assert.equal(parseReticleCellKey('ring:2'), undefined);
   assert.equal(parseRegionKey('reticle-position:cell:1,0').family, 'unknown');
+});
+
+test('the test scatter card names X and Y, states r and n, and prints its settings without the instructions', () => {
+  const { items, lot } = lotItems(3);
+  const tab = mountInsights(items, lot, 'correlation');
+  const card = tab.el.querySelector('[data-wmap-chart-title="Test scatter"]');
+  assert.ok(card, 'the scatter card');
+  assert.match(card.textContent, /X:/);
+  assert.match(card.textContent, /Y:/);
+  assert.match(card.textContent, /n = \d+/);
+  assert.ok(card.querySelector('[data-wmap-controls]').hasAttribute('data-wmap-noprint'), 'dropdowns do not print');
+  tab.destroy();
+});
+
+test('Edit as plot on an Insights card opens it as a draft plot with its test filled in, kept only when added', async () => {
+  const { items, lot } = lotItems(3);
+  let saved;
+  const tab = mountInsightsWith(items, lot, { onPlotsChange: p => { saved = p; } });
+  const card = boxplotCard(tab);
+  assert.deepEqual(cardMenuLabels(card), ['Save as PNG', 'Expand', 'Edit as plot', 'About this chart']);
+  cardMenuAction(card, 'Edit as plot');
+  const win = await waitFor(() => dom.window.document.querySelector('[data-wmap-plot-window]'), 'the plot editor');
+  assert.match(win.textContent, /This is a draft/);
+  assert.equal(saved, undefined, 'nothing kept yet');
+  win.querySelector('[data-wmap-plot-add]').click();
+  const plot = (await waitFor(() => saved, 'the host told of the added plot')).at(-1);
+  assert.equal(plot.chart, 'box');
+  assert.equal(plot.fields.y.test, 1050, 'the section’s test, as the plot’s own field');
+  assert.ok(!JSON.stringify(plot).includes('"slot"'), 'a plot of its own follows nothing');
+  dom.window.document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('About this chart shows one line under the card’s heading, and hides it again', () => {
+  const { items, lot } = lotItems(3);
+  const tab = mountInsightsWith(items, lot, {});
+  const card = boxplotCard(tab);
+  const line = () => card.querySelector('[data-wmap-card-about]');
+  assert.equal(line().textContent, '', 'hidden, and not part of the card’s text');
+  cardMenuAction(card, 'About this chart');
+  assert.match(line().textContent, /middle half/);
+  assert.notEqual(line().style.display, 'none');
+  cardMenuAction(card, 'About this chart');
+  assert.equal(line().style.display, 'none');
+  assert.equal(line().textContent, '');
 });

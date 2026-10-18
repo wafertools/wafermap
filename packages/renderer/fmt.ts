@@ -48,6 +48,17 @@ function siFormat(v: number, unit: string): string {
   return `${scaled.toFixed(digits)} ${prefix}${base}`;
 }
 
+/**
+ * A percentage: a share, not a quantity with a unit, so no SI prefix (0.5% is never "500 m%") and no space before the
+ * sign ("83.8%"), with the significant figures `fmt` gives any value.
+ */
+function fmtPercent(v: number): string {
+  const a = Math.abs(v);
+  if (a === 0) return '0%';
+  const digits = a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : Math.min(6, 1 - Math.floor(Math.log10(a)));
+  return `${v.toFixed(digits)}%`;
+}
+
 function engFormat(v: number): string {
   const abs = Math.abs(v);
   const exp3 = Math.floor(Math.log10(abs) / 3) * 3;
@@ -113,6 +124,7 @@ export function fmtExact(v: number): string {
  */
 export function fmt(v: number, unit?: string, fallbackFormat?: 'si' | 'engineering'): string {
   if (!isFinite(v)) return String(v);
+  if (unit === '%') return fmtPercent(v);
   const abs = Math.abs(v);
   if (abs === 0) return unit ? `0 ${unit}` : '0';
   if (unit !== undefined) return siFormat(v, unit);
@@ -195,6 +207,9 @@ export function fmtColorbarAxis(
     const tickFmt = plain && step === undefined ? plain : makeTickFormatter(scale, step);
     return { tickFmt, edgeFmt: makeEdgeFormatter(scale, step, tickFmt), axisLabel, scaledUnit };
   };
+
+  // A percentage axis is never prefixed: ticks are plain numbers and the label carries the sign.
+  if (unit === '%') return build(1, name ? `${name} (%)` : '%', '%');
 
   if (unit) {
     // With unit: pick SI prefix from vRef (folded back to the bare base unit first, in case

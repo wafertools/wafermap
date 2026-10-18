@@ -19,7 +19,7 @@ import type { WaferMetadata } from '../core/metadata.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { compareNatural, prettyKey } from '../core/utils.js';
 import type { MetadataFieldDef } from '../renderer/buildWaferMap.js';
-import { DEFAULT_FACET_CURATION, attributeLabel } from './facets.js';
+import { DEFAULT_FACET_CURATION, attributeLabel, type FacetCuration } from './facets.js';
 
 /** Where a column's value comes from. A `'wafer'` column is constant down
  *  every row; a `'die'` column genuinely varies die to die. */
@@ -70,6 +70,8 @@ export interface ResolveMetadataColumnsOptions {
   waferPlacement?: 'csv' | 'both' | 'none';
   /** Headers already taken by built-in columns, for collision resolution. */
   reservedLabels?: string[];
+  /** The host's own names for wafer attributes (`attributes` on the render options), over the defaults. */
+  curation?: Record<string, FacetCuration>;
   /**
    * Cap on auto-discovered die keys. Default 64. Exceeding it is a data shape
    * no table can usefully show; the excess is reported in `truncatedKeys` so
@@ -167,7 +169,7 @@ export function resolveMetadataColumns(o: ResolveMetadataColumnsOptions): Metada
   const labelFor = (key: string, scope: MetadataColumnScope): string => {
     const declared = o.metadataFields?.find(f => f.key === key)?.label;
     // A wafer attribute is named as everywhere else (attributeLabel); a die's own key is spelled out.
-    const base = declared ?? (scope === 'wafer' ? attributeLabel(key) : prettyKey(key));
+    const base = declared ?? (scope === 'wafer' ? attributeLabel(key, o.curation) : prettyKey(key));
     if (!taken.has(base)) { taken.add(base); return base; }
 
     // Distinguish by source before falling back to anything opaque.

@@ -21,6 +21,7 @@ import { fmt } from '../../renderer/fmt.js';
 import { limitSetName } from '../../renderer/valueFilter.js';
 import { escHtml } from '../../core/utils.js';
 import { DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
+import { cardAbout } from './cardAbout.js';
 
 /**
  * Names for the limits a capability column is normalised to. Capability uses
@@ -117,11 +118,13 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
   const { title = 'Process capability', items, testDefs, onSaveImage, onSelectTest } = options;
   /** Test the surrounding section is showing, marked in the plot. */
   let selectedTest: number | null = options.selectedTestNumber ?? null;
-  const { card, body } = cardShell(title, onSaveImage, options.ownerDocument);
+  const { card, body, setAbout } = cardShell(title, onSaveImage, options.ownerDocument);
+  setAbout(cardAbout('capability'));
 
   const hasData = testDefs.some(d => d.testNumber !== undefined);
 
-  body.style.overflowX = 'auto';
+  // Columns beyond the card's width scroll under a fixed axis (see `buildView`), so the body itself never scrolls sideways.
+  body.style.overflowX = 'hidden';
 
   // No group control of its own: the Insights tab owns ONE "Show:" scope for
   // every view (see `insightsTab.ts`), and a scoped population arrives here with
@@ -255,6 +258,33 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
     canvas.style.display = 'block';
     canvas.style.cursor = 'default';
     body.appendChild(canvas);
+    // More columns than the card is wide: only the columns in view are drawn, offset by `colScroll`, and a native
+    // scrollbar under the labels moves them (as does a sideways wheel or trackpad). A canvas as wide as every column
+    // would pass what a browser can draw: two thousand tests at the narrowest column are 60,000 pixels.
+    let colScroll = 0;
+    const colBar = card.ownerDocument.createElement('div');
+    colBar.dataset.wmapColScroll = '1';
+    colBar.tabIndex = 0;
+    colBar.setAttribute('aria-label', `Scroll the ${rows.length} tests`);
+    Object.assign(colBar.style, { position: 'absolute', display: 'none', height: '12px', overflowX: 'auto', overflowY: 'hidden', zIndex: '1' } as Partial<CSSStyleDeclaration>);
+    const colSpacer = card.ownerDocument.createElement('div');
+    colSpacer.style.height = '1px';
+    colBar.appendChild(colSpacer);
+    body.appendChild(colBar);
+    colBar.addEventListener('scroll', () => {
+      if (Math.abs(colBar.scrollLeft - colScroll) < 1) return;
+      colScroll = colBar.scrollLeft;
+      tooltip.style.display = 'none';
+      drawChart();
+    });
+    canvas.addEventListener('wheel', e => {
+      if (colBar.style.display === 'none') return;
+      const dx = e.deltaX || (e.shiftKey ? e.deltaY : 0);
+      if (!dx) return;
+      const before = colBar.scrollLeft;
+      colBar.scrollLeft += e.deltaMode === 1 ? dx * 16 : dx;
+      if (colBar.scrollLeft !== before) e.preventDefault();
+    }, { passive: false });
 
     const n = rows.length;
     const domainMin = Math.min(0, ...rows.map(d => d.min));
@@ -347,12 +377,23 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       // vertical scrollbar narrowing it.
       const availW = body.clientWidth;
       const cs = colSize(availW - CAP_AXIS_W);
-      const plotW = cs * n;
+      const allW = cs * n;
+      const viewW = Math.max(10, Math.min(allW, availW - CAP_AXIS_W));
+      const scrolls = allW > viewW + 0.5;
+      const BAR = scrolls ? 14 : 0;
+      colScroll = scrolls ? Math.max(0, Math.min(colScroll, allW - viewW)) : 0;
+      const plotW = viewW;
       const plotTop = CAP_TOP_MARGIN;
-      const totalW = CAP_AXIS_W + plotW;
-      const totalH = chartFillHeight(card, body, canvas, CAP_TOP_MARGIN + 200 + CAP_LABEL_H);
-      const plotBottom = Math.max(plotTop + 60, totalH - CAP_LABEL_H);
+      const totalW = CAP_AXIS_W + viewW;
+      const totalH = chartFillHeight(card, body, canvas, CAP_TOP_MARGIN + 200 + CAP_LABEL_H + BAR);
+      const plotBottom = Math.max(plotTop + 60, totalH - CAP_LABEL_H - BAR);
       const plotH = plotBottom - plotTop;
+      colBar.style.display = scrolls ? 'block' : 'none';
+      if (scrolls) {
+        Object.assign(colBar.style, { left: `${canvas.offsetLeft + CAP_AXIS_W}px`, width: `${viewW}px`, top: `${canvas.offsetTop + totalH - 13}px` } as Partial<CSSStyleDeclaration>);
+        colSpacer.style.width = `${allW}px`;
+        if (Math.abs(colBar.scrollLeft - colScroll) >= 1) colBar.scrollLeft = colScroll;
+      }
 
       const prep = prepareCanvas(canvas, card, totalW, totalH);
       if (!prep) return;
@@ -363,8 +404,13 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       // (see chartShell.ts's resolveChartCanvasColors doc comment).
       const theme = resolveChartCanvasColors(card);
 
+      // The columns in view, clipped to the plot's width (labels included); the axis gutter is drawn after, unclipped.
+      ctx.save();
+      ctx.beginPath(); ctx.rect(CAP_AXIS_W, 0, viewW, totalH); ctx.clip();
+      const first = Math.max(0, Math.floor(colScroll / cs) - 1), last = Math.min(n, Math.ceil((colScroll + viewW) / cs) + 1);
       rows.forEach((d, i) => {
-        const x = CAP_AXIS_W + i * cs;
+        if (i < first || i >= last) return;
+        const x = CAP_AXIS_W + i * cs - colScroll;
         const midX = x + cs / 2;
         const boxW = Math.max(4, Math.min(cs, CAP_MAX_COL) * 0.55);
 
@@ -473,6 +519,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
         }
         ctx.restore();
       });
+      ctx.restore();
 
       ctx.strokeStyle = theme.border;
       ctx.lineWidth = 1;
@@ -486,7 +533,8 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
       const availW = body.clientWidth;
       const cs = colSize(availW - CAP_AXIS_W);
       const ox = (e.clientX - rect.left) * (canvas.width / chartDpr(canvas) / rect.width) - CAP_AXIS_W;
-      const col = Math.floor(ox / cs);
+      if (ox < 0) return -1;
+      const col = Math.floor((ox + colScroll) / cs);
       return col >= 0 && col < n ? col : -1;
     }
 

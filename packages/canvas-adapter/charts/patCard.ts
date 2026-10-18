@@ -7,10 +7,11 @@ import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import type { RenderableWaferMap } from '../renderWaferMap.js';
 import { CLR, FONT, SPACE, controlStyle, wireControlHover, wireTooltip } from '../toolbar.js';
-import { cardShell } from './chartShell.js';
+import { cardShell, firstRowsToggle } from './chartShell.js';
+import { cardAbout } from './cardAbout.js';
 
 export interface PatCardOptions {
-  items: ReadonlyArray<{ label: string; dies: readonly Die[]; allDies?: readonly Die[]; passBins: readonly number[]; source?: RenderableWaferMap }>;
+  items: ReadonlyArray<{ label: string; dies: readonly Die[]; allDies?: readonly Die[]; passBins: readonly number[]; ringCount: number; source?: RenderableWaferMap }>;
   testDefs: readonly TestDef[];
   ownerDocument?: Document;
 }
@@ -23,11 +24,11 @@ export function renderPatCard(o: PatCardOptions): { card: HTMLElement; destroy: 
   const sum = summarisePat(o.items, o.testDefs);
   if (!sum) return undefined;
   const doc = o.ownerDocument ?? document;
-  const { card, body } = cardShell('Part average testing (PAT)', undefined, doc);
+  const { card, body, setAbout } = cardShell('Part average testing (PAT)', undefined, doc);
+  setAbout(cardAbout('pat'));
   card.dataset.wmapPatCard = '1';
   card.style.gridColumn = '1 / -1';
   card.style.flex = '0 0 auto';
-  card.querySelector('button[aria-label="Save as PNG"]')?.remove();
 
   const note = doc.createElement('div');
   note.textContent = `Dynamic limits for each of the ${sum.tests} test${sum.tests === 1 ? '' : 's'} with both limits, set per wafer at the median ± ${PAT_K} robust standard deviations (interquartile range ÷ 1.35) of the dies that pass, never wider than the specification limits (the test's own where a test has none), and only where a wafer has ${PAT_MIN_DIES} or more passing values. `
@@ -64,24 +65,18 @@ export function renderPatCard(o: PatCardOptions): { card: HTMLElement; destroy: 
 
   const wafers = [...sum.wafers].sort((a, b) => b.outliers / b.judged - a.outliers / a.judged || b.outliers - a.outliers);
   const { table: wt, tbody: wb } = makeTable([['Wafer'], ['Dies judged', 'Dies with a PAT verdict'], ['Within', 'Pass and inside the PAT limits'], ['Outliers', 'Pass every limit and bin, but outside the PAT limits of a test'], ['Outlier rate'], ['Fail anyway', 'Fail their bin or a test limit']]);
-  let showAll = false;
-  const more = doc.createElement('button');
-  more.type = 'button';
-  Object.assign(more.style, { ...controlStyle('outlined'), marginTop: SPACE.sm } as Partial<CSSStyleDeclaration>);
-  wireControlHover(more);
-  const fill = () => {
-    wb.replaceChildren();
-    for (const w of showAll ? wafers : wafers.slice(0, FIRST_ROWS)) {
-      row(wb, [w.label, w.judged.toLocaleString('en-GB'), w.within.toLocaleString('en-GB'), w.outliers.toLocaleString('en-GB'), pct(w.outliers, w.judged), w.fails.toLocaleString('en-GB')], w.outliers > 0);
-    }
-    more.textContent = showAll ? 'Show the first wafers' : `Show all ${wafers.length} wafers`;
-    more.style.display = wafers.length > FIRST_ROWS ? '' : 'none';
-  };
-  more.addEventListener('click', () => { showAll = !showAll; fill(); });
-  fill();
   const wrap = doc.createElement('div');
   wrap.style.overflowX = 'auto';
   wrap.appendChild(wt);
+  const more = firstRowsToggle(doc, {
+    total: wafers.length, first: FIRST_ROWS, noun: 'wafers', scroller: wrap,
+    fill: all => {
+      wb.replaceChildren();
+      for (const w of all ? wafers : wafers.slice(0, FIRST_ROWS)) {
+        row(wb, [w.label, w.judged.toLocaleString('en-GB'), w.within.toLocaleString('en-GB'), w.outliers.toLocaleString('en-GB'), pct(w.outliers, w.judged), w.fails.toLocaleString('en-GB')], w.outliers > 0);
+      }
+    },
+  });
   body.append(wrap, more);
   // The verdicts as a map of each wafer, in a gallery: where on each wafer the outliers are, and whether they recur.
   if (o.items.some(it => it.source)) {
@@ -92,7 +87,11 @@ export function renderPatCard(o: PatCardOptions): { card: HTMLElement; destroy: 
     wireTooltip(maps, 'Open a map of each wafer with its dies coloured by PAT verdict: within the limits, outlier, fails anyway');
     Object.assign(maps.style, { ...controlStyle('outlined'), marginTop: SPACE.sm, marginLeft: SPACE.sm } as Partial<CSSStyleDeclaration>);
     wireControlHover(maps);
-    maps.addEventListener('click', () => { void import('../patMaps.js').then(m => m.openPatMaps({ anchor: maps, items: o.items, testDefs: o.testDefs })); });
+    maps.addEventListener('click', () => {
+      // A failure here would otherwise vanish in the promise, leaving an empty window and nothing to say why.
+      void import('../patMaps.js').then(m => m.openPatMaps({ anchor: maps, items: o.items, testDefs: o.testDefs }))
+        .catch(e => console.error('[wafermap] The PAT verdict maps could not be drawn:', e));
+    });
     body.appendChild(maps);
   }
 

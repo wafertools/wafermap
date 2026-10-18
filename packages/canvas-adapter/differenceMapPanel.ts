@@ -11,6 +11,7 @@ import { fmt } from '../renderer/fmt.js';
 import { CLR, FONT, SPACE } from './toolbar.js';
 import { cardShell, makeListSelect, renderEmptyState, type SaveImageHandler } from './charts/chartShell.js';
 import { renderWaferMap, type RenderableWaferMap, type WaferMapController } from './renderWaferMap.js';
+import { cardAbout } from './charts/cardAbout.js';
 
 export interface DifferenceMapPanelOptions {
   groups: ReadonlyArray<{ key: string; items: ReadonlyArray<{ dies: readonly Die[]; passBins: readonly number[]; source?: RenderableWaferMap }> }>;
@@ -26,10 +27,9 @@ const YIELD = '\0yield';
 
 export function renderDifferenceMapPanel(o: DifferenceMapPanelOptions): { card: HTMLElement; setTest: (n: number) => void; destroy: () => void } {
   const doc = o.ownerDocument ?? document;
-  const { card, body, controlsRow } = cardShell('Difference map', o.onSaveImage, doc);
+  const { card, body, controlsRow, setAbout } = cardShell('Difference map', o.onSaveImage, doc, { png: false });
+  setAbout(cardAbout('difference-map'));
   card.dataset.wmapDifferenceMap = '1';
-  // The map draws itself into its own container: the card's PNG button would find no canvas of its own to save.
-  card.querySelector('button[aria-label="Save as PNG"]')?.remove();
   const keys = o.groups.map(g => g.key);
   const tests = o.testDefs.filter(isParametricTest);
   let a = keys[0], b = keys[1];

@@ -13,6 +13,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { cardMenuAction, cardMenuLabels } from './fixtures/cardMenu.mjs';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: 'http://localhost/' });
@@ -44,7 +45,8 @@ const { buildWaferMap } = await import('../dist/index.js');
 const { renderWaferMap, renderWaferGallery } = await import('../dist/packages/canvas-adapter/index.js');
 const { openDrilldownMenu } = await import('../dist/packages/canvas-adapter/drilldown.js');
 const { selectionPopulation, waferPopulation } = await import('./fixtures/populationStated.mjs');
-const { renderBarPanel } = await import('../dist/packages/canvas-adapter/charts/barPanel.js');
+const { renderPlotChart } = await import('../dist/packages/canvas-adapter/charts/plotChart.js');
+const { resolvePlot } = await import('../dist/packages/stats/plotData.js');
 const { createPlotStore } = await import('../dist/packages/canvas-adapter/plotStore.js');
 const { sweepToPlot } = await import('../dist/packages/stats/plotSpec.js');
 
@@ -174,18 +176,19 @@ test('a histogram opens on the test that was on screen, with its population stat
   closeModal();
 });
 
-test('the value histogram offers Edit as new plot: the same test as a draft plot over the same dies', async () => {
+test('the value histogram offers Edit as plot: the same test as a draft plot over the same dies', async () => {
   const store = sweepPlots(SWEEP);
   openDrilldownMenu({ x: 10, y: 10 }, anchor(), waferPopulation(wafer().dies, { ...facts, activeTest: 2000 }), { plots: store });
   rows().find(r => r.textContent === 'Value histogram').click();
-  const btn = document.querySelector('.wmap-overlay-box [data-wmap-edit-as-plot]');
-  assert.ok(btn, 'an Edit as new plot button beside the population line');
-  assert.equal(document.querySelector('.wmap-overlay-box [data-wmap-population]').textContent, 'Population: 24 dies on W07', 'the population line is unchanged');
+  const card = document.querySelector('.wmap-overlay-box [data-wmap-chart-card]');
+  assert.ok(cardMenuLabels(card).includes('Edit as plot'), 'Edit as plot in the card’s menu');
+  assert.ok(!cardMenuLabels(card).includes('Expand'), 'a card in its window does not offer to expand again');
+  assert.equal(document.querySelector('.wmap-overlay-box [data-wmap-population]').textContent, 'Population: 24 dies on W07', 'the population line');
   const before = store.get().length;
-  btn.click();
+  cardMenuAction(card, 'Edit as plot');
   await waitFor(() => document.querySelector('[data-wmap-plot-window]'), 'the plot editor opened');
   const win = document.querySelector('[data-wmap-plot-window]');
-  assert.ok(!document.querySelector('.wmap-overlay-box [data-wmap-edit-as-plot]'), 'the histogram window closed');
+  assert.ok(!card.isConnected || !card.closest('.wmap-overlay-box'), 'the histogram window closed');
   assert.match(win.textContent, /This is a draft/);
   assert.match(document.querySelector('.wmap-overlay-box').textContent, /New plot — 24 dies on W07/);
   assert.equal(store.get().length, before, 'a draft: nothing is saved until it is added');
@@ -196,10 +199,10 @@ test('the value histogram offers Edit as new plot: the same test as a draft plot
   document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
 });
 
-test('without a plot store there is no Edit as new plot', () => {
+test('without a plot store there is no Edit as plot', () => {
   openDrilldownMenu({ x: 10, y: 10 }, anchor(), waferPopulation(wafer().dies, { ...facts, activeTest: 2000 }), {});
   rows().find(r => r.textContent === 'Value histogram').click();
-  assert.ok(!document.querySelector('.wmap-overlay-box [data-wmap-edit-as-plot]'));
+  assert.ok(!cardMenuLabels(document.querySelector('.wmap-overlay-box [data-wmap-chart-card]')).includes('Edit as plot'));
   closeModal();
 });
 
@@ -362,25 +365,25 @@ test("a gallery's saved plots are in the right-click menu on each card's own map
   gallery.destroy();
 });
 
-test("a chart's wafer row hands its wafer to the right-click handler; a group row does not", () => {
-  const calls = [];
-  const panel = renderBarPanel({
-    title: 'Yield by wafer',
-    data: [
-      { label: 'W01', value: 80, percent: 80, itemCount: 1, key: 4 },
-      { label: 'Lot A', value: 70, percent: 70, itemCount: 3 },
-    ],
-    onWaferContextMenu: (waferIndex, testNumber, e) => { calls.push(waferIndex); e.preventDefault(); },
+test("a plot's wafer bar hands its wafer to the right-click handler; a group's bar does not", () => {
+  const items = [0, 1, 2].map(i => {
+    const r = wafer();
+    return { label: `W0${i + 1}`, dies: r.dies, metadata: { split: i ? 'B' : 'A' }, passBins: [1], ringCount: r.ringCount, wafer: r.wafer, waferIndex: i };
   });
-  document.getElementById('root').appendChild(panel.card);
-  const canvas = panel.card.querySelector('canvas');
-  const at = (row) => new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 12 + row * 29 + 5 });
-  const e0 = at(0); canvas.dispatchEvent(e0);
-  const e1 = at(1); canvas.dispatchEvent(e1);
-  assert.deepEqual(calls, [4]);
-  assert.equal(e0.defaultPrevented, true);
-  assert.equal(e1.defaultPrevented, false, 'a group row leaves the browser menu alone');
-  panel.destroy();
+  const rightClicks = (fields, orientation) => {
+    const calls = [];
+    const chart = renderPlotChart({ waferLabel: i => items[i].label, onWaferMenu: (item, testNumber, e) => { calls.push(item); e.preventDefault(); } });
+    document.getElementById('root').appendChild(chart.card);
+    chart.setPlot(resolvePlot({ id: 'p', chart: 'bar', fields: { ...fields, y: { builtin: 'yield' }, color: { none: true } }, ...(orientation ? { orientation } : {}) }, items, {}));
+    const canvas = chart.card.querySelector('canvas');
+    // Along the category axis: across the bottom, or (horizontal) down the left.
+    for (let k = 0; k < 700; k++) canvas.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: orientation ? 300 : k, clientY: orientation ? k : 300 }));
+    chart.destroy(); chart.card.remove();
+    return [...new Set(calls)].sort();
+  };
+  assert.deepEqual(rightClicks({ x: { builtin: 'wafer' } }), [0, 1, 2]);
+  assert.deepEqual(rightClicks({ x: { meta: 'split' } }), [], 'a bar of several wafers leaves the browser menu alone');
+  assert.deepEqual(rightClicks({ x: { builtin: 'wafer' } }, 'horizontal'), [0, 1, 2], 'horizontal bars are found down the left');
 });
 
 test("a sweep's title states the dies it plots, not the dies it was given", async () => {

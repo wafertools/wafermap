@@ -31,36 +31,48 @@ dom.window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, { get: (
   return noop;
 } });
 
-const { renderHistogramPanel } = await import('../dist/packages/canvas-adapter/charts/histogram.js');
+const { buildWaferMap } = await import('../dist/index.js');
+const { analyzeWaferLot } = await import('../dist/packages/stats/index.js');
+const { createInsightsTab } = await import('../dist/packages/canvas-adapter/insightsTab.js');
 
 // Data span 10 (10→20) inside a limit span of 30 (0→30) — a third of the axis,
 // exactly the share at which shouldIncludeLimitsByDefault says yes.
 const TEST_DEFS = [{ testNumber: 1, name: 'vth', unit: 'mV', limitLow: 0, limitHigh: 30 }];
-const die = (v) => ({ x: 0, y: 0, testValues: { 1: v } });
-const ITEMS = [
-  { label: 'W1', dies: [10, 12, 14].map(die) },
-  { label: 'W2', dies: [16, 18, 20].map(die) },
-];
-const GROUPS = [
-  { key: 'A', items: [ITEMS[0]] },
-  { key: 'B', items: [ITEMS[1]] },
-];
+const wafer = (values, split, i) => ({
+  ...buildWaferMap({
+    results: values.map((v, k) => ({ x: k, y: 0, hbin: 1, testValues: { 1: v } })),
+    waferConfig: { diameter: 200, metadata: { split, wafer: `W${i}` } }, dieConfig: { width: 10, height: 10 }, passBins: [1], testDefs: TEST_DEFS,
+  }),
+  label: `W${i}`,
+});
 
-function limitsToggleState(opts) {
+/** The Value histogram card's "Axis includes limits" toggle, on the Distributions tab, grouped by split or not. */
+function limitsToggleState({ grouped = false, axisPrefs } = {}) {
   const host = dom.window.document.getElementById('root');
   host.innerHTML = '';
-  const panel = renderHistogramPanel({ items: ITEMS, testDefs: TEST_DEFS, ownerDocument: dom.window.document, ...opts });
-  host.appendChild(panel.card);
-  const label = [...panel.card.querySelectorAll('label')].find(l => l.textContent.includes('Axis includes limits'));
-  assert.ok(label, 'the toggle is offered in both branches');
+  const items = [wafer([10, 12, 14], 'A', 1), wafer([16, 18, 20], 'B', 2)];
+  const lot = analyzeWaferLot(items, { computePerTestStats: true });
+  items.forEach((it, i) => { it.statsSummary = lot.perWafer[i].summary; });
+  const tab = createInsightsTab({ getRingCount: () => 4, getItems: () => items, getLotStats: () => lot, defaultView: 'distributions',
+    getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
+    ...(axisPrefs ? { initialAxisPrefs: axisPrefs } : {}) });
+  host.appendChild(tab.el);
+  tab.render();
+  if (grouped) {
+    tab.el.querySelector('[data-wmap-select="group-by"]').click();
+    [...dom.window.document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
+  }
+  const card = tab.el.querySelector('[data-wmap-chart-title="Value histogram"]');
+  const label = [...card.querySelectorAll('label')].find(l => l.textContent.includes('Axis includes limits'));
+  assert.ok(label, 'the toggle is offered in both');
   const state = label.querySelector('input[type="checkbox"]').checked;
-  panel.destroy();
+  tab.destroy();
   return state;
 }
 
 test('grouped and ungrouped resolve an unset preference identically', () => {
   const ungrouped = limitsToggleState({});
-  const grouped   = limitsToggleState({ groups: GROUPS, groupLabelText: 'lot' });
+  const grouped   = limitsToggleState({ grouped: true });
   assert.equal(grouped, ungrouped,
     'the same data and no preference must not include the limits in one view and not the other');
   // And the shared rule says yes for this data, so this is not two branches
@@ -71,6 +83,6 @@ test('grouped and ungrouped resolve an unset preference identically', () => {
 test('an explicit preference still wins in both', () => {
   for (const includeLimits of [true, false]) {
     assert.equal(limitsToggleState({ axisPrefs: { includeLimits, clipOutliers: false } }), includeLimits);
-    assert.equal(limitsToggleState({ groups: GROUPS, axisPrefs: { includeLimits, clipOutliers: false } }), includeLimits);
+    assert.equal(limitsToggleState({ grouped: true, axisPrefs: { includeLimits, clipOutliers: false } }), includeLimits);
   }
 });

@@ -49,6 +49,7 @@ dom.window.HTMLElement.prototype.scrollIntoView = function () { (globalThis.__sc
 
 const { buildWaferMap } = await import('../dist/index.js');
 const { openPatMaps } = await import('../dist/packages/canvas-adapter/patMaps.js');
+const { renderWaferMap } = await import('../dist/packages/canvas-adapter/renderWaferMap.js');
 
 const waitFor = async (cond, what) => { for (let i = 0; i < 300 && !cond(); i++) await new Promise(r => setTimeout(r, 5)); assert.ok(cond(), what); };
 const DEFS = [{ testNumber: 1, name: 'Vth', unit: 'V', limitLow: 0, limitHigh: 10 }];
@@ -61,9 +62,29 @@ test('the verdict maps open as a gallery of one card per wafer, and close cleanl
   const anchor = document.createElement('button');
   document.getElementById('root').appendChild(anchor);
   const a = mk(), b = mk();
-  openPatMaps({ anchor, testDefs: DEFS, items: [{ label: 'W1', dies: a.dies, passBins: [1], source: a }, { label: 'W2', dies: b.dies, passBins: [1], source: b }] });
+  openPatMaps({ anchor, testDefs: DEFS, items: [{ label: 'W1', dies: a.dies, passBins: [1], ringCount: 4, source: a }, { label: 'W2', dies: b.dies, passBins: [1], ringCount: 4, source: b }] });
   await waitFor(() => document.querySelectorAll('canvas').length >= 2, 'the cards');
   assert.match(document.body.textContent, /PAT verdicts by wafer/);
   assert.match(document.body.textContent, /PAT outlier/, 'the legend names the verdicts');
   assert.doesNotMatch(document.body.textContent, /hard bin/i, 'nothing calls a verdict a hard bin');
+});
+
+test('a single map opens its verdict map too: the ring count comes with the item, not from the map it was copied from', async () => {
+  document.body.querySelectorAll('[role="dialog"]').forEach(d => d.remove());
+  const host = document.createElement('div');
+  host.style.height = '600px';
+  document.getElementById('root').replaceChildren(host);
+  const errors = [];
+  const error = console.error;
+  console.error = (...a) => errors.push(a.join(' '));
+  try {
+    const map = mk();
+    const ctrl = renderWaferMap(host, map, { height: 600, insights: { enabled: true, defaultOpen: true } });
+    await waitFor(() => document.querySelector('[data-wmap-pat-maps]'), 'the PAT card offers its maps on a single map');
+    const before = document.querySelectorAll('canvas').length;
+    document.querySelector('[data-wmap-pat-maps]').click();
+    await waitFor(() => /PAT verdicts by wafer/.test(document.body.textContent) && document.querySelectorAll('canvas').length > before, 'the verdict map is drawn');
+    assert.deepEqual(errors, []);
+    ctrl.destroy();
+  } finally { console.error = error; }
 });

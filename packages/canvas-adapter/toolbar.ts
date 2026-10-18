@@ -1694,6 +1694,60 @@ export function wireMenuA11y(menu: HTMLElement, trigger: HTMLElement | null, clo
   wireMenuKeyboard(menu, trigger, close);
 }
 
+/** The one open command menu per document: opening another closes it. */
+const openCommandMenus = new WeakMap<Document, () => void>();
+
+/**
+ * Open a command menu (`role="menu"`, rows that act and are done) under `at`: a card's ⋯ menu, the drilldown menu at
+ * a click. `anchor` is an on-page element of the triggering render; it resolves the menu layer and gets focus back on
+ * Escape. A `trigger` button has its `aria-expanded` kept in step. The menu flips to stay on screen and closes on an
+ * outside press, Escape, Tab, the window losing focus, or another command menu opening. Returns its close function.
+ */
+export function openCommandMenu(
+  at: DOMRect,
+  anchor: HTMLElement,
+  rows: CheckMenuRow[],
+  label: string,
+  opts: { trigger?: HTMLElement; hook?: string } = {},
+): () => void {
+  const doc = anchor.ownerDocument;
+  const win = doc.defaultView ?? window;
+  openCommandMenus.get(doc)?.();
+
+  const { makeMenuSection } = createToolbarHelpers(getTooltip(doc));
+  const menu = buildCheckMenuEl(at, rows, { makeMenuSection }, win);
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', label);
+  if (opts.hook) menu.dataset[opts.hook] = '1';
+  menuLayerFor(anchor).appendChild(menu);
+
+  // Keep it on screen: a menu opened near the bottom or right edge flips to the other side rather than running out.
+  const r = menu.getBoundingClientRect();
+  if (r.bottom > win.innerHeight - 4) menu.style.top = `${Math.max(4, at.top - r.height)}px`;
+  if (r.right > win.innerWidth - 4) menu.style.left = `${Math.max(4, win.innerWidth - r.width - 4)}px`;
+
+  let closed = false;
+  function close(): void {
+    if (closed) return;
+    closed = true;
+    menu.remove();
+    if (opts.trigger) markMenuTrigger(opts.trigger, false);
+    doc.removeEventListener('pointerdown', onOutside, true);
+    win.removeEventListener('blur', close);
+    if (openCommandMenus.get(doc) === close) openCommandMenus.delete(doc);
+  }
+  function onOutside(e: PointerEvent): void {
+    // A press on the trigger is its own toggle: closing here first would reopen the menu on the same click.
+    if (!menu.contains(e.target as Node) && !opts.trigger?.contains(e.target as Node)) close();
+  }
+  doc.addEventListener('pointerdown', onOutside, true);
+  win.addEventListener('blur', close);
+  wireMenuA11y(menu, opts.trigger ?? anchor, close);
+  if (opts.trigger) markMenuTrigger(opts.trigger, true);
+  openCommandMenus.set(doc, close);
+  return close;
+}
+
 export interface ExpandToggleHandle {
   isOpen(): boolean;
   /** Force-close without toggling — used for e.g. a data refresh that should collapse an open panel. */

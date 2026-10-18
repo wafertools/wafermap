@@ -102,8 +102,9 @@ const rowsOf = (m) => [...m.querySelectorAll('[role="menuitem"]')].map(r => r.te
 test('the bin pareto: a bar opens the dies in that bin, across the wafers in view', () => {
   const { tab } = mount('overview');
   const c = card(tab, 'Hard bin pareto');
-  assert.match(c.textContent, /click a bar to chart or tabulate its dies/i);
-  const m = clickUntilMenu(c.querySelector('canvas'), [100], range(5, 120, 3));
+  assert.match(c.textContent, /click to chart or tabulate what it counts/i);
+  // Bars stand up from the axis, largest first: look along the bottom of the chart.
+  const m = clickUntilMenu(c.querySelector('canvas'), range(20, 390, 6), range(150, 390, 20));
   assert.ok(m, 'a menu');
   assert.match(m.getAttribute('aria-label'), /^Open a chart or table of \d+ dies in hard bin \d, across 3 wafers$/);
   assert.ok(rowsOf(m).includes('Dies'));
@@ -116,14 +117,14 @@ test('the soft bin pareto picks soft bins', () => {
   const soft = radios.find(r => r.value === 'sbin');
   soft.checked = true;
   soft.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  const m = clickUntilMenu(c.querySelector('canvas'), [100], range(5, 120, 3));
+  const m = clickUntilMenu(c.querySelector('canvas'), range(20, 390, 6), range(150, 390, 20));
   assert.match(m.getAttribute('aria-label'), /in soft bin 1[12]/);
 });
 
 test('the pass-rate card: a test\'s row opens the dies that fail it, on that test', () => {
   const { tab } = mount('overview');
   const c = card(tab, 'Parametric pass rate · test limits');
-  assert.match(c.textContent, /click a test to chart or tabulate the dies that fail it/);
+  assert.match(c.textContent, /click to chart or tabulate the dies that fail its test/);
   const m = clickUntilMenu(c.querySelector('canvas'), range(90, 400, 20), range(5, 200, 3));
   assert.ok(m, 'a menu');
   assert.match(m.getAttribute('aria-label'), /dies failing Vth, across 3 wafers$/);
@@ -235,14 +236,15 @@ test('plot bars, boxes and lines open what they count when they are not a wafer'
   closeMenu();
 });
 
-test('with Group by on, the clustered bin pareto opens one bin of one group', () => {
+test('with Group by on, the bin pareto has a bar per group in each bin, and a bar opens that bin of that group', () => {
   const { tab } = mount('overview');
   document.body.appendChild(tab.el);
   tab.el.querySelector('[data-wmap-select="group-by"]').click();
   [...document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
   const c = card(tab, 'Hard bin pareto');
-  assert.match(c.textContent, /click a sub-bar to chart or tabulate its dies/);
-  const m = clickUntilMenu(c.querySelector('canvas'), range(120, 500, 20), range(5, 100, 3));
+  assert.match(c.textContent, /click to chart or tabulate what it counts/);
+  assert.ok([...c.querySelectorAll('input[type="radio"]')].some(r => r.value === 'share'), 'counts or each group\'s share');
+  const m = clickUntilMenu(c.querySelector('canvas'), range(20, 390, 2), range(150, 390, 20));
   assert.ok(m, 'a menu');
   assert.match(m.getAttribute('aria-label'), /in hard bin \d of (TT|FF)/);
 });
@@ -255,8 +257,8 @@ test('with Group by on, a column of the overlaid histogram opens the dies in tha
   tab.el.querySelector('[data-wmap-select="group-by"]').click();
   [...document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
   const c = card(tab, 'Value histogram');
-  assert.match(c.textContent, /click a column to chart or tabulate its dies/);
-  const m = clickUntilMenu(c.querySelector('canvas'), range(40, 70, 1), [100]);
+  assert.match(c.textContent, /click a bar to chart or tabulate its dies/);
+  const m = clickUntilMenu(c.querySelector('canvas'), range(60, 560, 3), [150, 200, 250]);
   assert.ok(m, 'a menu');
   assert.match(m.getAttribute('aria-label'), /^Open a chart or table of \d+ dies with Vth from .+ to .+( on W\d| across [23] wafers)$/);
 });
@@ -272,29 +274,24 @@ test('a sweep: a level of the curve opens the dies measured there', async () => 
   assert.match(m.getAttribute('aria-label'), /dies measured at .+, across 3 wafers$/);
 });
 
-test('the wafer trend: a drag across it picks a run of wafers, whose own dies are the population', async () => {
-  const { renderTrendPanel } = await import('../dist/packages/canvas-adapter/charts/trend.js');
+test('a line plot: a drag across it picks the run of X values between its ends, with every unit each averages', async () => {
+  const { renderPlotChart } = await import('../dist/packages/canvas-adapter/charts/plotChart.js');
+  const { resolvePlot } = await import('../dist/packages/stats/plotData.js');
   const { items } = lotItems(5);
   const picked = [];
-  const panel = renderTrendPanel({
-    items: items.map((it, i) => ({ label: it.label, key: i, dies: it.dies })), testDefs: DEFS,
-    onSelectWafers: (sel, at, anchor) => picked.push({ keys: sel.keys, test: sel.testNumber, at, anchor }),
-  });
-  document.getElementById('root').appendChild(panel.card);
-  const body = panel.card.querySelector('canvas').parentElement;
-  Object.defineProperty(body, 'clientWidth', { configurable: true, get: () => 700 });
-  panel.setTest(1060);   // rebuilds the canvas at the width the body now reports
-  const canvas = panel.card.querySelector('canvas');
+  const chart = renderPlotChart({ waferLabel: i => items[i].label, onSelectPoints: (points, at, anchor) => picked.push({ points, anchor }) });
+  document.getElementById('root').appendChild(chart.card);
+  const plotItems = items.map(it => ({ label: it.label, dies: it.dies, passBins: it.passBins, ringCount: it.ringCount, wafer: it.wafer }));
+  chart.setPlot(resolvePlot({ id: 't', chart: 'line', aggregate: 'mean', fields: { x: { builtin: 'waferOrder' }, y: { test: 1060 }, color: { none: true } } }, plotItems, { testDefs: DEFS }));
+  const canvas = chart.card.querySelector('canvas');
   canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 300, width: 700, height: 300, x: 0, y: 0 });
-  assert.match(panel.card.textContent, /drag across the plot to select wafers/);
-  canvas.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 90, clientY: 50 }));
-  document.dispatchEvent(new dom.window.MouseEvent('mousemove', { bubbles: true, clientX: 450, clientY: 150 }));
-  document.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true, clientX: 450, clientY: 150 }));
+  assert.match(chart.card.textContent, /drag across the plot to select a run of points/);
+  canvas.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, button: 0, clientX: 0, clientY: 50 }));
+  document.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true, clientX: 2000, clientY: 150 }));
   assert.equal(picked.length, 1, 'a selection');
-  assert.deepEqual(picked[0].keys, [1, 2], 'the wafers whose points the drag crossed');
-  assert.deepEqual(picked[0].keys, [...picked[0].keys].sort(), 'in order');
-  assert.equal(picked[0].test, 1060);
+  assert.deepEqual([...new Set(picked[0].points.map(p => p.item))].sort(), [0, 1, 2, 3, 4], 'every wafer the drag crossed');
   assert.equal(picked[0].anchor, canvas);
+  chart.destroy();
 });
 
 test('a selection of wafers on the trend opens the menu on those wafers', () => {

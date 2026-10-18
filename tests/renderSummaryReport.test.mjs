@@ -192,7 +192,7 @@ test('report includes a Functional Tests section with pass rates; functional tes
 //
 // Before `sortBinsForDisplay` existed, this ordering was implemented three times
 // — the panel's bin section and both of this file's bin tables — all ascending by
-// bin number, and none agreeing with `buildBinParetoData`'s count-descending
+// bin number, and none agreeing with the Insights bin pareto's count-descending
 // order in the Insights bin chart. The same wafer therefore listed its bins in
 // one order in the chart and another in the panel and the report.
 

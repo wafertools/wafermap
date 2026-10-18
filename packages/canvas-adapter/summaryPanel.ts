@@ -28,7 +28,7 @@ import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 // The report builders are loaded when a report is opened, not with the map (see `openReportModal`'s callers):
 // they are most of the report's markup and stylesheet, and a panel that is never exported to a report never needs them.
 import type { ReportMap } from '../stats/renderSummaryReport.js';
-import { buildSynthesis, synthesisSource, synthesisRowShare, synthesisMoreTests, SYNTHESIS_ALSO_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
+import { buildSynthesis, synthesisKey, synthesisSource, synthesisRowShare, synthesisMoreTests, SYNTHESIS_ALSO_HEADING, type SynthesisItem, type SynthesisTarget } from '../stats/synthesis.js';
 import { ICONS } from './icons.js';
 import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWord, impactShortWord, formatPoints, shortfallColor, type MeterTier } from '../stats/presentation.js';
 import { regionYieldRows, waferYieldRows } from '../stats/yieldRows.js';
@@ -2212,6 +2212,11 @@ export interface SynthesisSectionActions {
   activeTest?: number | null;
   /** The map's bin colours, so a bin chip carries the swatch the legend shows. */
   binColors?: BinColors;
+  /**
+   * Opens an item's Worth a look card in Insights (by `synthesisKey`): the one way from a row to its chart. Offered on the
+   * items that have a card (the top ones), never on the "also" list. Omitted ⇒ no Chart links (no Insights).
+   */
+  onShowChart?: (key: string) => void;
 }
 
 /** The marker every acting row ends with: this row shows something on the map. */
@@ -2248,7 +2253,7 @@ export function buildSynthesisSection(
   /** Opens the full report, which begins with this same section. Omitted ⇒ no link. */
   onOpenReport?: () => void,
 ): HTMLDivElement {
-  const { onFindingClick, activeFindingId = null, onTestClick, activeTest = null, binColors } = actions;
+  const { onFindingClick, activeFindingId = null, onTestClick, activeTest = null, binColors, onShowChart } = actions;
   const synthesis = buildSynthesis(source, { passBins });
   const byId = new Map(synthesisSource(source).findings.map(f => [f.id, f]));
   const { outer, content } = collapsibleSection('What stands out', true, { stateKey: 'synthesis', panel });
@@ -2303,6 +2308,22 @@ export function buildSynthesisSection(
     return btn;
   };
   const marked = (): HTMLSpanElement => { const m = showOnMapMark(); m.dataset.wmapMark = ''; return m; };
+  // The one way from a row to its chart: a small link beside the row (never inside it: a button in a button is invalid).
+  const charted = new Set(synthesis.items.map(synthesisKey));
+  const chartLink = (it: SynthesisItem): HTMLButtonElement | null => {
+    if (!onShowChart || !charted.has(synthesisKey(it))) return null;
+    const b = el('button', {
+      border: 'none', background: 'none', padding: `0 ${SPACE.xs}`, fontSize: FONT.meta, color: CLR.icon, cursor: 'pointer',
+      textDecoration: 'underline', textUnderlineOffset: '2px', flexShrink: '0', alignSelf: 'center',
+    }, 'Chart') as HTMLButtonElement;
+    b.type = 'button';
+    b.dataset.wmapSynthesisChart = synthesisKey(it);
+    b.setAttribute('aria-label', `Chart: ${it.brief}`);
+    wireTooltip(b, 'Open Insights at the chart of this, under Worth a look');
+    wireControlHover(b, 'bare');
+    b.addEventListener('click', () => onShowChart(synthesisKey(it)));
+    return b;
+  };
 
   content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text, fontWeight: '600', marginBottom: SPACE.sm }, plainBinTerms(synthesis.headline)));
 
@@ -2356,11 +2377,20 @@ export function buildSynthesisSection(
       }
       const moreTests = synthesisMoreTests(lead);
       if (moreTests) chips.appendChild(el('span', { fontSize: FONT.meta, color: LABEL_COLOR, alignSelf: 'center' }, moreTests));
+      const link = chartLink(lead);
+      if (link) { link.style.marginLeft = 'auto'; chips.appendChild(link); }
       content.appendChild(main);
       content.appendChild(chips);
     } else {
       main.style.marginBottom = SPACE.sm;
       content.appendChild(main);
+      const link = chartLink(lead);
+      if (link) {
+        main.style.marginBottom = '0';
+        const under = el('div', { display: 'flex', justifyContent: 'flex-end', marginBottom: SPACE.sm });
+        under.appendChild(link);
+        content.appendChild(under);
+      }
     }
   }
   const smaller = [...others, ...(synthesis.also?.items ?? [])];
@@ -2376,21 +2406,18 @@ export function buildSynthesisSection(
         marked(),
       ]);
       // The listitem is the wrapper: a role on the button itself would replace its button role.
-      const item = el('div', {});
+      const item = el('div', { display: 'flex', alignItems: 'center', gap: SPACE.xs });
       item.setAttribute('role', 'listitem');
+      r.style.flex = '1';
+      r.style.minWidth = '0';
       item.appendChild(r);
+      const link = chartLink(it);
+      if (link) item.appendChild(link);
       list.appendChild(item);
     }
     const more = synthesis.also?.more ?? 0;
     if (more > 0) list.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR }, `and ${more} more`));
     content.appendChild(list);
-  }
-  for (const w of synthesis.watch ?? []) {
-    content.appendChild(row(w.target, CLR.menuBorder, [
-      el('span', { fontSize: FONT.meta, fontWeight: '600', letterSpacing: TRACKING, textTransform: 'uppercase', color: LABEL_COLOR }, 'Watch'),
-      el('span', { flex: '1', minWidth: '0' }, plainBinTerms(w.text)),
-      marked(),
-    ]));
   }
   content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: LABEL_COLOR, marginTop: SPACE.xs }, plainBinTerms(synthesis.checked)));
   if (onOpenReport) {
@@ -3075,6 +3102,8 @@ export function* renderWaferSummaryContentSteps(
     onTestClick?: (testNumber: number) => void;
     /** The test `onTestClick` last showed, while it is still shown. */
     activeTest?: number | null;
+    /** Opens a "What stands out" item's Worth a look card in Insights (`synthesisKey`). Omitted ⇒ no Chart links. */
+    onShowChart?: (key: string) => void;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
     /** See {@link FindingsNotice} — a host row at the top of the Findings section. */
@@ -3086,6 +3115,8 @@ export function* renderWaferSummaryContentSteps(
     dieListOptions?: DieListDisplayOptions;
     /** A die row clicked in the Data tables: show that die on its map. */
     onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+    /** The host's wafer attributes (`attributes` on the render options): what the Data tables call each field. */
+    attributes?: Record<string, FacetCuration>;
     /**
      * Suppress the "Wafer Info" metadata section because the caller already
      * renders this metadata elsewhere — `renderWaferMap` passes true whenever its
@@ -3110,10 +3141,10 @@ export function* renderWaferSummaryContentSteps(
     hbinDefs, sbinDefs, testDefs,
     statsSummary, passBins, ringCount,
     binColors, plotMode, fallbackFormat,
-    onFindingClick, activeFindingId = null, onTestClick, activeTest = null,
+    onFindingClick, activeFindingId = null, onTestClick, activeTest = null, onShowChart,
     findingsFilter, onFindingsFilterChange,
     findingsNotice,
-    onSaveText, metadataFields, dieListOptions, onLocateDie, metadataShownElsewhere, onClose,
+    onSaveText, metadataFields, dieListOptions, onLocateDie, attributes, metadataShownElsewhere, onClose,
   } = params;
 
   panel.appendChild(panelHeader(panel, 'Wafer Summary', onClose));
@@ -3142,7 +3173,7 @@ export function* renderWaferSummaryContentSteps(
     ? reportButton('Data tables', () => {
         openDataTablesModal(panel, {
           items: [{ label: wafer.metadata?.waferId !== undefined ? String(wafer.metadata.waferId) : 'this wafer', dies, wafer, passBins }],
-          testDefs, ringCount, metadataFields, dieListOptions, onSaveText, onLocateDie,
+          testDefs, ringCount, metadataFields, dieListOptions, onSaveText, onLocateDie, attributes,
         }, `Data tables — ${dies.length.toLocaleString()} dies`);
       })
     : null;
@@ -3176,7 +3207,7 @@ export function* renderWaferSummaryContentSteps(
   // of the panel: they used to be reachable only after scrolling past two full test tables — the
   // panel's most important content behind its densest.
   if (statsSummary) {
-    append(buildSynthesisSection(statsSummary, passBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors }, panel, openReport ?? undefined));
+    append(buildSynthesisSection(statsSummary, passBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors, onShowChart }, panel, openReport ?? undefined));
     yield;
   }
   if (statsSummary && onFindingClick && findingsFilter && onFindingsFilterChange) {
@@ -3288,6 +3319,8 @@ export function* renderLotSummaryContentSteps(
     onTestClick?: (testNumber: number) => void;
     /** The test `onTestClick` last showed, while it is still shown. */
     activeTest?: number | null;
+    /** Opens a "What stands out" item's Worth a look card in Insights (`synthesisKey`). Omitted ⇒ no Chart links. */
+    onShowChart?: (key: string) => void;
     onWaferClick?:    (waferIndex: number) => void;
     findingsFilter?: FindingsFilter;
     onFindingsFilterChange?: () => void;
@@ -3300,6 +3333,8 @@ export function* renderLotSummaryContentSteps(
     dieListOptions?: DieListDisplayOptions;
     /** A die row clicked in the Data tables: show that die on its map. */
     onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+    /** The host's wafer attributes (`attributes` on the render options): what the Data tables call each field. */
+    attributes?: Record<string, FacetCuration>;
     /** Per-wafer findings tally badged onto the Wafer Yield rows — see
      *  `buildPerWaferYieldSection`. */
     findingsFor?: (waferIndex: number) => { total: number; unusual: number; notable: number } | undefined;
@@ -3315,11 +3350,11 @@ export function* renderLotSummaryContentSteps(
     hbinDefs, sbinDefs, testDefs,
     passBins, ringCount: ringCountOpt,
     binColors, plotMode, fallbackFormat,
-    onFindingClick, activeFindingId = null, onTestClick, activeTest = null,
+    onFindingClick, activeFindingId = null, onTestClick, activeTest = null, onShowChart,
     onWaferClick,
     findingsFilter, onFindingsFilterChange,
     findingsNotice,
-    onSaveText, dieListOptions, onLocateDie, findingsFor, onClose,
+    onSaveText, dieListOptions, onLocateDie, attributes, findingsFor, onClose,
   } = params;
   // The lot-level ring figures use one ring count: the caller's own, else the first wafer's (wafers built with different
   // ring counts are named by `ring-count-mixed`, not pooled). There is no default.
@@ -3402,7 +3437,7 @@ export function* renderLotSummaryContentSteps(
             passBins: itemPassBins(it, passBins), statsSummary: it.statsSummary,
           })),
           testDefs, ringCount: lotRingCount(), metadataFields: items.find(it => it?.metadataFields?.length)?.metadataFields,
-          dieListOptions, onSaveText, onLocateDie,
+          dieListOptions, onSaveText, onLocateDie, attributes,
         }, `Data tables — ${allDies.length.toLocaleString()} dies across ${items.length} wafer${items.length === 1 ? '' : 's'}`);
       })
     : null;
@@ -3442,7 +3477,7 @@ export function* renderLotSummaryContentSteps(
   const lotBinColors = binColors ?? resolveBinColorsByWafer(
     items.flatMap((it) => it ? [{ dies: it.dies ?? [], passBins: itemPassBins(it, passBins) }] : []),
     { hbinDefs, sbinDefs }).colors;
-  append(buildSynthesisSection(lotSummary, lotPassBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors: lotBinColors }, panel, openReport));
+  append(buildSynthesisSection(lotSummary, lotPassBins, { onFindingClick, activeFindingId, onTestClick, activeTest, binColors: lotBinColors, onShowChart }, panel, openReport));
   yield;
   if (onFindingClick && findingsFilter && onFindingsFilterChange) {
     append(buildFindingsSectionWithFilter(

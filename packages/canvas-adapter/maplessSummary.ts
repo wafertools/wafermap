@@ -6,7 +6,7 @@
 //     directly, so colours are guaranteed to match a positioned card's own
 //     bin legend (same colour-scheme function) with zero new rendering code.
 //   - value mode gets a small histogram built from stats/histogram.ts's pure
-//     buildTestHistogramData — not the full Insights-tab renderHistogramPanel,
+//     buildTestHistogramData — not the Insights plot cards,
 //     which is ~230px with axis/dropdown chrome too heavy for a card corner.
 //   - every other mode (metadata, stacked-*, yield) falls back to a one-line
 //     message rather than silently rendering a blank panel.

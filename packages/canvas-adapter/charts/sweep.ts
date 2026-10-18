@@ -26,6 +26,7 @@ import {
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { escHtml } from '../../core/utils.js';
 import { unmarkedLabel, derivedTestNote, DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
+import { plotAbout } from './cardAbout.js';
 
 /**
  * An x value as the card prints it — ticks, crossing and widths alike. With an
@@ -107,7 +108,8 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
   let dies = options.dies;
 
 
-  const { card, body, heading, controlsRow } = cardShell(spec.title, onSaveImage, options.ownerDocument);
+  const { card, body, heading, controlsRow, setAbout } = cardShell(spec.title, onSaveImage, options.ownerDocument);
+  setAbout(plotAbout({ id: spec.id, chart: 'sweep' }));
   card.style.alignSelf = 'start';
   const doc = card.ownerDocument;
 

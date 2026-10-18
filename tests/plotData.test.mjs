@@ -317,7 +317,7 @@ test('axis settings and the title the user typed override the automatic ones', (
 
 test('the footnote states population, aggregation and what was left out', () => {
   const r = resolvePlot(spec('scatter', { x: T(1050), y: T(1060), color: { none: true } }), lot(), ctx);
-  assert.equal(plotFootnote(r), '3 wafers · 40 dies · 4 dies without Idsat not plotted');
+  assert.equal(plotFootnote(r), '3 wafers · 40 dies · r = 0.808 · n = 36 · 4 dies without Idsat not plotted');
   const one = resolvePlot(spec('histogram', { y: T(1050), color: { none: true } }), [lot()[0]], ctx);
   assert.equal(plotFootnote(one), '1 wafer · 10 dies');
 });
@@ -619,6 +619,40 @@ test('examples are drawn from the data: the test that moves most between wafers 
   assert.equal(ex[0].fields.y.test, 3, 'Follow, which tracks it, is the partner');
   assert.deepEqual(ex.find(p => p.chart === 'bar').fields.x, { meta: 'split' });
   for (const p of ex.filter(p => p.chart !== 'sweep')) assert.deepEqual(resolvePlot(p, items, c3).issues, [], p.chart);
+});
+
+test('examples follow the data: the worst ring filtered, the most-failing test rated and widened, a verdict as a category', () => {
+  // Vth fails its limits on a few dies, Leak on many; the outer ring yields worst; Scan is a pass/fail test.
+  const DEFS4 = [
+    { testNumber: 1, name: 'Vth', unit: 'V', limitLow: 0.1, limitHigh: 0.9 },
+    { testNumber: 2, name: 'Leak', unit: 'A', limitLow: 0, limitHigh: 2e-9 },
+    { testNumber: 3, name: 'Scan', testType: 'F' },
+  ];
+  const mk = (label, i) => {
+    const r = buildWaferMap({
+      results: Array.from({ length: 100 }, (_, k) => {
+        const x = k % 10, y = Math.floor(k / 10), edge = x === 0 || x === 9 || y === 0 || y === 9;
+        return { x, y, hbin: edge && k % 3 === 0 ? 2 : 1,
+          testValues: { 1: 0.05 + (k % 20) * 0.045 + i * 0.01, 2: (k % 4) * 1e-9 }, testPass: { 3: k % 7 !== 0 } };
+      }),
+      waferConfig: { diameter: 40, metadata: { split: i % 2 ? 'B' : 'A' } }, dieConfig: { width: 3, height: 3 }, passBins: [1], testDefs: DEFS4,
+    });
+    return { label, dies: r.dies, metadata: r.metadata, passBins: [1], ringCount: r.ringCount, wafer: r.wafer };
+  };
+  const items = [0, 1, 2, 3].map(i => mk(`W${i + 1}`, i));
+  const c = { testDefs: DEFS4 };
+  const ex = examplePlots(fieldCatalogue(items, c), items.length, () => 'x', { items, ctx: c });
+  const ringBar = ex.find(p => p.where);
+  assert.deepEqual(ringBar.where.conditions[0].field, { builtin: 'ring' });
+  assert.deepEqual(ringBar.where.conditions[0].values, ['Ring 4'], 'the edge yields least here');
+  const rate = ex.find(p => p.fields?.y && 'passRate' in p.fields.y);
+  assert.equal(rate.fields.y.passRate, 2, 'Leak, which fails most, not Vth, which comes first');
+  const whatIf = ex.find(p => p.whatIf);
+  assert.equal(whatIf.fields.y.test, 2);
+  assert.ok(whatIf.whatIf.lo < 0 && whatIf.whatIf.hi > 2e-9, 'the limits widened by a tenth of the window');
+  assert.ok(ex.some(p => p.chart === 'box' && p.fields.x?.test === 3), 'the lead test by the pass/fail test');
+  assert.deepEqual(ex.find(p => p.axes?.y?.references).axes.y.references, [{ stat: 'median' }]);
+  for (const p of ex.filter(p => p.chart !== 'sweep')) assert.deepEqual(resolvePlot(p, items, c).issues, [], p.chart);
 });
 
 test('examples add a goal plot and a pass-rate bar only where the test definitions carry limits', () => {

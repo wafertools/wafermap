@@ -5,7 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
 import { attributeLabel, buildFacetTable, facetValueOf } from '../dist/packages/stats/facets.js';
-import { fieldCatalogue } from '../dist/packages/stats/plotData.js';
+import { fieldCatalogue, fieldLabel, conditionText, resolvePlot, plotTitle, plotFootnote } from '../dist/packages/stats/plotData.js';
+import { resolveMetadataColumns } from '../dist/packages/stats/metadataColumns.js';
 import { buildMetadataRows } from '../dist/packages/stats/reportHtml.js';
 
 function item(label, meta) {
@@ -61,4 +62,21 @@ test('the report names an attribute the way Group by does', () => {
   const rows = buildMetadataRows(wafers().map(w => ({ metadata: w.metadata })));
   const labels = rows.map(r => r.label);
   assert.ok(labels.includes('Test Program') && labels.includes('Lot'), `got ${labels}`);
+});
+
+test('a plot, its filter and its title name an attribute the way the field list does', () => {
+  const curation = { jobRev: { label: 'Program rev' } };
+  const ctx = { curation };
+  assert.equal(fieldLabel({ meta: 'jobRev' }, undefined, curation), 'Program rev');
+  assert.equal(fieldLabel({ meta: 'jobRev' }), 'Job Rev', 'without the host’s names, the key spelled out as attributeLabel does');
+  assert.equal(conditionText({ field: { meta: 'jobRev' }, values: ['r1'] }, undefined, curation), 'Program rev is r1');
+  const r = resolvePlot({ id: 'p', chart: 'bar', fields: { x: { meta: 'jobRev' }, y: { builtin: 'yield' }, color: { none: true } }, where: { conditions: [{ field: { meta: 'jobRev' }, values: ['r1'] }] } }, wafers(), ctx);
+  assert.match(plotTitle(r), /Program rev/);
+  assert.match(plotFootnote(r), /only wafers where Program rev is r1/);
+  assert.equal(fieldCatalogue(wafers(), ctx).find(f => 'meta' in f.field && f.field.meta === 'jobRev').label, 'Program rev');
+});
+
+test('a die table’s wafer columns are headed by the host’s names', () => {
+  const cols = resolveMetadataColumns({ waferMetadata: { jobRev: 'r1', lot: 'A' }, waferPlacement: 'both', curation: { jobRev: { label: 'Program rev' } } });
+  assert.deepEqual(cols.columns.map(c => c.label).sort(), ['Lot', 'Program rev']);
 });

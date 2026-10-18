@@ -83,7 +83,7 @@ test('the verdicts map as one wafer per card: a PAT verdict field, the wafer’s
     testValues: { 1: k === 90 ? 5.9 : k === 91 ? 11 : k === 92 ? 3 : 5 + ((k % 10) - 4.5) / 50, 3: k },
   }));
   const source = buildWaferMap({ results, waferConfig: { diameter: 30 }, dieConfig: { width: 2, height: 2 }, passBins: [1], testDefs: DEFS });
-  const items = [{ label: 'W1', dies: source.dies, passBins: [1], source }, { label: 'No result', dies: source.dies, passBins: [1] }];
+  const items = [{ label: 'W1', dies: source.dies, passBins: [1], ringCount: 4, source }, { label: 'No result', dies: source.dies, passBins: [1], ringCount: 4 }];
   const maps = patVerdictMaps(items, DEFS);
   assert.equal(maps.length, 1, 'a wafer without its own result has nothing to draw on');
   const m = maps[0];

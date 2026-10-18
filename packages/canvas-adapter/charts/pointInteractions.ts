@@ -25,6 +25,8 @@ export interface PointInteractionOptions<P> {
   /** Whether a click on this point does anything. */
   clickable: (p: P) => boolean;
   onOpen?: (p: P) => void;
+  /** A right-click on a point (a wafer's own point opens the wafer's menu). Absent = the browser's menu. */
+  onContextMenu?: (p: P, e: MouseEvent) => void;
   /** The point under the pointer changed (null when it left all points): redraw. */
   onHover: (p: P | null) => void;
   /** Present to enable drag-to-select. */
@@ -135,6 +137,15 @@ export function wirePointInteractions<P>(o: PointInteractionOptions<P>): { destr
     if (!o.clickable(p)) return;
     o.onOpen?.(p);
   });
+
+  if (o.onContextMenu) {
+    canvas.addEventListener('contextmenu', e => {
+      const p = pointAt(e);
+      if (!p) return;
+      tooltip.style.display = 'none';
+      o.onContextMenu!(p, e);
+    });
+  }
 
   return { destroy: () => rubber.remove() };
 }

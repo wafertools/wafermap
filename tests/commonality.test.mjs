@@ -3,6 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { cardMenuLabels } from './fixtures/cardMenu.mjs';
 import { buildWaferMap } from '../dist/index.js';
 import { rankCommonality, measureLabel, COMMONALITY_BINS } from '../dist/packages/stats/commonality.js';
 
@@ -91,6 +92,8 @@ test('the card ranks the rows, offers Group by, and says which field Insights is
   assert.ok(all.length > rows.length);
   const splitRows = all.filter(r => /^Split/.test(r.textContent));
   assert.ok(splitRows.length > 0 && splitRows.every(r => /Grouped by this/.test(r.textContent)));
-  assert.equal(p.card.querySelector('button[aria-label="Save as PNG"]'), null);
+  const labels = cardMenuLabels(p.card);
+  assert.ok(!labels.includes('Save as PNG'), 'a table: no image to save');
+  assert.ok(labels.includes('About this table') && !labels.includes('About this chart'), 'a table is not called a chart');
   assert.equal(p.card.style.flex, '0 0 auto', 'as tall as its table, in a column of cards');
 });

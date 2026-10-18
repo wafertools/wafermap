@@ -21,7 +21,6 @@ import { buildCorrelationMatrix } from '../dist/packages/stats/correlation.js';
 import { buildScatterData, buildScatterDataGrouped } from '../dist/packages/stats/scatter.js';
 import { buildTestHistogramData } from '../dist/packages/stats/histogram.js';
 import { buildYieldData, buildYieldDataCombined } from '../dist/packages/stats/yield.js';
-import { buildBinParetoData } from '../dist/packages/stats/binPareto.js';
 import { JSDOM } from 'jsdom';
 
 // ── Wafer generators ────────────────────────────────────────────────────────
@@ -376,7 +375,7 @@ test('buildScatterData / buildScatterDataGrouped — 25-wafer lot, two tests, co
   assert.ok(msGrouped < 100, `buildScatterDataGrouped took ${msGrouped.toFixed(0)}ms (budget 100ms)`);
 });
 
-test('buildTestHistogramData, buildYieldData/Combined, buildBinParetoData — 25-wafer lot completes within budget', () => {
+test('buildTestHistogramData, buildYieldData/Combined — 25-wafer lot completes within budget', () => {
   const items = analysisLot;
   const groups = [{ key: 'A', items: items.filter((_, i) => i % 2) }, { key: 'B', items: items.filter((_, i) => !(i % 2)) }];
   // Cheapest builders — a shared, generous budget covers all of them; the
@@ -386,7 +385,6 @@ test('buildTestHistogramData, buildYieldData/Combined, buildBinParetoData — 25
     ['buildTestHistogramData', () => buildTestHistogramData(items, 1000, 16)],
     ['buildYieldData', () => buildYieldData(items.map(i => ({ passBins: [1], ...i })), 'label')],
     ['buildYieldDataCombined', () => buildYieldDataCombined(groups.map(g => ({ ...g, items: g.items.map(i => ({ passBins: [1], ...i })) })), 'label')],
-    ['buildBinParetoData', () => buildBinParetoData(items, 'hbin')],
   ];
   for (const [name, fn] of ops) {
     fn(); // warmup

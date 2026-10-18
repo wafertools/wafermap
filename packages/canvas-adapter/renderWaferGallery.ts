@@ -27,6 +27,7 @@ import { plotStoreFor, type WithPlotStore } from './plotStore.js';
 import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS, findingBin, findingPlotMode } from './renderWaferMap.js';
 import { findingPatternKey } from '../stats/filterFindings.js';
+import { synthesisSource } from '../stats/synthesis.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest, getDieTestValue, isBuiltMap } from '../renderer/buildWaferMap.js';
@@ -1011,7 +1012,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -1039,7 +1040,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -1067,7 +1068,7 @@ export function renderWaferGallery(
       ?? (finding ? wholeWafersSource(findingWaferIndices(finding)) : undefined);
     if (!sel) return;
     void import('./drilldown.js').then(({ openDrilldownMenu }) => {
-      if (anchor.isConnected) openDrilldownMenu(at, anchor, sel.source, { plots: plotStore, attributes: options.attributes, ...sel.ctx });
+      if (anchor.isConnected) openDrilldownMenu(at, anchor, sel.source, { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, ...sel.ctx });
     });
   }
 
@@ -1088,7 +1089,7 @@ export function renderWaferGallery(
     const defs = mergedTestDefs().defs;
     const source = sourceFromBins(shares, kind, bins, defs, undefined, stacked);
     if (!source) return;
-    const base: DrilldownContext = { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) };
+    const base: DrilldownContext = { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) };
     const own = bins.length > 1 ? sourceFromBins(shares, kind, [bin], defs, undefined, stacked) : null;
     const ctx: DrilldownContext = own ? { ...base, narrower: { label: `Only ${kind} bin ${bin}`, backLabel: 'All filtered bins', source: own, ctx: base } } : base;
     void import('./drilldown.js').then(({ openDrilldownMenu }) => {
@@ -1116,7 +1117,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
     };
   }
 
@@ -1430,6 +1431,7 @@ export function renderWaferGallery(
         findingsNotice: findingsNotice(),
         onFindingsFilterChange: renderGallerySummaryPanel,
         onSaveText: exportHooks.onSaveText,
+        attributes: options.attributes,
         onFindingClick: (finding, row) => {
           if (activeLotFindingId === finding.id) {
             clearLotFindingHighlight();
@@ -1448,6 +1450,11 @@ export function renderWaferGallery(
           if (again) restoreViewBeforeFinding(); else applyLotTestHighlight(testNumber);
           renderGallerySummaryPanel();
         },
+        // An item's Chart link: its Worth a look card in Insights' Overview.
+        onShowChart: insightsEnabled ? (key) => {
+          setInsightsOpen(true);
+          void ensureInsightsTab().then(tab => tab?.showWorthCard(key));
+        } : undefined,
         // Opens the wafer, which is what the row's own accessible name has always
         // claimed. It previously only highlighted the card in the grid — a weak
         // payoff for a click, and a promise the label did not keep.
@@ -1573,7 +1580,7 @@ export function renderWaferGallery(
     for (const ci of wafers) applyDieZoneHighlight(failing(ci)!, [ci]);
   }
 
-  function applyLotFindingHighlight(finding: StatsFinding, row: HTMLButtonElement): void {
+  function applyLotFindingHighlight(finding: StatsFinding, row?: HTMLButtonElement): void {
     // Toggle off if already active.
     if (activeLotFindingId === finding.id) {
       clearLotFindingHighlight();
@@ -1582,8 +1589,10 @@ export function renderWaferGallery(
 
     activeLotFindingId   = finding.id;
     activeLotTest        = null;
-    row.style.background = CLR.bgActive;
-    row.style.fontWeight = '600';
+    if (row) {
+      row.style.background = CLR.bgActive;
+      row.style.fontWeight = '600';
+    }
 
     // Switch to the mode that makes this finding's data visible, with the legend
     // filtered to the finding's own bin (none for a yield or test finding), so
@@ -2469,6 +2478,24 @@ export function renderWaferGallery(
       getRingCount: () => requireRingCount({ ringCount: lotRingCount() }, 'the Insights tab'),
       defaultView: options.insights?.defaultView,
       plotStore, onPickPlotsFile: options.insights?.onPickPlotsFile,
+      filter: options.insights?.filter, onFilterChange: options.insights?.onFilterChange,
+      // A Worth a look card's Show on map: back to the cards, showing the item as its row in the Summary panel does, with
+      // the panel open so the row is seen beside them.
+      showOnMap: (target) => {
+        setInsightsOpen(false);
+        if (target.kind === 'test') {
+          rememberViewBeforeFinding();
+          clearLotFindingHighlight();
+          applyLotTestHighlight(target.testNumber);
+        } else {
+          const finding = currentLotStats ? synthesisSource(currentLotStats).findings.find(f => f.id === target.id) : undefined;
+          if (finding) {
+            if (activeLotFindingId !== finding.id) { rememberViewBeforeFinding(); applyLotFindingHighlight(finding); }
+          }
+        }
+        setLotSummaryOpen(true);
+        renderGallerySummaryPanel();
+      },
       // Never. The bar stays visible in Insights and carries Help whenever the
       // host asked for it, so the tab row has nothing to fall back for. The
       // condition here was inverted — it passed the guide through precisely
@@ -3669,8 +3696,8 @@ export function renderWaferGallery(
         // The card's own hook, so the charts are named for its wafer, as on a single map.
         if (card.isConnected) {
           openDrilldownMenu(at, card, source, across
-            ? { plots: plotStore, attributes: options.attributes, ...across.ctx }
-            : { plots: plotStore, attributes: options.attributes, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
+            ? { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, ...across.ctx }
+            : { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
         }
       });
     });

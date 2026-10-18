@@ -13,6 +13,7 @@ import { testLabel, unmarkedLabel } from '../../renderer/testLabel.js';
 import { CLR, FONT, SPACE, controlStyle, wireControlHover, wireTooltip, type SaveTextHandler } from '../toolbar.js';
 import { exportCsv } from '../tableExport.js';
 import { cardShell, makeListSelect, renderEmptyState } from './chartShell.js';
+import { cardAbout } from './cardAbout.js';
 
 export interface GroupComparisonPanelOptions {
   title?: string;
@@ -39,11 +40,10 @@ const MAX_GROUP_COLUMNS = 6;
 export function renderGroupComparisonPanel(o: GroupComparisonPanelOptions): { card: HTMLElement; setTest: (n: number) => void; destroy: () => void } {
   const doc = o.ownerDocument ?? document;
   const label = o.groupLabelText ?? 'group';
-  const { card, body, controlsRow } = cardShell(o.title ?? `Comparison by ${label.toLowerCase()}`, undefined, doc);
+  const { card, body, controlsRow, setAbout } = cardShell(o.title ?? `Comparison by ${label.toLowerCase()}`, undefined, doc);
+  setAbout(cardAbout('comparison'));
   card.dataset.wmapGroupComparison = '1';
   card.style.gridColumn = '1 / -1';   // a table of many columns needs the row's width
-  // A table has no canvas to save: the card's PNG button would do nothing, so it goes (Comparison CSV saves the table).
-  card.querySelector('button[aria-label="Save as PNG"]')?.remove();
 
   const wafers: CompareWafer[] = o.groups.flatMap(g => g.items.map(it => ({ dies: it.dies, group: g.key })));
   const keys = groupKeys(wafers);

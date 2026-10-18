@@ -877,6 +877,7 @@ export function renderWaferMapCard(
           onSaveText:     exportHooks.onSaveText,
           waferMetadata:  wafer.metadata, // live local, not result.metadata which goes stale after setResult()
           metadataFields, // live local (setResult-reassigned), not result.metadataFields which goes stale
+          attributes:     options.attributes,
           ownerDocument });
         if (table) return table;
       }
@@ -1122,7 +1123,7 @@ export function renderWaferMapCard(
   // none, right-click stays the browser's (or host's).
   // The reader's saved plots, one list for the Plot tab and for the drilldown menu.
   const plotStore = (insightsOpts as WithPlotStore | undefined)?.plotStore ?? plotStoreFor(insightsOpts);
-  const drilldownCtx: DrilldownContext = { plots: plotStore, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
+  const drilldownCtx: DrilldownContext = { plots: plotStore, getBinColors: () => currentView.binColors, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
   /** Read live: `testDefs` changes with `setData`. */
   const drilldownOffered = (): boolean => !isMapless;
   let closeDrilldownMenu: (() => void) | null = null;
@@ -1298,6 +1299,9 @@ export function renderWaferMapCard(
         // would reach chart titles as though it were an ID.
         label: hostLabel(),
         passBins,
+        // The item stands for this map wherever Insights draws a map of its own from it (the PAT verdict maps), so it
+        // carries the map's ring count as a built result does.
+        ringCount: requireRingCount(currentResult, 'renderWaferMap'),
         statsSummary: currentStatsSummary }],
       getBinColors: () => currentView.binColors,
       getRingCount: () => requireRingCount(currentResult, 'renderWaferMap'),
@@ -1305,6 +1309,18 @@ export function renderWaferMapCard(
       onSaveText: exportHooks.onSaveText,
       defaultView: insightsOpts?.defaultView,
       plotStore, onPickPlotsFile: insightsOpts?.onPickPlotsFile,
+      filter: insightsOpts?.filter, onFilterChange: insightsOpts?.onFilterChange,
+      // A Worth a look card's Show on map: back to the map, showing the item as its row in the panel does, with the panel
+      // open so the row is seen beside it.
+      showOnMap: (target) => {
+        setInsightsOpen(false);
+        if (target.kind === 'test') showTestOnMap(target.testNumber);
+        else {
+          const finding = currentStatsSummary?.findings.find(f => f.id === target.id);
+          if (finding) showFindingOnMap(finding);
+        }
+        if (currentStatsSummary) setSummaryPanelOpen(true);
+      },
       // Both of these are FALLBACKS, passed only when the toolbar cannot carry
       // them. The toolbar now stays visible while Insights is open, so its own
       // toggle and Help are permanently reachable in a fixed corner; passing
@@ -1823,6 +1839,7 @@ export function renderWaferMapCard(
       metadataFields,
       dieListOptions: options.dieList,
       onLocateDie: (die) => locateDie(die),
+      attributes: options.attributes,
       // A close button only when there is a way back in: the Summary button, which exists with a
       // toolbar and shows with a summary. Read from those, not from `summaryToggle`: the panel's
       // first render comes before the toolbar is built.
@@ -1833,31 +1850,44 @@ export function renderWaferMapCard(
           summaryActiveTest = null;
           selectionFromKeys([]);
           restoreViewBeforeFinding();
-        } else {
-          rememberViewBeforeFinding();
-          summaryActiveFindingId = null;
-          summaryActiveTest = testNumber;
-          applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
-          selectionFromKeys(currentStatsSummary?.stats.testFailures?.[testNumber]?.dieKeys);
-        }
-        renderSummaryPanel();
+          renderSummaryPanel();
+        } else showTestOnMap(testNumber);
       },
       onFindingClick: (finding, _row) => {
         if (summaryActiveFindingId === finding.id) {
           summaryActiveFindingId = null;
           selectionFromKeys([]);
           restoreViewBeforeFinding();
-        } else {
-          rememberViewBeforeFinding();
-          summaryActiveTest = null;
-          summaryActiveFindingId = finding.id;
-          applyFindingHighlightFromPanel(finding);
-        }
-        renderSummaryPanel();
-      } }));
+          renderSummaryPanel();
+        } else showFindingOnMap(finding);
+      },
+      // An item's Chart link: its Worth a look card in Insights' Overview.
+      onShowChart: insightsEnabled ? (key) => {
+        setInsightsOpen(true);
+        void ensureInsightsTab().then(tab => tab?.showWorthCard(key));
+      } : undefined }));
     // Small wafers finish inside `runChunked`'s first slice and never stage, so
     // there is nothing to hold on to or cancel.
     if (!run.done) panelRuns.set(el, run);
+  }
+
+  /** Shows a test on the map with the dies it fails, as a "What stands out" row or a Worth a look card asks. */
+  function showTestOnMap(testNumber: number): void {
+    rememberViewBeforeFinding();
+    summaryActiveFindingId = null;
+    summaryActiveTest = testNumber;
+    applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
+    selectionFromKeys(currentStatsSummary?.stats.testFailures?.[testNumber]?.dieKeys);
+    renderSummaryPanel();
+  }
+
+  /** Shows a finding's dies on the map, as its row in the panel does. */
+  function showFindingOnMap(finding: StatsFinding): void {
+    rememberViewBeforeFinding();
+    summaryActiveTest = null;
+    summaryActiveFindingId = finding.id;
+    applyFindingHighlightFromPanel(finding);
+    renderSummaryPanel();
   }
 
   /** Re-renders the panel this map has: the placed one, or the auto-mounted one (only one exists). Every

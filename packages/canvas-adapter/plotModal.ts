@@ -1,15 +1,15 @@
 // The plot editor's window: the plot drawn large, with the editor beside it.
 //
-// Shared by the three ways a plot gets opened. A card's Edit button on the Plot tab and a saved plot opened from
+// Shared by every way a plot gets opened. A card's Edit button on the My plots tab and a saved plot opened from
 // the drilldown menu edit the saved plot (every change is kept, as the host is told); "New plot from this
-// selection..." opens a DRAFT, which stays in the window until the reader presses Add to my plots, so exploring a
-// dozen selections never litters the saved list.
+// selection..." and an Insights card's Edit as plot open a DRAFT, which stays in the window until the reader presses
+// Add to my plots, so exploring a dozen selections or cards never litters the saved list.
 //
 // Nothing here knows how a point is selected or a wafer opened: the caller passes those in (`chart`), which is also
 // what keeps this module from depending on the drilldown menu that depends on it.
 
 import type { PlotContext, PlotItem } from '../stats/plotData.js';
-import { fieldCatalogue, fieldValues, resolvePlot, plotTitle } from '../stats/plotData.js';
+import { fieldCatalogue, fieldValues, fieldExtent, resolvePlot, plotTitle } from '../stats/plotData.js';
 import { plotToSweep, type PlotSpec } from '../stats/plotSpec.js';
 import { renderPlotChart, type PlotChartOptions } from './charts/plotChart.js';
 import { renderSweepPanel, type SweepPanelOptions } from './charts/sweep.js';
@@ -109,6 +109,9 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
       autoText: () => { const r = resolve(current); return { title: r.autoTitle, x: r.x?.label, y: r.y?.label }; },
       onChange: onEdit,
       valuesOf: f => fieldValues(f, o.items, o.ctx),
+      extentOf: f => fieldExtent(f, o.items, o.ctx),
+      testDefs: o.ctx.testDefs,
+      attributes: o.ctx.curation,
     });
   right.appendChild(editor.el);
 

@@ -119,7 +119,7 @@ worth reporting, not a pattern to build on.
 - **The analysis surfaces are already built — do not reimplement them.** Pass
   `statsSummary` to `renderWaferMap` and it mounts the Summary panel. The
   chart suite (Insights) is on by default (`insights: { enabled: false }` removes it): yield, bin pareto,
-  boxplot, histogram, correlation, scatter, capability, and a Plot tab where the reader's own plots
+  boxplot, histogram, correlation, scatter, capability, and a My plots tab where the reader's own plots
   and sweeps (`chart: 'sweep'`, in `insights.plots`) are cards. `renderWaferGallery` takes the same option across a whole
   lot. Supply or replace the analysis later with `setStatsSummary()`. There is no
   chart-data API to hand-build them from. Charting a selection or one wafer (right-click → histogram, capability,

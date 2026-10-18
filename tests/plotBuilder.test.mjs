@@ -4,6 +4,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { cardMenuAction, cardMenuLabels } from './fixtures/cardMenu.mjs';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: 'http://localhost/' });
@@ -806,12 +807,12 @@ test('Add examples draws one of each type from the lot, and does not add them tw
   const { tab, store, changes } = mountPlot();
   const s = await section(tab);
   click(button(s, 'wmap-plot-examples'));
-  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'box', 'heatmap', 'box', 'box', 'histogram', 'box', 'box', 'bar', 'bar', 'sweep']);
-  assert.equal(cards(tab).length, 16);
+  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'bar', 'line', 'probability', 'box', 'heatmap', 'box', 'box', 'histogram', 'box', 'box', 'bar', 'bar', 'sweep']);
+  assert.equal(cards(tab).length, 17);
   for (const c of cards(tab)) assert.ok(c.querySelector('canvas'), c.dataset.wmapChartTitle);
-  assert.match(s.textContent, /Added 16 example plots: scatter, histogram, box, bar, line, probability, heatmap, sweep/);
+  assert.match(s.textContent, /Added 17 example plots: scatter, histogram, box, bar, line, probability, heatmap, sweep/);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 16, 'a second click adds nothing');
+  assert.equal(store.get().length, 17, 'a second click adds nothing');
   assert.match(s.textContent, /already in your plots/);
   await tick(10);
   assert.ok(changes.length >= 1, 'the host is told');
@@ -824,7 +825,7 @@ test('Add examples keeps what the reader already has and adds only what is missi
   const second = store.get()[1];
   store.remove(second.id);
   click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 16);
+  assert.equal(store.get().length, 17);
   assert.equal(store.get().at(-1).chart, 'histogram');
 });
 
@@ -836,8 +837,7 @@ test('the Plot tab\'s controls are left off a printed page, and the chart keeps 
   const noprint = (el) => el.hasAttribute('data-wmap-noprint');
   assert.ok(noprint(button(s, 'wmap-plot-new').parentElement), 'the toolbar: New, Examples, Import, Export');
   assert.ok(noprint(button(cards(tab)[0], 'wmap-plot-edit').parentElement), 'Edit, Duplicate, Delete');
-  assert.ok(noprint(cards(tab)[0].querySelector('button[aria-label="Save as PNG"]')));
-  assert.ok(noprint(cards(tab)[0].querySelector('button[aria-label="Expand"]')));
+  assert.ok(noprint(cards(tab)[0].querySelector('[data-wmap-card-menu]')), 'the card’s ⋯ menu');
   click(button(cards(tab)[0], 'wmap-plot-delete'));
   assert.ok(noprint(s.querySelector('[role="status"]')), 'and the undo notice');
 });
@@ -849,7 +849,7 @@ test('a plot saved as a PNG carries its title, its population and its colour key
   const colored = { ...SCATTER, title: undefined, fields: { ...SCATTER.fields, color: { meta: 'split' } } };
   const { tab } = mountPlot({ plots: [colored], deps: { onSaveImage: (blob, name) => saved.push(name) } });
   await section(tab);
-  cards(tab)[0].querySelector('button[aria-label="Save as PNG"]').click();
+  cardMenuAction(cards(tab)[0], 'Save as PNG');
   assert.deepEqual(saved, ['Idsat vs Vth · by Split.png']);
   assert.equal(flats.length, 1);
 });
@@ -881,12 +881,12 @@ test('a sweep whose tests are not in the lot is kept, greyed, and says so', asyn
   assert.equal(store.get().length, 1);
 });
 
-test('there is no Sweeps tab: the Plot tab holds them, and the old default view opens it', async () => {
+test('there is no Sweeps tab: the My plots tab holds them, and the old default view opens it', async () => {
   const { tab } = mountPlot({ plots: [SWEEP], deps: { defaultView: 'sweeps' } });
   await section(tab);
   const labels = [...tab.el.querySelectorAll('[role="tab"]')].map(t => t.textContent);
   assert.ok(!labels.includes('Sweeps'), labels.join(','));
-  assert.ok(labels.includes('Plot'));
+  assert.ok(labels.includes('My plots'));
   assert.equal(cards(tab).length, 1);
 });
 
@@ -1253,7 +1253,7 @@ test('the group comparison panel: tests ranked, a row picks the test, a control 
   assert.deepEqual(controls, ['POR']);
   click([...panel.card.querySelectorAll('button')].find(b => b.textContent === 'Comparison CSV'));
   assert.deepEqual(saved, ['group-comparison.csv']);
-  assert.equal(panel.card.querySelector('button[aria-label="Save as PNG"]'), null, 'a table offers its CSV, not an empty PNG');
+  assert.ok(!cardMenuLabels(panel.card).includes('Save as PNG'), 'a table offers its CSV, not an empty PNG');
 
   const withControl = renderGroupComparisonPanel({ groups, testDefs: defs, groupLabelText: 'Split', control: 'POR', onControlChange: () => {}, onSelectTest: () => {}, ownerDocument: document });
   assert.match(withControl.card.textContent, /POR \(control\)/);
@@ -1275,8 +1275,8 @@ test('a faceted plot draws a panel per value under one statement and legend; Pan
   chart.setPlot(r);
   const panels = [...chart.card.querySelectorAll('[data-wmap-plot-panel]')];
   assert.deepEqual(panels.map(p => p.dataset.wmapChartTitle), ['FF', 'TT']);
-  for (const p of panels) assert.equal(p.querySelector('button[aria-label="Save as PNG"]'), null, 'a panel is saved with its grid');
-  assert.ok(chart.card.querySelector(':scope > * button[aria-label="Save as PNG"]') || chart.card.querySelector('button[aria-label="Save as PNG"]'), 'the grid has one');
+  for (const p of panels) assert.ok(!cardMenuLabels(p).includes('Save as PNG'), 'a panel is saved with its grid');
+  assert.ok(cardMenuLabels(chart.card).includes('Save as PNG'), 'the grid has one');
   assert.match(chart.card.textContent, /2 panels by split, on shared axes/);
   assert.equal(panels.filter(p => /panels by/.test(p.textContent)).length, 0, 'a panel states only its own population');
   // As tall as its grid, and across the whole row of a grid of cards; a plain plot on the same card goes back.

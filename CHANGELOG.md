@@ -26,6 +26,57 @@ under `### Breaking`.
 
 ### Added
 
+- **Worth a look on the Insights Overview.** The items What stands out lists beside the map are drawn on the
+  Overview, below the yield, bin and region cards, as the charts that show them (a region's loss as yield by that kind
+  of region, a fail bin as the bins' shares by it, a shifted test by region, a failing or too-wide test as its
+  histogram or pass rate, a trend as a control chart; a yield or pass rate with each bar's value and the median of the
+  bars), each saying in one sentence why it is shown (the panel's whole sentence on hover), with Show on map going back to the
+  map with the item shown as its row shows it. Each of the panel's top rows gains a Chart link to its card. It
+  describes the whole lot, so it says so in place of the cards while the Insights filter or Show narrows the
+  population.
+- **An Insights filter.** **Filter…** beside Group by narrows every Insights tab to the wafers and dies that meet
+  conditions the reader sets, the same conditions a plot's filter takes, edited in a window that states what they would
+  keep before **Apply**. While a filter exists a line above every tab states it with the wafers and dies it keeps
+  (*2 of 3 wafers · 48 of 72 dies*), a switch that turns it off without losing it, **Edit…** and **Remove**; a filter
+  naming a field the wafers lack filters nothing and says so. It is view state: `insights.filter` starts it,
+  `onFilterChange` reports it, and it is never written into a plots file. `insights.filter` is read as a plots file's
+  filter is, so one restored from storage that holds a condition it cannot read keeps the rest and logs what it left out. Where its die conditions narrow a wafer,
+  the views compute that wafer's figures from the dies kept rather than from the wafer's own summary.
+- **A scatter plot states r and n**, Pearson's r over every point drawn (the rule the correlation matrix uses), in its
+  footnote, and warns when its points pool several values of a split or lot field that neither the colour nor the panels
+  divide by (a trend across them may be the groups' offset: Simpson's paradox).
+- **Axis limits and clipping on a plot.** `PlotAxis.includeLimits` widens a value axis to every limit drawn on it
+  (`true`) or never (`false`); absent keeps the rule that it does when the data keeps a third of the axis.
+  `PlotAxis.clip` narrows the axis to the robust range (quartiles ± 1.5 IQR) worked out over the whole plot; marks
+  beyond it are not drawn, the footnote counts them, and every statistic still uses them.
+- **Drag across a line plot** to select the run of X values between the drag's ends, with every unit each point
+  averages, for the same menu a click opens.
+- **Pass rates of several tests in one plot, and the tester's flag.** A set of tests can be read as pass rates,
+  `{ tests: [...], passRate: true }` (editor: *Read as* → *Pass rates*), one bar per test by the Test field, each die
+  judged as the Overview pass-rate card judges it. A pass rate, one test's or a set's, takes `judge: 'flag'` (*Judged
+  by* → *Tester flag*) to read the tester's recorded pass or fail instead of the test limits; a functional test is
+  judged by its verdict either way. A test the chosen judgement cannot judge is left out and named.
+- **Categories smallest first.** `PlotSpec.sort: 'ascending'` (*Order* → *Smallest first*) puts the worst pass rate at
+  the top. With colours, a category is ordered by all its colours together: added up for counts and sums, pooled (or
+  combined over every value) otherwise.
+- **Horizontal box and bar plots.** `PlotSpec.orientation: 'horizontal'` (Customise → *Orientation*) puts the categories
+  down the left and the values along the bottom, for many categories or long names. Limit labels are drawn over the
+  marks, on the chart's background. The left margin fits the labels,
+  nested categories' outer levels are columns with dividers across the plot, a pareto's share axis runs across the top,
+  bar values sit at the bars' right ends, and the card grows so each category keeps room. Hover, click, right-click,
+  stacks, limits and reference lines work as on vertical plots.
+- **Bars as each colour's share of its own total.** `PlotSpec.barNorm: 'percent'` (Customise → Colours: *Share of
+  colour*) draws a bar of counts or sums with each colour as a percentage of that colour's total, so groups of
+  different sizes compare (the bin mix of a small split beside a large one). Categories sort by their summed shares.
+- **Median and mean lines on a plot's axis.** A reference line can be `{ stat: 'median' }` or `{ stat: 'mean' }` (typed
+  as `median` or `mean` in Reference lines), drawn at that statistic of what the plot shows along the axis: the bars'
+  heights, the points, the values in the boxes. Worked out over the whole plot, so every panel shares it. Plot files
+  stay at version 1; an older build leaves such a line out with a warning.
+- **Values on a plot's bars.** `PlotSpec.valueLabels` (Customise: *Values on the bars*) prints each bar's value at its
+  end, only when every value fits its bar's width. A reference line's label moves clear of them and is drawn over the
+  bars on a halo.
+- **Right-click a wafer's mark in a plot** (a wafer's bar or box, a point per wafer) for that wafer's menu, as on the
+  maps and the Insights cards.
 - **Several tests in one plot, and rescaled values.** A plot's Y can be a set of tests, `{ tests: [1050, "1060..1080"] }`
   (numbers or ranges, read as a sweep's tests are), in a box, bar, line or histogram; the new `test` field divides it,
   on X (a box or bar with no X puts one box per test along it) or as the colour. `PlotSpec.normalize` rescales each
@@ -98,8 +149,11 @@ under `### Breaking`.
 - **Pass rates, die filters and spread bands in plots.** A field `{ passRate: n }` is test n's pass rate (each die 100
   or 0, judged as the test pass-rate card judges: test limits for a parametric test, the recorded outcome for a
   functional one), pooled over the dies of a bar or line, or per wafer with one mark per wafer; a die-level box,
-  scatter or histogram of it is refused. `where: { field, values }` keeps only the dies (or wafers, for a wafer field)
-  with those values, before panels and everything else, and the statement says so. `spread` puts a band round a line
+  scatter or histogram of it is refused. `where: { conditions, off? }` keeps only the dies that meet every condition,
+  before panels and everything else: a category with the `values` kept, or a number from `min` to `max` (either end
+  open), each with `not` to keep the rest instead. A condition on a wafer field keeps whole wafers and is judged on the
+  whole wafer; a unit with no value for a condition's field meets none. `off` keeps the conditions and applies none.
+  The card states the filter on a line with a switch, on or off, and the statement says what was kept. `spread` puts a band round a line
   of means or medians: ±1 SD, the mean's 95% interval with Student's t, the quartiles or the range.
 - **Radial position, stacked bars and paretos in plots.** A die field **Radial position** gives a die's distance from
   the wafer centre as a percentage of the radius, from the same centre offset the rings and quadrants use, so a ring is
@@ -154,10 +208,91 @@ under `### Breaking`.
   `comparison.family: 'cluster'`, `variable.kind: 'hardBin'` with its bin, and a rise in that bin as its effect; its
   summary reads "HBin 4 (Spot) cluster at (x, y): …". A bin's cluster that is most of a cluster over every fail bin is
   left to that cluster. Interior clusters only: edge arcs stay with the run over every fail bin.
+- **Edit as plot on the Insights cards.** The yield, bin pareto, pass rate, box plot, histogram, trend and scatter cards,
+  and the right-click Value histogram, open as a draft plot of the reader's own over the same wafers, with the test and
+  Group by the card shows filled in as fields, so it draws the same thing on any lot. It joins My plots only when added.
+- **About this chart.** Every chart card can show one line under its title saying what it shows and how to read it
+  (*About this table* on the comparison, What divides yield and PAT tables).
 
 ### Changed
 
-- **A plot's scatter draws its colours in legend order, each at an opacity set by its own count.** Where dies of several wafers share a position, a rare colour (PAT outliers, a small bin) is drawn over the common ones instead of under them, and a handful of dots are solid where thousands stay translucent. A PAT verdict has its own colour in a plot (outliers amber, fails red), and dots are larger the fewer there are. A goal plot names the tests short of Ppk 1.33 only where the name fits beside its point without covering another; hovering names the rest.
+- **What stands out ranks parametric signals with yield loss.** A test whose values shift in a region (a test-value
+  finding of at least half a standard deviation), a trend across the wafers, a test whose spread is too wide for its
+  limits (Ppk under 1.0) and dies outside a test's limits but binned as passing are items like a region's loss, so a
+  characterisation lot with no limits or fails still has items. All are ranked by the share of the lot they affect: a
+  loss by the dies it cost, a shift by its dies weighted by the square of its size (in full from two standard
+  deviations), a trend by its size, a spread by the dies it would put outside its limits. A shift standing on a loss
+  item's dies, or of a test an item already names, is said within that item. The separate Watch lines are gone, and
+  the compact list shows each item's size as fits it (`2.4%`, `1.3σ`, `Ppk 0.62`).
+
+- **A card in the Insights grid is the size of the others, whatever the data; what does not fit scrolls inside it.**
+  A horizontal bar or box plot (the Overview's test pass rate among them) draws the rows in view under a fixed value
+  axis, with a scrollbar at its right edge and the mouse wheel over the chart; the process capability chart does the
+  same sideways for its test columns. A plot's colour legend scrolls after about three lines, and a PAT or "what
+  divides yield" table listed in full scrolls after about twelve rows. Expanded, the plots and their legends take the
+  window's room before they scroll.
+
+- **A scatter draws its rarer colours on top.** Every colour keeps one dot and one strength, and the colours with fewer
+  dots are drawn last, so a small group (PAT outliers, a failing bin, a small split) lies over a dense one instead of
+  under it.
+
+- **A percentage is written 83.8%**, with no space before the sign, on plots, their hover text, axes and range names,
+  and it is never given an SI prefix: a small share reads 0.50%.
+
+- **A wafer attribute has one name everywhere.** Plot titles, axis titles, footnotes, filter conditions and the wafer
+  columns of the Dies table and its CSV name an attribute by the host's `attributes` label, as Group by, the field
+  list, the Wafers table and the reports already did; without one, by the default label or the key spelled out.
+
+- **One ⋯ menu on every chart card** holds Save as PNG, Expand, Edit as plot and About this chart, in place of the camera
+  and expand icons. It is a keyboard-operable command menu; a table leaves out Save as PNG and a card already in its own
+  window leaves out Expand.
+- **Plots read the dies a yield judges.** Every plot leaves out partial dies and dies inside the edge exclusion, as the
+  Insights cards (bin pareto, boxplot, trend, capability) do, so a plot and a card of the same thing give the same
+  numbers. Counts, means, boxes and histograms on a lot with edge exclusion move accordingly; the footnote states how many
+  dies were left out ("12 edge-excluded dies left out, as a yield leaves them out"). PAT limits are still read over the
+  whole wafer.
+- **A plot coloured by hard or soft bin draws each bin in its map colour**, from the same bin colours as the maps and
+  legends (palette, `BinDef.color`, colour-blind palettes), in the Plot tab, the plot editor and plots opened from a
+  right-click. A plot whose colour is also its X (bars by bin coloured by bin) has no legend, since the axis names
+  every colour.
+- **The Distributions box plot, value histogram and wafer-to-wafer trend are drawn as plots.** Each keeps its test
+  picker and the section's shared axis settings (which limits, *Axis includes limits*, *Clip outliers*), linked across
+  the cards as before. The box plot runs down the left, one box per wafer, or with Group by on one per group whose click
+  narrows the section to it (Back returns); it keeps its log scale. The histogram shows all wafers, one wafer (the
+  picker) or a series per group, and a bar opens the dies in its range; a group clicked in its legend narrows the
+  section to it, with Back. The trend draws each wafer's mean in the population's order with a ± 1 standard deviation
+  band and the lot mean as a line; a point opens its wafer, a right-click opens its menu and a drag picks a run of
+  wafers. A click on a wafer's box or bar in any plot is offered as "click a box (bar) to …".
+- **The Insights tab for the reader's own plots is named My plots**, so it reads as theirs beside the cards Insights
+  draws for the data.
+- **The right-click menu's Value histogram is drawn as a plot**, with its test picker and *Edit as plot*, over the same
+  dies.
+- **The Correlation tab's test scatter is drawn as a plot**: X and Y pickers, die-level points in the maps' hard-bin
+  colours (or by group with Group by on), the wafer picker ungrouped, the shared *Limits* choice, r and n in its
+  statement; a matrix cell still sets its pair, a point opens its wafer on the X test, and a drag opens the menu on the
+  dies inside it. The correlation matrix itself is unchanged.
+- **The Overview's pass-rate card is drawn as a plot**: a horizontal bar per test on a fixed 0–100% axis, worst first,
+  each with its rate at the end (one bar per group with Group by on), with the same Test limits / Tester flag /
+  Functional choice where the data supports it and the count of dies the two parametric judgements disagree on. A bar's
+  tooltip counts its passing and failing dies and, judged by test limits, how many failed below the low limit and above
+  the high. A bar opens the dies that fail its test (in its group). With nothing judgeable the Overview has no pass-rate card.
+- **Yield by wafer in Insights is drawn as a plot**: vertical bars with each yield at its end, the median of the bars
+  as a line (three bars or more), *Sort: yield* or the wafers' own order, a wafer's bar opening that wafer (right-click
+  for its menu). With Group by on, one bar per group, and a group's bar drills into its wafers in place, with **Back**
+  and the sort then naming the wafers.
+- **A group's yield pools passing dies over judged dies.** The combined yield of a group (the grouped yield bars, the
+  Overview's combined figures) weights each wafer by its judged dies, not by every die in it, so a die with no bin
+  recorded no longer counts; where some dies carry no bin, a group's yield moves slightly (for example 77.01% to 76.92%).
+- **The Insights bin pareto is drawn as a plot**: vertical bars by bin, largest first, in the map colours, with the
+  cumulative share on a right-hand axis, and the same Hard / Soft bins toggle. With Group by on it has one bar per
+  group in each bin, as each group's share of its own dies (*Share of …*, the default, so groups of different sizes
+  compare) or as counts; a bar opens that bin's dies in that group.
+- **With Group by on, Distributions puts the comparison cards first**: the comparison table and the difference map under
+  *Comparing …*, then the cards for each test under *Test by test*.
+- **Insights lists the Group by values in one order everywhere**: by number when every value is one, else naturally
+  (W2 before W10), the order plots use, so a group has the same colour on every card and plot. Clicking a bar opens exactly the dies it
+  counts (partial and edge-excluded dies are not among them).
+- **A PAT verdict has its own colour in a plot** (outliers amber, fails red). A goal plot names the tests short of Ppk 1.33 only where the name fits beside its point without covering another; hovering names the rest.
 - **A box or bar category has places only for the colours it holds.** Each category lays out the colour groups that
   have a value there, centred, at the width the fullest category needs, so a category one colour fills (a ring
   coloured by ring, a wafer coloured by its split) draws one full-width mark. A box's tooltip names its colour only
@@ -178,6 +313,12 @@ under `### Breaking`.
   pattern's item takes only the findings it explains that no other item holds.
 
 ### Fixed
+
+- **A limit beyond a plot's axis is marked at the edge clear of the other axis's limit labels.** The "← Lo limit"
+  markers in a corner and a limit line's own label take separate rows rather than one being drawn over the other.
+
+- **Map the verdicts opens from a single map's Insights as it does from a gallery's**, drawing that wafer's PAT
+  verdict map; a failure to draw the maps is logged rather than leaving an empty window.
 
 - **Typing in a text box inside a window is typing.** The E (close, in a modal) and F (maximise, in a window) shortcuts apply only when focus is not in a text box, text area or list; a letter typed into a plot's title, tests or reference-lines box goes into the box.
 - **A segmented choice keeps its highlight when the pointer leaves it.** Choosing a segment that does not redraw the

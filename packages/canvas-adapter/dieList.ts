@@ -21,6 +21,7 @@ import type { Wafer } from '../core/index.js';
 import { isParametricTest, getTestPassStatus, type MetadataFieldDef, type TestDef } from '../renderer/buildWaferMap.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { resolveMetadataColumns, type MetadataKeySelection } from '../stats/metadataColumns.js';
+import type { FacetCuration } from '../stats/facets.js';
 import { LEADING, TRACKING, wireControlHover, controlStyle, SPACE, RADIUS, FONT, CLR, type SaveTextHandler } from './toolbar.js';
 import { exportCsv, type CsvCell } from './tableExport.js';
 import { fmt as fmtValue } from '../renderer/fmt.js';
@@ -109,6 +110,8 @@ export interface DieListDisplayOptions {
 export interface DieListOptions extends DieListDisplayOptions {
   /** Heading text. Default: `Die list (N)`. */
   title?: string;
+  /** The host's own names for wafer attributes, so a wafer-metadata column is headed as Group by and the plots name it. */
+  attributes?: Record<string, FacetCuration>;
   /** Optional note shown under the heading, e.g. explaining why this replaced the map. */
   note?: string;
   /** Host hook for "Export CSV" — see `saveTextFile` (toolbar.ts). */
@@ -331,6 +334,7 @@ export function resolveDieColumns(
     waferKeys: options.waferMetadataColumns === 'none' ? 'none' : undefined,
     waferPlacement: options.waferMetadataColumns ?? 'csv',
     reservedLabels,
+    curation: options.attributes,
   });
 
 

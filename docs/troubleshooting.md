@@ -56,7 +56,7 @@ The same applies to `renderWaferGallery`, except the gallery is a scrolling card
 
 ---
 
-## Yield shows 0 % or 100 % when it should not
+## Yield shows 0% or 100% when it should not
 
 **Cause:** `passBins` defaults to `[1]`, but your test program uses a different bin for pass (e.g. bin `0`, or multiple bins).
 

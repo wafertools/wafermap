@@ -6,7 +6,8 @@ import { rankCommonality, measureLabel, type CommonalityField, type CommonalityW
 import { formatP } from '../../stats/groupCompare.js';
 import type { FacetCuration } from '../../stats/facets.js';
 import { CLR, FONT, SPACE, controlStyle, wireControlHover, wireTooltip } from '../toolbar.js';
-import { cardShell, renderEmptyState } from './chartShell.js';
+import { cardShell, firstRowsToggle, renderEmptyState } from './chartShell.js';
+import { cardAbout } from './cardAbout.js';
 
 export interface CommonalityPanelOptions {
   wafers: readonly CommonalityWafer[];
@@ -25,13 +26,12 @@ const FIRST_ROWS = 8;
 
 export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTMLElement; destroy: () => void } {
   const doc = o.ownerDocument ?? document;
-  const { card, body } = cardShell('What divides yield', undefined, doc);
+  const { card, body, setAbout } = cardShell('What divides yield', undefined, doc);
+  setAbout(cardAbout('commonality'));
   card.dataset.wmapCommonality = '1';
   card.style.gridColumn = '1 / -1';
   // As tall as its table: a card sized by a canvas has a zero flex basis, and with no canvas here it would collapse.
   card.style.flex = '0 0 auto';
-  // A table: nothing to save as an image.
-  card.querySelector('button[aria-label="Save as PNG"]')?.remove();
 
   const result = rankCommonality(o.wafers, o.fields, o.curation);
   if (o.fields.length === 0 || result.rows.length === 0) {
@@ -87,15 +87,9 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
   const pct = (v: number) => `${v.toFixed(1)}%`;
   const n = (key: string, row: (typeof result.rows)[number]) => row.comparison.groups.find(g => g.key === key)?.n ?? 0;
 
-  let showAll = false;
-  const more = doc.createElement('button');
-  more.type = 'button';
-  Object.assign(more.style, { ...controlStyle('outlined'), marginTop: SPACE.sm } as Partial<CSSStyleDeclaration>);
-  wireControlHover(more);
-
-  function fill(): void {
+  function fill(all: boolean): void {
     tbody.replaceChildren();
-    for (const r of showAll ? result.rows : result.rows.slice(0, FIRST_ROWS)) {
+    for (const r of all ? result.rows : result.rows.slice(0, FIRST_ROWS)) {
       const tr = doc.createElement('tr');
       td(tr, r.field.label, { align: 'left' });
       td(tr, measureLabel(r.measure), { align: 'left' });
@@ -120,15 +114,12 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
       }
       tbody.appendChild(tr);
     }
-    more.textContent = showAll ? 'Show the first rows' : `Show all ${result.rows.length} rows`;
-    more.style.display = result.rows.length > FIRST_ROWS ? '' : 'none';
   }
-  more.addEventListener('click', () => { showAll = !showAll; fill(); });
-  fill();
 
   const scroller = doc.createElement('div');
   Object.assign(scroller.style, { overflowX: 'auto' } as Partial<CSSStyleDeclaration>);
   scroller.appendChild(table);
+  const more = firstRowsToggle(doc, { total: result.rows.length, first: FIRST_ROWS, noun: 'rows', scroller, fill });
   body.append(scroller, more);
   return { card, destroy: () => {} };
 }

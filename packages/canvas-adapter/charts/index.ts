@@ -8,16 +8,6 @@
 
 export { renderCapabilityPanel } from './capability.js';
 export type { CapabilityPanelOptions, CapabilityPanelHandle } from './capability.js';
-export { renderBoxplotPanel } from './boxplot.js';
-export type { BoxplotPanelOptions, BoxplotPanelHandle } from './boxplot.js';
-export { renderHistogramPanel } from './histogram.js';
-export type { HistogramPanelOptions, HistogramPanelHandle } from './histogram.js';
 export { renderCorrelationPanel } from './correlation.js';
 export type { CorrelationPanelOptions, CorrelationPanelHandle } from './correlation.js';
-export { renderScatterPanel } from './scatter.js';
-export type { ScatterPanelOptions, ScatterPanelHandle } from './scatter.js';
-export { renderBarPanel } from './barPanel.js';
-export type { ChartPanel, BarPanelHandle } from './barPanel.js';
-export { renderBinClusterPanel } from './binCluster.js';
-export type { BinClusterPanelOptions, BinClusterPanelHandle } from './binCluster.js';
 export * from './chartShell.js';

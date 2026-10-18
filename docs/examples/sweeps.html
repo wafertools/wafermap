@@ -349,7 +349,7 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
         const noise = (k) => rng(r.x, r.y, 100 + 17 * waferIndex + k) - 0.5;   // ±0.5
         const tv = {};
 
-        // 1 · Fmax: Vth falls ~90 mV hot, mobility drops to 72 %.
+        // 1 · Fmax: Vth falls ~90 mV hot, mobility drops to 72%.
         const dvth = 0.02 * noise(1) + 0.015 * radial;
         VDD.forEach((v, i) => {
           tv[FMAX_COLD[i]] = fmax(v, 0.40 + dvth, 1.00) * (1 + 0.01 * noise(10 + i));

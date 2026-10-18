@@ -101,7 +101,7 @@ test('a test item is a row that shows its test, and a bin chip carries its legen
 test('items beyond the top one are a compact list with their share of the dies', () => {
   const regions = Array.from({ length: 5 }, (_, i) => ({ name: `R${i}`, dies: 1000, drop: 0.3 - i * 0.03 }));
   const text = buildSynthesisSection(lot(regions), [1], {}).textContent;
-  assert.match(text, /Also, each costing at least 1% of the dies/);
+  assert.match(text, /Also, each affecting at least 1% of the dies/);
   assert.match(text, /R3: pass rate, [\d,]+ dies\d+\.\d%/);
   assert.doesNotMatch(text, /Also over a yield point/);
 });

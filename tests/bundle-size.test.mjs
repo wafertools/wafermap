@@ -88,6 +88,9 @@
 //   panel's Data tables button and the fitted metadata strip, the card selection override and the gallery's
 //   "select the same dies on every wafer" toggle. The tables themselves (dataTab.ts, the virtual table, the CSV
 //   writer) are lazy and stubbed here. Legitimate library growth, not bloat.
+//   2026-10-18: root raised 227,000 -> 235,000 minified (measured 228,814; 220,247 at the last entry). The plot
+//   filters' shared evaluator and condition text, and the results synthesis ranking parametric signals (shifts,
+//   drifts, spreads too wide for their limits) with yield loss. Legitimate library growth, not bloat.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -109,7 +112,7 @@ const dist = resolve(root, 'dist');
 // work does not need a raise; the lazy-import tests below are what catch a heavy module landing in the chunk.
 // Gzipped sizes in the history above are the earlier measure.
 const THRESHOLDS = {
-  'wafermap (root)':            227_000,  // minified bytes — measured 220,247 (76.3 KB gzipped)
+  'wafermap (root)':            235_000,  // minified bytes — measured 228,814 (78.7 KB gzipped)
   'wafermap/render (initial)':  449_000,  // minified bytes — measured 435,551 (146.8 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
 };
 

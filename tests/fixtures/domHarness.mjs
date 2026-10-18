@@ -31,6 +31,7 @@ export function makeCanvasContext() {
     strokeText() {},
     clip() {},
     translate() {},
+    rotate() {},
   };
 }
 

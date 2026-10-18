@@ -108,3 +108,14 @@ test('buildYieldDataCombined — weights by yield-eligible dies, not raw die cou
   const out = buildYieldDataCombined(groups, [1], 'label');
   assert.ok(Math.abs(out[0].value - 50) < 1e-9); // (100*2 + 0*2) / 4, not swamped by the 100 excluded dies
 });
+
+test('a combined yield pools passing over judged dies: a die with no bin weighs nothing', async () => {
+  const { buildYieldDataCombined, yieldCounts } = await import('../dist/packages/stats/yield.js');
+  const d = (hbin) => ({ x: 0, y: 0, hbin });
+  const a = { dies: [d(1), d(1), d(2), d(undefined), d(undefined)], passBins: [1] };   // 2 of 3 judged
+  const b = { dies: [d(1), d(2), d(2), d(2)], passBins: [1] };                         // 1 of 4
+  const [row] = buildYieldDataCombined([{ key: 'G', items: [a, b] }]);
+  const pass = yieldCounts(a.dies, [1]).pass + yieldCounts(b.dies, [1]).pass;
+  const judged = yieldCounts(a.dies, [1]).total + yieldCounts(b.dies, [1]).total;
+  assert.ok(Math.abs(row.value - (pass / judged) * 100) < 1e-9, `${row.value} vs ${(pass / judged) * 100}`);
+});

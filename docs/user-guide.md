@@ -178,7 +178,7 @@ affect tests that have them; a host can instead keep only values inside the spec
 
 Nothing is hidden. Hover a grey die and the tooltip names the excluded value and the limit set. The Summary panel's Test Values table shows the
 total beside **N** and an **Excl.** column, and the same count appears in the histogram and box plot captions, the capability tooltip and caption,
-the Plot tab's footnote, the report and the CSV exports. The build also lists it among the data warnings. The bin map and each die's pass/fail are
+the My plots tab's footnote, the report and the CSV exports. The build also lists it among the data warnings. The bin map and each die's pass/fail are
 the tester's own and do not change, so yield is the same with the filter on or off.
 
 <div data-wmap-demo="value-heatmap" class="wmap-demo"></div>
@@ -230,7 +230,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)). This is the mode a map opens in.                                                                                                                                                                             |
 | <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
-| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Individual charts also have their own expand button. |
+| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Each chart can also be expanded on its own, from its ⋯ menu. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
 | <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                                                                                                      |
@@ -462,11 +462,11 @@ wafer otherwise.
 The menu offers:
 
 - **Value histogram** — one test's distribution, opening on the test the map
-  is showing. **Edit as new plot** beside its population line closes it and
+  is showing. **Edit as plot** in its ⋯ menu closes it and
   opens the same test as a draft plot over the same dies, to change its axes, colour or limits and keep it if you want.
 - **Process capability** — every test normalised to its spec limits, or its
   test limits when it has none, with its
-  Ppk. Below 30 dies the chart says each Ppk is a rough estimate: a Ppk from a
+  Ppk. Tests beyond the card's width scroll sideways, with the scrollbar under their names or a sideways wheel. Below 30 dies the chart says each Ppk is a rough estimate: a Ppk from a
   handful of dies can be far from the process's real capability.
 - **Plots** you have saved, sweeps included (see [Plots](#plots) and [Sweep cards](#sweep-cards)), and **New plot…** and **New sweep…**.
 - **Dies** and **Test statistics** — the same tables as Insights' Data tab (see
@@ -582,29 +582,35 @@ Sections, top to bottom:
   statistic as the bin breakdown's pass-bin share, which weights every die
   equally. The two agree only when die counts are even across the wafers.
 - **What stands out** — the headline (the yield, and for a lot its spread across
-  wafers), then the items ranked by how many dies each costs: the largest in a tinted
-  box with its full sentence, the others as a compact list (impact, name, and share of the dies).
-  Anything costing less than 1% of the dies is left to the findings list. A line says what
-  was compared. An item names a region, a wafer or a test and, for a region, the failing bins that make up
-  its shortfall; a test is an item when it is outside its limits (or a functional test
-  fails) on a share of the dies that clears the same floor. Its three dots and word (High, Moderate or Low impact) say how
-  much of the lot it costs: the higher of its share of all the dies (2% moderate, 4% high)
-  and its share of the dies that fail (15% moderate, 40% high), so a small area that is most
-  of a good lot's loss still reads as high.
+  wafers), then the items ranked by how much of the lot each affects: the largest in a tinted
+  box with its full sentence, the others as a compact list (impact, name, and its size: a share of
+  the dies, a shift in standard deviations, or a Ppk).
+  An item is a loss or a signal. A **loss** costs dies: a region's shortfall with the failing bins
+  that make it up, a wafer well below the lot, or a test outside its limits (or a functional test
+  failing). A **signal** costs no dies of its own but moves the values, which is often all a
+  characterisation lot has to show: a test whose mean shifts in a region by at least half a standard
+  deviation, a trend across the wafers *in the order given* (said as "input order": the order is only a
+  physical one if you know it is), a test whose Ppk against its limits is under 1.0, or a test outside
+  its limits on dies binned as passing. Both are ranked on one scale, the share of the dies an item
+  affects: a loss by the dies it cost; a shift by its dies, counted in full from two standard deviations
+  and by the square of its size below that (a one-sigma shift counts a quarter of its dies); a trend by
+  how far it moved; a Ppk under 1.0 by the share of dies its spread would put outside its limits.
+  Anything affecting less than 1% of the dies is left to the findings list. A line says what was
+  compared. Its three dots and word (High, Moderate or Low impact) say how much of the lot an item
+  affects: the higher of its share of all the dies (2% moderate, 4% high) and, for a loss, its share of
+  the dies that fail (15% moderate, 40% high), so a small area that is most of a good lot's loss still
+  reads as high.
   A test is costed by the dies it fails that also fail yield: dies outside its limits but binned
-  as passing cost nothing. A test whose failures lie mostly in a region is said as part of that
-  region's item rather than listed again beside it.
+  as passing cost nothing. A test whose failures lie mostly in a region, or whose values shift on a
+  region's dies, is said as part of that region's item rather than listed again beside it, and one test
+  is one item.
   **Every item is a row, and every row shows its dies on the map** — a wafer icon at its end marks
   it. Click a region or wafer to highlight it, or a test to show the test's values with the dies it
   fails selected; click again to clear. Under the top item's sentence, chips name its parts (its
-  failing bins, with their legend colours, the pattern, and tests failing on the same dies), and
-  each chip shows that part alone.
-  A **Watch** line (at most two) follows for things that cost no dies yet: a lot of five or more
-  wafers whose yield, or a test's mean, trends up or down across the wafers *in the order given*
-  (said as "input order": the order is only a physical one if you know it is), a test outside its
-  limits on dies that were binned as passing, and a test whose Ppk against its limits is under 1.0.
-  Watch lines are rows too.
-  A wafer or lot with nothing over a yield point says so: "Nothing stands out".
+  failing bins, with their legend colours, the pattern, and tests failing or shifted on the same dies),
+  and each chip shows that part alone. With Insights on, each of the top items also has a **Chart**
+  link, which opens Insights at its card under **Worth a look** on the Overview.
+  A wafer or lot with nothing affecting a yield point's worth of dies says so: "Nothing stands out".
   The reports open with the same section, and **Full report** at the foot of it opens the
   report; in a report opened from the panel, clicking a finding's row shows it on the map.
 - **Findings** — detected anomalies, most severe first, each group marked with
@@ -649,9 +655,9 @@ A **Summary report** button (when present) opens a printable full-detail
 report — yield, bin breakdown, ring and quadrant statistics, the full per-test
 table with Cp/Cpk/Pp/Ppk, and the findings list — and can be saved as a PDF
 from your browser's print dialog. It opens with **What stands out**: the yield,
-up to three regions, fail bins or wafers ranked by how many dies each costs, and a
-line saying what was compared. An item is listed only when it costs at least one
-yield point of the dies analysed; a lot with none says so. Each item links to its
+up to three items ranked by how much of the lot each affects (losses and signals alike, as
+the panel ranks them), and a line saying what was compared. An item is listed only when it
+affects at least one per cent of the dies analysed; a lot with none says so. Each item links to its
 evidence: a finding to its row in the Findings table below, a test to the Test Values
 or Functional Tests section. Severity is drawn as three dots and a word, so it reads in a
 black-and-white print; yields carry a bar, and a wafer or region is tinted only when it is
@@ -752,7 +758,7 @@ right-clicked to chart that wafer on its own (see
 [Section 4.4](#44-charting-dies-and-wafers)); its tooltip says so.
 
 Insights is organised into three chart sub-tabs, a **Data** sub-tab holding the
-same numbers as tables (see *Data tables* below), and a **Plot** sub-tab for your
+same numbers as tables (see *Data tables* below), and a **My plots** sub-tab for your
 own charts and sweeps (see *Plots* and *Sweep cards* below):
 
 - **Overview** — a **test pass rate** chart showing which test fails most (and,
@@ -763,10 +769,15 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   were exported), and **Functional** for pass/fail-only tests. The two
   parametric views can disagree — guard bands and dynamic limits routinely cause
   it — so the card reports how many dies the two judged differently rather than
-  picking one for you. Alongside it, headline tiles stating the population (wafers, dies analysed,
+  picking one for you. The tests run down the left, worst first, each with its pass rate at the end; click a test's
+  bar for the dies that fail it. The card is the size of the others whatever the number of tests: more than fit
+  scroll, with the scrollbar at its right edge or the mouse wheel over the chart, under a pass-rate axis that stays put. With nothing to judge (no limits, no recorded verdicts) the card is left out. Alongside it, headline tiles stating the population (wafers, dies analysed,
   and for a lot the mean wafer yield — an *unweighted* mean of each wafer's own
   yield, not the die-weighted figure), a yield bar labelled with the pass bins
-  actually in use and marked with the median, a hard/soft bin pareto, and
+  actually in use, each bar's yield at its end and the median of the bars as a line (with Group by on, one bar per
+  group, pooled as passing dies over judged dies; click a group's bar to see its wafers, **Back** to return), a
+  hard/soft bin pareto with its cumulative share (with Group by on, a bar per group in each bin, as each group's share
+  of its own dies, so groups of different sizes compare, or as counts), and
   ring/quadrant regional yield, and with a reticle set a **Reticle cell yield** grid: the stepper field drawn as its cells (row 0 at
   the bottom), each filled by the yield of that position pooled over every field on every wafer and labelled with it. Hover a cell
   for its dies, click it to chart or tabulate them. A cell that is low in all of them points at the mask rather than the wafer.
@@ -778,16 +789,28 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   percentage points; **Group by** groups the whole tab by that field. A low q says the groups differ by more than
   wafer-to-wafer noise, not why. The card also names fields it could not compare (every wafer its own value) and fields
   that group the wafers identically, which no ranking can tell apart (a lot and its test date).
+- **Worth a look**, on the Overview below the yield, bin and region cards — the same items as
+  **What stands out** beside the map, in the same order and words, each drawn as the chart that shows
+  it: a region's loss as yield by that kind of region (each bar with its value, and the median of the bars as
+  a line, as on the yield card), a fail bin as the bins' shares by it, a shifted
+  test as a box of the test by it, a failing or too-wide test as its histogram (a pass/fail test as its
+  pass rate), a trend as a control chart, an outlier wafer as yield by wafer. Each card says why it is
+  shown in one sentence (hover it for the whole sentence What stands out gives, with the bins and tests it
+  names), and **Show on map** goes back to the map showing it as its row does, with the Summary panel
+  open on that row. The rest follow on one "Also" line. It describes the whole lot, so while the Insights
+  filter or **Show** narrows the population it says so instead of drawing cards.
 - **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
   lower and upper limit — spec limits where given, otherwise test limits; tests
   without both still appear, normalized
-  onto their own range and sorted by variability), a test-value box plot, a
-  value histogram, and a **wafer-to-wafer trend** — one point per wafer at its
-  mean, ±1σ whiskers, the mean of all wafers dashed across (labelled the "lot
-  mean" when they all come from one lot), and the test's limits. The trend is always in slot order, deliberately: drift across
-  a cassette only reads in the physical sequence, so there is no sort control
-  to destroy it. Clicking a capability box drives the box plot, histogram and
-  trend onto that same test automatically.
+  onto their own range and sorted by variability), a test-value box plot (one box per wafer down the left, or with
+  Group by on one per group: click a group's box to see its wafers, **Back** to return), a value histogram (all wafers,
+  one wafer, or one series per group), and a **wafer-to-wafer trend** — one point per wafer at its mean with a ±1
+  standard deviation band, the mean of all wafers as a line (labelled the "lot mean" when they all come from one lot),
+  and the test's limits; drag across it to pick a run of wafers. The trend is always in slot order, deliberately: drift
+  across a cassette only reads in the physical sequence, so there is no sort control to destroy it, and it needs at
+  least two wafers. The box plot, histogram and trend are plots: each has the test picker and the axis settings
+  (*Axis includes limits*, *Clip outliers*, and which limits to draw), and a change in one reaches the others.
+  Clicking a capability box drives them onto that same test.
 
   With **Group by** on, a **Difference map** at the foot of Distributions draws one group minus another at every die
   position, as a wafer map: pick the two groups and a test (it follows the test the other panels show until you pick
@@ -797,8 +820,9 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   the first wafer of the first group's geometry and orientation, so a die is where it is on every other map; the map
   carries no wafer's identity, since it is none.
 
-  With **Group by** on (a split, a lot), a **Comparison by** table comes first: every measured test compared across the
-  groups, ranked so the tests that moved are at the top. Each wafer counts once, as the mean of its dies, because dies
+  With **Group by** on (a split, a lot), the cards that compare the groups come first, under **Comparing …**: the
+  **Comparison by** table and the difference map, then the cards for each test under **Test by test**. The table compares
+  every measured test across the groups, ranked so the tests that moved are at the top. Each wafer counts once, as the mean of its dies, because dies
   on one wafer share its processing: counted die by die, a difference no bigger than one wafer's offset would look
   certain. So n is the number of wafers, and with two or three a group, many differences honestly come out
   inconclusive. For each test the table gives each group's mean, **Welch p** (Welch's ANOVA, or Welch's t for two
@@ -841,7 +865,9 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   **Max tests** (5 to 100, 20 by default) sets how many tests the matrix shows, and
   **Correlation CSV** saves the matrix as a table.
   Clicking a matrix cell drives the scatter plot onto that pair, where `r` and
-  `n` for that pair are printed and update as you filter the legend. Hover a
+  `n` over every point drawn are printed (with Group by on, the colour is the group; filter the legend to look at one).
+  When the points pool several splits or lots, the scatter says so: a trend across them may be the groups' offset
+  rather than the relationship. Hover a
   point to see which wafer and die it is; **click** it to open that wafer on the
   X test. **Drag** a rectangle over the plot to select the dies inside it — across
   as many wafers as they fall on — and a menu opens with charts and tables of
@@ -855,6 +881,14 @@ each panel differently depending on what makes sense for that chart type. Group 
 separates whole wafers; to separate the dies within each wafer, a plot's own
 **Compare by** choices (see [Plots](#plots)) take die regions, bins, sites and
 pass/fail tests as well.
+**Filter…**, beside Group by, narrows every Insights tab at once to the wafers and dies that meet conditions you set:
+one split, the edge ring, bin 1, a range of a test, wafers below a yield. It opens a window with the same conditions a
+plot's own filter has, saying as you edit how many wafers and dies they keep; **Apply** filters, **Cancel** leaves
+things as they were. While a filter exists a line above every tab states it, with what it keeps
+(*2 of 3 wafers · 48 of 72 dies*), **Edit…** and **Remove**; its switch turns it off without losing it, and the line
+stays, saying the filter is off, until you remove it. A filter that names a field these wafers do not have filters
+nothing, and the line says so. Group by and **Show** then work on what the filter kept. The map views are not filtered.
+
 Histogram, correlation, and scatter also offer a **Wafer** picker to narrow
 from "all wafers pooled" down to one wafer at a time. Clicking a yield bar or
 box-plot row for one wafer opens that wafer's own map — a box-plot click opens
@@ -893,8 +927,8 @@ Every mark on an Insights chart stands for something, and a click opens it:
 
 | Click | Opens |
 | --- | --- |
-| A wafer's bar, box or point (Yield by wafer, the box plot, the trend, the scatter, a Plot-tab chart) | that wafer's map, on the test the chart is about (the bins, for Yield by wafer) |
-| A **bin** in the bin pareto (or a sub-bar of the grouped one) | the right-click menu on the dies in that bin |
+| A wafer's bar, box or point (Yield by wafer, the box plot, the trend, the scatter, a My plots chart) | that wafer's map, on the test the chart is about (the bins, for Yield by wafer) |
+| A **bin** in the bin pareto (with Group by on, one group's bar in it) | the right-click menu on the dies in that bin |
 | A **test** in a pass-rate chart | the menu on the dies that fail that test, judged as the card is |
 | A bar of the **value histogram** (with Group by on, a column of it) | the menu on the dies whose values fall in that bar, across the groups, or in the one group the legend has emphasised |
 | A level of a **sweep** curve | the menu on the dies measured at that level |
@@ -947,9 +981,10 @@ warns when that is more than a spreadsheet can open (1,048,576).
 
 ### Plots
 
-The **Plot** sub-tab is where you build your own charts. **+ New plot** starts one,
+The **My plots** sub-tab is where you build your own charts. **+ New plot** starts one,
 already filled in with the first two tests of the lot, and opens it beside a large
-copy of the chart. **Add examples** draws plots to start from, or to see what each chart and
+copy of the chart. **Edit as plot**, in the ⋯ menu of an Insights chart, opens that chart as a plot of your own (see
+*A chart's menu* below). **Add examples** draws plots to start from, or to see what each chart and
 setting is for. They are chosen from the lot in view: the *lead* test is the one that varies most from wafer to
 wafer (for a single wafer, the one that follows distance from the centre most), its partner the test that tracks it
 best, and the split is the lot field that best explains the lead test. The examples are a scatter of the lead
@@ -963,9 +998,9 @@ pass-rate bar when tests have limits, and a sweep of the first
 tests in test order. Edit any of them to see how it is set. Pressing the button again adds only what is missing. Every change you make there is drawn at once; there is no Apply
 button, and the plot is kept as you go.
 
-![The Plot tab: example plots, one card each](images/guide-plot-tab.png)
+![The My plots tab: example plots, one card each](images/guide-plot-tab.png)
 
-*The Plot tab after **Add examples**: each card is a plot, with Edit, Duplicate and Delete.*
+*The My plots tab after **Add examples**: each card is a plot, with Edit, Duplicate and Delete.*
 
 ![The plot editor: the chart beside its Setup tab](images/guide-plot-editor.png)
 
@@ -1010,7 +1045,11 @@ In **Setup**, choose the **chart type**, then the field for each role:
   between its ends). A box or bar puts one box per test along X; with wafer, split or ring as the categories instead,
   the colour tells the tests apart. This is how the Process capability chart's view, every test side by side, is made
   for your own choice of tests, by split or by wafer. Tests in different units cannot share an axis as measured, so the
-  plot asks you to rescale them.
+  plot asks you to rescale them. On a bar or line, **Read as → Pass rates** draws each test's pass rate instead of its
+  values: the Overview's pass-rate card is this plot, horizontal and smallest first.
+- **Judged by** (a pass rate, one test's or several): *Test limits* judges a parametric test's value against its
+  limits, *Tester flag* reads the pass or fail the tester recorded. A functional test is judged by its verdict either
+  way.
 - **Probability** plots each group's values in order against the share of the group at or below them, at
   (rank − ½) / n, so 50% is the median. On the default **normal-probability** axis a normal distribution is a
   straight line and the tails are spread out: a shifted split is a curve moved sideways, a wider one a flatter curve,
@@ -1022,7 +1061,7 @@ In **Setup**, choose the **chart type**, then the field for each role:
   the value combined over its dies (with no values, a count of them): hard bins by wafer, rings by split, and with
   several tests as the values Test as the rows, so tests by wafer, rescaled to compare. The colour bar above it spans
   the cells; a cell shows its value when it has room, and a click charts or tabulates its dies. It is a bar chart of
-  the two fields nested, laid out as a grid, so the same rules apply: pooled yield, pass rates, *Only dies where*.
+  the two fields nested, laid out as a grid, so the same rules apply: pooled yield, pass rates, *Filter*.
 - **Control** charts each wafer's value (a test's wafer mean, or as *Combine values by* says; a yield or a pass rate as
   the wafer's own) in wafer order, or along another wafer field with a number per wafer such as slot or date. It is an
   individuals chart: the centre is the mean, the control limits ±3σ with σ taken from the average moving range (÷ 1.128),
@@ -1060,10 +1099,15 @@ In **Setup**, choose the **chart type**, then the field for each role:
   same width (*Equal widths*), and each range is a category named by its limits in the field's unit (*7.16 pA to 19.4 pA*), lowest first. Vth by Idsat decile is
   a box with Idsat in ranges on the X axis. The edges are set over every die plotted, so panels and colours share
   them.
-- **Only dies where**: keep only the dies with chosen values of one category field (bin 1, the edge ring, one site), or
-  for a wafer field the wafers (one split, two lots). Tick the values to keep; the last one cannot be cleared. It
-  applies before everything else, panels included, and the line under the plot says what was kept. PAT limits stay
-  the whole wafer's.
+- **Filter**: keep only the dies that meet every condition you add. **+ Add a condition** asks for a field; a category
+  (bin, ring, site, split, a pass/fail test) then lists its values to tick, and a number (a measured test, Radial
+  position, Die X or Y, Yield) a range, either end left open, that starts at the range the data spans. **is not** or
+  **outside** keeps everything else instead. A condition on a wafer field (split, lot, yield) keeps whole wafers and
+  is judged on the whole wafer, so *Yield at most 70%* means the wafer's own yield; the die conditions then keep dies
+  inside those wafers. A die with no value for a condition's field (no bin, no reading) meets no condition. The filter
+  applies before everything else, panels included. Its line on the card states each condition, and its switch turns
+  the filter off and back on without losing it; the line under the plot says what was kept while it is on. PAT limits
+  stay the whole wafer's.
 - **Band** (line): round a line of means or medians, *±1 SD* (the standard deviation of the values combined at each
   X), *95% CI* (the mean's confidence interval, with Student's t for the number of dies or wafers there), *Quartiles*
   or *Range*, as a pale band in each line's colour. A pass rate has no spread of values to show, so it takes no band.
@@ -1071,12 +1115,23 @@ In **Setup**, choose the **chart type**, then the field for each role:
   centre and 100 at the edge. The rings are bands of it (with four rings, ring 4 is 75–100%), so a scatter of a test
   against radial position shows an edge roll-off the ring chart only buckets.
 - **Order** and **Show the first** (box and bar, one category field): *Largest first* sorts the categories by value (a
-  box by its median); *Show the first* keeps that many and counts the rest in a note.
-- **Colours** (bar): *Stacked* puts a category's colours one on another, *100%* shows each as its share of the
-  category. Stacking adds values, so it needs a count or a sum; a mean or a yield is refused with the reason.
+  box by its median), *Smallest first* the other way (the worst pass rate at the top); with colours, a category is
+  ordered by all its colours together. *Show the first* keeps that many and counts the rest in a note.
+- **Colours** (bar): *Share of colour* keeps the colours side by side, each as its share of its own total, so groups
+  of different sizes compare; *Stacked* puts a category's colours one on another, *100%* shows each as its share of
+  the category. Shares and stacking add values, so they need a count or a sum; a mean or a yield is refused with the
+  reason.
 - **Cumulative line** (a bar sorted largest first, of counts or sums): each category's running share of the whole, on
   its own 0–100% axis at the right. A bar of hard bins with it is a bin pareto; with Show the first, the line still
   counts every category.
+- **Axis includes limits** and **Clip outliers** (Customise, per value axis): the first widens the axis to every limit
+  drawn on it (or, unticked, never), where by default it does so only when the data keeps a third of the axis; the
+  second narrows the axis to a robust range (the quartiles ± 1.5 × their spread) so a few extreme values do not flatten
+  the rest. Clipping changes only the axis: the footnote counts the values outside, and every statistic still uses them.
+- **Orientation** (box, bar): *Horizontal* puts the categories down the left and the values along the bottom, for many
+  categories or long names (tests, wafers); the card grows so each category keeps room.
+- **Values on the bars** (bar): each bar's value printed at its end. Shown only when every value fits its bar's width,
+  so a crowded chart never labels some bars and not others.
 - **PAT** (part average testing), a die field: each die's verdict under dynamic PAT, per wafer. For every test with both
   a low and a high limit, the wafer's PAT limits are the median ± 6 robust standard deviations ((Q3 − Q1) / 1.35) of
   its passing dies' values, never wider than the test's own limits (spec limits where it has both). A die is
@@ -1098,7 +1153,7 @@ In **Setup**, choose the **chart type**, then the field for each role:
   colours with one legend and one statement above them. A wafer field (split, lot) gives each panel its whole wafers; a
   die field (ring, site, bin) the dies with that value from every wafer; **Test**, with several tests as the values,
   one test a panel. So "one scatter per split" or "a histogram per ring" is one plot. Rescaled values are measured over
-  the whole population, so a panel is not re-centred on itself and panels compare. Each panel has its own Expand, and
+  the whole population, so a panel is not re-centred on itself and panels compare. Each panel's ⋯ menu has its own Expand, and
   the plot's Save as PNG saves the whole grid. At most 24 panels; a field on the X axis or the colour cannot also make
   the panels.
 - **Wafer-level comparison** (box and bar of one measured test): when the categories or the colour are a wafer field
@@ -1140,8 +1195,10 @@ negative) and **reverse direction**. A histogram also has a number of **bins**. 
 
 A value axis can also carry **reference lines and bands** of your own: a target, a guard band, a customer's limit. Write
 them in *Reference lines* in Customise as a value for a line or `lo..hi` for a shaded band, each with an optional name,
-separated by commas (`0.45 Target, 0.3..0.5 Window`), in the axis's own unit (rescaled values for a rescaled plot). They
-are drawn dash-dot, labelled with their name and value, and widen the axis in the way test limits do.
+separated by commas (`0.45 Target, 0.3..0.5 Window`), in the axis's own unit (rescaled values for a rescaled plot).
+`median` or `mean` draws a line at that statistic of what the plot shows along the axis (the bars' heights, the points,
+the values in the boxes), worked out over the whole plot so every panel shares it: `median, 0.45 Target`. They are
+drawn dash-dot, labelled with their name and value, and widen the axis in the way test limits do.
 
 When a plotted test has limits they are drawn as dashed lines on the axis that measures it (a histogram's values, a scatter's X or
 Y, a box, bar or line's values when they are measured values or their mean, median, minimum or maximum): short dashes for the
@@ -1152,8 +1209,10 @@ Insights: the reconciled test list drops conflicting limits.
 
 Under every plot is a line stating what it shows: the wafers and dies, how values
 were combined ("median of Vth per wafer"), and how many dies were left out for
-having no value ("12 dies without Idsat not plotted"). A plot never drops a die
-without saying so.
+having no value ("12 dies without Idsat not plotted"). Like every Insights chart, a plot
+reads only the dies a yield judges: partial dies and dies inside the edge exclusion are
+left out, and the line counts them ("12 edge-excluded dies left out"). A plot never drops
+a die without saying so. A plot coloured by hard or soft bin uses the map's bin colours.
 
 **Hover** a point, bar, box or line to see its values and how many dies or wafers it
 stands for. **Click** a point (or a wafer's bar or box) to open that wafer, on the plot's own
@@ -1200,7 +1259,7 @@ you changed.
 
 ### Sweep cards
 
-A **sweep** is a card on the **Plot** sub-tab, beside your other plots. **+ New
+A **sweep** is a card on the **My plots** sub-tab, beside your other plots. **+ New
 sweep** starts one on the first tests of the lot, and **Edit** opens it beside a
 live copy of the curve. A sweep is kept, duplicated, deleted, exported and
 imported like any plot, and is offered in the right-click menu's **Plots**
@@ -1282,22 +1341,38 @@ the card is drawn in test order with **the crossing and widths not measured**.
 Pairing the remaining values with the remaining tests would put every later point
 at the wrong level, which gives a plausible curve and a wrong crossing.
 
+### A chart's menu
+
+Every chart card has a **⋯** button at the right of its title. Its menu holds what the card offers about itself:
+
+- **Save as PNG** saves the chart (see *Exporting a chart* below). A table has no image to save and offers its CSV
+  instead.
+- **Expand** opens the chart on its own in a large window. A chart already in its window does not offer it.
+- **Edit as plot**, on the Insights charts drawn as plots (yield, bin pareto, pass rate, box plot, histogram, trend,
+  scatter, and the value histogram of a selection), opens the chart as a draft plot of your own, drawn over the same
+  wafers: the test and Group by it shows now are filled in as its own fields, so it draws the same thing on the next lot
+  and follows nothing. It is kept only when you press **Add to my plots**. Greyed, with the reason, when the chart has
+  nothing to draw yet (no test chosen).
+- **About this chart** (**About this table** on a table) shows one line under the title saying what it shows and how
+  to read it; choose it again to hide the line.
+
+Use the arrow keys to move through the menu, **Enter** to choose, **Esc** to close it.
+
 ### Exporting a chart
 
-Every chart panel has a **camera** button that saves the current view as a PNG at the displayed
-resolution. To get a clean full-resolution render, use the panel's expand (corner-arrows)
-button first to open it in the fullscreen modal, then click the camera button.
+**Save as PNG** in a chart's ⋯ menu saves the current view as a PNG at the displayed resolution. To get a clean
+full-resolution render, choose **Expand** first to open it in the large window, then **Save as PNG**.
 
 The saved image is the chart as shown, under a header that says what it is: its **title**,
 what its controls are set to (**Test: vth_n_mV · 1001**, **Wafer: W03**, **Sort: yield**), the
 lines the chart states about itself (the population and N, how values were combined, what
 the box and whiskers mean, how the bars are normalised), and its colour key (the legend, or
 the colour bar's name and range). The instructions that only make sense on screen ("click a
-point to open this wafer") are left out. A chart on the **Plot** tab carries the line stating
+point to open this wafer") are left out. A chart on the **My plots** tab carries the line stating
 its wafers and dies in the same place. The image takes the card's own background, so a dark
 theme saves a dark chart. The file name identifies the lot, wafers and chart (see below).
 
-**Printing.** The dropdowns, toggles and buttons (camera, expand and, on the Plot tab, New
+**Printing.** The dropdowns, toggles and buttons (the ⋯ menu button and, on the My plots tab, New
 plot, Add examples, Import, Export, Delete all, Edit, Duplicate and Delete) are left off the printed page.
 In their place each chart prints a small block under its title giving the same settings and
 lines as the saved image, so a printed histogram says which test it is of.
@@ -1331,7 +1406,7 @@ field — just below the die's coordinate in the tooltip.
 
 ## 10. The statistics, explained
 
-This section is for reading the statistics in Insights and the Plot tab for the first time. Each entry says what
+This section is for reading the statistics in Insights and the My plots tab for the first time. Each entry says what
 question the figure answers, how it is worked out in plain terms, how to read it, and what it cannot tell you. None
 of these figures is a verdict: they say how surprising a difference is, and the decision stays with you.
 

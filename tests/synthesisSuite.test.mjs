@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { buildWaferMap, analyzeWaferMap, analyzeWaferLot } from '../dist/index.js';
 import { buildSynthesis, synthesisSource } from '../dist/packages/stats/synthesis.js';
+import { resolvePlot } from '../dist/packages/stats/plotData.js';
 import { renderLotReportHtml } from '../dist/packages/stats/renderSummaryReport.js';
 import { buildLot, passBinsOf, testDefsOf } from './fixtures/synthLots.mjs';
 import { setupDom, click } from './fixtures/domHarness.mjs';
@@ -147,7 +148,6 @@ function describe(s, summary) {
     ...s.items.map((it, i) => `${i + 1}. (${it.impact}, ${(it.shareOfDies * 100).toFixed(1)}%) → ${describeTarget(it.target, findings)} | ${i === 0 ? it.text : it.brief}${i === 0 ? chips(it) : ''}`),
     ...(s.also?.items ?? []).map(it => `also (${it.impact}, ${(it.shareOfDies * 100).toFixed(1)}%) → ${describeTarget(it.target, findings)} | ${it.brief}`),
     ...(s.also?.more ? [`and ${s.also.more} more`] : []),
-    ...(s.watch ?? []).map(w => `watch → ${describeTarget(w.target, findings)} | ${w.text}`),
     s.checked,
   ];
 }
@@ -204,7 +204,7 @@ function problems(s, summary, passBins) {
   const resolves = (t) => (t.kind === 'finding' ? findings.has(t.id) : tests.has(t.testNumber));
   const all = [...s.items, ...(s.also?.items ?? [])];
 
-  const texts = [s.headline, s.nothing ?? '', s.checked, ...all.flatMap(i => [i.text, i.brief, ...i.chips.map(c => c.label)]), ...(s.watch ?? []).map(w => w.text)];
+  const texts = [s.headline, s.nothing ?? '', s.checked, ...all.flatMap(i => [i.text, i.brief, ...i.chips.map(c => c.label)])];
   for (const t of texts) {
     if (plain.test(t)) out.push(`malformed text: "${t}"`);
     if (/\b1 (dies|wafers|findings|tests|hard bins)\b/.test(t) || /\babout 0 dies\b/.test(t)) out.push(`count reads wrong: "${t}"`);
@@ -217,10 +217,15 @@ function problems(s, summary, passBins) {
   // An item: a target that exists, a cost that is possible and material, and figures that agree with it.
   for (const it of all) {
     if (!it.target || !resolves(it.target)) out.push(`item without a live target: ${it.brief}`);
+    // The card's short reason says no figure the full sentence does not: it is the sentence's own start, and no longer.
+    if (!it.reason || it.reason.length > it.text.length) out.push(`reason longer than the item, or none: ${it.brief}`);
+    const lostSaid = /about ([\d,]+) dies lost/.exec(it.reason);
+    if (lostSaid && !it.text.includes(lostSaid[0])) out.push(`reason and sentence disagree: ${it.reason}`);
     for (const c of it.chips) if (!resolves(c.target)) out.push(`chip without a live target: ${c.label}`);
-    if (!(it.diesLost >= MIN_SHARE * total - 1e-9)) out.push(`item under the floor: ${it.brief} (${it.diesLost} of ${total})`);
-    if (it.diesLost > total) out.push(`item loses more dies than there are: ${it.brief}`);
-    if (Math.abs(it.shareOfDies - it.diesLost / total) > 1e-12) out.push(`share is not dies lost over dies: ${it.brief}`);
+    if (!(it.affected >= MIN_SHARE * total - 1e-9)) out.push(`item under the floor: ${it.brief} (${it.affected} of ${total})`);
+    if (it.diesLost > total || it.affected > total) out.push(`item affects more dies than there are: ${it.brief}`);
+    if (Math.abs(it.shareOfDies - it.affected / total) > 1e-12) out.push(`share is not affected dies over dies: ${it.brief}`);
+    if (it.kind === 'loss' ? it.affected !== it.diesLost : it.diesLost !== 0) out.push(`a loss is ranked by other than its dies lost, or a signal claims a loss: ${it.brief}`);
     const lost = /about ([\d,]+) dies lost/.exec(it.text);
     if (lost && +lost[1].replace(/,/g, '') !== Math.round(it.diesLost)) out.push(`sentence and cost disagree: ${it.text} vs ${it.diesLost}`);
     // Named bins are parts of the shortfall: together they cannot account for more than all of it.
@@ -230,22 +235,23 @@ function problems(s, summary, passBins) {
     for (const c of it.chips) if (c.bin && !new RegExp(`\\bbin ${c.bin.bin}\\b`).test(c.label)) out.push(`bin chip names another bin: ${c.label}`);
     // The tests folded into an item: a few chips, the tests failing most dies first, and the rest counted, none dropped.
     const testChips = it.chips.filter(c => c.target.kind === 'test').map(c => c.target.testNumber);
-    if (testChips.length > MAX_TEST_CHIPS) out.push(`${testChips.length} test chips: ${it.brief}`);
-    if (it.target.kind === 'finding' && testChips.length + (it.moreTests ?? 0) !== it.testNumbers.length) {
+    const shiftChips = it.chips.filter(c => c.shift).length;
+    if (testChips.length + shiftChips > MAX_TEST_CHIPS) out.push(`${testChips.length + shiftChips} test chips: ${it.brief}`);
+    // A loss item's tests are the ones folded into it; a signal's test is its own subject, not a part of it.
+    if (it.kind === 'loss' && it.target.kind === 'finding' && testChips.length + shiftChips + (it.moreTests ?? 0) !== it.testNumbers.length) {
       out.push(`tests folded and tests shown disagree: ${it.brief}`);
     }
     for (let i = 1; i < testChips.length; i++) {
       if ((failDies.get(testChips[i]) ?? 0) > (failDies.get(testChips[i - 1]) ?? 0)) out.push(`test chips not ranked by failing dies: ${it.brief}`);
     }
   }
-  for (let i = 1; i < s.items.length; i++) if (s.items[i].diesLost > s.items[i - 1].diesLost) out.push('items are not ranked by dies lost');
+  for (let i = 1; i < s.items.length; i++) if (s.items[i].affected > s.items[i - 1].affected) out.push('items are not ranked by the dies they affect');
   const claimed = all.flatMap(i => i.findingIds);
   if (new Set(claimed).size !== claimed.length) out.push('a finding is claimed by two items');
-  for (const w of s.watch ?? []) if (!w.target || !resolves(w.target)) out.push(`watch line without a live target: ${w.text}`);
 
   // Nothing material: then nothing is listed, and the sentence does not contradict a finding marked unusual.
   if (s.nothing && s.items.length) out.push('says nothing stands out and lists items');
-  const shown = new Set([...claimed, ...(s.watch ?? []).flatMap(w => w.findingIds)]);
+  const shown = new Set(claimed);
   if (s.nothing?.startsWith('Nothing stands out') && src.findings.some(f => f.severity === 'unusual' && !shown.has(f.id))) {
     out.push('says nothing stands out beside an unusual finding');
   }
@@ -387,6 +393,19 @@ const variant = (spec, change) => {
   const maps = buildLot(s);
   return { maps, lot: analyzeWaferLot(maps), passBins: passBinsOf(s) };
 };
+test('every item, on every lot and wafer, has a chart that draws over it', () => {
+  for (const spec of SPECS) {
+    const v = variant(spec, {});
+    const plotItems = v.maps.map((m, i) => ({ label: `W${i + 1}`, dies: m.dies, waferIndex: i, wafer: m.wafer, passBins: m.passBins, ringCount: m.ringCount, metadata: m.metadata }));
+    const ctx = { testDefs: v.maps[0]?.testDefs ?? [] };
+    const s = synth(v.lot, v.passBins);
+    for (const it of [...s.items, ...(s.also?.items ?? [])]) {
+      const r = resolvePlot({ id: 'worth', ...it.chart }, plotItems, ctx);
+      assert.deepEqual(r.issues, [], `${spec.name}: ${it.brief} (${it.chart.chart})`);
+    }
+  }
+});
+
 const SAME_BINS = ['edge-ring', 'edge-ring-two-bins', 'quadrant-on-four-of-six', 'centre', 'scratch', 'outlier-wafer', 'test-fails-in-ring'];
 
 test('how bins are carried does not change what stands out: hard and soft, hard only, soft only', () => {
@@ -423,7 +442,7 @@ test('the order of the wafers does not change what stands out, when there is no 
     const spec = SPECS.find(s => s.name === name);
     const a = synth(variant(spec, {}).lot, passBinsOf(spec));
     const b = synth(variant(spec, { reverse: true }).lot, passBinsOf(spec));
-    assert.ok(!(a.watch ?? []).some(w => /successive wafers/.test(w.text)), `${name} has a trend; pick another case`);
+    assert.ok(![...a.items, ...(a.also?.items ?? [])].some(i => /successive wafers/.test(i.text)), `${name} has a trend; pick another case`);
     assert.deepEqual(b.items.map(i => i.text).sort(), a.items.map(i => i.text).sort(), name);
   }
 });
@@ -433,7 +452,8 @@ test('taking the test limits away removes the test items and leaves the region i
     const spec = SPECS.find(s => s.name === name);
     const regions = (v) => {
       const s = synth(v.lot, v.passBins);
-      return [...s.items, ...(s.also?.items ?? [])].filter(i => i.target.kind === 'finding').map(i => i.text.replace(/\. \S+ (is|fails) .*$/, ''));
+      // A region item's own part ends at its cost; what follows is about tests there (failing, or shifted).
+      return [...s.items, ...(s.also?.items ?? [])].filter(i => i.target.kind === 'finding' && i.kind === 'loss').map(i => i.text.replace(/( dies lost(?: \(also seen as [^)]*\))?)\. .*$/, '$1'));
     };
     const without = variant(spec, { limits: false });
     assert.deepEqual(regions(without), regions(variant(spec, {})), name);
@@ -454,7 +474,7 @@ test('the panel shows every item as a row that acts, and nothing else acts', asy
       const s = synth(c.lot, c.passBins);
       const section = buildSynthesisSection(c.lot, c.passBins, { onFindingClick: () => {}, onTestClick: () => {} });
       const acting = [...section.querySelectorAll('button[data-wmap-finding], button[data-wmap-test]')];
-      const expected = s.items.length + (s.also?.items.length ?? 0) + (s.watch?.length ?? 0) + (s.items[0]?.chips.length ?? 0);
+      const expected = s.items.length + (s.also?.items.length ?? 0)+ (s.items[0]?.chips.length ?? 0);
       assert.equal(acting.length, expected, `${c.name}: rows and chips that act`);
       const ids = new Set(synthesisSource(c.lot).findings.map(f => f.id));
       for (const b of acting) if (b.dataset.wmapFinding) assert.ok(ids.has(b.dataset.wmapFinding), `${c.name}: ${b.dataset.wmapFinding}`);
@@ -514,7 +534,10 @@ async function clickEachTwice(c, mount, readState) {
     assert.ok(!hasHard ? readState(ctrl).plotMode !== 'hardBin' : true, `${c.name}: a lot with no hard bins opens in hard bins`);
     for (const id of targets) {
       const before = readState(ctrl);
-      click(window, actingIn(container).find(b => ident(b) === id));
+      const rowEl = actingIn(container).find(b => ident(b) === id);
+      // A spread too wide for its limits is a prediction: its test may fail no die, so it shows the test with nothing picked.
+      const predicted = /Ppk/.test(rowEl.textContent);
+      click(window, rowEl);
       const on = await until(() => actingIn(container).find(b => ident(b) === id && b.getAttribute('aria-current') === 'true'), `${c.name}: ${id} marked as shown`);
       const shown = readState(ctrl);
       if (!hasHard) assert.notEqual(shown.plotMode, 'hardBin', `${c.name}: ${id} switched a lot with no hard bins to hard bins`);
@@ -523,7 +546,7 @@ async function clickEachTwice(c, mount, readState) {
       if (shown.highlightBin !== undefined && (shown.plotMode === 'hardBin' || !hasHard)) {
         assert.ok(!c.passBins.includes(shown.highlightBin), `${c.name}: ${id} highlights pass bin ${shown.highlightBin}`);
       }
-      if ('selected' in shown && !id.startsWith('lot-repeat')) assert.ok(shown.selected > 0, `${c.name}: ${id} selects its dies`);
+      if ('selected' in shown && !id.startsWith('lot-repeat') && !predicted) assert.ok(shown.selected > 0, `${c.name}: ${id} selects its dies`);
       click(window, on);
       await until(() => actingIn(container).find(b => ident(b) === id && b.getAttribute('aria-current') !== 'true'), `${c.name}: ${id} released`);
       assert.deepEqual(readState(ctrl), before, `${c.name}: clicking ${id} twice leaves the map as it was`);

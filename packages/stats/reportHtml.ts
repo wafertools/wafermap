@@ -287,7 +287,6 @@ ${smaller.map((it) => `<li>${renderMeter(it.impact, impactShortWord(it.impact))}
   return renderSection('What stands out', `<p class="synthesis-headline">${escHtml(synthesis.headline)}</p>
   ${items}
   ${rows}
-  ${synthesis.watch ? `<ul class="synthesis-watch">${synthesis.watch.map((w) => `<li><strong>Watch</strong> ${link(w.text, w.target)}</li>`).join('')}</ul>` : ''}
   <p class="synthesis-checked">${escHtml(synthesis.checked)}</p>`, 'synthesis');
 }
 
@@ -463,9 +462,6 @@ export function reportStyles(): string {
   .synthesis-more { list-style: none; margin: 0 0 8px; padding: 0; }
   .synthesis-more li { display: grid; grid-template-columns: 96px 1fr auto; gap: 10px; align-items: baseline; margin: 0 0 3px; }
   .synthesis-share { font-variant-numeric: tabular-nums; color: var(--report-muted); }
-  .synthesis-watch { list-style: none; margin: 0 0 6px; padding: 0; }
-  .synthesis-watch li { margin: 0 0 3px; }
-  .synthesis-watch strong { margin-right: 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--report-muted); }
   .synthesis-checked, .synthesis-none { color: var(--report-muted); margin: 0; }
   .synthesis a { color: var(--report-link); text-decoration: underline; text-underline-offset: 2px; }
   .synthesis-see { display: block; margin-top: 4px; color: var(--report-muted); }

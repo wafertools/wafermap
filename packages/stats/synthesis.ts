@@ -2,18 +2,24 @@
 // from the findings the panels already show. Pure — it reads a computed summary and
 // recomputes nothing, so a figure in a sentence is the figure in the finding it names.
 //
-// Ranking is by dies lost, not by p-value or severity: severity saturates on a large
-// lot and p-values track sample size, while "how many dies did this cost" does neither.
-// The p/effect gates still decide whether a finding is real; dies lost decides where it
-// appears. Findings that stand on the same dies are one item, so a quadrant, a sector
-// and an edge arc over the same corner read as one thing, not three.
+// Ranking is by the share of the lot an item affects, not by p-value or severity: severity
+// saturates on a large lot and p-values track sample size, while "how much of the lot is
+// this" does neither. A loss affects the dies it cost; a signal that costs no dies (a test
+// shifted in a region, a drift across the wafers, a spread too wide for its limits) affects
+// its dies weighted by how far it moved them, so a characterisation lot with no limits and no
+// fails still has items, ranked on the same axis as yield loss. The p/effect gates still
+// decide whether a finding is real; the share decides where it appears. Findings that stand
+// on the same dies are one item, so a quadrant, a sector and an edge arc over the same corner
+// read as one thing, not three.
 
 import { maxOf, minOf } from '../core/utils.js';
 import { isPassBin, passBinsLabel } from '../core/passBins.js';
 import { DRIFT_MIN_WAFERS } from './lotDrift.js';
 import { isOneBinCluster } from './filterFindings.js';
 import { plainBinTerms } from '../renderer/fmt.js';
+import { normalUpperTail } from './math.js';
 import type { LotStatsSummary, StatsFinding, StatsSeverity, StatsSummary } from './types.js';
+import type { PlotBuiltin, PlotField, PlotSpec } from './plotSpec.js';
 
 /**
  * What an item shows when it is chosen: a finding (its dies, as the findings list shows them), or a test
@@ -30,21 +36,43 @@ export interface SynthesisChip {
   target: SynthesisTarget;
   /** Set for a bin, so a surface can draw the bin's legend colour beside it. */
   bin?: { kind: 'hardBin' | 'softBin'; bin: number };
+  /** Set for a test whose values shift on the item's dies: the chip shows that region on the test's map. */
+  shift?: true;
 }
 
 /** How much of the lot an item costs, in three steps. Drawn as a meter, never as colour alone. */
 export type ImpactTier = 'high' | 'medium' | 'low';
 
 export interface SynthesisItem {
-  /** From the share of analysed dies lost, the same quantity the items are ranked by. */
+  /**
+   * `loss`: the item costs dies (a region's shortfall, a fail bin, an outlier wafer, a failing test). `signal`: it costs
+   * none of its own but moves the values (a test shifted in a region, a drift across the wafers, a spread too wide for
+   * its limits, dies out of limits yet binned as passing). Both are ranked by `affected`.
+   */
+  kind: 'loss' | 'signal';
+  /** From the share of the lot the item affects, the same quantity the items are ranked by. */
   impact: ImpactTier;
-  /** Dies lost as a fraction (0–1) of the analysed dies; set once the items are costed. */
+  /** `affected` as a fraction (0–1) of the analysed dies; set once the items are ranked. */
   shareOfDies: number;
-  /** Estimated dies lost to this item (pass-rate shortfall × dies in the region). */
+  /** Estimated dies lost to this item (pass-rate shortfall × dies in the region). 0 for a signal. */
   diesLost: number;
+  /**
+   * The dies the item affects, the quantity it is ranked by: a loss, the dies it cost; a shift, the dies it moved
+   * weighted by how far (in full from two standard deviations); a spread too wide for its limits, the dies it is
+   * expected to put outside them.
+   */
+  affected: number;
+  /** The item's size as its compact row shows it: `2.4%` of the dies for a loss, `1.3σ` for a shift, `Ppk 0.62`. */
+  measure: string;
   severity: StatsSeverity;
   /** The item as a sentence. Plain text: what the item shows is `target`, and its parts are `chips`. */
   text: string;
+  /**
+   * The item in one short sentence, for a card that has a chart to say the rest: its own figure (a region's shortfall
+   * and the dies it cost, a test's failures, a shift's size), without the bins, regions and tests `text` goes on to
+   * name. Plain text.
+   */
+  reason: string;
   /** The item in a few words, for the compact list: `Ring 2: hard bin 4 (Short), 62 dies`. */
   brief: string;
   /** What `target` is, as a reader names it: `Ring 4 (edge)`, `W06`, `IP3_DBM`. */
@@ -59,17 +87,12 @@ export interface SynthesisItem {
   findingIds: string[];
   /** Tests the item names: its own test, or tests whose failing dies lie mostly on its dies. */
   testNumbers: number[];
-}
-
-/**
- * A signal that costs no dies of its own yet but predicts loss: a trend across the wafers, or a test whose
- * spread leaves little margin to its limits. Kept apart from the items, which are ranked by dies lost: a
- * Ppk of 0.9 with no failures does not belong on the same axis as 400 failing dies.
- */
-export interface SynthesisWatch {
-  text: string;
-  target: SynthesisTarget;
-  findingIds: string[];
+  /**
+   * The chart that shows the item, as a plot of the lot (Insights' Worth a look card): a region's loss as yield by that
+   * kind of region, a fail bin as the bins' shares by it, a shift as the test by it, a failing or too-wide test as its
+   * histogram, a trend as a control chart, an outlier wafer as yield by wafer. Its title is the plot's own.
+   */
+  chart: Omit<PlotSpec, 'id'>;
 }
 
 export interface Synthesis {
@@ -81,8 +104,6 @@ export interface Synthesis {
    * shows them all.
    */
   also?: { items: SynthesisItem[]; more: number };
-  /** At most two things to keep an eye on, after the items. Absent when there are none. */
-  watch?: SynthesisWatch[];
   /** Said instead of the items when none is material, so a good lot reads as one rather than as an empty list. */
   nothing?: string;
   /** What was compared and not repeated above. Required: a short synthesis must not read as "not analysed". */
@@ -98,10 +119,16 @@ export interface SynthesisContext {
   passBins?: readonly number[];
 }
 
-/** At most this many things go in the Watch tier. */
-const MAX_WATCH = 2;
-/** A test whose Ppk against its limits is below this is worth watching: 1.0 is the line between a spread that fits its limits and one that does not. */
-const WATCH_PPK = 1.0;
+/** A test whose Ppk against its limits is below this is a signal: 1.0 is the line between a spread that fits its limits and one that does not. */
+const SIGNAL_PPK = 1.0;
+/**
+ * A shift of this many standard deviations counts its dies in full; a smaller one by the square of its share of it, so
+ * a 1σ shift counts a quarter of its dies and a 0.6σ shift under a tenth. A shift moves values, it does not lose dies:
+ * a small one over half a wafer must not outrank a quadrant losing a third of its yield.
+ */
+const FULL_SHIFT_SD = 2;
+/** A shift smaller than this (a medium effect) is real but not worth a look on its own. */
+const MIN_SHIFT_SD = 0.5;
 /** At most this many items are written out in full; the rest that clear the floor go on one "also" line. */
 const MAX_LOSS_ITEMS = 3;
 /** The "also" line names at most this many, then counts the rest. */
@@ -275,6 +302,24 @@ const binChip = (f: StatsFinding): SynthesisChip => ({
     ? { bin: { kind: f.variable.kind, bin: f.variable.bin } } : {}),
 });
 
+/** The plot field a finding's kind of region is drawn by: a sector by its quadrant, an arc or a cluster by the rings. */
+function regionField(f: StatsFinding): PlotField {
+  const fam = f.comparison.family;
+  const builtin: PlotBuiltin = fam === 'quadrant' || fam === 'sector' ? 'quadrant'
+    : fam === 'reticle-position' ? 'reticleCell' : fam === 'test-site' ? 'site' : 'ring';
+  return { builtin };
+}
+/**
+ * A rate by category (a yield, a pass rate) as a bar each, with its value at the end and the median of the bars as a
+ * line, as the Overview's yield card shows it: where each bar stands, and against what.
+ */
+const rateBars = (x: PlotField, y: PlotField): Omit<PlotSpec, 'id'> =>
+  ({ chart: 'bar', fields: { x, y, color: { none: true } }, valueLabels: true, axes: { y: { references: [{ stat: 'median' }] } } });
+/** The test a finding or an item is about, as a plot field. */
+const testField = (testNumber: number): PlotField => ({ test: testNumber });
+const histogramOf = (testNumber: number, normalCurve = false): Omit<PlotSpec, 'id'> =>
+  ({ chart: 'histogram', fields: { y: testField(testNumber), color: { none: true } }, ...(normalCurve ? { normalCurve: true } : {}) });
+
 function lossItem(
   group: StatsFinding[],
   findings: readonly StatsFinding[],
@@ -298,6 +343,8 @@ function lossItem(
   let text = leadIsBin
     ? `${subjectOf(lead)}: ${nameOf(lead)} ${points(shortfall(lead))} points higher than ${versus}${where}`
     : `${subjectOf(lead)}: pass rate ${points(shortfall(lead))} points below ${versus}${where}`;
+
+  const reason = `${text} — about ${count(diesLostBy(lead))} dies lost`;
 
   // Every die carries one hard bin, so a region's pass-rate shortfall is exactly the sum of its
   // fail-bin excesses: the bins are read, not guessed. "mostly" only when one bin is over half.
@@ -325,11 +372,15 @@ function lossItem(
   if (elsewhere.length > 0) text += ` (also seen as ${seenAs(elsewhere)})`;
   const what = leadIsBin ? nameOf(lead) : 'pass rate';
   return {
+    kind: 'loss',
     impact: 'low',
     shareOfDies: 0,
     diesLost: diesLostBy(lead),
+    affected: diesLostBy(lead),
+    measure: '',
     severity: lead.severity,
     text,
+    reason,
     brief: `${subjectOf(lead)}: ${what}, ${count(diesLostBy(lead))} dies`,
     subject: subjectOf(lead),
     target: findingTarget(lead),
@@ -338,6 +389,10 @@ function lossItem(
     chips: [...(leadIsBin ? [lead] : []), ...bins.map(({ f }) => f)].map(binChip),
     findingIds: [lead.id, ...others.map(f => f.id)],
     testNumbers: [],
+    // A fail bin's rise as each bin's share of the dies by that kind of region; a pass rate's fall as yield by it.
+    chart: leadIsBin
+      ? { chart: 'bar', fields: { x: regionField(lead), color: { builtin: lead.variable.kind === 'softBin' ? 'sbin' : 'hbin' } }, stack: 'percent' }
+      : rateBars(regionField(lead), { builtin: 'yield' }),
   };
 }
 
@@ -373,17 +428,22 @@ function outlierItems(lot: LotStatsSummary): SynthesisItem[] {
     const dies = wafer === undefined ? undefined : lot.perWafer.find(w => w.waferIndex === wafer)?.summary.stats.analyzedDies;
     if (dies === undefined) continue;
     items.push({
+      kind: 'loss',
       impact: 'low',
       shareOfDies: 0,
       diesLost: shortfall(f) * dies,
+      affected: shortfall(f) * dies,
+      measure: '',
       severity: f.severity,
       text: `${f.summary.replace(/ percentage points lower than the lot median$/, ' points below the lot median')} — about ${count(shortfall(f) * dies)} dies lost`,
+      reason: `${f.summary.replace(/ percentage points lower than the lot median$/, ' points below the lot median')} — about ${count(shortfall(f) * dies)} dies lost`,
       brief: `${f.comparison.left}: yield, ${count(shortfall(f) * dies)} dies`,
       subject: f.comparison.left,
       target: findingTarget(f),
       chips: [],
       findingIds: [f.id],
       testNumbers: [],
+      chart: rateBars({ builtin: 'wafer' }, { builtin: 'yield' }),
     });
   }
   return items;
@@ -437,7 +497,10 @@ interface TestLoss {
 function testLosses(summary: StatsSummary | LotStatsSummary, named: Set<number>): TestLoss[] {
   const stats = summary.stats;
   const out: TestLoss[] = [];
-  const make = (testNumber: number, label: string, failDies: number, totalDies: number, verb: string, brief: string, plainVerb = verb): void => {
+  // A pass/fail test has no values to draw: its chart is its pass rate, by wafer for a lot and by ring for a wafer.
+  const passRateChart = (testNumber: number): Omit<PlotSpec, 'id'> =>
+    rateBars({ builtin: summary.level === 'lot' ? 'wafer' : 'ring' }, { passRate: testNumber });
+  const make = (testNumber: number, label: string, failDies: number, totalDies: number, verb: string, brief: string, plainVerb = verb, functional = false): void => {
     if (failDies <= 0 || totalDies <= 0) return;
     named.add(testNumber);
     const failures = testFailures(summary, testNumber);
@@ -448,18 +511,23 @@ function testLosses(summary: StatsSummary | LotStatsSummary, named: Set<number>)
     out.push({
       testNumber, label, verb, plainVerb, failDies, passingDies: passing, keys: failures?.keys,
       item: {
+        kind: 'loss',
         impact: 'low',
         shareOfDies: 0,
         diesLost: lost,
+        affected: lost,
+        measure: '',
         severity: 'info',
         text: `${label} ${verb} on ${count(failDies)} of ${count(totalDies)} dies (${share.toFixed(1)}%)`
           + (passing > 0 ? `; ${count(passing)} of them are binned as passing, so about ${count(lost)} dies lost` : ''),
+        reason: `${label} ${verb} on ${count(failDies)} of ${count(totalDies)} dies (${share.toFixed(1)}%)`,
         brief: passing > 0 ? `${label}: ${brief}, ${count(lost)} dies lost` : `${label}: ${count(failDies)} dies ${brief}`,
         subject: label,
         target: { kind: 'test', testNumber },
         chips: [],
         findingIds: [],
         testNumbers: [testNumber],
+        chart: functional ? passRateChart(testNumber) : histogramOf(testNumber),
       },
     });
   };
@@ -470,7 +538,7 @@ function testLosses(summary: StatsSummary | LotStatsSummary, named: Set<number>)
     make(t.testNumber, t.label, t.failLowDies + t.failHighDies, t.totalDies, verb, 'outside limits',
       t.failLowDies > 0 && t.failHighDies > 0 ? 'is outside its limits' : verb);
   }
-  for (const t of stats.functionalYield ?? []) make(t.testNumber, t.label, t.failDies, t.totalDies, 'fails', 'fail');
+  for (const t of stats.functionalYield ?? []) make(t.testNumber, t.label, t.failDies, t.totalDies, 'fails', 'fail', 'fails', true);
   return out;
 }
 
@@ -533,40 +601,132 @@ function foldTests(
   return tests.filter(t => alone.has(t));
 }
 
+/** A signal item: one that costs no dies of its own, ranked by the dies it affects. */
+function signalItem(o: {
+  affected: number; measure: string; severity: StatsSeverity; text: string; brief: string; subject: string;
+  target: SynthesisTarget; chart: Omit<PlotSpec, 'id'>; findingIds?: string[]; testNumbers?: number[];
+  /** Short of `text`, when `text` goes on past the item's own figure. Default `text`. */
+  reason?: string;
+}): SynthesisItem {
+  return {
+    kind: 'signal', impact: 'low', shareOfDies: 0, diesLost: 0, affected: o.affected, measure: o.measure,
+    severity: o.severity, text: o.text, reason: o.reason ?? o.text, brief: o.brief, subject: o.subject, target: o.target, chips: [],
+    findingIds: o.findingIds ?? [], testNumbers: o.testNumbers ?? [], chart: o.chart,
+  };
+}
+
+/** How much of a shift of `d` standard deviations counts: none below {@link MIN_SHIFT_SD}, in full from {@link FULL_SHIFT_SD}. */
+const shiftWeight = (d: number): number => (Math.abs(d) < MIN_SHIFT_SD ? 0 : Math.min(1, (Math.abs(d) / FULL_SHIFT_SD) ** 2));
+const sigma = (d: number): string => `${Math.abs(d).toFixed(1)}σ`;
+/** A test-value finding about a region: the test's mean differs there. */
+const isShift = (f: StatsFinding): boolean => f.variable.kind === 'test' && f.variable.measure !== 'limitFailRate'
+  && REGION_FAMILIES.has(f.comparison.family) && Number.isFinite(f.effect.effectSize ?? NaN) && !f.id.startsWith('drift:');
+
 /**
- * What to keep an eye on, from signals that cost no dies of their own: a trend across the wafers (the
- * lot's drift findings, strongest first) and then tests whose Ppk against their limits is under 1.0,
- * worst first. A test already listed as costing dies is not repeated here. At most {@link MAX_WATCH}.
+ * A test whose values differ in a region (the test-value findings), one item per test led by its strongest region:
+ * the region's dies weighted by the size of the shift. A shift standing mostly on a loss item's dies is said as part
+ * of that item (the same dies, one item), and returns nothing here.
  */
-function watchItems(
-  summary: StatsSummary | LotStatsSummary, listedTests: ReadonlySet<number>,
-  /** Tests outside their limits on passing dies, not already said as an item. */
-  passingFails: readonly TestLoss[],
-): SynthesisWatch[] {
-  const out: SynthesisWatch[] = [];
-
-  const rank: Record<StatsSeverity, number> = { unusual: 0, notable: 1, info: 2 };
-  const drift = summary.findings
-    .filter(f => f.id.startsWith('drift:'))
-    .sort((a, b) => rank[a.severity] - rank[b.severity] || (a.stats.adjustedPValue ?? 1) - (b.stats.adjustedPValue ?? 1));
-  for (const f of drift) out.push({ text: f.summary, target: findingTarget(f), findingIds: [f.id] });
-
-  // Out of limits, binned as passing: the limits and the test program disagree about these dies.
-  for (const t of [...passingFails].sort((a, b) => b.passingDies - a.passingDies)) {
-    out.push({ text: `${t.label} ${t.plainVerb} on ${count(t.passingDies)} dies binned as passing`, target: t.item.target, findingIds: [] });
+function shiftItems(findings: readonly StatsFinding[], lossItems: SynthesisItem[], itemDies: Map<SynthesisItem, Set<string>>): SynthesisItem[] {
+  const byTest = new Map<number, StatsFinding[]>();
+  for (const f of findings) {
+    if (!isShift(f) || f.variable.index === undefined) continue;
+    (byTest.get(f.variable.index) ?? byTest.set(f.variable.index, []).get(f.variable.index)!).push(f);
   }
+  const weight = (f: StatsFinding) => (diesIn(f) ?? f.stats.sampleSizeLeft) * shiftWeight(f.effect.effectSize ?? 0);
+  const out: SynthesisItem[] = [];
+  for (const [testNumber, list] of [...byTest].sort((a, b) => a[0] - b[0])) {
+    const ranked = [...list].sort((a, b) => weight(b) - weight(a));
+    const lead = ranked[0];
+    const d = lead.effect.effectSize ?? 0;
+    // Real but small: not worth a look on its own, nor worth a sentence in another item.
+    if (weight(lead) === 0) continue;
+    const dies = dieKeySet(lead);
+    // An item that already holds one of these findings (a pattern lists the findings it explains) is its home; else the
+    // loss item it shares most dies with, when at least half of the smaller of the two is shared.
+    // An item that already names the test (its own loss item, or a region it fails in) says the shift too: one item
+    // per test. The shifted region can be the other side of the same signal (higher elsewhere, failing low there).
+    let home: SynthesisItem | undefined = lossItems.find(it => it.target.kind === 'test' && it.target.testNumber === testNumber)
+      ?? lossItems.find(it => it.testNumbers.includes(testNumber))
+      ?? lossItems.find(it => ranked.some(f => it.findingIds.includes(f.id))), best = 0;
+    for (const item of home ? [] : lossItems) {
+      const own = itemDies.get(item);
+      if (!own || own.size === 0 || dies.size === 0) continue;
+      let shared = 0;
+      for (const k of dies) if (own.has(k)) shared++;
+      if (shared >= SHARED_DIES * Math.min(own.size, dies.size) && shared > best) { best = shared; home = item; }
+    }
+    if (home) {
+      // Said as part of the item: its sentence, and the test as one of the item's tests, its chip showing the shifted
+      // region on the test's own map; unless the item already names the test as one that fails there.
+      home.text += `. ${lead.summary}`;
+      if (!home.testNumbers.includes(testNumber)) {
+        const testChips = home.chips.filter(c => c.target.kind === 'test' || c.shift).length;
+        if (testChips < MAX_TEST_CHIPS) home.chips.push({ label: lead.variable.label, target: findingTarget(lead), shift: true });
+        else home.moreTests = (home.moreTests ?? 0) + 1;
+        home.testNumbers.push(testNumber);
+      }
+      for (const f of ranked) if (!home.findingIds.includes(f.id)) home.findingIds.push(f.id);
+      continue;
+    }
+    const n = diesIn(lead) ?? lead.stats.sampleSizeLeft;
+    out.push(signalItem({
+      affected: weight(lead), measure: sigma(d), severity: lead.severity,
+      text: `${lead.summary}: a shift of ${sigma(d)} over ${plural(n, 'die')}`
+        + (ranked.length > 1 ? ` (also seen as ${seenAs(ranked.slice(1))})` : ''),
+      reason: `${lead.summary}: a shift of ${sigma(d)} over ${plural(n, 'die')}`,
+      brief: `${subjectOf(lead)}: ${lead.variable.label} ${lead.effect.direction}`,
+      subject: subjectOf(lead), target: findingTarget(lead), findingIds: ranked.map(f => f.id), testNumbers: [testNumber],
+      chart: { chart: 'box', fields: { x: regionField(lead), y: testField(testNumber), color: { none: true } } },
+    }));
+  }
+  return out;
+}
 
-  const weak = (summary.stats.capability ?? [])
-    .filter(c => c.hasSpec && c.ppk !== null && c.ppk !== undefined && c.ppk < WATCH_PPK && !listedTests.has(c.testNumber))
-    .sort((a, b) => (a.ppk ?? 0) - (b.ppk ?? 0));
-  for (const c of weak) {
-    out.push({
-      text: `${c.label} has Ppk ${(c.ppk as number).toFixed(2)} against its limits (below ${WATCH_PPK.toFixed(1)})`,
-      target: { kind: 'test', testNumber: c.testNumber },
-      findingIds: [],
+/** A trend across the wafers (the lot's drift findings): a test's, weighted by its size; yield's, by the points it moved. */
+function driftItems(findings: readonly StatsFinding[], total: number): SynthesisItem[] {
+  return findings.filter(f => f.id.startsWith('drift:')).map(f => {
+    const yieldTrend = f.variable.kind === 'yield';
+    const size = f.effect.effectSize ?? 0;
+    return signalItem({
+      affected: total * (yieldTrend ? Math.abs(size) : shiftWeight(size)),
+      measure: yieldTrend ? `${points(Math.abs(size))} pts` : sigma(size),
+      severity: f.severity, text: f.summary, brief: `${f.variable.label}: drifts across the wafers`, subject: f.variable.label,
+      target: findingTarget(f), findingIds: [f.id], ...(f.variable.index !== undefined ? { testNumbers: [f.variable.index] } : {}),
+      // Wafer by wafer, in the order the trend was read, against the wafers' own variation.
+      chart: { chart: 'control', fields: { x: { builtin: 'waferOrder' }, y: yieldTrend || f.variable.index === undefined ? { builtin: 'yield' } : testField(f.variable.index) } },
     });
-  }
-  return out.slice(0, MAX_WATCH);
+  });
+}
+
+/**
+ * A test whose spread is too wide for its limits (Ppk under 1.0) and that does not already cost dies: the dies its
+ * spread is expected to put outside them, from the normal tail beyond 3 × Ppk standard deviations (Ppk 0.5 is about
+ * 7%). A prediction, said as one.
+ */
+function capabilityItems(summary: StatsSummary | LotStatsSummary, failing: ReadonlySet<number>, total: number): SynthesisItem[] {
+  return (summary.stats.capability ?? [])
+    .filter(c => c.hasSpec && c.ppk !== null && c.ppk !== undefined && c.ppk < SIGNAL_PPK && !failing.has(c.testNumber))
+    .map(c => {
+      const ppk = c.ppk as number;
+      const share = normalUpperTail(3 * ppk);
+      return signalItem({
+        affected: total * share, measure: `Ppk ${ppk.toFixed(2)}`, severity: 'notable',
+        text: `${c.label} has Ppk ${ppk.toFixed(2)} against its limits: a spread that would put about ${points(share)}% of the dies outside them`,
+        brief: `${c.label}: Ppk ${ppk.toFixed(2)}`, subject: c.label,
+        target: { kind: 'test', testNumber: c.testNumber }, testNumbers: [c.testNumber], chart: histogramOf(c.testNumber, true),
+      });
+    });
+}
+
+/** Dies outside a test's limits but binned as passing: the limits and the test program disagree about them. */
+function passingFailItems(passingFails: readonly TestLoss[]): SynthesisItem[] {
+  return passingFails.map(t => signalItem({
+    affected: t.passingDies, measure: '', severity: 'notable',
+    text: `${t.label} ${t.plainVerb} on ${plural(t.passingDies, 'die')} binned as passing`,
+    brief: `${t.label}: ${count(t.passingDies)} dies out of limits, binned passing`, subject: t.label,
+    target: t.item.target, testNumbers: [t.testNumber], chart: t.item.chart,
+  }));
 }
 
 function headlineOf(summary: StatsSummary | LotStatsSummary, ctx: SynthesisContext): string {
@@ -679,6 +839,7 @@ export function buildSynthesis(input: StatsSummary | LotStatsSummary, ctx: Synth
     const seen = pattern.level === 'lot' && 'waferIndices' in pattern.highlight ? pattern.highlight.waferIndices?.length : undefined;
     const on = seen !== undefined && waferCount ? ` on ${seen}/${waferCount} wafers` : '';
     item.text = `${pattern.variable.label} pattern${on}. ${item.text}`;
+    item.reason = `${pattern.variable.label} pattern${on}. ${item.reason}`;
     item.chips.unshift({ label: `${pattern.variable.label} pattern`, target: findingTarget(pattern) });
     // A finding the pattern explains that another item already holds stays with that item.
     item.findingIds.unshift(pattern.id, ...[...members].filter(id => !items.some(it => it.findingIds.includes(id))));
@@ -687,17 +848,33 @@ export function buildSynthesis(input: StatsSummary | LotStatsSummary, ctx: Synth
   const total = analysedDies(summary);
   const lossTests = new Set<number>();
   const losses = testLosses(summary, lossTests);
-  const standalone = foldTests(losses, [...items], itemDies, total);
+  const regionItems = [...items];
+  const standalone = foldTests(losses, regionItems, itemDies, total);
   if (summary.level === 'lot') items.push(...outlierItems(summary));
   items.push(...standalone.map(t => t.item));
 
+  // Signals, on the same axis: shifts (or said within the loss item on their dies), drifts, spreads too wide for
+  // their limits, and dies out of limits yet binned as passing. A test that stands as its own loss item already says
+  // how many of its failing dies are binned as passing.
+  // (Only when that item is listed: one that costs under a yield point says nothing.)
+  const alone = new Set(standalone.filter(t => total > 0 && t.item.diesLost / total >= MIN_SHARE_OF_DIES).map(t => t.testNumber));
+  items.push(
+    ...shiftItems(findings, [...regionItems, ...standalone.map(t => t.item)], itemDies),
+    ...driftItems(findings, total),
+    ...capabilityItems(summary, lossTests, total),
+    ...passingFailItems(losses.filter(t => t.passingDies > 0 && !alone.has(t.testNumber))),
+  );
+
   const failing = failingDies(summary);
-  const material = items.filter(it => total > 0 && it.diesLost / total >= MIN_SHARE_OF_DIES);
+  const material = items.filter(it => total > 0 && it.affected / total >= MIN_SHARE_OF_DIES);
   for (const it of material) {
-    it.shareOfDies = it.diesLost / total;
-    it.impact = impactTier(it.diesLost / total, failing > 0 ? it.diesLost / failing : 0);
+    it.shareOfDies = it.affected / total;
+    it.impact = impactTier(it.shareOfDies, it.kind === 'loss' && failing > 0 ? it.diesLost / failing : 0);
+    if (!it.measure) it.measure = `${(it.shareOfDies * 100).toFixed(1)}%`;
   }
-  material.sort((a, b) => b.diesLost - a.diesLost);
+  // Largest first; ties by the first test or finding named, so the same data always lists the same order.
+  const tie = (it: SynthesisItem) => `${String(it.testNumbers[0] ?? '').padStart(10, '0')}${it.findingIds[0] ?? ''}`;
+  material.sort((a, b) => b.affected - a.affected || (tie(a) < tie(b) ? -1 : tie(a) > tie(b) ? 1 : 0));
   const top = material.slice(0, MAX_LOSS_ITEMS);
   const rest = material.slice(MAX_LOSS_ITEMS);
   for (const item of [...top, ...rest]) for (const id of item.findingIds) shown.add(id);
@@ -705,13 +882,6 @@ export function buildSynthesis(input: StatsSummary | LotStatsSummary, ctx: Synth
   const also = rest.length > 0
     ? { items: rest.slice(0, MAX_ALSO_NAMED), more: Math.max(0, rest.length - MAX_ALSO_NAMED) }
     : undefined;
-
-  // Dies outside a test's limits but binned as passing cost no yield, so they never rank an item; they
-  // are named here once they pass the floor. Only a lead that is the test itself already says it.
-  const leadTest = top[0]?.target.kind === 'test' ? top[0].target.testNumber : undefined;
-  const passingFails = losses.filter(t => t.testNumber !== leadTest && total > 0 && t.passingDies / total >= MIN_SHARE_OF_DIES);
-  const watch = watchItems(summary, lossTests, passingFails);
-  for (const w of watch) for (const id of w.findingIds) shown.add(id);
 
   const what = summary.level === 'lot' ? 'region, fail bin or wafer' : 'region or fail bin';
   // "Nothing stands out" would contradict a finding marked Unusual in the list below, so then the
@@ -722,14 +892,21 @@ export function buildSynthesis(input: StatsSummary | LotStatsSummary, ctx: Synth
       ? `No ${what} costs as much as ${points(MIN_SHARE_OF_DIES)} yield points, though ${plural(unusual, 'finding')} below ${unusual === 1 ? 'is' : 'are'} marked unusual.`
       : `Nothing stands out: no ${what} costs as much as ${points(MIN_SHARE_OF_DIES)} yield points.`
     : undefined;
-  return { headline: headlineOf(summary, ctx), items: top, ...(also ? { also } : {}), ...(watch.length ? { watch } : {}), ...(nothing ? { nothing } : {}), checked: checkedLine(summary, shown) };
+  return { headline: headlineOf(summary, ctx), items: top, ...(also ? { also } : {}), ...(nothing ? { nothing } : {}), checked: checkedLine(summary, shown) };
 }
 
-/** The heading over the compact list of further items: the floor is the same one that admits an item at all. */
-export const SYNTHESIS_ALSO_HEADING = `Also, each costing at least ${(MIN_SHARE_OF_DIES * 100).toFixed(0)}% of the dies`;
+/**
+ * A stable key for an item: what it shows, the same in the panel and in Insights, so a row's Chart link finds the item's
+ * card and a card's Show on map finds its row.
+ */
+export const synthesisKey = (it: Pick<SynthesisItem, 'target'>): string =>
+  it.target.kind === 'finding' ? `finding:${it.target.id}` : `test:${it.target.testNumber}`;
 
-/** A compact-list row: the item in a few words, then its share of the analysed dies. Plain text. */
-export const synthesisRowShare = (it: SynthesisItem): string => `${(it.shareOfDies * 100).toFixed(1)}%`;
+/** The heading over the compact list of further items: the floor is the same one that admits an item at all. */
+export const SYNTHESIS_ALSO_HEADING = `Also, each affecting at least ${(MIN_SHARE_OF_DIES * 100).toFixed(0)}% of the dies`;
+
+/** A compact-list row: the item in a few words, then its size (`2.4%` of the dies, `1.3σ`, `Ppk 0.62`). Plain text. */
+export const synthesisRowShare = (it: SynthesisItem): string => it.measure;
 
 /** After an item's chips: the folded tests not shown as one. Undefined when every test is a chip. Plain text. */
 export const synthesisMoreTests = (it: SynthesisItem): string | undefined =>
@@ -742,7 +919,6 @@ export function synthesisText(s: Synthesis): string {
     ...(s.nothing ? [s.nothing] : []),
     ...s.items.map((it, i) => `${i + 1}. ${it.text}`),
     ...(s.also ? [`${SYNTHESIS_ALSO_HEADING}: ${s.also.items.map(it => `${it.brief} (${synthesisRowShare(it)})`).join('; ')}${s.also.more ? `; and ${s.also.more} more` : ''}.`] : []),
-    ...(s.watch ? s.watch.map(w => `Watch: ${w.text}`) : []),
     s.checked,
   ].join('\n');
 }

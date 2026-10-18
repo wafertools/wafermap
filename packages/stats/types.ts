@@ -272,12 +272,12 @@ export interface StatsSummary {
     softBinsConsidered: number[];
     /**
      * Die counts per hard/soft bin, keyed by bin code, over the same
-     * yield-eligible population `YieldSummary`/`buildBinParetoData` use
+     * yield-eligible population `YieldSummary` and the Insights bin pareto use
      * (`isYieldEligibleDie` — excludes `partial`/`edgeExcluded` dies).
      * Unlike `hardBinsConsidered`/`softBinsConsidered` (which list every bin
      * code that appears anywhere, eligible or not), these are the actual
      * counts a bin-breakdown display should show. Consumed by
-     * `buildBinParetoData`/`buildBinClusterData` and the summary panel's bin
+     * the Insights bin pareto and the summary panel's bin
      * section when supplied, instead of each independently re-walking dies.
      * Absent on a value stack (any `lotStack` method but `'mode'`), whose dies
      * carry one wafer's bins rather than the stack's.

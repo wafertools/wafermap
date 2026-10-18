@@ -54,10 +54,25 @@ export type PlotField =
    * limits, a functional one by its recorded verdict), so a bar or line of it is the share of judged dies that pass.
    * `name` is checked as a test field's is.
    */
-  | { passRate: number; name?: string }
+  | { passRate: number; name?: string; judge?: PlotJudge }
   | PlotBinnedField;
 
-export interface PlotTestSet { tests: Array<number | string>; names?: Record<string, string> }
+/**
+ * How a pass rate judges a die: `limits` (the default) a parametric test's measured value against its test limits;
+ * `flag` the pass or fail the tester recorded (STDF's own flag, which exists whether or not limits do). A functional
+ * test has only its recorded verdict, and is judged by it either way.
+ */
+export const PLOT_JUDGES = ['limits', 'flag'] as const;
+export type PlotJudge = (typeof PLOT_JUDGES)[number];
+
+/**
+ * Several tests as one series. `passRate`: each test's pass rate (each die 100 or 0, as a single test's pass rate is)
+ * instead of its measured values, judged by `judge`.
+ */
+export interface PlotTestSet { tests: Array<number | string>; names?: Record<string, string>; passRate?: true; judge?: PlotJudge }
+
+/** A set of tests read as pass rates. */
+export const isPassRateSet = (f: unknown): f is PlotTestSet & { passRate: true } => isTestSet(f) && f.passRate === true;
 
 export const PLOT_BIN_BY = ['count', 'width'] as const;
 /** Fewest and most bins a binned field takes, and how many it takes when it does not say. */
@@ -82,7 +97,17 @@ export const PLOT_REFERENCES_MAX = 8;
  * A line the reader draws on a value axis: at `at`, or a shaded band from `at` to `to`. Values are in the axis's own
  * unit, as measured (or as rescaled, when the plot is). `label` names it on the chart; absent = the value alone.
  */
-export interface PlotReference { at: number; to?: number; label?: string }
+export type PlotReference = PlotValueReference | PlotStatReference;
+export interface PlotValueReference { at: number; to?: number; label?: string }
+
+export const PLOT_REFERENCE_STATS = ['median', 'mean'] as const;
+/**
+ * A line at the median or mean of what the plot draws on that axis: the bars' heights, the points' values, the values
+ * in the boxes. Over the whole plot, so every panel shares it. `label` names it; absent = the statistic's name.
+ */
+export interface PlotStatReference { stat: (typeof PLOT_REFERENCE_STATS)[number]; label?: string }
+
+export const isStatReference = (r: PlotReference): r is PlotStatReference => 'stat' in r;
 
 export interface PlotAxis {
   /** Replaces the automatic axis title. Absent = automatic. */
@@ -90,6 +115,12 @@ export interface PlotAxis {
   /** Reference lines and bands on a value axis: a target, a guard band, a customer's limit. Absent = none. */
   references?: PlotReference[];
   scale?: 'linear' | 'log';
+  /** Widen the axis to every limit drawn on it (`true`), or never (`false`). Absent = when that still leaves the data at
+   *  least a third of the axis. */
+  includeLimits?: boolean;
+  /** Narrow the axis to a robust range (the quartiles ± 1.5 × their spread) so a few extreme values do not flatten the
+   *  rest. Only the axis: every statistic still uses every value, and the footnote counts the values outside. */
+  clip?: boolean;
   min?: number;
   max?: number;
   reverse?: boolean;
@@ -113,6 +144,31 @@ export const PLOT_NORMALIZE = ['limits', 'zscore', 'robust'] as const;
  *     outliers do not set the scale.
  */
 export type PlotNormalize = (typeof PLOT_NORMALIZE)[number];
+
+/**
+ * One condition of a filter. A category field keeps the units whose value is one of `values`; a number keeps those
+ * from `min` to `max` inclusive, either end open. `not` keeps everything else. A unit with no value for the field
+ * (no bin, no reading) meets no condition, negated or not.
+ */
+export interface PlotCondition {
+  field: PlotField;
+  values?: string[];
+  min?: number;
+  max?: number;
+  not?: boolean;
+}
+
+/** Conditions that must all hold. `off` keeps them and applies none, so a filter can be switched off and back on. */
+export interface PlotFilter {
+  conditions: PlotCondition[];
+  off?: boolean;
+}
+
+/** The conditions a spec applies: none when it has no filter or the filter is off. */
+export function plotConditions(spec: Pick<PlotSpec, 'where'>): PlotCondition[] {
+  const f = spec.where;
+  return f && !f.off ? f.conditions : [];
+}
 
 export interface PlotSpec {
   /** Stable, generated once, never reused; survives rename and reorder. */
@@ -158,10 +214,21 @@ export interface PlotSpec {
   /** A bar's colours stacked into one bar per category (`stack`), or each as its share of the category (`percent`).
    *  Only for counts and sums, which add up. Absent = side by side. */
   stack?: 'stack' | 'percent';
-  /** Categories in order of their value, largest first (a box by its median). Absent = the field's own order. */
-  sort?: 'value';
+  /** Categories in order of their value: `value` largest first (a box by its median), `ascending` smallest first (the
+   *  worst pass rate at the top). With colours, a category's value is all its colours together. Absent = the field's own order. */
+  sort?: 'value' | 'ascending';
   /** Only the first this many categories, after sorting; the rest are counted in a note. Absent = all. */
   top?: number;
+  /**
+   * A bar of counts or sums as each colour's share of its own total, in percent (`percent`), so groups of different sizes
+   * compare: the bin mix of a small split beside a large one. Not with `stack`. Absent = the counts or sums.
+   */
+  barNorm?: 'count' | 'percent';
+  /** A box or bar plot's categories down the left and its values along the bottom (`horizontal`), for many categories or
+   *  long names. Absent = categories along the bottom. */
+  orientation?: 'vertical' | 'horizontal';
+  /** Each bar's value printed at its end (when every value fits its bar's width; else none are). Absent = none. */
+  valueLabels?: boolean;
   /** A cumulative-percentage line over a value-sorted bar of counts or sums: a pareto chart. */
   cumulative?: boolean;
   /**
@@ -185,10 +252,11 @@ export interface PlotSpec {
   /** A control chart's limits set from its first this many points (at least 3). Absent = all of them. */
   baseline?: number;
   /**
-   * Only the dies whose value of a category field is one of `values` (only the wafers, for a wafer field): bin 1 only,
-   * the edge ring only, one split. Applied before everything else, panels included. Absent = every die.
+   * Only the dies (or, for a wafer field, the wafers) that meet every condition: bin 1 only, the edge ring, one split,
+   * Vth within a range. Applied before everything else, panels included; `off` keeps the conditions and applies none.
+   * Absent = every die.
    */
-  where?: { field: PlotField; values: string[] };
+  where?: PlotFilter;
   /** Rescale the measured values on Y, each test on its own. Absent = the values as measured. */
   normalize?: PlotNormalize;
   /** The definition of a `sweep` chart: ordered runs of tests read as curves. Such a plot has no `fields`. */
@@ -224,8 +292,9 @@ export function sameField(a: PlotField | undefined, b: PlotField | undefined): b
   if (isBinned(a) || isBinned(b)) return isBinned(a) && isBinned(b) && sameField(a.binned, b.binned);
   if ('test' in a) return 'test' in b && a.test === b.test;
   if ('builtin' in a) return 'builtin' in b && a.builtin === b.builtin;
-  if ('tests' in a) return 'tests' in b && a.tests.length === b.tests.length && a.tests.every((t, i) => String(t) === String(b.tests[i]));
-  if ('passRate' in a) return 'passRate' in b && a.passRate === b.passRate;
+  if ('tests' in a) return 'tests' in b && !!a.passRate === !!b.passRate && (a.judge ?? 'limits') === (b.judge ?? 'limits')
+    && a.tests.length === b.tests.length && a.tests.every((t, i) => String(t) === String(b.tests[i]));
+  if ('passRate' in a) return 'passRate' in b && !('tests' in b) && a.passRate === b.passRate && (a.judge ?? 'limits') === (b.judge ?? 'limits');
   return 'meta' in b && a.meta === b.meta;
 }
 
@@ -239,8 +308,16 @@ export function isField(v: unknown): v is PlotField {
   if ('builtin' in v) return (PLOT_BUILTINS as readonly unknown[]).includes(v.builtin);
   if ('meta' in v) return typeof v.meta === 'string' && v.meta !== '';
   if ('tests' in v) return Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isTestEntry);
-  if ('passRate' in v) return Number.isInteger(v.passRate);
+  if ('passRate' in v) return Number.isInteger(v.passRate) && (v.judge === undefined || (PLOT_JUDGES as readonly unknown[]).includes(v.judge));
   return false;
+}
+
+/** A pass rate's `judge` this build does not know is left out (the default, test limits, then applies) and named. */
+function dropBadJudge(out: Record<string, unknown>, where: string, warnings: string[]): void {
+  if ('judge' in out && !(PLOT_JUDGES as readonly unknown[]).includes(out.judge)) {
+    warnings.push(`${where}.judge: "${String(out.judge)}" is not limits or flag, left out`);
+    delete out.judge;
+  }
 }
 
 /** A field this build can read, or `null` with the reason it cannot. A kind it does not know is not an error. */
@@ -275,10 +352,11 @@ function readField(raw: unknown, where: string, warnings: string[]): PlotField |
     if (typeof raw.meta !== 'string' || raw.meta === '') { warnings.push(`${where}: metadata key is empty, left out`); return undefined; }
     return { ...raw, meta: raw.meta } as unknown as PlotField;
   }
-  if ('passRate' in raw) {
+  if ('passRate' in raw && !('tests' in raw)) {
     if (!Number.isInteger(raw.passRate)) { warnings.push(`${where}: pass-rate test ${JSON.stringify(raw.passRate)} is not an integer, left out`); return undefined; }
     const out: Record<string, unknown> = { ...raw };
     if (!(typeof raw.name === 'string' && raw.name !== '')) delete out.name;
+    dropBadJudge(out, where, warnings);
     return out as unknown as PlotField;
   }
   if ('tests' in raw) {
@@ -286,10 +364,47 @@ function readField(raw: unknown, where: string, warnings: string[]): PlotField |
       warnings.push(`${where}: its tests must be test numbers or ranges such as "1010..1030", left out`); return undefined;
     }
     const out: Record<string, unknown> = { ...raw, tests: raw.tests };
+    if ('passRate' in raw && raw.passRate !== true) { warnings.push(`${where}.passRate: not true, left out`); delete out.passRate; }
+    dropBadJudge(out, where, warnings);
     if ('names' in raw && !(isObject(raw.names) && Object.values(raw.names).every(v => typeof v === 'string'))) { warnings.push(`${where}.names: not a list of names, left out`); delete out.names; }
     return out as unknown as PlotField;
   }
   return raw as unknown as PlotField; // a kind from a newer build
+}
+
+/**
+ * A filter from a file: `{ conditions, off }`. A single condition written without the list (`{ field, values }`) is read
+ * as a list of one. A condition that cannot be read is named and left out; a filter left with none is no filter.
+ */
+export function readFilter(raw: Record<string, unknown>, where: string, warnings: string[]): PlotFilter | undefined {
+  const list = Array.isArray(raw.conditions) ? raw.conditions : 'field' in raw ? [{ field: raw.field, values: raw.values }] : [];
+  const conditions: PlotCondition[] = [];
+  list.forEach((c, i) => {
+    const at = Array.isArray(raw.conditions) ? `${where}.conditions[${i}]` : where;
+    const cond = readCondition(c, at, warnings);
+    if (cond) conditions.push(cond);
+  });
+  if (conditions.length === 0) return undefined;
+  const { field: _f, values: _v, conditions: _c, ...rest } = raw;
+  const out: PlotFilter = { ...rest, conditions };
+  if ('off' in raw && typeof raw.off !== 'boolean') { warnings.push(`${where}.off: not true or false, left out`); delete out.off; }
+  return out;
+}
+
+function readCondition(raw: unknown, where: string, warnings: string[]): PlotCondition | undefined {
+  if (!isObject(raw)) { warnings.push(`${where}: not a condition, left out`); return undefined; }
+  const field = readField(raw.field, `${where}.field`, warnings);
+  if (!field) return undefined;
+  const out: PlotCondition = { ...raw, field };
+  if ('values' in raw) {
+    const values = Array.isArray(raw.values) ? raw.values.filter((v): v is string => typeof v === 'string') : [];
+    if (values.length) out.values = values; else { warnings.push(`${where}.values: not a list of values, left out`); delete out.values; }
+  }
+  for (const k of ['min', 'max'] as const) if (k in raw && !isFiniteNumber(raw[k])) { warnings.push(`${where}.${k}: not a number, left out`); delete out[k]; }
+  if (out.min !== undefined && out.max !== undefined && out.min > out.max) { warnings.push(`${where}: min is above max, the range left out`); delete out.min; delete out.max; }
+  if ('not' in raw && typeof raw.not !== 'boolean') { warnings.push(`${where}.not: not true or false, left out`); delete out.not; }
+  if (!out.values && out.min === undefined && out.max === undefined) { warnings.push(`${where}: needs values or a range, left out`); return undefined; }
+  return out;
 }
 
 function readAxis(raw: unknown, where: string, warnings: string[]): PlotAxis | undefined {
@@ -301,16 +416,19 @@ function readAxis(raw: unknown, where: string, warnings: string[]): PlotAxis | u
   for (const k of ['min', 'max'] as const) {
     if (k in raw && !isFiniteNumber(raw[k])) { warnings.push(`${where}.${k}: not a number, left out`); delete out[k]; }
   }
-  if ('reverse' in raw && typeof raw.reverse !== 'boolean') { warnings.push(`${where}.reverse: not true or false, left out`); delete out.reverse; }
+  for (const k of ['reverse', 'includeLimits', 'clip'] as const) if (k in raw && typeof raw[k] !== 'boolean') { warnings.push(`${where}.${k}: not true or false, left out`); delete out[k]; }
   if ('references' in raw) {
     const kept: PlotReference[] = [];
     const list = Array.isArray(raw.references) ? raw.references : [];
     if (!Array.isArray(raw.references)) warnings.push(`${where}.references: not a list, left out`);
     list.forEach((r, i) => {
-      if (isObject(r) && isFiniteNumber(r.at) && (r.to === undefined || (isFiniteNumber(r.to) && r.to !== r.at)) && (r.label === undefined || typeof r.label === 'string')) {
-        if (kept.length < PLOT_REFERENCES_MAX) kept.push({ ...r, at: r.at, ...(r.to !== undefined ? { to: r.to } : {}) } as PlotReference);
+      const labelOk = isObject(r) && (r.label === undefined || typeof r.label === 'string');
+      const value = labelOk && isFiniteNumber(r.at) && (r.to === undefined || (isFiniteNumber(r.to) && r.to !== r.at));
+      const stat = labelOk && !value && (PLOT_REFERENCE_STATS as readonly unknown[]).includes(r.stat);
+      if (value || stat) {
+        if (kept.length < PLOT_REFERENCES_MAX) kept.push(value ? { ...r, at: r.at, ...(r.to !== undefined ? { to: r.to } : {}) } as PlotReference : { ...r } as unknown as PlotReference);
         else warnings.push(`${where}.references[${i}]: more than ${PLOT_REFERENCES_MAX}, left out`);
-      } else warnings.push(`${where}.references[${i}]: needs a number (and a different number for a band), left out`);
+      } else warnings.push(`${where}.references[${i}]: needs a number (and a different number for a band), or median or mean, left out`);
     });
     if (kept.length) out.references = kept; else delete out.references;
   }
@@ -419,17 +537,18 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
   }
   if ('where' in raw) {
     const w = raw.where;
-    const field = isObject(w) ? readField(w.field, `${where}.where.field`, warnings) : undefined;
-    const values = isObject(w) && Array.isArray(w.values) ? w.values.filter((v): v is string => typeof v === 'string') : [];
-    if (!field || values.length === 0) { warnings.push(`${where}.where: needs a field and at least one value, left out`); delete out.where; }
-    else out.where = { ...(w as Record<string, unknown>), field, values };
+    const filter = isObject(w) ? readFilter(w, `${where}.where`, warnings) : undefined;
+    if (!filter) { warnings.push(`${where}.where: needs at least one condition, left out`); delete out.where; }
+    else out.where = filter;
   }
   if ('stack' in raw && raw.stack !== 'stack' && raw.stack !== 'percent') { warnings.push(`${where}.stack: "${String(raw.stack)}" is not stack or percent, left out`); delete out.stack; }
-  if ('sort' in raw && raw.sort !== 'value') { warnings.push(`${where}.sort: "${String(raw.sort)}" is not known to this version, left out`); delete out.sort; }
+  if ('sort' in raw && raw.sort !== 'value' && raw.sort !== 'ascending') { warnings.push(`${where}.sort: "${String(raw.sort)}" is not known to this version, left out`); delete out.sort; }
   if ('top' in raw && !(Number.isInteger(raw.top) && (raw.top as number) >= 1)) { warnings.push(`${where}.top: not a whole number of at least 1, left out`); delete out.top; }
   if ('baseline' in raw && !(Number.isInteger(raw.baseline) && (raw.baseline as number) >= 3)) { warnings.push(`${where}.baseline: not a whole number of at least 3, left out`); delete out.baseline; }
   if ('fit' in raw && raw.fit !== 'linear' && raw.fit !== 'orthogonal') { warnings.push(`${where}.fit: "${String(raw.fit)}" is not linear or orthogonal, left out`); delete out.fit; }
-  for (const k of ['identity', 'normalCurve'] as const) if (k in raw && typeof raw[k] !== 'boolean') { warnings.push(`${where}.${k}: not true or false, left out`); delete out[k]; }
+  for (const k of ['identity', 'normalCurve', 'valueLabels'] as const) if (k in raw && typeof raw[k] !== 'boolean') { warnings.push(`${where}.${k}: not true or false, left out`); delete out[k]; }
+  if ('orientation' in raw && raw.orientation !== 'vertical' && raw.orientation !== 'horizontal') { warnings.push(`${where}.orientation: "${String(raw.orientation)}" is not vertical or horizontal, left out`); delete out.orientation; }
+  if ('barNorm' in raw && raw.barNorm !== 'count' && raw.barNorm !== 'percent') { warnings.push(`${where}.barNorm: "${String(raw.barNorm)}" is not count or percent, left out`); delete out.barNorm; }
   if ('histNorm' in raw && raw.histNorm !== 'count' && raw.histNorm !== 'percent') { warnings.push(`${where}.histNorm: "${String(raw.histNorm)}" is not count or percent, left out`); delete out.histNorm; }
   if ('whatIf' in raw) {
     const w = raw.whatIf;
@@ -546,7 +665,7 @@ export function addPlots(existing: readonly PlotSpec[], incoming: readonly PlotS
 export function plotIssue(plot: PlotSpec): string | undefined {
   if (!(PLOT_CHARTS as readonly unknown[]).includes(plot.chart)) return 'Needs a newer version of this tool';
   const given = plot.fields ?? {};
-  for (const f of [...xFieldsOf(given.x), given.y, given.color, given.facet, given.rows, plot.where?.field]) {
+  for (const f of [...xFieldsOf(given.x), given.y, given.color, given.facet, given.rows, ...(plot.where?.conditions.map(c => c.field) ?? [])]) {
     if (f === undefined || (isObject(f) && ('follow' in f || 'none' in f))) continue;
     if (!isField(f)) return 'Needs a newer version of this tool';
   }

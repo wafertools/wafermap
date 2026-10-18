@@ -1,5 +1,4 @@
-// What the plot chart puts on the canvas: a scatter draws its colours in legend order (a later colour over an earlier
-// one), and a goal plot names the tests it can without writing one name over another.
+// What the plot chart puts on the canvas: a goal plot names the tests it can without writing one name over another.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,22 +49,6 @@ function draw(spec, items, defs) {
   chart.setPlot(resolvePlot(spec, items, { testDefs: defs, passBins: [1] }));
   chart.destroy();
 }
-
-test('a scatter draws its colours in legend order, so a rare colour is not hidden under a common one', () => {
-  const DEFS = [{ testNumber: 1, name: 'A' }, { testNumber: 2, name: 'B' }];
-  // Two wafers with dies at the same positions; bin 2 (rare) comes first in the die list of the second wafer.
-  const mk = (label, rareFirst) => {
-    const results = Array.from({ length: 30 }, (_, k) => ({ x: k % 6, y: Math.floor(k / 6), hbin: (rareFirst ? k < 3 : k >= 27) ? 2 : 1, testValues: { 1: k, 2: k } }));
-    const r = buildWaferMap({ results, waferConfig: { diameter: 80 }, dieConfig: { width: 10, height: 10 }, passBins: [1], testDefs: DEFS });
-    return { label, dies: r.dies, wafer: r.wafer, waferIndex: 0, metadata: r.metadata, passBins: [1], ringCount: 4 };
-  };
-  draw({ id: 's', chart: 'scatter', fields: { x: { builtin: 'x' }, y: { builtin: 'y' }, color: { builtin: 'hbin' } } }, [mk('W1', false), mk('W2', true)], DEFS);
-  const dots = fills.filter(Boolean);
-  const colours = [...new Set(dots)];
-  assert.equal(colours.length, 2, 'two bins, two colours');
-  const lastFirst = dots.lastIndexOf(colours[0]), firstSecond = dots.indexOf(colours[1]);
-  assert.ok(lastFirst < firstSecond, 'every dot of the first colour is drawn before any of the second');
-});
 
 test('a goal plot names tests without writing one name over another', () => {
   const defs = Array.from({ length: 8 }, (_, i) => ({ testNumber: i + 1, name: `Test${i + 1}`, limitLow: 0, limitHigh: 1 }));

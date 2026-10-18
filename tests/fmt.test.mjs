@@ -141,3 +141,20 @@ test('fmtExact: a float32 in its shortest exact digits, anything else as it is',
   assert.equal(fmtExact(0.1 + 0.2), String(0.1 + 0.2), 'not a float32: unchanged');
   assert.equal(fmtExact(NaN), 'NaN');
 });
+
+test('fmt — a percentage is written 83.8%: no space before the sign and never an SI prefix', () => {
+  assert.equal(fmt(83.8, '%'), '83.8%');
+  assert.equal(fmt(100, '%'), '100%');
+  assert.equal(fmt(5.25, '%'), '5.25%');
+  assert.equal(fmt(0.5, '%'), '0.50%', 'not 500 m%');
+  assert.equal(fmt(0.05, '%'), '0.050%');
+  assert.equal(fmt(0, '%'), '0%');
+  assert.equal(fmt(-2.5, '%'), '-2.50%');
+});
+
+test('fmtColorbarAxis — a percentage axis is unprefixed and says % once', () => {
+  const small = fmtColorbarAxis(0.05, 'Yield', '%');
+  assert.equal(small.axisLabel, 'Yield (%)');
+  assert.equal(small.scaledUnit, '%');
+  assert.equal(fmtColorbarAxis(88, null, '%').axisLabel, '%');
+});

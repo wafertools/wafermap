@@ -66,7 +66,8 @@ function clickBoxplotRow(root) {
   assert.ok(card, 'the Distributions view rendered a boxplot card');
   const canvas = card.querySelector('canvas');
   canvas.getBoundingClientRect = () => ({ top: 0, left: 0, right: 600, bottom: 300, width: 600, height: 300, x: 0, y: 0, toJSON() {} });
-  canvas.dispatchEvent(new dom.window.MouseEvent('click', { clientX: 300, clientY: 20, bubbles: true }));
+  // The one wafer's box fills the middle of the category axis, down the left.
+  canvas.dispatchEvent(new dom.window.MouseEvent('click', { clientX: 300, clientY: 80, bubbles: true }));
   return card;
 }
 

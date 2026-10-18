@@ -68,3 +68,24 @@ test('the starting plot is still two measured tests, not a verdict', () => {
   assert.equal(p.chart, 'histogram', 'one measured test makes a histogram of it');
   assert.equal(p.fields.y.test, 1050);
 });
+
+test('a pass-rate bar judged by limits knows which side each failing die fell on', () => {
+  const DEFS = [{ testNumber: 7, name: 'Vt', limitLow: 10, limitHigh: 20 }];
+  // 20 dies: values 5..24, so 5 below the low limit (5–9), 4 above the high (21–24) and 11 pass.
+  const map = buildWaferMap({
+    results: Array.from({ length: 20 }, (_, k) => ({ x: k % 5, y: Math.floor(k / 5), hbin: 1, testValues: { 7: 5 + k } })),
+    waferConfig: { diameter: 80 }, dieConfig: { width: 10, height: 10 }, passBins: [1], testDefs: DEFS,
+  });
+  const items = [{ label: 'W1', dies: map.dies, wafer: map.wafer, waferIndex: 0, passBins: [1], ringCount: 4 }];
+  const r = resolvePlot({ id: 'p', chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { passRate: 7 } } }, items, { testDefs: DEFS });
+  assert.deepEqual(r.issues, []);
+  const m = r.marks;
+  const units = m.cellUnits[0][0];
+  const side = [...units].map(u => m.passFail.failSide[u]);
+  assert.equal(side.filter(s => s < 0).length, 5, 'below the low limit');
+  assert.equal(side.filter(s => s > 0).length, 4, 'above the high limit');
+  assert.equal(m.cells[0][0].filter(v => v === 100).length, 11, 'passing');
+
+  const flag = resolvePlot({ id: 'f', chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { passRate: 7, judge: 'flag' } } }, items, { testDefs: DEFS });
+  assert.ok(!flag.marks?.passFail?.failSide, 'a tester flag has no side');
+});

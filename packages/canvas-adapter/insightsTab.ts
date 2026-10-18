@@ -28,7 +28,7 @@ import { MEAN_WAFER_YIELD_LABEL } from '../stats/presentation.js';
 import { buildFacetTable, facetValueOf, FACET_NONE_VALUE, DEFAULT_FACET_CURATION, type FacetCuration, type FacetItem } from '../stats/facets.js';
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
-import { dieFailsTest } from '../stats/testPassRate.js';
+import { dieFailsTest, hasJudgeableTests, testsForPassKind, buildTestPassRateData, type TestPassKind } from '../stats/testPassRate.js';
 import { fmt } from '../renderer/fmt.js';
 import { testLabel } from '../renderer/testLabel.js';
 import type { WaferMapDisplayItem } from './renderWaferGallery.js';
@@ -36,37 +36,35 @@ import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { waferPopulation } from './chartPopulation.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { plotStoreFor, type PlotStore } from './plotStore.js';
-import type { PlotSpec } from '../stats/plotSpec.js';
+import { readFilter, type PlotFilter, type PlotSpec } from '../stats/plotSpec.js';
+import { buildFilterEditor, buildFilterStrip } from './filterEditor.js';
 import { itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
-import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { describeWaferPopulation, populationStat } from '../stats/population.js';
-import { LEADING, ALPHA, SPACE, EDGE_GUTTER, FONT, CLR, RADIUS, SHADOW, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
+import { LEADING, ALPHA, SPACE, EDGE_GUTTER, FONT, CLR, RADIUS, SHADOW, openModal, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
 import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
-import { renderBoxplotPanel } from './charts/boxplot.js';
-import { renderTrendPanel } from './charts/trend.js';
 import { renderGroupComparisonPanel } from './charts/groupComparison.js';
 import { renderCommonalityPanel } from './charts/commonality.js';
 import { renderPatCard } from './charts/patCard.js';
 import { renderDifferenceMapPanel } from './differenceMapPanel.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { SweepSpec } from '../stats/sweep.js';
-import { renderHistogramPanel } from './charts/histogram.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
-import { renderScatterPanel } from './charts/scatter.js';
-import { renderBarPanel, type ChartPanel } from './charts/barPanel.js';
-import { renderBinClusterPanel } from './charts/binCluster.js';
-import { renderTestPassRatePanel } from './charts/testPassRate.js';
-import { QUANTITY } from './charts/palette.js';
-import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
-import { buildYieldData, buildYieldDataCombined, type YieldSortBy } from '../stats/yield.js';
-import { buildBinParetoData, type BinType } from '../stats/binPareto.js';
+import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, makeLinkedTestSelect, makeWaferSelect, makeTestSelect, makeLimitsSelect, makeLinkedAxisPrefs, makeToggle, limitLines, limitExtent, shouldIncludeLimitsByDefault, hasBothLimitKinds, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
+import { maxOf, minOf } from '../core/utils.js';
+import { buildYieldData, buildYieldDataCombined } from '../stats/yield.js';
 import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
 import { runChunked } from './chunked.js';
 import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions, buildReticlePositionRegions, diesInRegion, type RegionYieldDatum } from '../stats/regions.js';
 import { renderDataSection, type DataView } from './dataTab.js';
-import { sourceFromDies } from './plotItems.js';
+import { sourceFromDies, toPlotItems } from './plotItems.js';
+import { isYieldEligibleDie } from '../core/dies.js';
+import { renderPlotCard, type CardChoice } from './plotCard.js';
+import { orderFieldValues, axisValues, applyConditions, fieldCatalogue, fieldExtent, fieldValues, type ConditionsApplied, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
+import type { CardSpec } from '../stats/cardSpec.js';
+import { buildSynthesis, synthesisKey, type SynthesisTarget } from '../stats/synthesis.js';
+import { commonPassBins } from '../core/passBins.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
 export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot';
@@ -83,7 +81,7 @@ export interface InsightsOptions {
    * (a gallery always has one); `false` opts out.
    */
   enabled?: boolean;
-  /** Which sub-tab is shown first. Default 'overview'. `'sweeps'` opens the Plot tab, where sweeps are drawn. */
+  /** Which sub-tab is shown first. Default 'overview'. `'sweeps'` opens the My plots tab, where sweeps are drawn. */
   defaultView?: InsightsView;
   /**
    * @deprecated Sweeps are plots now: give them in `plots` as sweep plots, or read a sweeps file with
@@ -131,6 +129,15 @@ export interface InsightsOptions {
    * the browser's own file input; a desktop host passes its native dialog.
    */
   onPickPlotsFile?: () => Promise<string | null>;
+  /**
+   * The Insights filter to start with: conditions every tab's wafers and dies must meet (one split, the edge ring, a
+   * range of a test), with `off` to keep them unapplied. It is view state, like Group by: the reader edits it from the
+   * Filter button, it is shown above every tab whenever it exists, and it is never written into a plots file. Keep it
+   * from `onFilterChange` to restore it.
+   */
+  filter?: PlotFilter;
+  /** Called with the filter after the reader applies, switches, or removes it (`undefined` once removed). */
+  onFilterChange?: (filter: PlotFilter | undefined) => void;
   /**
    * Open the Insights view on mount instead of starting on the map/grid.
    * Default false — the tab is offered, the map is what you see first.
@@ -211,6 +218,14 @@ export interface InsightsTabDeps {
   plots?: PlotSpec[];
   onPlotsChange?: (plots: PlotSpec[]) => void;
   onPickPlotsFile?: () => Promise<string | null>;
+  /**
+   * Leaves Insights and shows a "What stands out" item on the map, as its row in the Summary panel does: a finding's dies,
+   * or a test's value map with the dies it fails. Omitted ⇒ the Worth a look cards offer no Show on map.
+   */
+  showOnMap?: (target: SynthesisTarget) => void;
+  /** See `InsightsOptions.filter` and `onFilterChange`. */
+  filter?: PlotFilter;
+  onFilterChange?: (filter: PlotFilter | undefined) => void;
   /** Opens the user guide. Rendered as an icon at the end of the tab row —
    *  while Insights is showing, the map toolbar is hidden (it held only a
    *  back-to-gallery button, which the back tab already provides, and this
@@ -254,6 +269,11 @@ export interface InsightsTabHandle {
   destroy: () => void;
   /** Adopt axis settings set from outside (the host's `setOptions`), in every chart. */
   setAxisPrefs: (prefs: AxisPrefs) => void;
+  /**
+   * Opens the Overview at the Worth a look card of the item `key` names (`synthesisKey`), scrolled into view: the Summary
+   * panel's Chart link. False when there is no such card (the item has none, or the list is hidden while narrowed).
+   */
+  showWorthCard: (key: string) => boolean;
 }
 
 type Item = FacetItem & {
@@ -285,7 +305,22 @@ const VIEWS: Array<{ key: InsightsView; label: string }> = [
 const DATA_VIEW: { key: InsightsView; label: string } = { key: 'data', label: 'Data' };
 
 /** Last: the reader's own plots (plotTab.ts). */
-const PLOT_VIEW: { key: InsightsView; label: string } = { key: 'plot', label: 'Plot' };
+const PLOT_VIEW: { key: InsightsView; label: string } = { key: 'plot', label: 'My plots' };
+
+/**
+ * `insights.filter` as the host gave it, read by the plots file's own reader: a host restores it from storage, where it
+ * may be malformed or written by another version. A condition that cannot be read is left out and the problem logged;
+ * the band then states the filter that is applied, so nothing is filtered unseen.
+ */
+function readFilterOption(raw: unknown): PlotFilter | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const warnings: string[] = [];
+  const isObj = typeof raw === 'object' && !Array.isArray(raw);
+  const filter = isObj ? readFilter(JSON.parse(JSON.stringify(raw)) as Record<string, unknown>, 'insights.filter', warnings) : undefined;
+  if (!filter) warnings.push('insights.filter: needs at least one condition, so no filter is applied');
+  if (warnings.length) console.warn(`[wafermap] ${warnings.join('; ')}`);
+  return filter;
+}
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest, locateDie } = deps;
@@ -415,15 +450,39 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     marginTop: '0',
     paddingLeft: contentInset, paddingRight: contentInset } as Partial<CSSStyleDeclaration>);
 
+  // The Insights filter, between the tabs and what they show: present on every tab whenever a filter exists, on or off.
+  const filterBandEl = doc.createElement('div');
+  filterBandEl.dataset.wmapInsightsFilter = '1';
+  Object.assign(filterBandEl.style, { display: 'none', marginLeft: contentInset, marginRight: contentInset, marginBottom: SPACE.lg } as Partial<CSSStyleDeclaration>);
+
   rootEl.appendChild(metaStripEl);
   rootEl.appendChild(tabBar);
+  rootEl.appendChild(filterBandEl);
   rootEl.appendChild(bodyEl);
 
   const views = [...VIEWS, DATA_VIEW, PLOT_VIEW];
   const plotStore = deps.plotStore ?? plotStoreFor(deps);
+  // Edit as plot (a card's ⋯ menu): the card as the reader's own plot, opened as a draft over the card's population. It
+  // joins My plots only when the reader adds it.
+  const editAsPlot = (plot: PlotSpec, over: { items: readonly PlotItem[]; ctx: PlotContext }): void => {
+    void import('./plotModal.js').then(({ openPlotEditor }) => openPlotEditor({
+      doc, anchor: rootEl, store: plotStore, plot, draft: true, items: [...over.items], ctx: over.ctx,
+      title: plot.title ? `New plot from “${plot.title}”` : 'New plot',
+      chart: { onSaveImage, binColors: getBinColors() },
+    }));
+  };
   // Sweeps are plots now: the old Sweeps tab opens the Plot tab, where they are.
   let activeView: InsightsView = deps.defaultView === 'sweeps' ? 'plot' : deps.defaultView ?? 'overview';
   let analysisGroupKey: string | undefined;
+  /** The Insights filter (see `InsightsOptions.filter`): view state, applied in `render` before Group by. */
+  let pageFilter: PlotFilter | undefined = readFilterOption(deps.filter);
+  /** Whether the filter is narrowing what the tabs show right now: the host's lot stats describe every die, so not then. */
+  let filtering = false;
+  const setPageFilter = (f: PlotFilter | undefined): void => {
+    pageFilter = f;
+    deps.onFilterChange?.(f ? JSON.parse(JSON.stringify(f)) as PlotFilter : undefined);
+    render();
+  };
   // The Data tab's own choices live here for the same reason as the shared test
   // below: `render()` rebuilds the section, and the choice must outlive that.
   let dataView: DataView = 'statistics';
@@ -531,7 +590,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         waferLabel: it.identity, testDefs: it.testDefs,
         activeTest: testNumber ?? activeSectionTest ?? undefined, waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount(),
       });
-      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
+      openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, { plots: plotStore, getBinColors, onSaveImage, onSaveText, onLocateDie: locateDie });
     };
   }
 
@@ -549,7 +608,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const source = sourceFromDies(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })),
       what, keep, mergeTestDefs(items).defs, activeTest);
     if (!source) return;
-    openDrilldownMenu(at, anchor, source, { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
+    openDrilldownMenu(at, anchor, source, { plots: plotStore, getBinColors, onSaveImage, onSaveText, onLocateDie: locateDie });
   }
 
   function testLeafAction(items: Item[]): { open: (waferIndex: number, testNumber: number) => void; label?: string } | null {
@@ -620,13 +679,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return btn;
   }
 
-  /** Yield-by-wafer + bin pareto together. Yield always uses the generic bar
-   *  panel (`barPanel.ts`), grouped or not — pooled-per-group bars with
-   *  in-place drill-down when grouped. Bin pareto swaps to a clustered panel
-   *  (`binCluster.ts`) when grouped rather than a variant of the plain
-   *  pareto. Both belong to Overview: they're the chart form of the same
-   *  yield/bin numbers the Overview details card shows in kv/progress-bar
-   *  form below them. */
+  /** Yield-by-wafer + bin pareto together, both drawn as plots (plotCard.ts): yield pooled per wafer or per group, with
+   *  in-place drill-down when grouped; the bin pareto one bar per group within each bin when grouped. Both belong
+   *  to Overview: they're the chart form of the same yield/bin numbers the Overview details card shows below them. */
   function renderYieldBinsSection(
     items: Item[],
     groups: { key: string; items: Item[] }[] | undefined,
@@ -639,156 +694,90 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const wrap = makeChartGridWrap(doc);
 
     const binColors = getBinColors();
-    let yieldSortBy: YieldSortBy = 'label';
     const label = groupLabelText ?? 'group';
     // CLAUDE.md: "yield label must name the actual pass bins in use, not
     // assume bin 1" — mirrors renderSummaryReportHtml's summary-metric label.
     const passBinsLabel = describePassBins(items.map(it => it.passBins));
+    // The plot cards' population. A host card label can carry the yield itself ("W01 · 92.7%"); the chart prints its own.
+    const plotItems = toPlotItems(items.map(it => ({
+      label: it.identity ?? it.label.replace(/\s*·\s*\d+(\.\d+)?%$/, ''), dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount(),
+    })));
+    const plotDefs = mergeTestDefs(items).defs;
+    const groupBy = groups ? analysisGroupKey : undefined;
+    const plotCtx = { testDefs: plotDefs, groupBy, curation: deps.attributes };
 
-    // Prefer each wafer's already-computed yield (e.g. from the host's
-    // `analyzeWaferLot` call) over recomputing from dies — guarantees this
-    // panel agrees exactly with whatever else in the host already reports
-    // yield for the same wafer, rather than trusting a second,
-    // independently-written computation to stay in sync (see
-    // stats/yield.ts's doc comment — a real mismatch was found and fixed
-    // this way).
-    const lotStats = getLotStats?.();
-    // Indexed once per render rather than `.find()`-scanned per item — a
-    // per-item linear scan over `lotYieldSeries` turns this into an O(wafers²)
-    // pass for a large lot (redone on every "Group by"/sort change too).
-    const yieldByWaferIndex = new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent]));
-    const withYieldPercent = (item: Item) => ({
-      ...item,
-      // Host card labels often embed the yield themselves ("W01 · 92.7%") —
-      // strip that here, since this panel prints the % in its own value
-      // column and the doubled number read as two different stats.
-      label: item.label.replace(/\s*·\s*\d+(\.\d+)?%$/, ''),
-      yieldPercent: yieldByWaferIndex.get(item.waferIndex),
-      key: item.waferIndex,
+    // Yield as a plot (plotCard.ts): pooled passing over judged dies per bar, the same rule every yield figure uses, with
+    // each value at its bar's end and the median of the bars drawn as a line (three bars or more: a median of two is not
+    // a reference). Grouped, a group's bar drills into its wafers in place; a wafer's bar opens that wafer.
+    const yieldSpec = (sort: boolean, bars: number): CardSpec => ({
+      id: 'card-yield', title: groups ? `Yield by ${label} (pass: ${passBinsLabel})` : `Yield by wafer (pass: ${passBinsLabel})`, chart: 'bar',
+      fields: { x: { slot: 'groupBy' }, y: { builtin: 'yield' }, color: { none: true } },
+      valueLabels: true, ...(sort ? { sort: 'value' as const } : {}),
+      ...(bars >= 3 ? { axes: { y: { references: [{ stat: 'median' as const }] } } } : {}),
     });
-    const yieldItems = items.map(withYieldPercent);
-    const yieldGroups = groups?.map(g => ({ key: g.key, items: g.items.map(withYieldPercent) }));
-
-    const makeYieldData = () => yieldGroups
-      ? buildYieldDataCombined(yieldGroups, yieldSortBy)
-      : buildYieldData(yieldItems, yieldSortBy);
-
-    const yieldPanelConfig: ChartPanel = {
-      title: groups ? `Yield by ${label} (pass: ${passBinsLabel})` : `Yield by wafer (pass: ${passBinsLabel})`,
-      data: makeYieldData(),
-      selfControl: {
-        current: yieldSortBy,
-        options: [['yield', 'Sort: yield'], ['label', groups ? `Sort: ${label}` : 'Sort: wafer ID']],
-        onChange: v => { yieldSortBy = v as YieldSortBy; return { data: makeYieldData() }; },
-      },
-      // One neutral fill for every yield bar (palette.ts) — bar length and
-      // the printed % already carry the value. The map value ramp here made
-      // good yields render in alarm colours, and its data-range
-      // normalization could paint a *better* wafer redder than a worse one.
-      barColor: () => QUANTITY,
-      valueLabel: datum => `${datum.percent.toFixed(1)}%`,
-      // Median of whatever rows are currently drawn — including after a drill
-      // into one group, where the overall lot median would be the wrong
-      // reference. Median rather than mean: one catastrophic wafer drags a mean
-      // below every other bar, which makes the reference itself misleading.
-      reference: rows => {
-        if (rows.length < 3) return null;
-        const sorted = rows.map(d => d.percent).sort((a, b) => a - b);
-        const mid = sorted.length % 2
-          ? sorted[(sorted.length - 1) / 2]
-          : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
-        return { value: mid, label: `median ${mid.toFixed(1)}%` };
-      },
-      drill: yieldGroups ? {
-        onOpenGroup: datum => {
-          const detailItems = yieldGroups.find(g => g.key === datum.label)?.items ?? [];
-          return { data: buildYieldData(detailItems, yieldSortBy), title: `Yield by wafer — ${label}: ${datum.label} (pass: ${passBinsLabel})` };
-        },
-        onBack: () => ({ data: makeYieldData(), title: `Yield by ${label} (pass: ${passBinsLabel})` }),
-        groupLabelText: label,
-      } : undefined,
-      // Sorted rows can't be index-correlated back to `items` by position, so
-      // resolve via `datum.key` (set to `waferIndex` above by `withYieldPercent`)
-      // — not `label`, which two items can share (e.g. both fall back to the
-      // same default when neither supplies a label nor a wafer ID), which
-      // would silently open the wrong wafer.
-      onOpen: openWafer ? datum => {
-        if (typeof datum.key === 'number') openWaferDetailModal(datum.key, `Wafer ${datum.label}`);
-      } : undefined,
-      onWaferContextMenu: waferContextMenu(items),
-      ownerDocument: doc,
-    };
-    let yieldPanel: ReturnType<typeof renderBarPanel> | null = null;
+    const barCount = groups ? groups.length : items.length;
+    let yieldPanel: ReturnType<typeof renderPlotCard> | null = null;
     if (includeYieldPanel) {
-      yieldPanel = renderBarPanel(yieldPanelConfig, onSaveImage);
+      yieldPanel = renderPlotCard({
+        doc, editAsPlot, items: plotItems, ctx: plotCtx,
+        spec: {
+          choices: [{ current: 'natural', options: drilledIn => [['value', 'Sort: yield'], ['natural', groups && !drilledIn ? `Sort: ${label}` : 'Sort: wafer']] }],
+          build: ([sort]) => yieldSpec(sort === 'value', barCount),
+        },
+        drill: groups && groupBy ? points => {
+          const value = facetValueOf(plotItems[points[0]?.item]?.metadata, groupBy, deps.attributes);
+          if (value === undefined) return null;
+          const n = groups.find(g => g.key === value)?.items.length ?? 0;
+          return spec => ({
+            ...spec, title: `Yield by wafer — ${label}: ${value} (pass: ${passBinsLabel})`,
+            fields: { ...spec.fields, x: { builtin: 'wafer' } },
+            where: { conditions: [{ field: { meta: groupBy }, values: [value] }] },
+            axes: n >= 3 ? { y: { references: [{ stat: 'median' }] } } : undefined,
+          });
+        } : undefined,
+        drillLabel: 'see its wafers',
+        chart: {
+          onSaveImage,
+          onOpenWafer: openWafer ? i => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`) : undefined,
+          onWaferMenu: waferContextMenu(items),
+        },
+      });
       yieldPanel.card.style.minHeight = '360px';
       wrap.appendChild(yieldPanel.card);
     }
 
-    if (groups) {
-      const binCluster = renderBinClusterPanel({
-        title: 'Hard bin pareto',
-        groups: groups.map(g => ({
-          key: g.key,
-          items: g.items.map(it => ({
-            dies: it.dies,
-            hardBinCounts: it.statsSummary?.stats.hardBinCounts,
-            softBinCounts: it.statsSummary?.stats.softBinCounts,
-          })),
-        })),
-        // A sub-bar is a bin in one group: click it for those dies.
-        onSelectBin: (sel, e) => {
-          const group = groups.find(g => g.key === sel.groupKey);
-          if (!group) return;
-          const kind = sel.binType === 'hbin' ? 'hard' : 'soft';
-          openDiesMenu(e, group.items, `in ${kind} bin ${sel.bin} of ${sel.groupKey}`, d => (sel.binType === 'hbin' ? d.hbin : d.sbin) === sel.bin);
+    // The pareto is a plot (plotCard.ts): bars by bin, largest first. Alone, each bar in its bin's map colour with the
+    // cumulative share; with Group by on, one bar per group within each bin, as counts or as each group's share of its
+    // own dies, so splits of different sizes compare. A bar is a bin (in one group): click it for its dies.
+    const binChoice: CardChoice = { current: 'hbin', options: [['hbin', 'Hard bins', 'The physical sort result: where the part goes on the handler'], ['sbin', 'Soft bins', 'The test program’s failure category: many soft bins can map to one hard bin']] };
+    // Grouped, each group's share by default: groups of different sizes then compare bin for bin; counts are a click away.
+    const shareChoice: CardChoice = { current: 'share', options: [['count', 'Counts'], ['share', `Share of ${label}`, `Each ${label}’s dies in a bin as a share of all its dies, so ${label} values of different sizes compare`]] };
+    const paretoOf = (bin: string, share: string | undefined): CardSpec => ({
+      id: 'card-bin-pareto', title: `${bin === 'sbin' ? 'Soft' : 'Hard'} bin pareto`, chart: 'bar', sort: 'value',
+      fields: { x: { builtin: bin === 'sbin' ? 'sbin' : 'hbin' }, color: groups ? { follow: 'groupBy' } : { builtin: bin === 'sbin' ? 'sbin' : 'hbin' } },
+      ...(groups ? (share === 'share' ? { barNorm: 'percent' as const } : {}) : { cumulative: true }),
+    });
+    const binPanel = renderPlotCard({
+      doc, editAsPlot, items: plotItems, ctx: plotCtx,
+      spec: groups ? { choices: [binChoice, shareChoice], build: ([bin, share]) => paretoOf(bin, share) } : { choices: [binChoice], build: ([bin]) => paretoOf(bin, undefined) },
+      chart: {
+        onSaveImage, binColors,
+        // Named for its bin and group ("in hard bin 3 of POR"), and exactly the dies the bar counts (no partial or
+        // edge-excluded ones).
+        onSelectPoints: (points, at, anchor, info) => {
+          const x = binPanel.current().fields.x;
+          const type = x && !Array.isArray(x) && 'builtin' in x && x.builtin === 'sbin' ? 'sbin' : 'hbin';
+          const bins = new Set(points.map(p => (type === 'hbin' ? p.die?.hbin : p.die?.sbin)));
+          if (bins.size !== 1) return;
+          const bin = [...bins][0];
+          // The colour is the group only with Group by on; alone, it is the bin itself.
+          const group = groups ? info?.group : undefined;
+          const among = group !== undefined ? groups?.find(g => g.key === group)?.items ?? [] : items;
+          openDiesMenuAt(at, anchor, among, `in ${type === 'hbin' ? 'hard' : 'soft'} bin ${bin}${group !== undefined ? ` of ${group}` : ''}`,
+            d => isYieldEligibleDie(d) && (type === 'hbin' ? d.hbin : d.sbin) === bin);
         },
-        onSaveImage,
-        ownerDocument: doc,
-      });
-      binCluster.card.style.minHeight = '360px';
-      wrap.appendChild(binCluster.card);
-      return { card: wrap, destroy: () => { yieldPanel?.destroy(); binCluster.destroy(); } };
-    }
-
-    let binType: BinType = 'hbin';
-    // The map's own resolved colours, per bin type — read at draw time so the
-    // Hard/Soft toggle below picks the matching number space.
-    const binColorFor = (binCode: number | undefined): string => binCode === undefined
-      ? NO_DATA_FILL
-      : (binType === 'hbin' ? binColors.hard : binColors.soft).get(binCode) ?? NO_DATA_FILL;
-    // Threads each item's already-computed StatsSummary bin counts through
-    // (see stats/types.ts's hardBinCounts/softBinCounts doc comment) so
-    // buildBinParetoData can skip re-walking `dies` when available.
-    const binItems = items.map(it => ({
-      dies: it.dies,
-      hardBinCounts: it.statsSummary?.stats.hardBinCounts,
-      softBinCounts: it.statsSummary?.stats.softBinCounts,
-    }));
-    const makeBinData = () => buildBinParetoData(binItems, binType);
-    const binPanelConfig: ChartPanel = {
-      title: 'Hard bin pareto',
-      data: makeBinData(),
-      selfControl: {
-        current: binType,
-        options: [['hbin', 'Hard bins', 'The physical sort result: where the part goes on the handler'], ['sbin', 'Soft bins', 'The test program’s failure category: many soft bins can map to one hard bin']],
-        onChange: v => { binType = v as BinType; return { data: makeBinData(), title: `${binType === 'hbin' ? 'Hard' : 'Soft'} bin pareto` }; },
       },
-      // Bin identity keeps the map's colours so a bar matches the dies it
-      // counts — including a colour-blind-safe palette or definition colours.
-      // binCode undefined ⇒ no bin recorded ⇒ the no-data fill.
-      barColor: datum => binColorFor(datum.binCode),
-      // A bar is a bin: click it for the dies in it, to chart or tabulate.
-      onSelectBar: (datum, e) => {
-        const kind = binType === 'hbin' ? 'hard' : 'soft';
-        const bin = datum.binCode;
-        openDiesMenu(e, items, bin === undefined ? `with no ${kind} bin recorded` : `in ${kind} bin ${bin}`,
-          d => (binType === 'hbin' ? d.hbin : d.sbin) === bin);
-      },
-      selectLabel: 'chart or tabulate its dies',
-      ownerDocument: doc,
-    };
-    const binPanel = renderBarPanel(binPanelConfig, onSaveImage);
+    });
     binPanel.card.style.minHeight = '360px';
     wrap.appendChild(binPanel.card);
     return { card: wrap, destroy: () => { yieldPanel?.destroy(); binPanel.destroy(); } };
@@ -891,30 +880,64 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // usually run to answer. Covers parametric (spec-limit judgement) and
     // functional (recorded verdict) tests behind one selector; see
     // stats/testPassRate.ts for why they share a builder.
+    // A plot (plotCard.ts): one horizontal bar per test, worst first, on a fixed 0–100% axis, one per group when grouped.
+    // Three judgements, offered as the data supports them: a parametric test's value against its limits, the tester's
+    // own recorded flag, and a functional test's verdict (stats/testPassRate.ts says why they are separate). The two
+    // parametric ones can disagree, and the card says on how many dies rather than picking one.
     const passRateGroups = groupsForPassRate ?? [{ key: '', items }];
-    const passRate = renderTestPassRatePanel({
-      groups: passRateGroups.map(g => ({
-        key: g.key,
-        items: g.items.map(it => ({
-          dies: it.dies,
-          testSpecYield: it.statsSummary?.stats.testSpecYield,
-          functionalYield: it.statsSummary?.stats.functionalYield,
-        })),
-      })),
-      testDefs: allTestDefs,
-      onSaveImage,
-      // A row is a test: click it for the dies that fail it, as the card is judging them.
-      onSelectTest: (row, e) => {
-        const def = allTestDefs.find(d => d.testNumber === row.testNumber);
-        if (!def) return;
-        openDiesMenu(e, items, `failing ${row.label}`, d => dieFailsTest(d, def, row.kind) === true,
-          isParametricTest(def) ? row.testNumber : undefined);
-      },
-      ownerDocument: doc,
-    });
-    passRate.card.style.minHeight = '300px';
-    elements.push(passRate.card);
-    destroyFns.push(passRate.destroy);
+    const allDies = items.flatMap(it => it.dies);
+    const kinds = (['spec', 'testFlag', 'functional'] as const).filter(k => hasJudgeableTests(allTestDefs, k, allDies));
+    if (kinds.length) {
+      const KIND = {
+        spec: { label: 'Test limits', hint: 'Judged from each die’s measured value against the test’s limits', title: 'Parametric pass rate · test limits' },
+        testFlag: { label: 'Tester flag', hint: 'The pass or fail the tester recorded for each die', title: 'Parametric pass rate · tester flag' },
+        functional: { label: 'Functional', hint: 'Tests that only pass or fail and have no measured value', title: 'Functional test pass rate' },
+      } as const;
+      const grouped = !!groupsForPassRate;
+      const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount })));
+      const specOf = (kind: TestPassKind): CardSpec => ({
+        id: `card-pass-rate-${kind}`, title: KIND[kind].title, chart: 'bar', orientation: 'horizontal', sort: 'ascending',
+        fields: {
+          x: { builtin: 'test' },
+          y: { tests: testsForPassKind(allTestDefs, kind).map(d => d.testNumber), passRate: true, ...(kind === 'testFlag' ? { judge: 'flag' as const } : {}) },
+          color: grouped ? { follow: 'groupBy' } : { none: true },
+        },
+        ...(grouped ? {} : { valueLabels: true }),
+        // A fixed axis: a 99% and a 98% test must not both draw a full bar.
+        axes: { y: { min: 0, max: 100 } },
+      });
+      const kindOf = (spec: CardSpec): TestPassKind => spec.id.slice('card-pass-rate-'.length) as TestPassKind;
+      const passRate = renderPlotCard({
+        doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
+        spec: kinds.length > 1
+          ? { choices: [{ current: kinds[0], options: kinds.map(k => [k, KIND[k].label, KIND[k].hint] as [string, string, string]) }], build: ([k]) => specOf(k as TestPassKind) }
+          : specOf(kinds[0]),
+        // Surfaced, not resolved: a spec/flag disagreement is expected under guard bands or dynamic limits, but it is
+        // also how a limits/data mismatch shows itself, and the reader is the one who can tell those apart.
+        notes: spec => {
+          const kind = kindOf(spec);
+          if (kind === 'functional') return [];
+          const n = buildTestPassRateData(passRateGroups.map(g => ({ key: g.key, items: g.items.map(it => ({ dies: it.dies })) })), allTestDefs, kind).disagreementDies;
+          return n ? [`${n.toLocaleString('en-GB')} die${n === 1 ? '' : 's'} judged differently by test limits and the tester flag`] : [];
+        },
+        chart: {
+          onSaveImage,
+          selectActionLabel: 'chart or tabulate the dies that fail its test',
+          // A bar is a test (in one group): the dies that fail it, judged as the card is showing.
+          onSelectPoints: (_points, at, anchor, info) => {
+            const def = allTestDefs.find(d => d.testNumber === info?.test);
+            if (!def) return;
+            const kind = kindOf(passRate.current());
+            const among = info?.group !== undefined ? passRateGroups.find(g => g.key === info.group)?.items ?? items : items;
+            openDiesMenuAt(at, anchor, among, `failing ${testLabel(def, def.testNumber)}${info?.group !== undefined ? ` in ${info.group}` : ''}`,
+              d => dieFailsTest(d, def, kind) === true, isParametricTest(def) ? def.testNumber : undefined);
+          },
+        },
+      });
+      passRate.card.style.minHeight = '300px';
+      elements.push(passRate.card);
+      destroyFns.push(passRate.destroy);
+    }
 
     // A region of the yield diagram is a ring or a quadrant: click it for the dies it counts, across the wafers in view.
     const regionClick = (builder: typeof buildRingRegions) => (row: RegionYieldDatum, e: MouseEvent): void => {
@@ -1172,6 +1195,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const details = renderOverviewDetailsCards(items, testDefs, allTestDefs, groups);
     for (const c of details.elements) yieldBins.card.appendChild(c);
 
+    // What stands out, as charts: below the fixed cards, so those stay where a reader expects them on every lot.
+    const worth = renderWorthALook(items, allTestDefs);
+    if (worth) outer.appendChild(worth.el);
+
     // Which wafer field divides yield: a lot with fields to compare gets the ranking, and a row groups the tab by it.
     if (items.length >= 4 && dividingFields.length) {
       const commonality = renderCommonalityPanel({
@@ -1183,12 +1210,84 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
 
     // What part-average testing sets apart: a lot with tests that have both limits gets the per-wafer table.
-    const pat = renderPatCard({ items, testDefs: allTestDefs, ownerDocument: doc });
+    const pat = renderPatCard({ items: items.map(it => ({ ...it, ringCount: getRingCount() })), testDefs: allTestDefs, ownerDocument: doc });
     if (pat) outer.appendChild(pat.card);
 
     outer.appendChild(dataTabLink());
 
-    return { card: outer, destroy: () => { yieldBins.destroy(); details.destroy(); } };
+    return { card: outer, destroy: () => { yieldBins.destroy(); details.destroy(); worth?.destroy(); } };
+  }
+
+  /**
+   * Worth a look: the items "What stands out" lists beside the map (the results synthesis, one list for both), each
+   * drawn as the chart that shows it, with the sentence that says why and Show on map, then the same "also" line. The
+   * list describes the whole lot, so while the Insights filter or Show narrows the population it says so instead of
+   * drawing charts of a population the list was not made from. Null when there is no analysis to make it from.
+   */
+  function renderWorthALook(items: Item[], allTestDefs: TestDef[]): { el: HTMLElement; destroy: () => void } | null {
+    const summary = getLotStats?.() ?? (items.length === 1 ? items[0].statsSummary : undefined);
+    if (!summary) return null;
+    const el = doc.createElement('section');
+    el.dataset.wmapWorthALook = '1';
+    Object.assign(el.style, { display: 'flex', flexDirection: 'column', gap: SPACE.md } as Partial<CSSStyleDeclaration>);
+    const heading = doc.createElement('h3');
+    heading.textContent = 'Worth a look';
+    Object.assign(heading.style, { margin: '0', fontSize: FONT.heading, fontWeight: '600', color: CLR.value } as Partial<CSSStyleDeclaration>);
+    el.appendChild(heading);
+    const line = (text: string, hook?: string) => {
+      const p = doc.createElement('p');
+      p.textContent = text;
+      if (hook) p.dataset[hook] = '1';
+      Object.assign(p.style, { margin: '0', fontSize: FONT.body, color: CLR.label, lineHeight: LEADING.base } as Partial<CSSStyleDeclaration>);
+      el.appendChild(p);
+    };
+    if (filtering || activeSectionGroup !== null) {
+      line('Worth a look describes the whole lot, as What stands out beside the map does. Switch the Insights filter off, or Show all groups, to see it here.', 'wmapWorthNarrowed');
+      return { el, destroy: () => {} };
+    }
+    const synthesis = buildSynthesis(summary, { passBins: commonPassBins(items.map(it => it.passBins)) });
+    if (synthesis.items.length === 0) {
+      line(synthesis.nothing ?? 'Nothing stands out.', 'wmapWorthNothing');
+      return { el, destroy: () => {} };
+    }
+    const grid = makeChartGridWrap(doc);
+    el.appendChild(grid);
+    const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
+    const destroys: Array<() => void> = [];
+    synthesis.items.forEach((item, i) => {
+      // Why the card is here, in one sentence (the chart says the rest): a line of its own across the card, plain, not a
+      // warning. The panel's whole sentence, with the bins and tests it names, is on hover.
+      const why = doc.createElement('div');
+      why.dataset.wmapWorthWhy = '1';
+      why.textContent = `Shown because: ${item.reason}`;
+      if (item.text !== item.reason) wireTooltip(why, item.text);
+      Object.assign(why.style, { flexBasis: '100%', fontSize: FONT.body, color: CLR.text, lineHeight: LEADING.base } as Partial<CSSStyleDeclaration>);
+      const extras: HTMLElement[] = [why];
+      if (deps.showOnMap) {
+        const btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Show on map';
+        btn.dataset.wmapWorthShowOnMap = '1';
+        Object.assign(btn.style, { ...controlStyle('outlined'), fontSize: FONT.body, padding: `0 ${SPACE.md}` } as Partial<CSSStyleDeclaration>);
+        wireControlHover(btn);
+        wireTooltip(btn, 'Leave Insights and show this on the map, as its row in What stands out does');
+        btn.addEventListener('click', () => deps.showOnMap!(item.target));
+        extras.push(btn);
+      }
+      const card = renderPlotCard({
+        doc, items: plotItems, ctx: { testDefs: allTestDefs, curation },
+        spec: { id: `worth-${i}`, ...item.chart } as CardSpec,
+        extras, editAsPlot, chart: { onSaveImage },
+      });
+      card.card.dataset.wmapWorthKey = synthesisKey(item);
+      grid.appendChild(card.card);
+      destroys.push(card.destroy);
+    });
+    if (synthesis.also) {
+      const named = synthesis.also.items.map(it => it.brief).join('; ');
+      line(`Also: ${named}${synthesis.also.more ? `; and ${synthesis.also.more} more` : ''}. Their rows in What stands out show them on the map.`, 'wmapWorthAlso');
+    }
+    return { el, destroy: () => destroys.forEach(d => d()) };
   }
 
   /** The Overview's pointer to the tables that used to sit at its foot. */
@@ -1227,7 +1326,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       if (gone) return;
       const section = createPlotSection({
         doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount(), attributes: deps.attributes,
-        groupBy, groupLabel, onSaveImage, onSaveText,
+        groupBy, groupLabel, onSaveImage, onSaveText, getBinColors, waferMenu: waferContextMenu(items),
         openWafer: openWafer ? (wi, label, test) => openWafer(wi, label, test) : undefined,
         focusTest, locateDie, pickPlotsFile: deps.onPickPlotsFile,
       });
@@ -1246,7 +1345,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     groups: { key: string; items: Item[] }[] | undefined,
     groupLabelText: string | undefined,
   ): { card: HTMLElement; destroy: () => void } {
-    const lotStats = getLotStats?.();
+    const lotStats = filtering ? undefined : getLotStats?.();
     const rebuild = () => {
       // Only this view's cached section is stale; the other tabs are unchanged.
       sectionCache.get('data')?.destroy();
@@ -1274,6 +1373,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    *  group scope. Each panel still renders the scope in the way that suits it
    *  (capability narrows, boxplot drills, histogram emphasises), but they can
    *  no longer be describing different populations at the same time. */
+  /** A heading across a tab's grid of cards, naming the block of cards under it. */
+  function rowHeading(text: string, hook: string): HTMLElement {
+    const el = doc.createElement('h3');
+    el.textContent = text;
+    el.dataset.wmapRowHeading = hook;
+    Object.assign(el.style, { gridColumn: '1 / -1', margin: `${SPACE.md} 0 0`, color: CLR.value, fontSize: FONT.heading, fontWeight: '600' } as Partial<CSSStyleDeclaration>);
+    return el;
+  }
+
   function renderDistributionsSection(
     items: Item[],
     testDefs: TestDef[],
@@ -1304,55 +1412,121 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // Trend is deliberately excluded, as it already is from `groups` entirely:
     // its x axis is the population's own slot order, and restricting it would
     // remove the drift signal that is the whole point of the chart.
-    const axisHandler = (self: () => AxisPrefsPanel | null) =>
-      (prefs: AxisPrefs) => broadcastAxisPrefs(prefs, self());
 
-    // Threads each item's already-computed StatsSummary per-test five-number
-    // summaries through (stats/boxplot.ts's `BoxplotItem.testStats`) so
-    // buildTestBoxplotData can skip re-scanning `dies` when available — for
-    // per-item leaf rows only; a group-overview row pools raw dies across
-    // multiple wafers and has no equivalent precomputed source (same
-    // limitation as capability's pooled quantiles — see stats/capability.ts).
-    const withTestStats = (it: Item) => ({ ...it, testStats: it.statsSummary?.stats.perTestStats });
-    const boxplotItems = items.map(withTestStats);
-    const boxplotGroups = groups?.map(g => ({ key: g.key, items: g.items.map(withTestStats) }));
-    const boxplot = renderBoxplotPanel({
-      title: 'Test value distribution',
-      axisPrefs, onAxisPrefsChange: axisHandler(() => boxplot),
-      onTestChange: (n) => selectTestEverywhere(n),
-      // Every panel gets the section's remembered test, not just capability.
-      // `activeSectionTest` lives at tab level so it survives a scope change —
-      // which meant that after one, capability marked the remembered test while
-      // these three silently reset to `testDefs[0]`: four panels disagreeing
-      // about which test they were showing, the very fault the shared selection
-      // exists to prevent.
-      selectedTestNumber: activeSectionTest ?? undefined,
-      items: boxplotItems, testDefs, groups: boxplotGroups, groupLabelText, onSaveImage,
-      onGroupChange: (key) => selectGroupEverywhere(key),
-      onOpen: leafAction?.open,
-      openActionLabel: leafAction?.label,
-      onWaferContextMenu: waferContextMenu(items),
-      ownerDocument: doc,
+    // The plot cards of this section (plotCard.ts) share its test and its axis settings the way the panels do: each
+    // has the test picker and the axis toggles, and a change in one reaches the rest (selectTestEverywhere,
+    // broadcastAxisPrefs). `valueRole` is the axis the test's values run along, which the toggles are about.
+    const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
+    const sectionTests = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
+    const grouped = !!groups && !!analysisGroupKey;
+    const narrowed = grouped && activeSectionGroup !== null;
+    const plotCtx = { testDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes };
+    /** The settings of a value axis as a plot states them. */
+    const axisSpec = (role: 'x' | 'y', p: AxisPrefs, log: boolean): Pick<CardSpec, 'limits' | 'axes'> => ({
+      limits: p.limits ?? 'both',
+      axes: { [role]: { ...(p.includeLimits !== undefined ? { includeLimits: p.includeLimits } : {}), ...(p.clipOutliers ? { clip: true } : {}), ...(log ? { scale: 'log' as const } : {}) } },
     });
-    const histogram = renderHistogramPanel({
-      title: 'Value histogram',
-      axisPrefs, onAxisPrefsChange: axisHandler(() => histogram),
-      onTestChange: (n) => selectTestEverywhere(n),
-      selectedTestNumber: activeSectionTest ?? undefined,
-      items, testDefs, groups,
-      onGroupChange: (key) => selectGroupEverywhere(key),
-      onSaveImage,
-      // A bar is a range of one test's values: click it for the dies in it.
-      onSelectBucket: (sel, e) => {
-        const def = testDefs.find(d => d.testNumber === sel.testNumber);
-        const whose = new Set<unknown>(sel.items.map(x => x.item));   // the very Item objects handed in above
-        const picked = new Set(sel.items.flatMap(x => x.dies));
-        const lo = fmt(sel.low, def?.unit, 'engineering'), hi = fmt(sel.high, def?.unit, 'engineering');
-        openDiesMenu(e, items.filter(it => whose.has(it)),
-          `with ${def ? testLabel(def, def.testNumber) : `test ${sel.testNumber}`} from ${lo} to ${hi}${sel.group ? ` in ${sel.group}` : ''}`,
-          d => picked.has(d), sel.testNumber);
+    function distributionCard(o: {
+      valueRole: 'x' | 'y';
+      build: (p: AxisPrefs, log: boolean) => CardSpec;
+      logToggle?: boolean;
+      /** Controls of the card's own, after the shared ones (a wafer picker). */
+      extras?: HTMLElement[];
+      card?: Partial<Parameters<typeof renderPlotCard>[0]>;
+      chart: Parameters<typeof renderPlotCard>[0]['chart'];
+    }): { card: HTMLElement; setTest: (n: number) => void; setAxisPrefs: (p: AxisPrefs) => void; refresh: () => void; destroy: () => void } {
+      let prefs = axisPrefs;
+      let log = false;
+      let handle: ReturnType<typeof renderPlotCard> | undefined;
+      // The picker has already moved to the test the reader chose: draw it here, then the siblings follow.
+      const testSel = makeLinkedTestSelect(sectionTests, activeSectionTest ?? sectionTests[0]?.testNumber ?? null, n => { handle?.refresh(); selectTestEverywhere(n); }, { ownerDocument: doc });
+      const axisRow = doc.createElement('span');
+      Object.assign(axisRow.style, { display: 'inline-flex', flexWrap: 'wrap', gap: SPACE.sm, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
+      const self = { setAxisPrefs: (p: AxisPrefs) => { if (axisCtl.set(p)) { prefs = p; handle?.refresh(); } } };
+      const axisCtl = makeLinkedAxisPrefs(axisRow, prefs, p => { prefs = p; handle?.refresh(); broadcastAxisPrefs(p, self); }, doc);
+      const extras: HTMLElement[] = [testSel.el, axisRow];
+      if (o.logToggle) extras.push(makeToggle('Log scale', log, v => { log = v; handle?.refresh(); }, doc, 'Draw the value axis on a logarithmic scale'));
+      extras.push(...(o.extras ?? []));
+      handle = renderPlotCard({
+        doc, editAsPlot, items: plotItems, ctx: plotCtx, ...o.card,
+        spec: { choices: [], build: () => o.build(prefs, log) },
+        slots: () => ({ test: testSel.get() ?? undefined }),
+        extras,
+        // The "Axis includes limits" toggle shows what the axis does now, the automatic choice included.
+        onResolved: r => {
+          const def = testDefs.find(d => d.testNumber === testSel.get());
+          const lines = limitLines(def, prefs.limits);
+          const values = axisValues(r, o.valueRole);
+          const { lo, hi } = limitExtent(lines);
+          const auto = values.length > 0 && lines.length > 0 && shouldIncludeLimitsByDefault(minOf(values), maxOf(values), lo, hi);
+          axisCtl.sync(prefs.includeLimits ?? auto, limitLines(def).length > 0, hasBothLimitKinds(def));
+        },
+        chart: o.chart,
+      });
+      const h = handle;
+      return {
+        card: h.card,
+        setTest: n => { if (testSel.set(n)) h.refresh(); },
+      refresh: () => h.refresh(),
+        setAxisPrefs: self.setAxisPrefs,
+        destroy: () => h.destroy(),
+      };
+    }
+    const openOnTest = leafAction ? (i: number, testNumber?: number) => leafAction.open(plotItems[i]?.waferIndex ?? i, testNumber ?? activeSectionTest ?? sectionTests[0]?.testNumber ?? 0) : undefined;
+
+    // Test value distribution: a box per wafer, or with Group by on one pooled box per group, whose click narrows the
+    // section to that group (its wafers' boxes, and Back).
+    const boxplot = distributionCard({
+      valueRole: 'y', logToggle: true,
+      build: (p, log) => ({
+        id: 'card-box', title: 'Test value distribution', chart: 'box', orientation: 'horizontal',
+        fields: { x: grouped && !narrowed ? { slot: 'groupBy' } : { builtin: 'wafer' }, y: { slot: 'test' }, color: { none: true } },
+        ...(narrowed ? { where: { conditions: [{ field: { meta: analysisGroupKey! }, values: [activeSectionGroup!] }] } } : {}),
+        ...axisSpec('y', p, log),
+      }),
+      card: {
+        ...(grouped && !narrowed ? {
+          drill: (points: readonly PlotPoint[]) => {
+            const v = facetValueOf(plotItems[points[0]?.item]?.metadata, analysisGroupKey!, deps.attributes);
+            if (v !== undefined) selectGroupEverywhere(v);
+            return null;
+          },
+          drillLabel: `see its wafers`,
+        } : {}),
+        // A group in force (picked here or under Show) arrives as its own wafers: Back widens to every group again.
+        ...(activeSectionGroup !== null ? { externalBack: { shown: () => activeSectionGroup !== null, onBack: () => selectGroupEverywhere(null) } } : {}),
       },
-      ownerDocument: doc,
+      chart: { onSaveImage, onOpenWafer: openOnTest, openActionLabel: leafAction?.label, onWaferMenu: waferContextMenu(items) },
+    });
+    // Value histogram: the whole population, one wafer of it (the picker, ungrouped), or one overlaid series per group.
+    // A bar is a range of the test's values: click it for the dies in it.
+    let histWafer: number | null = null;
+    const histExtras = grouped ? [] : [makeWaferSelect(plotItems.map(it => ({ label: it.label })), null, i => { histWafer = i; histogram.refresh(); }, { ownerDocument: doc })];
+    const histogram = distributionCard({
+      valueRole: 'x', extras: histExtras,
+      // Narrowed to a group (from its legend, the box plot or Show): Back shows every group again, as on the box plot.
+      card: activeSectionGroup !== null ? { externalBack: { shown: () => activeSectionGroup !== null, onBack: () => selectGroupEverywhere(null) } } : {},
+      build: p => ({
+        id: 'card-histogram', title: 'Value histogram', chart: 'histogram',
+        fields: { y: { slot: 'test' }, color: grouped ? { follow: 'groupBy' } : { none: true } },
+        ...(histWafer !== null ? { where: { conditions: [{ field: { builtin: 'wafer' }, values: [plotItems[histWafer].label] }] } } : {}),
+        ...axisSpec('x', p, false),
+      }),
+      chart: {
+        onSaveImage,
+        // A group clicked in the legend narrows the whole section to it, as Show does.
+        ...(grouped ? { onLegendPick: (key: string | null) => selectGroupEverywhere(key), legendPicked: activeSectionGroup } : {}),
+        onSelectPoints: (points, at, anchor, info) => {
+          const def = testDefs.find(d => d.testNumber === (activeSectionTest ?? sectionTests[0]?.testNumber));
+          const picked = new Set(points.map(pt => pt.die).filter((d): d is Die => !!d));
+          const whose = new Set(points.map(pt => plotItems[pt.item]?.waferIndex));
+          const range = info?.range;
+          const what = def && range
+            ? `with ${testLabel(def, def.testNumber)} from ${fmt(range.lo, def.unit, 'engineering')} to ${fmt(range.hi, def.unit, 'engineering')}${info?.group ? ` in ${info.group}` : ''}`
+            : 'selected in the histogram';
+          openDiesMenuAt(at, anchor, items.filter(it => whose.has(it.waferIndex)), what, d => picked.has(d), def?.testNumber);
+        },
+      },
     });
     // Wafer-to-wafer trend joins the cross-panel test link below, so picking a
     // test in capability drives boxplot, histogram AND this — all four then answer
@@ -1362,37 +1536,32 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // Deliberately NOT group-aware like its siblings: this chart's x axis is the
     // population's own slot order, and restricting or splitting by group would
     // break the sequence that is the entire signal. It always shows every wafer.
-    const trend = renderTrendPanel({
-      title: 'Wafer-to-wafer trend',
-      axisPrefs, onAxisPrefsChange: axisHandler(() => trend),
-      onTestChange: (n) => selectTestEverywhere(n),
-      selectedTestNumber: activeSectionTest ?? undefined,
-      items: items.map(it => ({
-        label: it.label,
-        key: it.waferIndex,
-        dies: it.dies,
-        testStats: it.statsSummary?.stats.perTestStats,
-      })),
-      testDefs,
-      onSaveImage,
-      centreLabel: populationStat(describeWaferPopulation(items.map(it => it.wafer.metadata)), 'mean'),
-      // Not routed through `testLeafAction`: this panel renders an empty state
-      // below two wafers, so the single-wafer `focusTest` branch could never
-      // fire here anyway — wiring it would be dead code claiming otherwise.
-      onOpen: openWafer
-        ? (key, testNumber) => openWaferDetailModal(key, `Wafer ${items.find(it => it.waferIndex === key)?.label ?? key}`, testNumber)
-        : undefined,
-      // Drag across the trend: a run of wafers, with their own dies as the population.
-      onSelectWafers: (sel, at, anchor) => {
-        const keys = new Set(sel.keys);
-        openDiesMenuAt(at, anchor, items.filter(it => keys.has(it.waferIndex)), 'selected in the trend', () => true, sel.testNumber);
+    // Wafer-to-wafer trend: each wafer's mean of the test, in the population's own order, with ± one standard deviation
+    // and the mean of the wafers as the centre line. Deliberately never divided by group: the order is the signal.
+    // A point is one wafer: click it to open that wafer.
+    const trend = distributionCard({
+      valueRole: 'y',
+      build: p => ({
+        id: 'card-trend', title: 'Wafer-to-wafer trend', chart: 'line', aggregate: 'mean', spread: 'sd',
+        fields: { x: { builtin: 'waferOrder' }, y: { slot: 'test' }, color: { none: true } },
+        ...axisSpec('y', p, false),
+        axes: { ...axisSpec('y', p, false).axes, y: { ...axisSpec('y', p, false).axes!.y, references: [{ stat: 'mean', label: populationStat(describeWaferPopulation(items.map(it => it.wafer.metadata)), 'mean') }] } },
+      }),
+      card: { ctx: { ...plotCtx, groupBy: undefined }, ...(items.length < 2 ? { unavailable: 'A trend needs at least two wafers' } : {}) },
+      chart: {
+        onSaveImage,
+        onWaferMenu: waferContextMenu(items),
+        selectActionLabel: openOnTest ? 'open that wafer' : 'chart or tabulate its dies',
+        selectRangeLabel: 'wafers',
+        onSelectPoints: (points, at, anchor) => {
+          const wafers = new Set(points.map(pt => pt.item));
+          if (wafers.size === 1 && openOnTest) { openOnTest([...wafers][0]); return; }
+          const picked = new Set(points.map(pt => pt.die).filter((d): d is Die => !!d));
+          const whose = new Set(points.map(pt => plotItems[pt.item]?.waferIndex));
+          openDiesMenuAt(at, anchor, items.filter(it => whose.has(it.waferIndex)), 'selected in the trend', d => picked.has(d), activeSectionTest ?? undefined);
+        },
       },
-      onWaferContextMenu: waferContextMenu(items),
-      ownerDocument: doc,
     });
-
-
-
     // One test across the section: pick it anywhere and the others follow.
     //
     // Previously only the capability chart broadcast — clicking a column drove
@@ -1450,9 +1619,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // than a guessed constant. Capability's empty state (no test data at
     // all) never calls that, so it stays sized to its compact message
     // instead of forcing a large dead box next to functional siblings.
-    if (compare) wrap.append(compare.card);
+    // With Group by on, the cards that compare the groups come first, together, under their own heading, so they are not
+    // lost among the cards about each test.
+    if (compare || difference) {
+      wrap.append(rowHeading(`Comparing ${groupLabelText ?? 'groups'}`, 'comparing'));
+      if (compare) wrap.append(compare.card);
+      if (difference) wrap.append(difference.card);
+      wrap.append(rowHeading('Test by test', 'tests'));
+    }
     wrap.append(capability.card, boxplot.card, histogram.card, trend.card);
-    if (difference) wrap.append(difference.card);
 
     return {
       card: wrap,
@@ -1474,34 +1649,80 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   ): { card: HTMLElement; destroy: () => void } {
     const wrap = makeChartGridWrap(doc);
 
-    const scatter = renderScatterPanel({
-      title: 'Test scatter',
-      items, testDefs, groups, binColors: getBinColors().hard, onSaveImage,
-      axisPrefs, onAxisPrefsChange: prefs => broadcastAxisPrefs(prefs, scatter),
-      // A point is a die: click opens its wafer on the X test, as the boxplot and trend do.
-      onOpen: testLeafAction(items)?.open,
-      openActionLabel: testLeafAction(items)?.label,
-      onSelect: (pts, at, anchor, xTest) => {
+    // Test scatter as a plot (plotCard.ts): two tests die by die, coloured by hard bin in the map's colours or, with Group
+    // by on, by group; a matrix cell sets its pair. Ungrouped, the wafer picker narrows it to one wafer. The plot states
+    // r and n, and warns when the points pool several splits or lots.
+    const leaf = testLeafAction(items);
+    const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
+    const scTests = testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined && isParametricTest(d));
+    let sx = scTests[0]?.testNumber, sy = scTests[1]?.testNumber ?? sx;
+    let scWafer: number | null = null;
+    let scPrefs: AxisPrefs = axisPrefs;
+    const grouped = !!groups && !!analysisGroupKey;
+    const labelled = (text: string, el: HTMLElement): HTMLElement => {
+      const wrap = doc.createElement('label');
+      Object.assign(wrap.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, fontSize: FONT.body, color: CLR.label } as Partial<CSSStyleDeclaration>);
+      const t = doc.createElement('span'); t.textContent = text;
+      wrap.append(t, el);
+      return wrap;
+    };
+    const xSel = makeTestSelect(scTests, sx ?? null, n => { sx = n; syncLimits(); scatterCard.refresh(); }, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: doc });
+    const ySel = makeTestSelect(scTests, sy ?? null, n => { sy = n; syncLimits(); scatterCard.refresh(); }, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: doc });
+    // The "Limits:" choice, offered while either test has both test and spec limits; shared with the section's other cards.
+    const limitsSlot = doc.createElement('span');
+    const scatter = {
+      setXY: (x: number, y: number) => { sx = x; sy = y; xSel.value = String(x); ySel.value = String(y); syncLimits(); scatterCard.refresh(); },
+      setAxisPrefs: (p: AxisPrefs) => { scPrefs = p; syncLimits(); scatterCard.refresh(); },
+      destroy: () => scatterCard.destroy(),
+    };
+    function syncLimits(): void {
+      const defs = [sx, sy].map(n => testDefs.find(d => d.testNumber === n));
+      limitsSlot.replaceChildren(...(defs.some(hasBothLimitKinds) ? [makeLimitsSelect(scPrefs.limits ?? 'both', v => {
+        scPrefs = { ...scPrefs, limits: v };
+        scatterCard.refresh();
+        broadcastAxisPrefs(scPrefs, scatter);
+      }, doc)] : []));
+    }
+    const named = (n: number | undefined) => { const d = testDefs.find(t => t.testNumber === n); return d?.name ? { test: n ?? 0, name: d.name } : { test: n ?? 0 }; };
+    const scExtras: HTMLElement[] = [labelled('X:', xSel), labelled('Y:', ySel), limitsSlot];
+    if (!grouped && items.length > 1) scExtras.push(makeWaferSelect(plotItems.map(it => ({ label: it.label })), null, i => { scWafer = i; scatterCard.refresh(); }, { ownerDocument: doc }));
+    const scatterCard = renderPlotCard({
+      doc, editAsPlot, items: plotItems, ctx: { testDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
+      extras: scExtras,
+      spec: { choices: [], build: () => ({
+        id: 'card-scatter', title: 'Test scatter', chart: 'scatter', limits: scPrefs.limits ?? 'both',
+        fields: { x: named(sx), y: named(sy), color: grouped ? { follow: 'groupBy' } : { builtin: 'hbin' } },
+        ...(scWafer !== null ? { where: { conditions: [{ field: { builtin: 'wafer' }, values: [plotItems[scWafer].label] }] } } : {}),
+      }) },
+      ...(sx === undefined ? { unavailable: 'No parametric test has values to plot' } : {}),
+      chart: {
+        onSaveImage, binColors: getBinColors(),
+        // A point is a die: click opens its wafer on the X test, as the box plot and trend do.
+        onOpenWafer: leaf ? (i, tn) => leaf.open(plotItems[i]?.waferIndex ?? i, tn ?? sx ?? 0) : undefined,
+        openActionLabel: leaf?.label,
         // The dragged-out dies, per wafer, as a drilldown population: charts and tables of just these.
-        const byWafer = new Map<number, Die[]>();
-        for (const p of pts) {
-          if (p.waferIndex === undefined || !p.die) continue;
-          const list = byWafer.get(p.waferIndex);
-          if (list) list.push(p.die); else byWafer.set(p.waferIndex, [p.die]);
-        }
-        const picked = [...byWafer].flatMap(([waferIndex, dies]) => {
-          const it = items.find(i => i.waferIndex === waferIndex);
-          return it ? [{ label: it.identity ?? it.label, dies, waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() }] : [];
-        });
-        if (picked.length === 0) return;
-        const population = picked.length === 1
-          ? `selected on ${picked[0].label} in the scatter`
-          : `selected in the scatter, across ${picked.length} wafers`;
-        openDrilldownMenu(at, anchor, { items: picked, population, testDefs, activeTest: xTest },
-          { plots: plotStore, onSaveImage, onSaveText, onLocateDie: locateDie });
+        onSelectPoints: (pts, at, anchor) => {
+          const byWafer = new Map<number, Die[]>();
+          for (const p of pts) {
+            const waferIndex = plotItems[p.item]?.waferIndex;
+            if (waferIndex === undefined || !p.die) continue;
+            const list = byWafer.get(waferIndex);
+            if (list) list.push(p.die); else byWafer.set(waferIndex, [p.die]);
+          }
+          const picked = [...byWafer].flatMap(([waferIndex, dies]) => {
+            const it = items.find(i => i.waferIndex === waferIndex);
+            return it ? [{ label: it.identity ?? it.label, dies, waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() }] : [];
+          });
+          if (picked.length === 0) return;
+          const population = picked.length === 1
+            ? `selected on ${picked[0].label} in the scatter`
+            : `selected in the scatter, across ${picked.length} wafers`;
+          openDrilldownMenu(at, anchor, { items: picked, population, testDefs, activeTest: sx },
+            { plots: plotStore, getBinColors, onSaveImage, onSaveText, onLocateDie: locateDie });
+        },
       },
-      ownerDocument: doc,
     });
+    syncLimits();
     axisPrefsPanels.set('correlation', [scatter]);
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
@@ -1513,9 +1734,139 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // ensureCardFits (chartShell.ts); correlation sizes compactly to its
     // matrix and stretches to match scatter's row height via the grid's
     // default align-items: stretch, same as any other CSS Grid row.
-    wrap.append(correlation.card, scatter.card);
+    wrap.append(correlation.card, scatterCard.card);
 
     return { card: wrap, destroy: () => { correlation.destroy(); scatter.destroy(); } };
+  }
+
+  /** The loaded wafers as plot items, the form the filter (`applyConditions`) and its field lists read. */
+  function filterPopulation(loaded: Item[]): { items: PlotItem[]; ctx: PlotContext } {
+    const items = toPlotItems(loaded.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
+    return { items, ctx: { testDefs: mergeTestDefs(loaded).defs, curation } };
+  }
+
+  /**
+   * The wafers and dies the Insights filter keeps. A wafer kept whole keeps its own summary; one whose dies a condition
+   * narrowed loses it, since the summary describes every die. A filter that cannot be applied (a field these wafers
+   * lack) filters nothing, and the band says so.
+   */
+  function applyPageFilter(loaded: Item[]): { items: Item[]; result?: ConditionsApplied } {
+    if (!pageFilter || pageFilter.off) return { items: loaded };
+    const pop = filterPopulation(loaded);
+    const result = applyConditions(pageFilter.conditions, pop.items, pop.ctx);
+    if (result.issue) return { items: loaded, result };
+    const items = result.index.map((i, k) => {
+      const it = loaded[i], dies = result.items[k].dies as Die[];
+      return dies === it.dies ? it : { ...it, dies, statsSummary: undefined };
+    });
+    return { items, result };
+  }
+
+  function bandButton(text: string, hook: string, hint: string, onClick: () => void): HTMLButtonElement {
+    const b = doc.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.dataset[hook] = '1';
+    Object.assign(b.style, { ...controlStyle('outlined'), fontSize: FONT.body, padding: `0 ${SPACE.md}` } as Partial<CSSStyleDeclaration>);
+    wireControlHover(b);
+    wireTooltip(b, hint);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  /** The band above every tab: the filter, what it kept, and Edit / Remove. Hidden only when there is no filter. */
+  function renderFilterBand(result: ConditionsApplied | undefined): void {
+    filterBandEl.replaceChildren();
+    filterBandEl.style.display = pageFilter ? '' : 'none';
+    if (!pageFilter) return;
+    const actions = [
+      bandButton('Edit…', 'wmapInsightsFilterEdit', 'Change the conditions', () => openFilterModal()),
+      bandButton('Remove', 'wmapInsightsFilterRemove', 'Delete the filter: every tab shows every wafer and die again', () => setPageFilter(undefined)),
+    ];
+    if (result?.issue) {
+      const warn = doc.createElement('div');
+      warn.dataset.wmapInsightsFilterIssue = '1';
+      warn.setAttribute('role', 'status');
+      Object.assign(warn.style, {
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.md, padding: `${SPACE.xs} ${SPACE.md}`,
+        background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, color: CLR.warnText, fontSize: FONT.body,
+      } as Partial<CSSStyleDeclaration>);
+      const t = doc.createElement('span');
+      t.textContent = `The Insights filter cannot be applied to these wafers (${result.issue}), so nothing is filtered.`;
+      const end = doc.createElement('span');
+      Object.assign(end.style, { display: 'inline-flex', gap: SPACE.sm, marginLeft: 'auto' } as Partial<CSSStyleDeclaration>);
+      end.append(...actions);
+      warn.append(t, end);
+      filterBandEl.appendChild(warn);
+      return;
+    }
+    const n = (v: number) => v.toLocaleString('en-GB');
+    const kept = result
+      ? `${n(result.wafers.kept)} of ${n(result.wafers.total)} wafer${result.wafers.total === 1 ? '' : 's'} · ${n(result.dies.kept)} of ${n(result.dies.total)} dies`
+      : undefined;
+    filterBandEl.appendChild(buildFilterStrip({
+      doc, filter: pageFilter, testDefs: mergeTestDefs(facetItems()).defs, attributes: curation, label: 'Insights filter', kept, actions,
+      onToggle: on => {
+        if (!pageFilter) return;
+        const next: PlotFilter = { ...pageFilter };
+        if (on) delete next.off; else next.off = true;
+        setPageFilter(next);
+      },
+    }));
+  }
+
+  /**
+   * The Insights filter's editor, in a modal: the conditions are too many controls for the tab bar. Changes are a draft,
+   * with what they would keep stated live, until Apply; Cancel, Escape and ✕ leave the filter as it was.
+   */
+  function openFilterModal(): void {
+    const loaded = facetItems();
+    const pop = filterPopulation(loaded);
+    let draft: PlotFilter | undefined = pageFilter ? JSON.parse(JSON.stringify(pageFilter)) as PlotFilter : undefined;
+    let apply: HTMLButtonElement | undefined;
+    const handle = openModal({
+      title: 'Filter Insights', anchor: rootEl, ownerDocument: doc,
+      // An editor's height, not its content's: a field list opens inside the window and needs room to show its choices.
+      boxSize: { width: 'min(92vw, 640px)', height: 'min(85vh, 640px)' }, maximizable: false,
+      // With nothing to apply yet, start where the reader begins: adding a condition.
+      initialFocus: () => (draft ? apply : editor.el.querySelector<HTMLButtonElement>('[data-wmap-filter-add]') ?? apply),
+      onClose: () => {},
+    });
+    handle.box.dataset.wmapInsightsFilterModal = '1';
+    const body = doc.createElement('div');
+    Object.assign(body.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg, padding: SPACE.xl, color: CLR.text, fontSize: FONT.body, overflowY: 'auto', flex: '1 1 auto', minHeight: '0' } as Partial<CSSStyleDeclaration>);
+    const intro = doc.createElement('p');
+    intro.style.margin = '0';
+    intro.textContent = 'Every Insights tab shows only the wafers and dies that meet every condition. A condition on a wafer field '
+      + '(split, yield) keeps whole wafers; one on a die field (bin, ring, a test) keeps those dies inside them. The filter is '
+      + 'shown above every tab for as long as it exists, and can be switched off there without losing it.';
+    const preview = doc.createElement('div');
+    preview.dataset.wmapInsightsFilterPreview = '1';
+    preview.setAttribute('aria-live', 'polite');
+    Object.assign(preview.style, { fontWeight: '600', color: CLR.value } as Partial<CSSStyleDeclaration>);
+    const showPreview = () => {
+      if (!draft || draft.off) { preview.textContent = draft ? 'Off: every wafer and die is shown.' : 'No conditions: every wafer and die is shown.'; return; }
+      const r = applyConditions(draft.conditions, pop.items, pop.ctx);
+      preview.textContent = r.issue ? `Cannot be applied: ${r.issue}`
+        : `Keeps ${r.wafers.kept.toLocaleString('en-GB')} of ${r.wafers.total.toLocaleString('en-GB')} wafers · ${r.dies.kept.toLocaleString('en-GB')} of ${r.dies.total.toLocaleString('en-GB')} dies`;
+    };
+    const editor = buildFilterEditor({
+      doc, catalogue: fieldCatalogue(pop.items, pop.ctx), filter: draft, testDefs: pop.ctx.testDefs, attributes: curation, switchLabel: 'Filter Insights',
+      valuesOf: f => fieldValues(f, pop.items, pop.ctx), extentOf: f => fieldExtent(f, pop.items, pop.ctx),
+      onChange: f => { draft = f; showPreview(); },
+    });
+    showPreview();
+    // Cancel and Apply stay at the foot of the window, below what scrolls.
+    const row = doc.createElement('div');
+    Object.assign(row.style, { display: 'flex', justifyContent: 'flex-end', gap: SPACE.md, flexWrap: 'wrap', flexShrink: '0',
+      padding: `${SPACE.md} ${SPACE.xl}`, borderTop: `1px solid ${CLR.menuBorder}` } as Partial<CSSStyleDeclaration>);
+    const cancel = bandButton('Cancel', 'wmapInsightsFilterCancel', 'Close without changing the filter', () => handle.close());
+    apply = bandButton('Apply', 'wmapInsightsFilterApply', 'Filter every Insights tab by these conditions', () => { handle.close(); setPageFilter(draft); });
+    for (const b of [cancel, apply]) b.style.padding = `${SPACE.sm} ${SPACE.lg}`;
+    row.append(cancel, apply);
+    body.append(intro, editor.el, preview);
+    handle.contentWrap.style.flexDirection = 'column';
+    handle.contentWrap.append(body, row);
   }
 
   function render(opts?: { keepSections?: boolean }): void {
@@ -1528,7 +1879,11 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     for (const v of views) tabBar.appendChild(makeTabButton(v.key, v.label));
 
-    const allItems = facetItems();
+    const loadedItems = facetItems();
+    const filtered = applyPageFilter(loadedItems);
+    const allItems = filtered.items;
+    filtering = allItems !== loadedItems;
+    renderFilterBand(filtered.result);
     renderMetadataStrip(allItems);
     const facetTable = buildFacetTable(allItems, { facetableOnly: true, curation }).filter(f => f.splittable);
     dividingFields = facetTable.map(f => ({ key: f.key, label: f.label }));
@@ -1541,6 +1896,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       display: 'flex', gap: SPACE.md, alignItems: 'center',
       marginLeft: SPACE.xxl, paddingBottom: SPACE.xs,
     } as Partial<CSSStyleDeclaration>);
+    controlsRow.appendChild(bandButton('Filter…', 'wmapInsightsFilterOpen',
+      'Show only the wafers and dies that meet conditions you set, on every Insights tab', () => openFilterModal()));
     let groupLabelText: string | undefined;
     if (facetTable.length > 0) {
       controlsRow.appendChild(makeLabeledSelect(
@@ -1564,7 +1921,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         if (!byKey.has(key)) { byKey.set(key, []); order.push(key); }
         byKey.get(key)!.push(it);
       }
-      groups = order.map(key => ({ key, items: byKey.get(key)! }));
+      // Listed in the order plots use for a field's values, so a group has one colour on every card, plot or not.
+      groups = orderFieldValues(order).map(key => ({ key, items: byKey.get(key)! }));
     }
     // A scope that no longer exists (the "Group by" field changed under it)
     // cannot narrow anything.
@@ -1673,6 +2031,15 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       activeSectionTest = null;
     }
 
+    if (allItems.length === 0) {
+      // The filter kept nothing: say so where the charts would be, rather than draw every chart empty.
+      const none = doc.createElement('div');
+      none.dataset.wmapInsightsFilterEmpty = '1';
+      none.textContent = 'The Insights filter keeps no wafer and no die. Edit the filter or switch it off to see the data.';
+      Object.assign(none.style, { color: CLR.label, fontSize: FONT.body, padding: SPACE.xl } as Partial<CSSStyleDeclaration>);
+      bodyEl.appendChild(none);
+      return;
+    }
     const cached = opts?.keepSections ? sectionCache.get(activeView) : undefined;
     const section = cached ?? (
       activeView === 'overview'      ? renderOverviewSection(scopeItems, scopedTestDefs, scopedAllDefs, scopeGroups, groupLabelText) :
@@ -1720,5 +2087,19 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       rootEl.remove();
     },
     setAxisPrefs: (prefs) => broadcastAxisPrefs(prefs, null, true),
+    showWorthCard: (key) => {
+      if (activeView !== 'overview') { activeView = 'overview'; render({ keepSections: true }); }
+      const card = [...bodyEl.querySelectorAll<HTMLElement>('[data-wmap-worth-key]')].find(c => c.dataset.wmapWorthKey === key);
+      if (!card) return false;
+      // After the frames in which opening Insights restores its own scroll position, which would otherwise undo this.
+      const view = doc.defaultView;
+      const reveal = () => card.scrollIntoView({ block: 'center' });
+      if (view?.requestAnimationFrame) view.requestAnimationFrame(() => view.requestAnimationFrame(reveal)); else reveal();
+      // A short outline says which card the link meant, then goes.
+      card.style.outline = `2px solid ${CLR.iconActive}`;
+      card.style.outlineOffset = '2px';
+      setTimeout(() => { card.style.outline = ''; card.style.outlineOffset = ''; }, 1600);
+      return true;
+    },
   };
 }

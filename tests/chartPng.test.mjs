@@ -3,6 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { cardMenuAction } from './fixtures/cardMenu.mjs';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><head></head><body><div id="root"></div></body></html>', { pretendToBeVisual: true, url: 'http://localhost/' });
@@ -52,9 +53,8 @@ Object.defineProperty(proto, 'clientHeight', { configurable: true, get() { retur
 
 const { composeChartPng, cardShell, describeCard, captionText } = await import('../dist/packages/canvas-adapter/charts/chartShell.js');
 const { buildWaferMap } = await import('../dist/index.js');
-const { renderHistogramPanel } = await import('../dist/packages/canvas-adapter/charts/histogram.js');
-const { renderScatterPanel } = await import('../dist/packages/canvas-adapter/charts/scatter.js');
-const { renderBoxplotPanel } = await import('../dist/packages/canvas-adapter/charts/boxplot.js');
+const { renderPlotCard } = await import('../dist/packages/canvas-adapter/plotCard.js');
+const { makeTestSelect, makeWaferSelect, makeToggle } = await import('../dist/packages/canvas-adapter/charts/chartShell.js');
 const { renderCorrelationPanel } = await import('../dist/packages/canvas-adapter/charts/correlation.js');
 const { renderCapabilityPanel } = await import('../dist/packages/canvas-adapter/charts/capability.js');
 const { markNoPrint } = await import('../dist/packages/canvas-adapter/toolbar.js');
@@ -132,7 +132,7 @@ test('a card\'s Save as PNG saves under its title with the decor it supplies', (
   shell.heading.textContent = 'Now named';
   shell.body.appendChild(source());
   shell.setPngDecor(() => ({ caption: '6 wafers · 3,966 dies' }));
-  shell.card.querySelector('button[aria-label="Save as PNG"]').click();
+  cardMenuAction(shell.card, 'Save as PNG');
   assert.deepEqual(saved, ['Now named.png'], 'the file is named for the title as it reads now');
   const flat = blobs.at(-1);
   assert.deepEqual(textOf(flat), ['Now named', '6 wafers · 3,966 dies']);
@@ -148,10 +148,10 @@ test('markNoPrint adds one print rule to the document, however many controls use
   assert.match(styles[0].textContent, /@media print\{\[data-wmap-noprint\]\{display:none!important\}\}/);
 });
 
-test('a chart card\'s own Save and Expand buttons are left off the page when printed', () => {
+test('a chart card\'s ⋯ menu button is left off the page when printed', () => {
   const shell = cardShell('T', undefined, document);
   document.getElementById('root').appendChild(shell.card);
-  for (const label of ['Save as PNG', 'Expand']) assert.ok(shell.card.querySelector(`button[aria-label="${label}"]`).hasAttribute('data-wmap-noprint'), label);
+  assert.ok(shell.card.querySelector('[data-wmap-card-menu]').hasAttribute('data-wmap-noprint'));
 });
 
 // ── what a card says around its canvas ──
@@ -166,6 +166,23 @@ const panelItems = () => [0, 1, 2].map(i => ({
 }));
 const mounted = (panel) => { document.getElementById('root').appendChild(panel.card); return panel.card; };
 
+/** A plot card of one test's values, with the controls an Insights card carries: a test picker, a wafer picker and a toggle. */
+function histogramCard(opts = {}) {
+  const items = panelItems();
+  let test = 1050;
+  let card;
+  const picker = makeTestSelect(DEFS, test, n => { test = n; card.refresh(); }, { ownerDocument: document });
+  const wafer = makeWaferSelect(items.map(it => ({ label: it.label })), null, () => {}, { ownerDocument: document });
+  const clip = makeToggle('Clip outliers', false, () => {}, document);
+  card = renderPlotCard({
+    doc: document, items, ctx: { testDefs: DEFS }, extras: [picker, wafer, clip],
+    spec: { choices: [], build: () => ({ id: 'h', title: 'Value histogram', chart: 'histogram', fields: { y: { slot: 'test' }, color: { none: true } } }) },
+    slots: () => ({ test }),
+    chart: { onSaveImage: opts.onSaveImage },
+  });
+  return card;
+}
+
 test('captionText drops the instructions to click or drag and keeps what the chart states', () => {
   assert.equal(
     captionText('One point per die across all wafers · coloured by hard bin · click legend to filter · click a point to open this wafer · drag to select dies · r = 0.93 · n = 3,966'),
@@ -176,26 +193,14 @@ test('captionText drops the instructions to click or drag and keeps what the cha
   assert.equal(captionText('box = Q1–Q3, line = median, whiskers = min/max · value shown is the median'), 'box = Q1–Q3, line = median, whiskers = min/max · value shown is the median');
 });
 
-test('a histogram\'s card names the test it is showing, and what its bars count', () => {
-  const ctx = describeCard(mounted(renderHistogramPanel({ items: panelItems(), testDefs: DEFS })));
+test('a histogram\'s card names the test it is showing, and the population it counts', () => {
+  const ctx = describeCard(mounted(histogramCard()));
   assert.ok(ctx.controls.includes('Test: Vth'), ctx.controls.join(' | '));
   assert.ok(ctx.controls.includes('Wafer: All wafers'));
-  assert.match(ctx.captions.join(' '), /dies\/bucket/);
+  assert.match(ctx.captions.join(' '), /3 wafers · \d+ dies/);
 });
 
-test('a scatter\'s card names X and Y, and states its population without the instructions', () => {
-  const ctx = describeCard(mounted(renderScatterPanel({ items: panelItems(), testDefs: DEFS, onOpen: () => {}, onSelect: () => {} })));
-  assert.ok(ctx.controls.includes('X: Vth') && ctx.controls.includes('Y: Idsat'), ctx.controls.join(' | '));
-  const text = ctx.captions.join(' ');
-  assert.match(text, /One point per die across all wafers/);
-  assert.doesNotMatch(text, /click|drag/i);
-  assert.ok(ctx.legend.length >= 1 && ctx.legend.every(l => l.label && l.color), 'the bin legend');
-});
-
-test('a box plot and a correlation card carry their test and their reading key', () => {
-  const box = describeCard(mounted(renderBoxplotPanel({ items: panelItems(), testDefs: DEFS })));
-  assert.ok(box.controls.includes('Test: Vth'));
-  assert.match(box.captions.join(' '), /box = Q1–Q3/);
+test('a correlation card carries its reading key', () => {
   const corr = describeCard(mounted(renderCorrelationPanel({ items: panelItems(), testDefs: DEFS })));
   assert.match(corr.captions.join(' '), /Pearson r/);
   assert.doesNotMatch(corr.captions.join(' '), /click/i);
@@ -207,7 +212,7 @@ test('capability states its normalisation, which is its whole premise', () => {
 });
 
 test('a control that is not showing is not reported, and a checkbox only when ticked', () => {
-  const card = mounted(renderHistogramPanel({ items: panelItems(), testDefs: DEFS }));
+  const card = mounted(histogramCard());
   const ctx = describeCard(card);
   assert.ok(!ctx.controls.some(c => /Clip outliers/.test(c)), 'unticked');
   const box = card.querySelector('[data-wmap-controls] input[type="checkbox"]');
@@ -218,31 +223,17 @@ test('a control that is not showing is not reported, and a checkbox only when ti
 test('a saved image carries the test the card is set to and its caption', () => {
   const blobs = [];
   proto.toBlob = function toBlob(cb) { blobs.push(this); cb(new dom.window.Blob(['x'])); };
-  const card = mounted(renderHistogramPanel({ items: panelItems(), testDefs: DEFS, onSaveImage: () => {} }));
+  const card = mounted(histogramCard({ onSaveImage: () => {} }));
   card.querySelector('canvas').width = 600; card.querySelector('canvas').height = 300;
-  card.querySelector('button[aria-label="Save as PNG"]').click();
+  cardMenuAction(card, 'Save as PNG');
   const text = textOf(blobs.at(-1));
   assert.ok(text.includes('Test: Vth · Wafer: All wafers') || text.some(t => t.startsWith('Test: Vth')), text.join(' | '));
-  assert.ok(text.some(t => /dies\/bucket/.test(t)), 'the caption');
+  assert.ok(text.some(t => /3 wafers · \d+ dies/.test(t)), 'the caption');
 });
 
-test('before printing, each card\'s print block is filled from its current settings, and the hints and controls are hidden', () => {
-  const card = mounted(renderScatterPanel({ items: panelItems(), testDefs: DEFS, onOpen: () => {}, onSelect: () => {} }));
-  const block = card.querySelector(':scope > [data-wmap-print-only]');
-  assert.ok(block, 'a print block');
-  assert.equal(block.style.display, 'none', 'not on screen');
-  assert.equal(block.textContent, '', 'empty until printing');
-  dom.window.dispatchEvent(new dom.window.Event('beforeprint'));
-  assert.match(block.textContent, /X: Vth · Y: Idsat · Wafer: All wafers/);
-  assert.match(block.textContent, /One point per die across all wafers/);
-  assert.doesNotMatch(block.textContent, /click|drag/i);
-  assert.ok(card.querySelector('[data-wmap-controls]').hasAttribute('data-wmap-noprint'), 'dropdowns do not print');
-  assert.ok(card.querySelector('[data-wmap-caption]').hasAttribute('data-wmap-noprint'), 'the on-screen hint does not print');
-  assert.match(document.head.textContent, /@media print\{\[data-wmap-print-only\]\{display:block!important\}\}/);
-});
 
 test('printing again after a change reads the new setting', () => {
-  const card = mounted(renderHistogramPanel({ items: panelItems(), testDefs: DEFS }));
+  const card = mounted(histogramCard());
   dom.window.dispatchEvent(new dom.window.Event('beforeprint'));
   const block = card.querySelector(':scope > [data-wmap-print-only]');
   const before = block.textContent;
@@ -253,4 +244,27 @@ test('printing again after a change reads the new setting', () => {
   dom.window.dispatchEvent(new dom.window.Event('beforeprint'));
   assert.notEqual(block.textContent, before);
   assert.match(block.textContent, /Test: Idsat/);
+});
+
+test('a card’s ⋯ menu is a command menu its button opens and closes, with Expand left out once expanded', () => {
+  const shell = cardShell('T', undefined, document);
+  document.getElementById('root').appendChild(shell.card);
+  shell.body.appendChild(document.createElement('canvas'));
+  const btn = shell.card.querySelector('[data-wmap-card-menu]');
+  assert.equal(btn.getAttribute('aria-haspopup'), 'menu');
+  assert.equal(btn.getAttribute('aria-expanded'), 'false');
+  btn.click();
+  const menu = document.querySelector('[data-wmap-card-menu-list]');
+  assert.equal(menu.getAttribute('role'), 'menu');
+  assert.equal(btn.getAttribute('aria-expanded'), 'true');
+  assert.deepEqual([...menu.querySelectorAll('[role="menuitem"]')].map(r => r.textContent), ['Save as PNG', 'Expand']);
+  btn.click();
+  assert.ok(!document.querySelector('[data-wmap-card-menu-list]'), 'its button closes it');
+  assert.equal(btn.getAttribute('aria-expanded'), 'false');
+  shell.card.dataset.wmapExpanded = '1';
+  btn.click();
+  assert.deepEqual([...document.querySelectorAll('[data-wmap-card-menu-list] [role="menuitem"]')].map(r => r.textContent), ['Save as PNG']);
+  document.querySelector('[data-wmap-card-menu-list]').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!document.querySelector('[data-wmap-card-menu-list]'), 'Escape closes it');
+  delete shell.card.dataset.wmapExpanded;
 });

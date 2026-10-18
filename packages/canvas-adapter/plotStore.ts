@@ -65,7 +65,7 @@ export function createPlotStore(
   const have = new Set((initial ?? []).map(p => p.id));
   const fromSweeps = (legacy?.sweeps ?? []).filter(sw => !have.has(sw.id));
   if ((legacy?.sweeps?.length ?? 0) > 0) {
-    noticeOnce('insights.sweeps', '`insights.sweeps` is deprecated: sweeps are plots now. Pass them in `insights.plots` as sweep plots (readPlotsFile reads a sweeps file), which the Plot tab can also save and share.');
+    noticeOnce('insights.sweeps', '`insights.sweeps` is deprecated: sweeps are plots now. Pass them in `insights.plots` as sweep plots (readPlotsFile reads a sweeps file), which the My plots tab can also save and share.');
   }
   const legacyIds = new Set((legacy?.sweeps ?? []).map(sw => sw.id));
   let plots: PlotSpec[] = [...(initial ?? []), ...fromSweeps.map(sweepToPlot)].map(p => JSON.parse(JSON.stringify(p)) as PlotSpec);
