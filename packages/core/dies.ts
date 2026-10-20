@@ -44,6 +44,8 @@ export interface Die {
   insideWafer?: boolean;
   partial?: boolean;     // true if die straddles the wafer boundary
   edgeExcluded?: boolean; // true if die centre falls within the edge exclusion zone
+  /** True on a die the page filter drops: a map draws it dimmed and no count, yield or statistic includes it. */
+  filteredOut?: boolean;
   probeIndex?: number;   // assigned by applyProbeSequence
   /** Number of times this die position appeared in the input results. Only set when > 1. */
   retestCount?: number;
@@ -168,7 +170,7 @@ export function positionKey(die: { x?: number; y?: number; id?: string }): numbe
 }
 
 export function isYieldEligibleDie(die: Die, options: DieEligibilityOptions = {}): boolean {
-  if (die.partial) return false;
+  if (die.partial || die.filteredOut) return false;
   if (!options.includeEdgeExcluded && die.edgeExcluded) return false;
   return true;
 }

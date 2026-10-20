@@ -57,7 +57,7 @@ const GROUPS = [
 // Scripts that exist for npm, CI, or another script to call — not for you.
 // Adding a name here is a deliberate "no, you don't type this".
 const INTERNAL = [
-  'build', 'build:guide', 'build:examples-index', 'build:agents-page', 'build:site',
+  'build', 'build:guide', 'build:examples-index', 'build:chart-index', 'build:agents-page', 'build:site',
   'check', 'check:api', 'clean', 'pack:check', 'screenshots', 'screenshots:list', 'test',
 ];
 

@@ -536,6 +536,179 @@ export const CAPTURES = [
       await page.screenshot({ path: outFile, clip: { x: box.x, y: box.y, width: box.width, height: chart.y + chart.height - box.y + 24 } });
     },
   },
+
+  // ── The Chart gallery (examples/insights.html): one thumbnail of each chart and table, written to docs/examples/thumbs/ for
+  //    the page's tiles. One definition makes them all, so they can be redone in one go. ──────────────────────────────────
+  {
+    file: 'chart-gallery',
+    group: 'chart-gallery',
+    page: '/examples/insights.html',
+    wait: 3000,
+    viewport: { width: 1280, height: 1100 },
+    screenshotFn: async (harnessPage, outFile) => {
+      const { mkdirSync, writeFileSync } = await import('node:fs');
+      const { dirname, join } = await import('node:path');
+      const dir = join(dirname(outFile), '..', 'examples', 'thumbs');
+      mkdirSync(dir, { recursive: true });
+      // A card is cropped to its top left corner, 560 by 420: a wide card (a table, a comparison) would otherwise shrink to
+      // unreadable text in a tile, and a tall one is mostly scrolling.
+      const MAX_W = 560;
+      const MAX_H = 420;
+      // At twice the pixel density, and scaled down once at the end (to twice a tile's width), so the text in a thumbnail is
+      // crisp where a 1x capture shrunk by the browser is a blur. The harness's own page is 1x, so this opens another.
+      const browser = harnessPage.context().browser();
+      const context = await browser.newContext({ viewport: { width: 1280, height: 1100 }, deviceScaleFactor: 2 });
+      const page = await context.newPage();
+      await page.goto(harnessPage.url(), { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-wmap-chart-card]');
+      await page.waitForTimeout(3000);
+      // Catalogue id → where the chart is and how its card is titled (the first words of its heading).
+      const CARDS = [
+        ['overview', 'yield-by-wafer', /^Yield by wafer/], ['overview', 'bin-pareto', /^Hard bin pareto/],
+        ['overview', 'pass-rate-by-test', /^Parametric pass rate/], ['overview', 'ring-yield', /^Ring yield/],
+        ['overview', 'quadrant-yield', /^Quadrant yield/], ['overview', 'reticle-cell-yield', /^Reticle cell yield/],
+        ['overview', 'what-divides-yield', /^What divides yield/], ['overview', 'part-average-testing-pat', /^Part average testing/],
+        ['distributions', 'test-value-distribution', /^Test value distribution/], ['distributions', 'value-histogram', /^Value histogram/],
+        ['distributions', 'wafer-to-wafer-trend', /^Wafer-to-wafer trend/], ['distributions', 'process-capability', /^Process capability/],
+        ['correlation', 'test-correlation-matrix', /^Test correlation matrix/], ['correlation', 'test-scatter', /^Test scatter/],
+        // The comparison and the difference map only exist once Group by is on.
+        ['grouped', 'comparison-by-group', /^Comparison by/], ['grouped', 'difference-map', /^Difference map/],
+        ['plot', 'scatter-plot', 'gallery-scatter'], ['plot', 'histogram', 'gallery-histogram'], ['plot', 'box-plot', 'gallery-box'],
+        ['plot', 'bar-chart', 'gallery-bar'], ['plot', 'line-chart', 'gallery-line'], ['plot', 'probability-plot', 'gallery-probability'],
+        ['plot', 'control-chart', 'gallery-control'], ['plot', 'capability-goal-plot', 'gallery-goal'], ['plot', 'heatmap', 'gallery-heatmap'],
+        ['plot', 'pareto', 'gallery-pareto'], ['plot', 'stacked-bars-and-shares', 'gallery-stacked'], ['plot', 'nested-categories', 'gallery-nested'],
+        ['plot', 'panels-small-multiples', 'gallery-panels'],
+      ];
+      const open = async tab => {
+        await page.locator(`[data-wmap-insights-tab="${tab}"]`).click();
+        await page.waitForTimeout(1800);
+      };
+      const shoot = async (locator, id) => {
+        await locator.scrollIntoViewIfNeeded();
+        await page.mouse.move(2, 2);
+        await page.waitForTimeout(250);
+        const box = await locator.boundingBox();
+        const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: Math.min(box.width, MAX_W), height: Math.min(box.height, MAX_H) }, scale: 'device' });
+        // A tile shows it about 300 px wide: scaled down once, to twice that, as WebP so thirty-odd thumbnails stay small files.
+        const small = await page.evaluate(async ([b64, width]) => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${b64}`;
+          await img.decode();
+          const k = Math.min(1, width / img.width);
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+          const g = c.getContext('2d');
+          g.imageSmoothingQuality = 'high';
+          g.drawImage(img, 0, 0, c.width, c.height);
+          return c.toDataURL('image/webp', 0.92).split(',')[1];
+        }, [png.toString('base64'), 600]);
+        writeFileSync(join(dir, `${id}.webp`), Buffer.from(small, 'base64'));
+      };
+      const card = (m) => (typeof m === 'string'
+        ? page.locator(`[data-wmap-plot-id="${m}"]`)
+        : page.locator('[data-wmap-chart-card]').filter({ hasText: m }).first());
+      await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click().catch(() => {});
+      for (const tab of ['overview', 'distributions', 'correlation', 'plot']) {
+        await open(tab);
+        for (const [t, id, m] of CARDS) if (t === tab) await shoot(card(m), id);
+      }
+      // The PAT verdict maps: the card's Map the verdicts opens a window of maps coloured by verdict.
+      await open('overview');
+      await page.getByRole('button', { name: 'Map the verdicts' }).first().click();
+      const patWindow = page.locator('.wmap-overlay-box').last();
+      await patWindow.locator('.wmap-gallery-card canvas').first().waitFor();
+      await page.waitForTimeout(1800);
+      await shoot(patWindow.locator('.wmap-gallery-card').first(), 'pat-verdict-map');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+      // Group by Process Split: the comparison and the difference map appear on Distributions.
+      await open('distributions');
+      await page.locator('[data-wmap-select="group-by"]').click();
+      await page.getByRole('option', { name: /Process Split/ }).click();
+      await page.waitForTimeout(2500);
+      for (const [t, id, m] of CARDS) if (t === 'grouped') await shoot(card(m), id);
+      // The tables: the Data tab's three views.
+      await open('data');
+      for (const [view, id] of [['statistics', 'statistics-table'], ['wafers', 'wafers-table'], ['dies', 'dies-table']]) {
+        await page.locator(`[data-wmap-data-view="${view}"]`).click();
+        await page.waitForTimeout(1500);
+        await shoot(page.locator('[data-wmap-data-tab]'), id);
+      }
+      await context.close();
+    },
+  },
+
+  // ── The filter (§3 Filtering wafers and dies): the gallery with a wafer filter on, the maps with a die filter on, and
+  //    the Filter window. Driven from the Filtering example, which starts with a wafer filter and three saved filters. ──
+  {
+    file: 'guide-filter-gallery',
+    group: 'filters',
+    page: '/examples/filters.html',
+    wait: 2500,
+    viewport: { width: 1280, height: 760 },
+    screenshotFn: async (page, outFile) => {
+      await page.waitForSelector('[data-wmap-insights-filter] [data-wmap-filter-strip]');
+      await page.locator('[data-wmap-summary-toggle] button, [data-wmap-summary-toggle]').first().click();
+      await page.waitForTimeout(1500);
+      await page.mouse.move(2, 2);
+      await page.evaluate(() => document.activeElement?.blur?.());
+      await page.locator('#stage').screenshot({ path: outFile });
+    },
+  },
+  {
+    file: 'guide-filter-dies',
+    group: 'filters',
+    page: '/examples/filters.html',
+    wait: 2500,
+    viewport: { width: 1280, height: 760 },
+    screenshotFn: async (page, outFile) => {
+      await page.locator('[data-start="die"]').click();
+      await page.waitForSelector('[data-wmap-insights-filter] [data-wmap-filter-strip="on"]');
+      await page.waitForTimeout(2500);
+      await page.mouse.move(2, 2);
+      // The band and the first row of cards: enough to show the faded dies beside what the filter kept.
+      const band = await page.locator('[data-wmap-insights-filter]').boundingBox();
+      const cards = await page.locator('.wmap-gallery-card').evaluateAll(els => els.slice(0, 3).map(e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }));
+      const x = Math.min(band.x, ...cards.map(c => c.x)) - 8;
+      const y = band.y - 8;
+      await page.screenshot({ path: outFile, clip: { x, y, width: Math.max(...cards.map(c => c.x + c.w)) - x + 8, height: Math.max(...cards.map(c => c.y + c.h)) - y + 8 } });
+    },
+  },
+  {
+    file: 'guide-filter-editor',
+    group: 'filters',
+    page: '/examples/filters.html',
+    wait: 2500,
+    viewport: { width: 1280, height: 900 },
+    screenshotFn: async (page, outFile) => {
+      await page.locator('[data-wmap-gallery-filter-open]').click();
+      await page.waitForSelector('[data-wmap-insights-filter-modal] [data-wmap-filter-add]');
+      await page.waitForTimeout(500);
+      await page.mouse.move(2, 2);
+      await page.evaluate(() => document.activeElement?.blur?.());
+      await page.waitForTimeout(300);
+      await page.locator('[data-wmap-insights-filter-modal]').screenshot({ path: outFile });
+    },
+  },
+  {
+    file: 'guide-filter-saved',
+    group: 'filters',
+    page: '/examples/filters.html',
+    wait: 2500,
+    viewport: { width: 1280, height: 900 },
+    screenshotFn: async (page, outFile) => {
+      await page.locator('[data-wmap-gallery-filter-open]').click();
+      await page.waitForSelector('[data-wmap-saved-filters]');
+      // Load one of the saved filters into the editor: the conditions change, nothing is applied until Apply.
+      await page.locator('[data-wmap-saved-filter="east-fails"] [data-wmap-saved-filter-load]').click();
+      await page.waitForTimeout(500);
+      await page.locator('[data-wmap-saved-filters]').scrollIntoViewIfNeeded();
+      await page.mouse.move(2, 2);
+      await page.evaluate(() => document.activeElement?.blur?.());
+      await page.waitForTimeout(300);
+      await page.locator('[data-wmap-insights-filter-modal]').screenshot({ path: outFile });
+    },
+  },
   {
     file: 'guide-sweep-editor',
     group: 'plots',

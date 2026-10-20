@@ -152,7 +152,7 @@
     <h2>Part 2 · A sweep — a chart of the data</h2>
     <p>Not a test and not in the same list: a sweep is a <em>chart definition</em>,
       passed to the renderer as a plot with <code>chart: 'sweep'</code> in
-      <code>insights.plots</code> and drawn on the Insights Plot tab. It reads tests —
+      <code>insights.plots</code> and drawn on the Insights My plots tab. It reads tests —
       measured or derived — but adds none. In tsmap it is saved with your plots, not
       with the test definitions.</p>
     <p>This page has one sweep. The <a href="sweeps.html"><strong>parametric sweeps
@@ -172,7 +172,7 @@ const PULSE_V = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4];
 renderWaferGallery(container, items, {
   insights: {
     enabled: true,           // adds the Insights tab to the toolbar
-    defaultView: 'plot',     // …and opens it on the Plot tab
+    defaultView: 'plot',     // …and opens it on the My plots tab
     plots: [{
       id: 'threshold',
       title: 'SET / RESET threshold — crossing and width',
@@ -386,7 +386,7 @@ renderWaferGallery(container, items, {
     // "Show the sweep": scroll to the gallery and press the Insights side of its Maps | Insights switch —
     // the same control a reader would use, so the page shows where it is rather
     // than opening the tab by some route the reader cannot repeat. The gallery
-    // opens Insights on the Plot tab because of `defaultView` above.
+    // opens Insights on the My plots tab because of `defaultView` above.
     document.getElementById('show-sweep').addEventListener('click', () => {
       const gallery = document.getElementById('gallery');
       gallery.scrollIntoView({ behavior: 'smooth', block: 'start' });

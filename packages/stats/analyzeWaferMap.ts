@@ -368,7 +368,7 @@ function computeTestSpecYield(
     const tn = td.testNumber;
     let passDies = 0, failLowDies = 0, failHighDies = 0, totalDies = 0;
     for (const die of dies) {
-      if (die.partial || die.edgeExcluded) continue;
+      if (!isYieldEligibleDie(die)) continue;
       const category = classifySpec(testValue(die, tn), td);
       if (category === null) continue;
       totalDies++;
@@ -411,7 +411,7 @@ export function computeFunctionalYield(
     const tn = td.testNumber;
     let passDies = 0, failDies = 0;
     for (const die of dies) {
-      if (die.partial || die.edgeExcluded) continue;
+      if (!isYieldEligibleDie(die)) continue;
       const status = getTestPassStatus(die, tn, td);
       if (status === undefined) continue;
       if (status) { passDies++; continue; }
@@ -441,7 +441,7 @@ function computePerTestStats(
   for (const tn of testNumbers) {
     const values: number[] = [];
     for (const die of dies) {
-      if (die.partial || die.edgeExcluded) continue;
+      if (!isYieldEligibleDie(die)) continue;
       const v = testValue(die, tn);
       // `Number.isFinite`, not just `!== undefined`, which is what every other
       // per-test collection in this library screens on (the pooled pass, the

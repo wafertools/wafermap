@@ -68,9 +68,9 @@ implementation. Exported CSVs carry the same σ.
 
 ### Sweeps are plots
 
-Sweeps are drawn on the Insights **Plot** tab, beside your other plots, and the **Sweeps** tab is gone. Nothing needs
+Sweeps are drawn on the Insights **My plots** tab, beside your other plots, and the **Sweeps** tab is gone. Nothing needs
 changing to keep working: `insights.sweeps` and `insights.onRemoveSweeps` still draw, and log a notice the first time.
-`defaultView: 'sweeps'` opens the Plot tab.
+`defaultView: 'sweeps'` opens the My plots tab.
 
 To move over, give each sweep as a plot, with its `id` and `title` on the plot and the rest under `sweep`:
 

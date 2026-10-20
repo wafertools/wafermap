@@ -509,16 +509,21 @@ The on-screen test table carries Test / Mean / **Ppk** / Limit yield only; the f
 {
   enabled?:     boolean                                          // show the Maps | Insights switch; default true with a toolbar (single map: `showToolbar`), always true for a gallery; `false` opts out
   defaultView?: 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot'  // sub-tab shown first; default 'overview'.
-                                                                      // 'sweeps' opens the Plot tab, where sweeps are drawn
+                                                                      // 'sweeps' opens the My plots tab, where sweeps are drawn
   defaultOpen?: boolean                                          // open Insights on mount instead of the map; default false
   sweeps?:      SweepSpec[]                                      // DEPRECATED: sweeps are plots (see "Sweeps" below); each entry
                                                                       // is drawn as a sweep plot under its own id
   onRemoveSweeps?: (ids: string[]) => void                       // DEPRECATED, with `sweeps`: told when the reader deletes one
                                                                       // of them, so the host stops supplying it
-  plots?:       PlotSpec[]                                       // the reader's saved plots, the Plot tab's list (below)
+  plots?:       PlotSpec[]                                       // the reader's saved plots, the My plots tab's list (below)
   onPlotsChange?: (plots: PlotSpec[]) => void                    // the whole list after every add, edit, delete or import
   onPickPlotsFile?: () => Promise<string | null>                 // choose a plots file to import (a native dialog); without
-                                                                      // it the Plot tab uses the browser's file input
+                                                                      // it the My plots tab uses the browser's file input
+  filter?:      PlotFilter                                       // the page filter to start with: { conditions, off? } (below)
+  onFilterChange?: (filter: PlotFilter | undefined) => void      // after the reader applies, switches off or removes it
+  savedFilters?: SavedFilter[]                                   // filters saved under a name: { id, name, conditions }
+  onSavedFiltersChange?: (filters: SavedFilter[]) => void        // the whole list after a save, delete or import
+  onPickFiltersFile?: () => Promise<string | null>               // choose a filters file to import (a native dialog)
 }
 ```
 
@@ -526,10 +531,10 @@ The on-screen test table carries Test / Mean / **Ppk** / Limit yield only; the f
 the map is the secondary view — symmetric with `summaryPanel.defaultOpen`. Note
 that the chart suite is a lazily-imported chunk, so opening it on mount also pulls
 that chunk on load rather than on first click; leave it off for a map-first page.
-See the [Insights example](../examples/insights.html), which uses it because the
+See the [Chart gallery](../examples/insights.html), which uses it because the
 charts are its whole subject.
 
-##### The Plot tab: saved plots
+##### The My plots tab: saved plots
 
 The **Plot** sub-tab is a chart builder: the reader picks a chart type (scatter, histogram, box, bar or line), the field for X, Y
 and colour (any test, die position, wafer yield, or lot field), and axis titles and limits, and each edit is drawn
@@ -646,7 +651,19 @@ added as a copy.
 
 **Plots in drilldown.** Each saved plot, sweeps included, is a row in the right-click menu (a **Plots** section between the charts and
 the tables), drawn over the selected dies; **New plot…** and **New sweep…** open a draft on the selection that is kept only if the
-reader adds it. The Plot tab, its editor and the chart are loaded the first time they are opened.
+reader adds it. The My plots tab, its editor and the chart are loaded the first time they are opened.
+
+**The page filter.** `filter` is one filter for the map, the gallery and every Insights tab: `{ conditions, off? }`, each
+condition a `field` with `values` to keep (a category) or `min` / `max` (a number, either end open), and `not: true` to keep
+the rest. A condition on a wafer field removes the wafer's card in a gallery; one on a die field draws the dies it drops
+dimmed on a map. Everything beside the map (the Summary panel, the findings, the report and the tables) is analysed again
+over what is kept. The filter is view state: keep it from `onFilterChange`, and it is never written into a plots file.
+
+**Saved filters and their file.** The Filter window lists `savedFilters`, and **Export…** / **Import…** move them as
+`writeFiltersFile(filters)`, `{ "format": "wafermap-filters", "version": 1, "filters": [...] }`, and `readFiltersFile(text)`.
+The reader is as lenient as the plots file's: it keeps every filter it can read, names each condition it dropped in
+`warnings`, sets `error` only when nothing is usable, accepts a bare list of filters, and gives a missing `id` or `name`
+one. Importing adds filters and never replaces: a filter whose id is already saved is added as a copy.
 
 #### 5.4.4 Die list & CSV export
 
@@ -902,7 +919,7 @@ Insights is on by default wherever the toolbar is shown (pass `insights: { enabl
 
 **Separate from the Summary panel (§5.4.2) on purpose.** A finding's entire value is click-to-highlight-on-map, which can't work inside a full takeover of the map — so the Summary panel (which includes findings) stays docked, always co-visible with the map, while Insights takes over the full view for chart-heavy content that doesn't reference specific dies. The two toggle independently; opening one never hides the other's toolbar button. Insights' Overview numbers and the Summary panel's compact bin/ring/quadrant/test-value rows read the same underlying computation, so they never disagree even though both can be on screen in principle.
 
-Insights has three chart sub-tabs, then **Data** and **Plot** sub-tabs (below). Sweeps are drawn on the Plot tab:
+Insights has three chart sub-tabs, then **Data** and **My plots** sub-tabs (below). Sweeps are drawn on the My plots tab:
 
 - **Overview** — a **per-test pass rate** chart (worst test first, clustered by group when "Group by" is active), headline tiles naming the population (wafer count, dies analysed and excluded, and for a lot the mean wafer yield, labelled *unweighted, per wafer* to distinguish it from the die-weighted figure), a yield bar (labelled with the actual `passBins` in use, e.g. "Yield by wafer (pass: bin 1)", with a dashed median reference line), a hard/soft bin pareto, and a details card with ring/quadrant regional yield. The pass-rate chart has three modes — the same three pass rates `analyzeWaferMap` returns as `stats.testSpecYield`, `stats.testFlagYield` and `stats.functionalYield` (§7.4.1) — because a parametric test carries **two independent** pass/fail notions and a functional test only one:
 
@@ -924,7 +941,7 @@ For a single wafer there is no "Group by" control (grouping needs more than one 
 
 `insights.enabled` only changes what the toolbar exposes; it needs no other options.
 
-**Sweeps** — a sweep is a plot with `chart: 'sweep'`: one card on the **Plot** tab, beside the reader's other plots, kept and shared the same way (`plots` / `onPlotsChange`, Export and Import). It is a card of its own kind rather than a field plot because it reads a run of *tests* with stated X values, not one field per role. The **Plot** tab's **+ New sweep** starts one on the lot's first tests, and **Edit** opens the sweep editor beside a live copy of the curve (below). `defaultView: 'sweeps'` is accepted and opens the Plot tab. **→ [Example: Parametric sweeps](../examples/sweeps.html)**
+**Sweeps** — a sweep is a plot with `chart: 'sweep'`: one card on the **My plots** tab, beside the reader's other plots, kept and shared the same way (`plots` / `onPlotsChange`, Export and Import). It is a card of its own kind rather than a field plot because it reads a run of *tests* with stated X values, not one field per role. The **My plots** tab's **+ New sweep** starts one on the lot's first tests, and **Edit** opens the sweep editor beside a live copy of the curve (below). `defaultView: 'sweeps'` is accepted and opens the My plots tab. **→ [Example: Parametric sweeps](../examples/sweeps.html)**
 
 A sweep plot is the plot envelope (`id`, `title`) with the definition under `sweep`, which is a `SweepSpec` without its `id` and `title`:
 
@@ -945,7 +962,7 @@ plots: [{
 
 **The sweep editor** has the title, one block per series, and the axis and measurements. A series is its name, its **tests, in sweep order** (typed as numbers and ranges, `1010, 1011, 1020..1030`), and where each test's X comes from: **Test order** (the position in the run, labelled by test number, no scale assumed), **Values** (one number per test) or **From test name** (a `{x}` pattern). One source at a time, because giving two is reported as an error. Text that is not a test number or a range is flagged where it is typed, naming the offending word, and is not applied, so the chart beside it is always a definition the reader meant. **+ Add series** and **Remove** manage the list; crossing and widths appear only with two or more series.
 
-**`insights.sweeps`** (deprecated) — the earlier way to supply sweeps. Each entry is added to the plot list as a sweep plot under its own `id` and the first use logs a notice; a plot saved under that `id` takes precedence, so a host that keeps both shows the sweep once and does not undo the reader's edits. Deleting one on the Plot tab calls `onRemoveSweeps` with its id, so the host stops supplying it and the next render does not bring it back. The `SweepSpec` shape below is unchanged.
+**`insights.sweeps`** (deprecated) — the earlier way to supply sweeps. Each entry is added to the plot list as a sweep plot under its own `id` and the first use logs a notice; a plot saved under that `id` takes precedence, so a host that keeps both shows the sweep once and does not undo the reader's edits. Deleting one on the My plots tab calls `onRemoveSweeps` with its id, so the host stops supplying it and the next render does not bring it back. The `SweepSpec` shape below is unchanged.
 
 A sweep reads an ordered run of tests as a response curve rather than as independent tests, and measures the **pair**: where the first two series cross, and how far apart they are at given levels. The case it exists for is one quantity measured at a series of drive levels and recorded as a block of consecutive test numbers — swept up in one block, down in another.
 

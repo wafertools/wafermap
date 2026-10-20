@@ -583,7 +583,7 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
 }
 
 /** Offset of a JSON syntax error as line and column, where the engine's message states a position. */
-function syntaxErrorAt(text: string, message: string): string {
+export function syntaxErrorAt(text: string, message: string): string {
   const m = /position (\d+)/.exec(message);
   if (!m) return message;
   const at = Math.min(Number(m[1]), text.length);
@@ -594,43 +594,77 @@ function syntaxErrorAt(text: string, message: string): string {
 }
 
 /**
+ * The items of a file's list that can be read, each given an id not yet used (a repeat gets a new one, said in
+ * `warnings`). `read` returns an item, or `undefined` after naming what was wrong.
+ */
+export function readIdentified<T extends { id: string }>(list: readonly unknown[], warnings: string[], o: {
+  labelOf: (raw: unknown, index: number) => string;
+  read: (raw: unknown, label: string, warnings: string[]) => T | null | undefined;
+  newId: () => string;
+}): T[] {
+  const out: T[] = [];
+  const seen = new Set<string>();
+  list.forEach((raw, i) => {
+    const label = o.labelOf(raw, i);
+    const item = o.read(raw, label, warnings);
+    if (!item) return;
+    if (seen.has(item.id)) { item.id = o.newId(); warnings.push(`${label}: its id was already used, given a new one`); }
+    seen.add(item.id);
+    out.push(item);
+  });
+  return out;
+}
+
+/**
+ * The list in a file of `noun` (a plots or a filters file), or why there is none. A bare array is accepted as well as the
+ * wrapped form; a file from a newer version is read with a warning. `legacy` reads an older wrapped form of the same
+ * list: its list, an error, or `undefined` when the file is not that form.
+ */
+export function unwrapListFile(text: string, o: {
+  format: string; noun: string; key: string; version: number;
+  legacy?: (json: Record<string, unknown>) => unknown[] | string | undefined;
+}): { list: unknown[]; warnings: string[] } | { error: string } {
+  let json: unknown;
+  try { json = JSON.parse(text); }
+  catch (e) { return { error: `Not valid JSON: ${syntaxErrorAt(text, e instanceof Error ? e.message : String(e))}` }; }
+  let list: unknown;
+  if (Array.isArray(json)) list = json;
+  else if (isObject(json)) {
+    const old = o.legacy?.(json);
+    if (typeof old === 'string') return { error: old };
+    if (old) list = old;
+    else if (json.format !== o.format) return { error: `This is not a ${o.noun} file (expected "format": "${o.format}")` };
+    else list = json[o.key];
+  } else return { error: `This is not a ${o.noun} file` };
+  if (!Array.isArray(list)) return { error: `The file has no "${o.key}" list` };
+  const warnings: string[] = [];
+  if (isObject(json) && isFiniteNumber(json.version) && json.version > o.version) {
+    warnings.push(`Written by a newer version (${json.version}); settings this version does not know are kept but not used`);
+  }
+  return { list, warnings };
+}
+
+/**
  * Reads a plots file. Lenient: every plot that can be read is kept and each problem is named, because a file a
  * user spent time on must not be refused for one bad setting. Only a file with nothing usable is an error.
  * A bare array of plots is accepted as well as the wrapped form.
  */
 export function readPlotsFile(text: string): ReadPlotsResult {
-  let json: unknown;
-  try { json = JSON.parse(text); }
-  catch (e) { return { plots: [], warnings: [], error: `Not valid JSON: ${syntaxErrorAt(text, e instanceof Error ? e.message : String(e))}` }; }
+  const file = unwrapListFile(text, {
+    format: PLOTS_FORMAT, noun: 'plots', key: 'plots', version: PLOTS_VERSION,
+    // A sweeps file from before sweeps were plots: each sweep is a plot with the sweep chart.
+    legacy: json => {
+      if (json.format !== SWEEPS_FORMAT) return undefined;
+      if (!Array.isArray(json.sweeps)) return 'The file has no "sweeps" list';
+      return json.sweeps.map(sw => (isObject(sw) ? { id: sw.id, title: sw.title, chart: 'sweep', sweep: sw } : sw));
+    },
+  });
+  if ('error' in file) return { plots: [], warnings: [], error: file.error };
+  const { list, warnings } = file;
 
-  let list: unknown;
-  if (Array.isArray(json)) list = json;
-  else if (isObject(json)) {
-    if (json.format === SWEEPS_FORMAT) {
-      // A sweeps file from before sweeps were plots: each sweep is a plot with the sweep chart.
-      if (!Array.isArray(json.sweeps)) return { plots: [], warnings: [], error: 'The file has no "sweeps" list' };
-      list = json.sweeps.map(sw => (isObject(sw) ? { id: sw.id, title: sw.title, chart: 'sweep', sweep: sw } : sw));
-    } else if (json.format !== PLOTS_FORMAT) {
-      return { plots: [], warnings: [], error: `This is not a plots file (expected "format": "${PLOTS_FORMAT}")` };
-    } else list = json.plots;
-  } else return { plots: [], warnings: [], error: 'This is not a plots file' };
-
-  if (!Array.isArray(list)) return { plots: [], warnings: [], error: 'The file has no "plots" list' };
-
-  const warnings: string[] = [];
-  if (isObject(json) && isFiniteNumber(json.version) && json.version > PLOTS_VERSION) {
-    warnings.push(`Written by a newer version (${json.version}); settings this version does not know are kept but not used`);
-  }
-
-  const plots: PlotSpec[] = [];
-  const seen = new Set<string>();
-  list.forEach((raw, i) => {
-    const label = isObject(raw) && typeof raw.title === 'string' && raw.title ? `"${raw.title}"` : `plot ${i + 1}`;
-    const p = readPlot(raw, label, warnings);
-    if (!p) return;
-    if (seen.has(p.id)) { p.id = newPlotId(); warnings.push(`${label}: its id was already used, given a new one`); }
-    seen.add(p.id);
-    plots.push(p);
+  const plots = readIdentified<PlotSpec>(list, warnings, {
+    labelOf: (raw, i) => (isObject(raw) && typeof raw.title === 'string' && raw.title ? `"${raw.title}"` : `plot ${i + 1}`),
+    read: readPlot, newId: newPlotId,
   });
   if (plots.length === 0 && list.length > 0) return { plots, warnings, error: 'No plot in the file could be read' };
   return { plots, warnings };
@@ -646,16 +680,27 @@ export function writePlotsFile(plots: readonly PlotSpec[]): string {
  * overwrite a plot the user has edited since. Returns the merged list and the titles that became copies.
  */
 export function addPlots(existing: readonly PlotSpec[], incoming: readonly PlotSpec[]): { plots: PlotSpec[]; copies: string[] } {
+  const { items, copies } = addIdentified(existing, incoming, p => p.title ?? p.id, newPlotId);
+  return { plots: items, copies };
+}
+
+/**
+ * `incoming` added to `existing` as copies where an id is already in use, never replacing. Returns the merged list and
+ * the names (`nameOf`) of those that became copies.
+ */
+export function addIdentified<T extends { id: string }>(
+  existing: readonly T[], incoming: readonly T[], nameOf: (item: T) => string, newId: () => string,
+): { items: T[]; copies: string[] } {
   const used = new Set(existing.map(p => p.id));
   const copies: string[] = [];
   const added = incoming.map(p => {
     if (!used.has(p.id)) { used.add(p.id); return p; }
-    const id = newPlotId();
+    const id = newId();
     used.add(id);
-    copies.push(p.title ?? p.id);
+    copies.push(nameOf(p));
     return { ...p, id };
   });
-  return { plots: [...existing, ...added], copies };
+  return { items: [...existing, ...added], copies };
 }
 
 /**

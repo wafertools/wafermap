@@ -1521,7 +1521,7 @@ function collapseLotStack(lotStack: NonNullable<WaferMapInput['lotStack']>, test
 
 // ── Coverage & yield ──────────────────────────────────────────────────────────
 
-function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
+export function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
   const positioned = dies.filter(hasPosition);
   const totalDies = positioned.length;
   const edgeExcludedDies = positioned.filter(d => d.edgeExcluded).length;
@@ -1537,7 +1537,7 @@ function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
     ratio: totalDies > 0 ? filledDies / totalDies : 0 };
 }
 
-function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclude' | 'denominator-only' = 'exclude', binsAreData = true): YieldSummary {
+export function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclude' | 'denominator-only' = 'exclude', binsAreData = true): YieldSummary {
   const passBinSet = new Set(passBins);
   const fullDies = dies.filter(d => !d.partial);
   const edgeCount = fullDies.filter(d => d.edgeExcluded).length;

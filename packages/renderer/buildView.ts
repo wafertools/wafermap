@@ -17,7 +17,7 @@ import { contrastTextColor, SPEC_PASS_FILL, SPEC_FAIL_LOW, SPEC_FAIL_HIGH } from
 import { resolveValueColorFn } from './colorSchemes.js';
 import { resolveBinColors, binColorsCover, type BinColors } from './binColors.js';
 import { NO_DATA_FILL } from './colorMap.js';
-import { diePassStatus } from '../core/dies.js';
+import { diePassStatus, isYieldEligibleDie } from '../core/dies.js';
 import type { CompactMap } from '../core/compact.js';
 import { compactView } from './compactView.js';
 import { buildXYIndicator } from './xyIndicator.js';
@@ -64,7 +64,7 @@ export function resolveTestNumber(activeTest: number, testDefs?: TestDef[]): { t
 export function collectMetadataValues(dies: readonly Die[], key: string): string[] {
   const distinct = new Set<string>();
   for (const die of dies) {
-    if (die.partial || die.edgeExcluded) continue;
+    if (!isYieldEligibleDie(die)) continue;
     const value = getDieMetadataValue(die, key);
     if (value !== undefined) distinct.add(value);
   }
@@ -491,6 +491,8 @@ interface ColorFns {
 
 const PARTIAL_DIE_FILL = '#d3d6db';
 const DIM_FILL = '#e8e9ea';
+/** A die the page filter drops: faded but still readable, so the wafer's shape and the dropped positions stay visible. */
+const FILTERED_OUT_FILL = '#d9dcdf';
 // Was '#eceef0' — lighter than NO_DATA_FILL and barely darker than the
 // default canvas background ('#f5f5f5', canvasTheme.ts), so an excluded die
 // read as blank/missing rather than "measured but excluded" against the
@@ -1261,6 +1263,14 @@ function pushDieRectangles(
     return;
   }
 
+  if (die.filteredOut) {
+    rectangles.push({
+      x: physX, y: physY, width: sw, height: sh,
+      fill: FILTERED_OUT_FILL, type: 'stacked', metadata: die.metadata,
+    });
+    return;
+  }
+
   if (die.edgeExcluded) {
     rectangles.push({
       x: physX, y: physY, width: sw, height: sh,
@@ -1685,21 +1695,21 @@ export function buildView(
     // drawn as no-data grey (not their bin/spec colour), so counting them would
     // make the legend population disagree with what is actually coloured on the
     // map and with the summary panel (which also excludes edge-excluded dies).
-    if (binCounts && !die.partial && !die.edgeExcluded) {
+    if (binCounts && isYieldEligibleDie(die)) {
       const bin = useSoftBin ? die.sbin : die.hbin;
       if (bin != null) binCounts.set(bin, (binCounts.get(bin) ?? 0) + 1);
     }
-    if (specCounts && !die.partial && !die.edgeExcluded) {
+    if (specCounts && isYieldEligibleDie(die)) {
       // Same classification the colouring uses (shared helper) so counts match the drawn colours.
       const cat = classifySpec(getDieTestValue(die, activeTestNumber), activeTestDef);
       if (cat) specCounts[cat]++;
     }
-    if (passFailCounts && !die.partial && !die.edgeExcluded) {
+    if (passFailCounts && isYieldEligibleDie(die)) {
       // Same read-path the colouring uses so counts match the drawn colours.
       const p = getTestPassStatus(die, activeTestNumber, activeTestDef);
       if (p !== undefined) passFailCounts[p ? 'pass' : 'fail']++;
     }
-    if (metadataCounts && !die.partial && !die.edgeExcluded) {
+    if (metadataCounts && isYieldEligibleDie(die)) {
       const value = getDieMetadataValue(die, activeMetadataKey);
       if (value !== undefined) metadataCounts.set(value, (metadataCounts.get(value) ?? 0) + 1);
     }

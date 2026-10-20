@@ -27,6 +27,8 @@ const SNAPSHOTS = {
     'setReportOpener', 'visibleFindings',
     // The plot builder's saved recipes: a host keeps them between sessions and needs the one reader and writer.
     'readPlotsFile', 'writePlotsFile',
+    // Saved filters and their file: a host keeps the list between sessions and needs the one reader and writer.
+    'readFiltersFile', 'writeFiltersFile',
   ],
   './core': [
     'diePassStatus', 'getDieKey', 'getReticleCell', 'getReticleShot', 'hasPosition', 'isYieldEligibleDie',
@@ -51,6 +53,8 @@ const SNAPSHOTS = {
     'analyzeWaferLot', 'analyzeWaferLotAsync', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'facetValueOf', 'FACET_NONE_VALUE',
     'filterFindings', 'mergeTestDefs', 'setReportOpener', 'visibleFindings',
     'readPlotsFile', 'writePlotsFile',
+    // Saved filters and their file: a host keeps the list between sessions and needs the one reader and writer.
+    'readFiltersFile', 'writeFiltersFile',
   ],
   './render': [
     'renderWaferMap', 'renderWaferGallery', 'setDetachWindowOpener',

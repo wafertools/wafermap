@@ -3,6 +3,7 @@
 // bin colours and the reports as table rows; the counting, the order, the label and the title are
 // decided here once, so the two cannot count a different population or order the bins differently.
 
+import { isYieldEligibleDie } from '../core/dies.js';
 import type { Die } from '../core/dies.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
 import { sortBinsForDisplay } from './binPareto.js';
@@ -23,7 +24,7 @@ export function binCountsFrom(dies: Iterable<Die>, mode: BinMode, precomputed?: 
     return counts;
   }
   for (const d of dies) {
-    if (d.partial || d.edgeExcluded) continue;
+    if (!isYieldEligibleDie(d)) continue;
     const bin = mode === 'hard' ? d.hbin : d.sbin;
     if (bin != null) counts.set(bin, (counts.get(bin) ?? 0) + 1);
   }

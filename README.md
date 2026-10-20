@@ -5,7 +5,7 @@
 [![CI and deploy](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml/badge.svg)](https://github.com/wafertools/wafermap/actions/workflows/deploy.yml)
 [![npm](https://img.shields.io/npm/v/@wafertools/wafermap.svg)](https://www.npmjs.com/package/@wafertools/wafermap)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
-![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~80%20kB-blue)
+![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~81%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 <img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
@@ -13,7 +13,7 @@
 Browser-first wafer map visualization for semiconductor test data.
 
 **Zero runtime dependencies.** Pure ES modules with TypeScript types — works in React,
-Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~80 kB
+Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~81 kB
 min+gz; the interactive renderer is larger, and its chart suite and in-app guide are
 loaded on demand rather than shipped up front — [measured sizes](docs/performance.md).
 
@@ -33,9 +33,9 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 - `renderWaferGallery` — lot-level card grid with shared controls and click-to-expand
 - Insights tab — a chart suite behind the Maps | Insights switch, on by default (`insights: { enabled: false }` removes it) (yield, per-test pass rate, bin pareto, capability, boxplot, histogram, wafer-to-wafer trend, correlation, scatter) computed from the same wafer/lot data, for one wafer or the whole gallery
 - Derived tests (`derivedTests`) — tests computed per die from other tests (`abs(t[1020] - t[1010])`), which then work everywhere a measured test does, marked † as not measured
-- Parametric sweeps (plots with `chart: 'sweep'`, edited on the Plot tab) — an ordered run of tests read as a response curve, with the crossing and widths between two curves measured; x values given directly or read from the test names, on a linear or log axis
+- Parametric sweeps (plots with `chart: 'sweep'`, edited on the My plots tab) — an ordered run of tests read as a response curve, with the crossing and widths between two curves measured; x values given directly or read from the test names, on a linear or log axis
 - Drilldown — right-click selected dies, a finding, a legend bin, a wafer card or a wafer's bar to chart and tabulate just that population, with the population stated on the chart; in a gallery, select the same dies on every wafer to read one region across the lot
-- Plot tab and Data tab — a chart builder (scatter, histogram, box, bar, line, sweep over any test, die field or wafer attribute) whose saved plots your app keeps with `insights.plots` and `onPlotsChange`, and the lot as sortable tables (statistics, dies, wafers) with CSV export
+- My plots tab and Data tab — a chart builder (scatter, histogram, box, bar, line, sweep over any test, die field or wafer attribute) whose saved plots your app keeps with `insights.plots` and `onPlotsChange`, and the lot as sortable tables (statistics, dies, wafers) with CSV export
 - Validity limits (`TestDef.validLow` / `validHigh`, `valueFilter`) — tester clamps and open-circuit readings are kept out of the map, statistics and charts, and counted wherever a population is shown
 - Reticle and multi-project wafers — stepper-field overlay, reticle cell and shot as die fields to colour, split and chart by, reticle-position findings, and a compact layout for sparse multi-project reticles
 - `analyzeWaferMap` / `analyzeWaferLot` — spatial analysis across rings, quadrants, sectors, and reticle positions; failure cluster detection; lot trend series
@@ -78,7 +78,7 @@ export. Add `analyzeWaferMap` for the findings and summary panel, swap in
 
 The API reference is long because it documents every option, not because you need
 them: [tsmap](https://github.com/wafertools/tsmap), a complete cross-platform desktop
-application built on this library, imports **20** of its ~100 exports. Read the
+application built on this library, imports **22** of its ~100 exports. Read the
 [Quick Start](https://wafertools.github.io/wafermap/quickstart/) first and treat the
 [API reference](https://wafertools.github.io/wafermap/api/) as something to search,
 not to read.

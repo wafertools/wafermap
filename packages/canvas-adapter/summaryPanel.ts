@@ -13,6 +13,7 @@
 // there) without ever being able to drift apart.
 
 import type { Wafer } from '../core/wafer.js';
+import { isYieldEligibleDie } from '../core/dies.js';
 import type { Die, PositionedDie } from '../core/dies.js';
 import { excludedCounts, testValue } from '../core/dieTable.js';
 import { limitSetName } from '../renderer/valueFilter.js';
@@ -1380,7 +1381,7 @@ export function* buildTestSectionSteps(
    */
   columns: 'compact' | 'full' = 'full',
 ): Chunked<HTMLDivElement | null> {
-  const activeDies = dies.filter(d => !d.partial && !d.edgeExcluded);
+  const activeDies = dies.filter(d => isYieldEligibleDie(d));
   const perTestStatsByNumber = new Map((precomputedTestStats?.perTestStats ?? []).map(s => [s.testNumber, s]));
   const specYieldByNumber = new Map((precomputedTestStats?.testSpecYield ?? []).map(s => [s.testNumber, s]));
 

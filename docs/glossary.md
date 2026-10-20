@@ -30,6 +30,10 @@ The bin number(s) considered a passing result for yield calculation. The library
 
 The fraction of tested dies that pass, expressed as a percentage. By default the library divides passing dies by the dies that count toward yield — edge-excluded and partial dies are left out of both numerator and denominator. *Library mapping: `YieldSummary.yieldPercent`; see also gross die yield.*
 
+### Filter
+
+Conditions that keep only some wafers and dies: one split, bin 1, the outer ring, a range of a test, wafers below a yield. One filter applies to the gallery, a single map and every Insights tab; a wafer condition drops whole wafers from the gallery, a die condition draws the dropped dies faded on the maps, and every figure is analysed again over what is kept. *Library mapping: `PlotFilter` (`insights.filter`); saved by name as `SavedFilter` (`insights.savedFilters`) and moved as a `wafermap-filters` file (`readFiltersFile` / `writeFiltersFile`).*
+
 ### Edge exclusion
 
 A ring of dies around the wafer perimeter that are excluded from yield calculations. Dies near the edge are mechanically stressed during handling and may be partially outside the lithography field, making their results unreliable for lot disposition. The exclusion width is specified in millimetres. *Library mapping: `WaferConfig.edgeExclusion`.*

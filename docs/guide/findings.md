@@ -351,6 +351,15 @@ const newSummary = analyzeWaferMap(newResult);
 ctrl.setStatsSummary(newSummary);
 ```
 
+### With a filter on
+
+While the reader's **Filter…** keeps only some wafers and dies, the panel, the findings and the warnings describe what is
+kept: the library runs `analyzeWaferMap` (or, in a gallery, `analyzeWaferLotAsync`) again over the dies that remain, with
+the options your own analysis ran with (`analysisOptions`), and shows that instead of the summary you passed in. Removing the
+filter, or switching it off, shows yours again. The filtered analysis is the library's own, shown only while the filter is on:
+`onStatsSummaryChange` and the controller's `setStatsSummary` still carry the analyses you ran. See
+[The filter](galleries.md#the-filter).
+
 **→ [Demo: Summary panel](../examples/statistics.html#summary-panel)**
 
 

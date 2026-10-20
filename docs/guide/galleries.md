@@ -315,7 +315,7 @@ Histogram, correlation, and scatter each draw one shared chart rather than one p
 
 Clicking a leaf row in the yield bar or the box plot — or a point on the trend chart — opens that wafer in a modal. A box-plot click is context-aware: it opens the wafer already in **test-value mode on the test you were looking at**, not the toolbar's default plot mode — so drilling from "Idsat" in the box plot lands you on the Idsat colour map, not a hard-bin view you'd have to switch away from.
 
-**→ [Demo: Your first wafer map](../examples/first-map.html)** and **[Demo: Building a lot gallery](../examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it.
+**→ [Demo: Your first wafer map](../examples/first-map.html)** and **[Demo: Building a lot gallery](../examples/statistics.html#lot-gallery)** both have the Insights tab enabled — click the toolbar's Insights button in either to try it. **[Demo: Chart gallery](../examples/insights.html)** opens on it and lists every chart and table the tab holds.
 
 ### Saved plots: the My plots tab, kept by the host
 
@@ -341,11 +341,18 @@ it; a test is matched by number and checked by name, so a plot saved against ano
 **Export plots…** and **Import plots…** move a set of plots between machines as a `wafermap-plots` file (`writePlotsFile` / `readPlotsFile`; a desktop host passes
 its native dialog as `onPickPlotsFile`). The reader is lenient: it keeps every readable plot, names each setting it dropped, and keeps settings a newer version wrote.
 
-### The Insights filter
+### The filter
 
-**Filter…** narrows every Insights tab to the wafers and dies that meet conditions the reader sets, and is shown above
-every tab while it exists. It is view state, like Group by: it is never written into a plots file. Keep it if you want
-it restored:
+**Filter…**, the last button in the toolbar row (it keeps that place on a map, in the gallery and in Insights), narrows
+the gallery, a single map and every Insights tab to the wafers and dies that meet conditions the reader sets. It is one
+filter, shown above whichever view is open while it exists: setting it in one view sets it in the others. A condition on a
+wafer field (split, yield) removes that wafer's card; one on a die field (bin, ring, a test) draws the dies it drops faded
+on the maps and counts them nowhere. The analysis is run again over the wafers and dies kept, so the legend, the yield, the
+Summary panel and its findings, each wafer's own summary, the report and the tables all describe what is shown; removing the
+filter (or switching it off) brings back the analysis you passed in (`lotStatsSummary`, `statsSummary`). Only an analysis
+you passed in is run again: with none, there is no Summary panel to follow the filter. It is view state, like Group by: it is
+never written into a plots file. Keep it if you want it
+restored (`insights.filter` starts it on a gallery or a map alike):
 
 ```js
 renderWaferGallery(el, items, {
@@ -356,8 +363,57 @@ renderWaferGallery(el, items, {
 });
 ```
 
+![A gallery filtered to the Hi-dose wafers, with the line that states the filter above the cards](../images/guide-filter-gallery.png)
+
+![The Filter window with a condition, what it would keep, and the saved filters](../images/guide-filter-editor.png)
+
 A filter is `{ conditions, off? }`, the same shape as a plot's own `where`: each condition names a `field` and either
 `values` to keep (a category) or `min`/`max` (a number, either end open), with `not: true` to keep the rest.
+
+#### Saved filters
+
+The Filter window keeps **Saved filters**: type a name and **Save** to keep the conditions in the editor under it (saving
+a name already used updates that filter), **Load** to put a saved filter's conditions in the editor (nothing is applied
+until **Apply**), **Delete** to remove it. A saved filter naming a field the open lot lacks says so beside its name. The
+host keeps the list, as it keeps plots:
+
+```js
+import { readFiltersFile, writeFiltersFile } from '@wafertools/wafermap';
+
+renderWaferGallery(el, items, {
+  insights: {
+    savedFilters: JSON.parse(localStorage.getItem('savedFilters') ?? '[]'),
+    onSavedFiltersChange: list => localStorage.setItem('savedFilters', JSON.stringify(list)),
+    onPickFiltersFile: () => pickFileText(),   // optional: a desktop host's own dialog; the browser's file input is used without it
+  },
+});
+```
+
+**Export…** and **Import…** move the list between machines as a `wafermap-filters` file (`writeFiltersFile` /
+`readFiltersFile`). It is JSON, meant to be written by hand or by a host as much as exported:
+
+```json
+{
+  "format": "wafermap-filters",
+  "version": 1,
+  "filters": [
+    { "id": "ne-fails", "name": "Bin 2 in the north-east quadrant",
+      "conditions": [
+        { "field": { "builtin": "hbin" }, "values": ["Bin 2"] },
+        { "field": { "builtin": "quadrant" }, "values": ["NE"] }
+      ] }
+  ]
+}
+```
+
+A filter is `id`, `name` and `conditions` (the conditions above; `off` belongs to the filter in force and is not kept). The
+reader is lenient, like the plots file's: it keeps every filter it can read and names each condition it dropped, accepts a
+bare list of filters, reads a condition written without its list as a list of one, gives a missing `id` or `name` a
+value, and keeps settings a newer version wrote. An import never replaces: a filter whose `id` is already saved is added
+as a copy.
+
+**→ [Demo: Filtering wafers and dies](../examples/filters.html)**: a wafer filter and a die filter to start from, filters saved by name, and a hand-written filters file read by **Import…**.
+
 `insights.sweeps` and `onRemoveSweeps` are deprecated: give sweeps in `plots` as `chart: 'sweep'` plots.
 
 The plot editor refuses a combination that cannot be drawn, with the reason: in the field lists such a field is dimmed ("Yield is per wafer: use a bar or line

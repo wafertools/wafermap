@@ -27,6 +27,7 @@ nav = [
     { "Vue 3"     = "vue.md"       },
   ]},
   { "Reference" = [
+    { "Chart reference" = "charts.md" },
     { "API Reference" = [
       { "Overview"                      = "api.md"              },
       { "buildWaferMap"                 = "api/core.md"         },
@@ -54,8 +55,9 @@ nav = [
     ]},
     { "What your users get" = [
       { "Findings, Summary panel and galleries" = "examples/statistics.html" },
-      { "Insights chart suite"           = "examples/insights.html"        },
+      { "Chart gallery"                  = "examples/insights.html"        },
       { "Plots, tables and attributes"   = "examples/insights-plots.html"  },
+      { "Filtering wafers and dies"      = "examples/filters.html"         },
       { "Validity limits"                = "examples/validity-limits.html" },
       { "Derived tests and sweeps"       = "examples/derived-tests.html"   },
       { "Parametric sweeps"              = "examples/sweeps.html"          },

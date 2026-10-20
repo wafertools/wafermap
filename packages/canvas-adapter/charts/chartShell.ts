@@ -1211,6 +1211,7 @@ function guideLink(doc: Document, section: GuideSection): HTMLButtonElement {
     border: 'none', background: 'none', padding: '0', font: 'inherit', color: CLR.iconActive,
     textDecoration: 'underline', cursor: 'pointer',
   } as Partial<CSSStyleDeclaration>);
+  wireControlHover(link);
   link.addEventListener('click', () => openGuideAt(section.id, link));
   return link;
 }

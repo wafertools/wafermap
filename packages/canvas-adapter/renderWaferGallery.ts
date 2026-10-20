@@ -13,10 +13,12 @@ import { ICONS } from './icons.js';
 import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
 import { openReportModal, openUserGuideWindow, registerGuideOpener, type UserGuideExtension } from './guideWindow.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
+import type { FilterSource, PageFilterController } from './pageFilter.js';
+import { bandButton } from './filterButton.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
-import { diePassStatus, type Die } from '../core/dies.js';
+import { diePassStatus, isYieldEligibleDie, type Die } from '../core/dies.js';
 import { aggregateValues, aggregateBinCounts } from '../core/aggregates.js';
 import type { AggregationMethod } from '../core/aggregates.js';
 import { renderWaferMap, renderWaferMapCard, toPublicViewOptions } from './renderWaferMap.js';
@@ -30,7 +32,7 @@ import { findingPatternKey } from '../stats/filterFindings.js';
 import { synthesisSource } from '../stats/synthesis.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { BinDef } from '../renderer/buildWaferMap.js';
-import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest, getDieTestValue, isBuiltMap } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, computeCoverage, computeYield, defaultBinMode, getTestPassStatus, isParametricTest, getDieTestValue, isBuiltMap } from '../renderer/buildWaferMap.js';
 import type { WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { LotStatsSummary, StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
@@ -473,7 +475,7 @@ function countLegendPopulation<K>(
   for (const item of items) {
     const passSet = passBinsOf ? new Set(passBinsOf(item)) : undefined;
     for (const die of item.dies) {
-      if (die.partial || die.edgeExcluded) continue;
+      if (!isYieldEligibleDie(die)) continue;
       const k = keyOf(die);
       if (k === undefined) continue;
       counts.set(k, (counts.get(k) ?? 0) + 1);
@@ -621,6 +623,10 @@ export function renderWaferGallery(
         + `${counts[0]} rings.` };
   }
   let currentLotStats        = options.lotStatsSummary;
+  /** The lot analysed again over the wafers and dies the page filter keeps; unset until that analysis lands. */
+  let filteredLot: typeof currentLotStats;
+  /** What the Summary panel describes: the host's lot stats, or while the page filter narrows, the lot analysed over what it keeps. */
+  const lotStats = (): typeof currentLotStats => (filterNarrowing ? filteredLot : currentLotStats);
   let currentLegendStyle     = options.viewOptions?.legendPosition ?? 'default' as 'default' | 'compact' | 'bottom' | 'top' | 'left' | 'floating';
 
   // Whether each card draws its own legend. Off by default: the lot legend
@@ -707,6 +713,177 @@ export function renderWaferGallery(
   let originalItems: (WaferMapDisplayItem | null)[] =
     items.map(it => (typeof it === 'function' ? null : it) as WaferMapDisplayItem);
 
+  // ── Page filter ─────────────────────────────────────────────────────────────
+  // `originalItems` is the source as the host gave it and is never narrowed. What the cards, the Summary panel, the
+  // legend and the report read is `activeItems()`: the same items with the dies the page filter drops flagged
+  // `filteredOut` (drawn dimmed, counted nowhere), and a wafer it drops whole hidden. Insights reads the source and
+  // applies the filter itself, through the same controller. The controller loads on demand.
+  let pageFilter: PageFilterController | null = null;
+  let pageFilterLoad: Promise<PageFilterController> | null = null;
+  let galleryDestroyed = false;
+  /** Bumped when the filter changes, so each item's view is derived again. */
+  let filterVersion = 0;
+  /** Whether the filter narrows anything right now: lot stats from the host then describe dies that are not shown. */
+  let filterNarrowing = false;
+  /** A filter change that arrived while factories were still resolving: applied once the lot is in. */
+  let filterDirty = false;
+  const hiddenItems = new WeakSet<WaferMapDisplayItem>();
+  const viewMemo = new WeakMap<WaferMapDisplayItem, { v: number; item: WaferMapDisplayItem }>();
+  const filterIsOn = (): boolean => { const f = pageFilter?.get(); return !!f && !f.off; };
+
+  function filterSource(it: WaferMapDisplayItem, index: number): FilterSource {
+    return {
+      dies: it.dies, wafer: it.wafer, label: waferDisplayLabel(it, index), identity: waferIdentityLabel(it), waferIndex: index,
+      passBins: itemPassBins(it), testDefs: it.testDefs, statsSummary: it.statsSummary,
+    };
+  }
+  /** Each wafer's analysis over what the filter keeps, by source item: what its card and the Summary panel show. */
+  const filteredSummaries = new Map<WaferMapDisplayItem, StatsSummary>();
+  /**
+   * One source item as the filter leaves it, for drawing: itself when nothing of it is dropped, else its dies with the
+   * dropped ones flagged (a card draws them dimmed), its yield and coverage over the dies kept, and its summary the
+   * analysis of those dies once that has run.
+   */
+  function viewItem(it: WaferMapDisplayItem, index: number): WaferMapDisplayItem {
+    if (!pageFilter || !filterIsOn()) return it;
+    const memo = viewMemo.get(it);
+    if (memo && memo.v === filterVersion) return memo.item;
+    const m = pageFilter.mark([filterSource(it, index)]);
+    let out = it;
+    if (m.narrowing) {
+      const dies = m.items[0].dies;
+      const kept = dies.filter(d => !d.filteredOut);
+      out = {
+        ...it, dies, statsSummary: filteredSummaries.get(it),
+        ...(it.yield ? { yield: computeYield(dies, [...itemPassBins(it)], it.yield.yieldPercentGross != null ? 'denominator-only' : 'exclude') } : {}),
+        ...(it.dataCoverage ? { dataCoverage: computeCoverage(kept) } : {}),
+      };
+      if (m.hidden.size) hiddenItems.add(out);
+    }
+    viewMemo.set(it, { v: filterVersion, item: out });
+    return out;
+  }
+  const dataMemo = new WeakMap<WaferMapDisplayItem, { v: number; item: WaferMapDisplayItem | null }>();
+  /**
+   * One source item as everything but a card reads it (the Summary panel, the report, the tables, a stack): the dies the
+   * filter drops are gone, and a wafer it drops whole is `null`, as one whose factory has not resolved is, so every
+   * position still means the same wafer.
+   */
+  function dataItem(it: WaferMapDisplayItem, index: number): WaferMapDisplayItem | null {
+    if (!pageFilter || !filterIsOn()) return it;
+    const memo = dataMemo.get(it);
+    if (memo && memo.v === filterVersion) return memo.item;
+    const view = viewItem(it, index);
+    const out = view === it ? it : hiddenItems.has(view) ? null : { ...view, dies: view.dies.filter(d => !d.filteredOut) };
+    dataMemo.set(it, { v: filterVersion, item: out });
+    return out;
+  }
+  /** The items every surface but the cards and Insights reads: `originalItems` itself when no filter is in force. */
+  function activeItems(): (WaferMapDisplayItem | null)[] {
+    if (!pageFilter || !filterIsOn()) return originalItems;
+    return originalItems.map((it, i) => (it ? dataItem(it, i) : null));
+  }
+  let filterAnalysisRun = 0;
+  let filterAnalysisPending = false;
+  /**
+   * Analyse the wafers and dies the filter keeps, as the host's lot stats analysed the whole lot, so the Summary panel,
+   * the findings and each card's own summary describe what is shown. Only where there was an analysis to begin with
+   * (the host's lot stats or a card's summary) and every item is a built map; otherwise the panel has nothing to
+   * show while the filter narrows. The panel keeps showing its last content until this lands.
+   */
+  function analyseFiltered(): void {
+    const run = ++filterAnalysisRun;
+    filteredLot = undefined;
+    filteredSummaries.clear();
+    const settle = (): void => { filterAnalysisPending = false; renderGallerySummaryPanel(); refreshLotSummaryButton(); };
+    if (!filterNarrowing) { settle(); return; }
+    const raw = analysableItems();
+    if (!raw || !(currentLotStats || raw.some(it => it.statsSummary))) { settle(); return; }
+    const kept = activeItems().flatMap((it, i) => (it ? [{ it, i }] : []));
+    if (kept.length === 0) { settle(); return; }
+    filterAnalysisPending = true;
+    const options0 = currentLotStats?.analysisOptions ?? raw.find(it => it.statsSummary)?.statsSummary?.analysisOptions ?? {};
+    void import('../stats/analyzeWaferLot.js').then(async ({ analyzeWaferLotAsync, remapLotWaferIndices }) => {
+      const lot = await analyzeWaferLotAsync(kept.map(k => k.it) as WaferMapResult[], options0);
+      if (run !== filterAnalysisRun || galleryDestroyed) return;
+      const positions = kept.map(k => k.i);
+      filteredLot = remapLotWaferIndices(lot, positions);
+      lot.perWafer.forEach((w, k) => filteredSummaries.set(originalItems[positions[k]]!, w.summary));
+      // Every item's view is derived again, now carrying its summary; the cards take it in place.
+      filterVersion++;
+      originalItems.forEach((it, i) => {
+        if (!it || STACKED_MODES.has(sharedOpts.plotMode!)) return;
+        const v = viewItem(it, i);
+        currentItems[i] = v;
+        cardControllers[i]?.setStatsSummary(v.statsSummary);
+      });
+      refreshGalleryWarnings();
+      settle();
+    }).catch(() => { if (run === filterAnalysisRun) settle(); });
+  }
+  /** Items about to become cards: pre-built ones seen through the filter, factories left to resolve first. */
+  const throughFilter = (list: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): Array<WaferMapDisplayItem | WaferMapDisplayItemFactory> =>
+    (pageFilter && filterIsOn() ? list.map((e, i) => (typeof e === 'function' ? e : viewItem(e, i))) : list);
+
+  /** Load the filter (once) and start from the host's: resolves with the controller the maps and Insights share. */
+  function ensurePageFilter(): Promise<PageFilterController> {
+    pageFilterLoad ??= import('./pageFilter.js').then(({ createPageFilter }) => {
+      const ctl = createPageFilter({
+        doc: container.ownerDocument, initial: options.insights?.filter, onChange: options.insights?.onFilterChange,
+        savedFilters: options.insights?.savedFilters, onSavedFiltersChange: options.insights?.onSavedFiltersChange,
+        pickFiltersFile: options.insights?.onPickFiltersFile, onSaveText: options.onSaveText,  // the file is the reader's, not this lot's: no lot or wafer prefix
+        attributes: options.attributes, getRingCount: () => requireRingCount({ ringCount: lotRingCount() }, 'the page filter'),
+      });
+      if (galleryDestroyed) return ctl;
+      pageFilter = ctl;
+      filterBand = ctl.createBand(() => originalSources(), { marginLeft: EDGE_GUTTER, marginRight: EDGE_GUTTER, marginBottom: SPACE.lg });
+      container.insertBefore(filterBand.el, bodyEl);
+      ctl.subscribe(applyPageFilter);
+      if (ctl.get()) applyPageFilter();
+      return ctl;
+    });
+    return pageFilterLoad;
+  }
+  let filterBand: ReturnType<PageFilterController['createBand']> | null = null;
+  let filterButtonEl: HTMLButtonElement | null = null;
+  let bandTimer: ReturnType<typeof setTimeout> | undefined;
+  const originalSources = (): FilterSource[] => originalItems.flatMap((it, i) => (it ? [filterSource(it, i)] : []));
+
+  /** State the filter above the cards, with what it keeps. Coalesced: a lot resolving item by item does it once. */
+  function refreshFilterBand(): void {
+    clearTimeout(bandTimer);
+    bandTimer = setTimeout(() => {
+      if (!pageFilter || !filterBand) return;
+      const sources = originalSources();
+      const kept = pageFilter.keep(sources);
+      filterBand.refresh(kept.result, sources);
+      filterBand.el.style.display = pageFilter.get() && !insightsOpen ? '' : 'none';
+    }, 0);
+  }
+
+  /** The filter changed (or just loaded): derive every item's view again and rebuild the cards from it. */
+  function applyPageFilter(): void {
+    filterVersion++;
+    filterNarrowing = false;
+    if (pendingFactoryCount > 0) { filterDirty = true; refreshFilterBand(); return; }
+    filterDirty = false;
+    const mode = sharedOpts.plotMode!;
+    filterNarrowing = filterIsOn() && originalItems.some((it, i) => it !== null && viewItem(it, i) !== it);
+    // Until the analysis lands the old lot figures are not the filtered ones, so none stand.
+    filteredLot = undefined;
+    filterAnalysisPending = filterNarrowing && !!currentLotStats;
+    if (originalItems.length > 0) {
+      if (STACKED_MODES.has(mode)) {
+        sharedOpts = { ...sharedOpts, ...stackedSharedOpts(mode) };
+        buildCards(buildStackedItems(mode));
+      } else {
+        buildCards(throughFilter(originalItems.filter((it): it is WaferMapDisplayItem => it !== null)));
+      }
+    }
+    refreshFilterBand();
+    analyseFiltered();
+  }
+
   /**
    * The population's ONE test namespace — see `stats/mergeTestDefs.ts`.
    *
@@ -722,7 +899,7 @@ export function renderWaferGallery(
    * collision. The merge is a linear pass over defs the caller already holds.
    */
   function mergedTestDefs(): MergedTestDefs {
-    return mergeTestDefs(originalItems);
+    return mergeTestDefs(activeItems());
   }
 
   /**
@@ -740,7 +917,7 @@ export function renderWaferGallery(
    * fallback may override.
    */
   function lotTestDefs(): TestDef[] | undefined {
-    if (!originalItems.some(it => it?.testDefs?.length)) return undefined;
+    if (!activeItems().some(it => it?.testDefs?.length)) return undefined;
     return mergedTestDefs().defs;
   }
   let buildGeneration = 0;  // incremented on each buildCards call; stale factory callbacks check this
@@ -814,14 +991,14 @@ export function renderWaferGallery(
   // Falls back to lotStatsSummary.perWafer so a single analyzeWaferLot call
   // is sufficient — no separate analyzeWaferMap per item required.
   function perWaferSummary(index: number): StatsSummary | undefined {
-    return originalItems[index]?.statsSummary
-      ?? currentLotStats?.perWafer.find(pw => pw.waferIndex === index)?.summary;
+    return activeItems()[index]?.statsSummary
+      ?? lotStats()?.perWafer.find(pw => pw.waferIndex === index)?.summary;
   }
 
   // True when any wafer has per-wafer findings, either on the item or in the lot summary.
   function hasAnyPerWaferFindings(): boolean {
-    if (originalItems.some(it => it?.statsSummary?.findings.length)) return true;
-    if (currentLotStats?.perWafer.some(pw => pw.summary.findings.length)) return true;
+    if (activeItems().some(it => it?.statsSummary?.findings.length)) return true;
+    if (lotStats()?.perWafer.some(pw => pw.summary.findings.length)) return true;
     return false;
   }
 
@@ -854,10 +1031,10 @@ export function renderWaferGallery(
   }
   function lotTestValueStatusNow() {
     return currentLotStats?.stats.testValueAnalysis
-      ?? lotTestValueStatus(originalItems.flatMap(it => (it?.statsSummary ? [it.statsSummary] : [])));
+      ?? lotTestValueStatus(activeItems().flatMap(it => (it?.statsSummary ? [it.statsSummary] : [])));
   }
   const findingsNotice = (): FindingsNotice | undefined => hostFindingsNotice
-    ?? (analysableItems() ? testValueNotice(lotTestValueStatusNow(), originalItems.length, analysingTestValues !== null, analyseTestValues) : undefined);
+    ?? (analysableItems() ? testValueNotice(lotTestValueStatusNow(), activeItems().length, analysingTestValues !== null, analyseTestValues) : undefined);
   function analyseTestValues(): void {
     const items = analysableItems();
     if (analysingTestValues || !items) return;
@@ -1063,7 +1240,7 @@ export function renderWaferGallery(
     const anchor = gallerySummaryPanelEl;
     if (!anchor) return;
     // A finding that names wafers but no dies (a wafer's yield, say) opens on those whole wafers.
-    const finding = currentLotStats?.findings.find(f => f.id === id);
+    const finding = lotStats()?.findings.find(f => f.id === id);
     const sel = acrossSelectionSource() ?? selectedOnCardsSource() ?? singleCardSelectionSource()
       ?? (finding ? wholeWafersSource(findingWaferIndices(finding)) : undefined);
     if (!sel) return;
@@ -1210,8 +1387,8 @@ export function renderWaferGallery(
   /** Wafers that have at least one per-wafer finding, with their severity tallies. */
   function wafersWithFindings(): Array<{ index: number; item: WaferMapDisplayItem; unusualCount: number; notableCount: number; totalCount: number }> {
     const out: Array<{ index: number; item: WaferMapDisplayItem; unusualCount: number; notableCount: number; totalCount: number }> = [];
-    for (let i = 0; i < originalItems.length; i++) {
-      const item = originalItems[i];
+    for (let i = 0; i < activeItems().length; i++) {
+      const item = activeItems()[i];
       if (!item) continue;
       const findings = perWaferSummary(i)?.findings ?? [];
       if (!findings.length) continue;
@@ -1228,7 +1405,7 @@ export function renderWaferGallery(
   /** Open a wafer by index — the Wafer Yield rows only know the index, while
    *  `openWindowForCard` wants the item too. */
   function openWindowForCardIndex(cardIndex: number): void {
-    const item = currentItems[cardIndex] ?? originalItems[cardIndex];
+    const item = currentItems[cardIndex] ?? activeItems()[cardIndex];
     if (item) openWindowForCard(cardIndex, item);
   }
 
@@ -1248,7 +1425,7 @@ export function renderWaferGallery(
   function openLotSummaryReport(): void {
     // Loaded when opened, not with the gallery.
     void import('../stats/renderSummaryReport.js').then(({ renderLotReportHtml }) => {
-      openReportModal(renderLotReportHtml(reportMapsFromItems(originalItems, lotRingCount())), { anchor: container });
+      openReportModal(renderLotReportHtml(reportMapsFromItems(activeItems(), lotRingCount())), { anchor: container });
     });
   }
 
@@ -1260,10 +1437,10 @@ export function renderWaferGallery(
 
     // State the denominator. The list is a subset by design; saying so is what
     // stops it reading as the full wafer list.
-    if (originalItems.length > 0) {
+    if (activeItems().length > 0) {
       const heading = container.ownerDocument.createElement('div');
       const withCount = wafers.length;
-      const total = originalItems.filter(Boolean).length;
+      const total = activeItems().filter(Boolean).length;
       heading.textContent = withCount === 0
         ? `No findings on any of the ${total} wafers`
         : `${withCount} of ${total} wafer${total === 1 ? '' : 's'} with findings`;
@@ -1385,6 +1562,8 @@ export function renderWaferGallery(
 
   function renderGallerySummaryPanel(): void {
     if (!gallerySummaryPanelEl) return;
+    // The filter's analysis is still running: the panel keeps what it shows until the filtered figures land.
+    if (filterNarrowing && currentLotStats && !filteredLot && filterAnalysisPending) return;
     // A render already staging is now describing a lot, a filter or a
     // highlight that is no longer current, and it would keep appending
     // sections to a panel this one is about to clear. Abandon it first.
@@ -1396,7 +1575,8 @@ export function renderWaferGallery(
     // wafers) and gave two identical-looking per-wafer lists two different click
     // actions. The per-wafer list now lives inside the lot panel as badges on the
     // Wafer Yield rows.
-    if (currentLotStats) {
+    const lotNow = lotStats();
+    if (lotNow) {
       // Lot-level view — full stats (metadata/yield/bin/ring/quadrant/test
       // values) plus findings and a combined Report button. Bin/ring/
       // quadrant/test numbers here and in the Insights tab's Overview
@@ -1404,8 +1584,8 @@ export function renderWaferGallery(
       // (`buildRegionYieldData`, `StatsSummary.stats.*` — see
       // summaryPanel.ts's header comment), so the two surfaces can overlap
       // without ever disagreeing.
-      const lotHbinDefs = mergeBinDefs(originalItems.map(it => it?.hbinDefs));
-      const lotSbinDefs = mergeBinDefs(originalItems.map(it => it?.sbinDefs));
+      const lotHbinDefs = mergeBinDefs(activeItems().map(it => it?.hbinDefs));
+      const lotSbinDefs = mergeBinDefs(activeItems().map(it => it?.sbinDefs));
       // Staged across tasks rather than rendered in one: pooling every die of
       // every wafer and deriving the bin, region and per-test sections from
       // that pool is the longest single piece of work this library does — 15.3 s
@@ -1414,8 +1594,8 @@ export function renderWaferGallery(
       // enough that an ordinary lot still renders in one synchronous pass and
       // looks exactly as it did.
       lotPanelRun = runChunked(renderLotSummaryContentSteps(gallerySummaryPanelEl, {
-        lotSummary: currentLotStats,
-        items:      originalItems,
+        lotSummary: lotNow,
+        items:      activeItems(),
         hbinDefs:   lotHbinDefs.length ? lotHbinDefs : undefined,
         sbinDefs:   lotSbinDefs.length ? lotSbinDefs : undefined,
         testDefs:   lotTestDefs(),
@@ -1652,9 +1832,9 @@ export function renderWaferGallery(
     syncToolbarVisible(barEl, 'inline-flex');
     // Hidden while Insights is open: the panel sits behind the Insights grid there.
     lotSummaryToggle.sync({
-      visible: !!(currentLotStats || hasAnyPerWaferFindings()) && !!gallerySummaryPanelEl && !insightsOpen,
+      visible: !!(currentLotStats || lotStats() || hasAnyPerWaferFindings()) && !!gallerySummaryPanelEl && !insightsOpen,
       open: lotSummaryOpen(),
-      notable: !!(currentLotStats?.hasNotableFindings || originalItems.some(it => it?.statsSummary?.hasNotableFindings)),
+      notable: !!(lotStats()?.hasNotableFindings || activeItems().some(it => it?.statsSummary?.hasNotableFindings)),
     });
   }
 
@@ -1715,7 +1895,7 @@ export function renderWaferGallery(
 
     // Use originalItems (per-wafer source) — currentItems may be aggregated cards
     // in stacked modes, which don't accurately reflect the full data availability.
-    const dies      = originalItems.flatMap(it => it?.dies ?? []);
+    const dies      = activeItems().flatMap(it => it?.dies ?? []);
     const testDefs  = lotTestDefs();
     // Value mode is available for any per-test data — numeric values or recorded
     // pass/fail verdicts (functional tests). Stacked values need numeric values.
@@ -1733,11 +1913,11 @@ export function renderWaferGallery(
     // lots SHARE, leaving the menu offering the ones unique to a single lot.
     // Naming the coverage turns "why is everything blank" into a fact stated
     // before the click rather than a puzzle after it.
-    const waferCount = originalItems.filter(Boolean).length;
+    const waferCount = activeItems().filter(Boolean).length;
     const coverageOf = (testNumber: number | undefined): number => {
       if (testNumber === undefined) return waferCount;
       let n = 0;
-      for (const it of originalItems) {
+      for (const it of activeItems()) {
         if (it?.dies?.some(d => getTestPassStatus(d, testNumber) !== undefined || testValue(d, testNumber) !== undefined)) n++;
       }
       return n;
@@ -1776,7 +1956,7 @@ export function renderWaferGallery(
     // key, first item's def wins, mirroring the hbinDefs/sbinDefs dedup pattern
     // used elsewhere in this file (e.g. itemsHaveCustomColors's neighbours).
     const seenMetadataKeys = new Set<string>();
-    const metadataModeEntries: ModeEntry[] = originalItems
+    const metadataModeEntries: ModeEntry[] = activeItems()
       .flatMap(it => it?.metadataFields ?? [])
       .filter(f => !seenMetadataKeys.has(f.key) && seenMetadataKeys.add(f.key))
       .filter(f => metadataKeyHasData(dies, f.key))
@@ -1832,7 +2012,7 @@ export function renderWaferGallery(
   function activeTestHasRecordedStatus(): boolean {
     if ((sharedOpts.plotMode ?? 'hardBin') !== 'value') return false;
     const { testNumber, td } = activeTestDefShared();
-    return originalItems.some(it => it?.dies?.some(d => getTestPassStatus(d, testNumber, td) !== undefined));
+    return activeItems().some(it => it?.dies?.some(d => getTestPassStatus(d, testNumber, td) !== undefined));
   }
 
   /**
@@ -1852,7 +2032,7 @@ export function renderWaferGallery(
     const colorbarRangeMode = effectiveSpecDisplay ? 'spec' : (sharedOpts.colorbarRangeMode ?? 'spec');
     if (colorbarRangeMode === 'spec' && hasLimits) return undefined;
     let lo = Infinity, hi = -Infinity;
-    for (const item of originalItems) {
+    for (const item of activeItems()) {
       if (!item) continue;
       for (const die of item.dies) {
         const v = getDieTestValue(die, testNumber);
@@ -1916,7 +2096,7 @@ export function renderWaferGallery(
     const key = sharedOpts.activeMetadataKey;
     if (!key) return undefined;
     const distinct = new Set<string>();
-    for (const item of originalItems) {
+    for (const item of activeItems()) {
       if (!item) continue;
       for (const value of collectMetadataValues(item.dies, key)) distinct.add(value);
     }
@@ -2024,7 +2204,7 @@ export function renderWaferGallery(
     // The same rule binColorsForMaps gives a host, so the colours a host reads
     // for its own surfaces are the ones these cards draw.
     const { colors, mixedHardBins } = resolveBinColorsForMaps(
-      originalItems.filter((it): it is WaferMapDisplayItem => it != null),
+      activeItems().filter((it): it is WaferMapDisplayItem => it != null),
       { binColorScheme: sharedOpts.binColorScheme, useDefinedBinColors: sharedOpts.useDefinedBinColors });
     lotMixedPassBins = mixedHardBins;
     return colors;
@@ -2247,7 +2427,7 @@ export function renderWaferGallery(
 
   function refreshGalleryWarnings(): void {
     const next = collectWarnings({
-      lotStatsSummary: currentLotStats,
+      lotStatsSummary: lotStats(),
       // Per-item geometry advisories live on the items themselves — each card is
       // a built WaferMapResult, so `warnings` is already on it.
       // Test-def collisions are a property of the POPULATION, not of any one
@@ -2255,7 +2435,7 @@ export function renderWaferGallery(
       // here, and collectWarnings de-duplicates and severity-orders them with
       // the geometry advisories exactly as it does everything else.
       result: { warnings: [
-        ...originalItems.flatMap(it => it?.warnings ?? []),
+        ...activeItems().flatMap(it => it?.warnings ?? []),
         ...mergedTestDefs().warnings,
       ] },
       // Stated once for the whole gallery, from the same assignment every card draws.
@@ -2465,8 +2645,9 @@ export function renderWaferGallery(
   function ensureInsightsTab(): Promise<InsightsTabHandle | null> {
     if (!insightsEnabled) return Promise.resolve(null);
     if (insightsTab) return Promise.resolve(insightsTab);
-    insightsLoad ??= import('./insightsTab.js').then(({ createInsightsTab }) => {
+    insightsLoad ??= Promise.all([import('./insightsTab.js'), ensurePageFilter()]).then(([{ createInsightsTab }, sharedFilter]) => {
       insightsTab = createInsightsTab({
+      pageFilter: sharedFilter, showFilterButton: false,
       // The charts' axis settings are preferences: start from them, and report a reader's change.
       initialAxisPrefs: axisPrefsFromOptions(sharedOpts),
       onAxisPrefsChange: (prefs) => {
@@ -2481,7 +2662,6 @@ export function renderWaferGallery(
       getRingCount: () => requireRingCount({ ringCount: lotRingCount() }, 'the Insights tab'),
       defaultView: options.insights?.defaultView,
       plotStore, onPickPlotsFile: options.insights?.onPickPlotsFile,
-      filter: options.insights?.filter, onFilterChange: options.insights?.onFilterChange,
       // A Worth a look card's Show on map: back to the cards, showing the item as its row in the Summary panel does, with
       // the panel open so the row is seen beside them.
       showOnMap: (target) => {
@@ -2491,7 +2671,8 @@ export function renderWaferGallery(
           clearLotFindingHighlight();
           applyLotTestHighlight(target.testNumber);
         } else {
-          const finding = currentLotStats ? synthesisSource(currentLotStats).findings.find(f => f.id === target.id) : undefined;
+          const lotNow = lotStats();
+          const finding = lotNow ? synthesisSource(lotNow).findings.find(f => f.id === target.id) : undefined;
           if (finding) {
             if (activeLotFindingId !== finding.id) { rememberViewBeforeFinding(); applyLotFindingHighlight(finding); }
           }
@@ -2529,7 +2710,7 @@ export function renderWaferGallery(
       // A die row in a table: back to the grid, with that die ringed on its card.
       locateDie: (die, waferIndex) => { setInsightsOpen(false); locateOnCard(waferIndex, die); },
       openWafer: (waferIndex, title, testNumber) => {
-        const item = originalItems[waferIndex];
+        const item = activeItems()[waferIndex];
         if (!item) return;
         let ctrl: WaferMapController | null = null;
         const handle = openModal({ title, onClose: () => ctrl?.destroy(), anchor: container });
@@ -2561,6 +2742,8 @@ export function renderWaferGallery(
     // chart suite is still being fetched; only revealing the tab has to wait.
     if (insightsEl) insightsEl.style.display = open ? 'flex' : 'none';
     bodyEl.style.display = open ? 'none' : 'flex';
+    // Insights states the filter in its own band; the Filter button stays where it is.
+    if (filterBand) filterBand.el.style.display = pageFilter?.get() && !open ? '' : 'none';
     galleryViewControlsEl.style.display = open ? 'none' : 'inline-flex';
     syncSeparators(barEl);
     syncToolbarVisible(barEl, 'inline-flex');
@@ -2920,7 +3103,7 @@ export function renderWaferGallery(
       gallerySummaryPanelEl.style.top       = '8px';
       gallerySummaryPanelEl.style.display   = 'flex';
       gallerySummaryPanelEl.style.flexDirection = 'column';
-    } else if (currentLotStats || hasAnyPerWaferFindings()) {
+    } else if (currentLotStats || lotStats() || hasAnyPerWaferFindings()) {
       const openOnMount = !!summaryPanelOpts?.defaultOpen;
       gallerySummaryPanelEl = createSummaryPanelEl('right', EDGE_GUTTER, container.ownerDocument, onFindingMenu);
       gallerySummaryPanelEl.style.maxHeight = 'calc(100vh - 80px)';
@@ -3013,6 +3196,16 @@ export function renderWaferGallery(
     viewSwitch = createViewSwitch(container.ownerDocument, 'Maps', 'lot', open => setInsightsOpen(open));
     chromeRowEl.appendChild(viewSwitch.el);
   }
+  // Filter: the page filter's editor, last in the row, so it keeps one place (the trailing edge) in the gallery, the map
+  // and Insights alike, whichever buttons before it come and go. Its band appears above the view once a filter exists.
+  if (insightsEnabled) {
+    filterButtonEl = bandButton(container.ownerDocument, 'Filter…', 'wmapGalleryFilterOpen',
+      'Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab',
+      () => { void ensurePageFilter().then(ctl => ctl.openEditor(filterButtonEl ?? container, originalSources())); });
+    // Ordered with the Summary button and the view switch (`order: 1`), after which it comes in the row: last, whatever order they are added in.
+    filterButtonEl.style.order = '1';
+    chromeRowEl.appendChild(filterButtonEl);
+  }
   stickyHeaderEl.appendChild(chromeRowEl);
   stickyHeaderEl.appendChild(legendEl);
   container.appendChild(stickyHeaderEl);
@@ -3036,7 +3229,7 @@ export function renderWaferGallery(
     // `lotIdentity`: a field that varies across wafers must show every
     // distinct value it takes, not just the first wafer's, and never be
     // silently dropped just because it isn't common to every visible wafer.
-    const resolvedItems = currentItems.filter((it): it is WaferMapDisplayItem => it != null);
+    const resolvedItems = currentItems.filter((it): it is WaferMapDisplayItem => it != null && !hiddenItems.has(it));
     const stackedItem = resolvedItems.find(it => it.isLotStack);
     const metaRow = buildMetadataStripRow(
       resolvedItems.map(it => ({ metadata: it.wafer.metadata ?? undefined })),
@@ -3256,12 +3449,12 @@ export function renderWaferGallery(
   // Build lot-aggregated WaferMapDisplayItems from originalItems for a stacked mode.
   // One card per bin (stackedBins/stackedSoftBins) or per test parameter (stackedValues).
   function buildStackedItems(mode: PlotMode): WaferMapDisplayItem[] {
-    const resolvedItems = originalItems.filter((it): it is WaferMapDisplayItem => it !== null);
+    const resolvedItems = activeItems().filter((it): it is WaferMapDisplayItem => it !== null && !hiddenItems.has(it));
     if (!resolvedItems.length) return [];
     // Stacking combines wafers' values at "the same physical die" — a
     // position-only concept. Unpositioned dies have no cross-wafer position
     // identity to stack by, so they're excluded from these cards.
-    const allDies   = resolvedItems.map(item => item.dies.filter(hasPosition));
+    const allDies   = resolvedItems.map(item => item.dies.filter(hasPosition).filter(d => !d.filteredOut));
     const baseWafer = resolvedItems[0].wafer;
     const lotSize   = resolvedItems.length;
     // A stack is judged by the pass bins its wafers share. Wafers built with different pass bins have no one verdict to
@@ -3412,7 +3605,7 @@ export function renderWaferGallery(
 
   // Extra shared options required for stacked modes (colour scale / lot size metadata).
   function stackedSharedOpts(mode: PlotMode): Partial<CardViewOptions> {
-    const lotSize = originalItems.length;
+    const lotSize = activeItems().length;
     if (mode === 'stackedBins' || mode === 'stackedSoftBins')
       return { valueRange: [0, lotSize] as [number, number], lotSize };
     if (mode === 'stackedValues')
@@ -3485,7 +3678,7 @@ export function renderWaferGallery(
         if (hasPendingFactories) {
           for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
         } else {
-          buildCards(originalItems.filter((it): it is WaferMapDisplayItem => it !== null));
+          buildCards(activeItems().filter((it): it is WaferMapDisplayItem => it !== null));
         }
       } else {
         for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
@@ -3745,6 +3938,8 @@ export function renderWaferGallery(
     ctrl.setSummaryVisible(false);
     expandBtn.onclick = () => openWindowForCard(cardIndex, item);
 
+    // A wafer the page filter drops whole has no card; its slot stays so card indexes keep matching the source.
+    if (hiddenItems.has(item)) card.style.display = 'none';
     return { card, ctrl, canvasWrapper, expandBtn };
   }
 
@@ -3895,6 +4090,8 @@ export function renderWaferGallery(
           buildCards(buildStackedItems(mode));
           return;
         }
+        // A filter changed while the lot was still arriving: build the cards from it now the lot is in.
+        if (filterDirty) { applyPageFilter(); return; }
         // The lot is in. This is where the summary panel settles — see the
         // comment on its call site below for why it does not follow each
         // resolution.
@@ -3920,9 +4117,11 @@ export function renderWaferGallery(
         return;
       }
       const { index, factory, placeholder } = factories[fi++];
-      const item = factory();
+      const raw = factory();
+      originalItems[index] = raw;
+      const item = viewItem(raw, index);
+      if (item !== raw) filterNarrowing = true;
       currentItems[index] = item;
-      originalItems[index] = item;
       applyGridColumns([item]);
       const { card, ctrl, canvasWrapper, expandBtn } = buildCard(item, index, newItems.length);
       cardControllers[index] = ctrl;
@@ -3980,13 +4179,15 @@ export function renderWaferGallery(
   // originalItems is already populated (see its declaration) — factories fill their
   // slots in as they resolve via resolveNext.
   // If the initial plotMode is already a stacked mode, aggregate immediately.
-  if (STACKED_MODES.has(sharedOpts.plotMode!) && originalItems.length > 0) {
+  if (STACKED_MODES.has(sharedOpts.plotMode!) && activeItems().length > 0) {
     const extra = stackedSharedOpts(sharedOpts.plotMode!);
     sharedOpts = { ...sharedOpts, ...extra };
     buildCards(buildStackedItems(sharedOpts.plotMode!));
   } else {
-    buildCards(items);
+    buildCards(throughFilter(items));
   }
+  // A filter the host restored is applied as soon as the filter has loaded.
+  if (options.insights?.filter !== undefined) void ensurePageFilter();
   // The first refreshGalleryWarnings ran before buildCards resolved the
   // gallery-wide bin colours, so it could not yet know whether bins share one.
   refreshGalleryWarnings();
@@ -4391,7 +4592,7 @@ export function renderWaferGallery(
         // the final factory resolution promote the gallery into stacked mode.
         const hasPendingFactories = newItems.some(it => typeof it === 'function');
         if (hasPendingFactories) {
-          buildCards(newItems);
+          buildCards(throughFilter(newItems));
         } else {
           // Refresh lotSize and valueRange in case the wafer count changed.
           const extra = stackedSharedOpts(mode);
@@ -4399,7 +4600,7 @@ export function renderWaferGallery(
           buildCards(buildStackedItems(mode));
         }
       } else {
-        buildCards(newItems);
+        buildCards(throughFilter(newItems));
       }
     },
 
@@ -4482,6 +4683,10 @@ export function renderWaferGallery(
       stickyHeaderEl.remove();
       bodyEl.remove();
       gallerySummaryPanelEl?.remove();
+      galleryDestroyed = true;
+      filterAnalysisRun++;
+      clearTimeout(bandTimer);
+      filterBand?.el.remove();
       insightsTab?.destroy();
     } };
 }

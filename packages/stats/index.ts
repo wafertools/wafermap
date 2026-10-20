@@ -18,4 +18,6 @@ export type { MergedTestDefs, TestDefConflict, TestDefConflictKind } from './mer
 // The plot builder's saved recipes and their file. A host keeps the list between sessions (InsightsOptions.plots in,
 // onPlotsChange out) and needs the one reader and writer, so there is a single validator of the format.
 export { readPlotsFile, writePlotsFile } from './plotSpec.js';
+export { readFiltersFile, writeFiltersFile } from './filterFile.js';
+export type { SavedFilter } from './filterFile.js';
 export type { PlotSpec, PlotFilter, PlotCondition, ReadPlotsResult } from './plotSpec.js';

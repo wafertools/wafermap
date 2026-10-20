@@ -116,8 +116,8 @@
       "section": "What your users get",
       "id": "insights",
       "file": "insights.html",
-      "title": "Insights chart suite",
-      "blurb": "the built-in charts — yield by wafer, bin pareto, ring/quadrant yield, capability, box plots, histograms and test correlation — with no charting library to add",
+      "title": "Chart gallery",
+      "blurb": "every chart and table the library draws, live on one lot, with no charting library to add: the built-in charts on the Insights tabs, one of each chart a plot can be in My plots, and the tables behind them",
       "guide": {
         "label": "Guide: The Insights tab",
         "href": "../guide/galleries.md#the-insights-tab"
@@ -129,10 +129,22 @@
       "id": "insights-plots",
       "file": "insights-plots.html",
       "title": "Plots, tables and attributes",
-      "blurb": "the Plot tab kept by the host with `insights.plots` and `onPlotsChange`, the Data tab, drilldown, and your own names for wafer attributes with `attributes`",
+      "blurb": "the My plots tab kept by the host with `insights.plots` and `onPlotsChange`, the Data tab, drilldown, and your own names for wafer attributes with `attributes`",
       "guide": {
         "label": "Guide: Saved plots, the Data tab and attribute names",
         "href": "../guide/galleries.md#saved-plots-the-my-plots-tab-kept-by-the-host"
+      },
+      "dataFiles": []
+    },
+    {
+      "section": "What your users get",
+      "id": "filters",
+      "file": "filters.html",
+      "title": "Filtering wafers and dies",
+      "blurb": "one filter for the gallery, a single map and Insights, kept by the host with `insights.filter` and `onFilterChange`; filters saved by name with `savedFilters`, and a hand-written `wafermap-filters` file read by Import…",
+      "guide": {
+        "label": "Guide: The filter",
+        "href": "../guide/galleries.md#the-filter"
       },
       "dataFiles": []
     },

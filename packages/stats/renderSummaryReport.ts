@@ -25,7 +25,7 @@ import { MEAN_WAFER_YIELD_LABEL, shortfallLegend } from './presentation.js';
 import { regionYieldRows, waferYieldRows } from './yieldRows.js';
 import { describeValues } from './math.js';
 import { fmt } from '../renderer/fmt.js';
-import { getDieKey, isPositionedDie, diePassStatus } from '../core/dies.js';
+import { isYieldEligibleDie, getDieKey, isPositionedDie, diePassStatus } from '../core/dies.js';
 import { excludedCounts, testValue } from '../core/dieTable.js';
 import { limitSetName } from '../renderer/valueFilter.js';
 import {
@@ -133,7 +133,7 @@ function regionYieldSection(
     let pass = 0, total = 0;
     for (const key of region.dieKeys) {
       const d = dieByKey.get(key);
-      if (!d || d.partial || d.edgeExcluded) continue;
+      if (!d || !isYieldEligibleDie(d)) continue;
       const verdict = diePassStatus(d, passSet);
       if (verdict === undefined) continue;
       total++;
@@ -201,7 +201,7 @@ function testSection(
   anchorId?: string,
 ): string {
   if (!testDefs.length) return '';
-  const active = dies.filter(d => !d.partial && !d.edgeExcluded);
+  const active = dies.filter(d => isYieldEligibleDie(d));
   const known = new Map((precomputed ?? []).map(s => [s.testNumber, s]));
   const yields = new Map((specYield ?? []).map(y => [y.testNumber, y.yieldPercent]));
 
@@ -840,7 +840,7 @@ function renderLotGroupSections(
       totalDies++;
       if (d.edgeExcluded) edgeExcludedDies++;
       if (d.partial) partialDies++;
-      if (d.partial || d.edgeExcluded) continue;
+      if (!isYieldEligibleDie(d)) continue;
       const verdict = diePassStatus(d, passSet);
       if (verdict === undefined) continue;
       analyzedDies++;

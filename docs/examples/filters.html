@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Filtering wafers and dies — wafermap guide</title>
+  <link rel="stylesheet" href="demo.css">
+  <script src="demo-nav.js" defer></script>
+  <script type="importmap">{ "imports": {
+    "wafermap":        "../dist/index.js",
+    "wafermap/render": "../dist/packages/canvas-adapter/index.js",
+    "wafermap/stats":  "../dist/packages/stats/index.js"
+  } }</script>
+  <style>
+    .demo-content { padding: 0; }
+    #stage { width: 100%; padding: 14px; box-sizing: border-box; }
+    #state { font-family: monospace; font-size: 12px; color: var(--muted); }
+    #file-box { width: 100%; box-sizing: border-box; font: 12px/1.4 monospace; min-height: 11em; }
+    .file-panel { padding: 0 14px 14px; max-width: 70em; }
+    .file-panel summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+    #file-msg { font-size: 12px; color: var(--muted); margin: 4px 0 0; white-space: pre-line; }
+  </style>
+</head>
+<body class="demo-page">
+
+  <header class="demo-header">
+    <span class="demo-logo">wafer<em>map</em></span>
+    <div class="demo-sep"></div>
+    <span class="demo-title">Filtering wafers and dies</span>
+    <span class="demo-desc">insights.filter · onFilterChange · savedFilters · onSavedFiltersChange · onPickFiltersFile · readFiltersFile / writeFiltersFile</span>
+  </header>
+
+  <div class="demo-intro">
+    <strong>Filter…</strong>, the last button in the toolbar row, keeps only the wafers and dies that meet conditions the reader sets. It is
+    one filter for the gallery, a single map and every Insights tab, and the library keeps nothing: you hand it the filter in
+    <code>insights.filter</code> and keep it current from <code>insights.onFilterChange</code> (here, in <code>localStorage</code>).
+    A condition on a <em>wafer</em> field (the split, a wafer's yield) removes the wafer's card; a condition on a <em>die</em> field (a bin, a ring, a test)
+    draws the dies it drops faded, and everything beside the map, the Summary panel and its findings included, is analysed again over what is kept.
+    Try the two starting filters below, then open <strong>Summary</strong> and switch to <strong>Insights</strong> to see the same filter there.
+    <strong>Filter…</strong> also saves what you set under a name (<code>insights.savedFilters</code>, <code>onSavedFiltersChange</code>): the three here
+    came from the host, and <strong>Export…</strong> writes them as a <code>wafermap-filters</code> file (<code>writeFiltersFile</code>).
+    <strong>Import…</strong> reads one (<code>readFiltersFile</code>), here the text in the box below, which you can edit: the file is plain JSON, written by hand or by a host.
+  </div>
+
+  <div class="demo-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Start with</span>
+      <button class="toggle-btn active" data-start="wafer">A wafer filter</button>
+      <button class="toggle-btn"        data-start="die">A die filter</button>
+      <button class="toggle-btn"        data-start="none">No filter</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <button class="toggle-btn" id="btn-reset">Reset saved filters</button>
+    <div class="ctrl-sep"></div>
+    <span id="state"></span>
+  </div>
+
+  <div class="demo-content">
+    <div id="stage"><div id="gallery"></div></div>
+  </div>
+
+  <div class="file-panel">
+    <details open>
+      <summary>A filters file, as <strong>Import…</strong> reads it (edit it, then press Import… in the Filter window)</summary>
+      <textarea id="file-box" spellcheck="false" aria-label="Filters file text read by Import…"></textarea>
+      <p id="file-msg" role="status"></p>
+    </details>
+  </div>
+
+  <script type="module">
+    import { buildWaferMap, readFiltersFile, writeFiltersFile } from 'wafermap';
+    import { renderWaferGallery } from 'wafermap/render';
+    import { analyzeWaferLot } from 'wafermap/stats';
+    import { makeResults, makeWaferConfig, DIE_CONFIG, TEST_DEFS, HBIN_DEFS, SBIN_DEFS } from './data.js';
+
+    const FILTER_KEY = 'wafermap-example-filter';
+    const SAVED_KEY  = 'wafermap-example-saved-filters';
+
+    // What "Start with" offers. A filter is { conditions, off? }: every condition must hold.
+    const STARTS = {
+      wafer: { conditions: [{ field: { meta: 'processSplit' }, values: ['Hi-dose'] }] },
+      die:   { conditions: [{ field: { builtin: 'hbin' }, values: ['Bin 1'] }, { field: { builtin: 'quadrant' }, values: ['NE', 'SE'] }] },
+      none:  undefined,
+    };
+    // Filters the host ships. The reader can add to these, delete them, and move them as a file.
+    const STARTER_SAVED = [
+      { id: 'hi-dose', name: 'Hi-dose wafers only', conditions: STARTS.wafer.conditions },
+      { id: 'vth-in-spec', name: 'Vth inside its limits', conditions: [{ field: { test: 1060 }, min: 0.45, max: 0.57 }] },
+      { id: 'east-fails', name: 'Fails on the east side', conditions: [{ field: { builtin: 'hbin' }, values: ['Bin 1'], not: true }, { field: { builtin: 'quadrant' }, values: ['NE', 'SE'] }] },
+    ];
+    // The file Import… reads: a hand-written one, as a user or a host might write it.
+    const SAMPLE_FILE = JSON.stringify({
+      format: 'wafermap-filters', version: 1,
+      filters: [
+        { id: 'poor-wafers', name: 'Wafers yielding under 90 %', conditions: [{ field: { builtin: 'yield' }, max: 90 }] },
+        { name: 'Process split POR, bin 1', conditions: [{ field: { meta: 'processSplit' }, values: ['POR'] }, { field: { builtin: 'hbin' }, values: ['Bin 1'] }] },
+      ],
+    }, null, 2);
+
+    const readStored = (key, fallback) => {
+      try { const s = JSON.parse(localStorage.getItem(key) ?? 'null'); if (s !== null) return s; } catch { /* storage unavailable */ }
+      return fallback;
+    };
+    const store = (key, value) => {
+      try { if (value === undefined) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
+    };
+
+    let start = 'wafer', filter = STARTS.wafer, saved = STARTER_SAVED;
+    function show() {
+      const say = filter ? `filter: ${filter.conditions.length} condition${filter.conditions.length === 1 ? '' : 's'}${filter.off ? ' (off)' : ''}` : 'no filter';
+      document.getElementById('state').textContent = `${say} · ${saved.length} saved (${writeFiltersFile(saved).length.toLocaleString()} bytes as a filters file)`;
+    }
+
+    const items = [];
+    for (let i = 0; i < 6; i++) {
+      const cfg = makeWaferConfig(i);
+      const result = buildWaferMap({
+        results: makeResults({ seed: 41 + i, waferIndex: i, quadrant: true }),
+        waferConfig: cfg, dieConfig: DIE_CONFIG,
+        passBins: [1], testDefs: TEST_DEFS, hbinDefs: HBIN_DEFS, sbinDefs: SBIN_DEFS,
+      });
+      items.push({ ...result, label: cfg.metadata.waferId });
+    }
+    const lotStatsSummary = analyzeWaferLot(items, { testDefs: TEST_DEFS, computePerTestStats: true });
+
+    const fileBox = document.getElementById('file-box');
+    const fileMsg = document.getElementById('file-msg');
+    fileBox.value = SAMPLE_FILE;
+
+    let gallery;
+    function render() {
+      if (gallery) gallery.destroy();
+      show();
+      gallery = renderWaferGallery(document.getElementById('gallery'), items, {
+        lotStatsSummary,
+        attributes: { processSplit: { label: 'Process split' } },
+        insights: {
+          enabled: true,
+          filter,
+          onFilterChange: f => { filter = f; store(FILTER_KEY, f ?? null); show(); },
+          savedFilters: saved,
+          onSavedFiltersChange: list => { saved = list; store(SAVED_KEY, list); show(); },
+          // Import… asks the host for the file's text; a desktop host passes its own file dialog here. This one answers
+          // with the box above, and says what the reader found in it.
+          onPickFiltersFile: async () => {
+            const text = fileBox.value;
+            const read = readFiltersFile(text);
+            fileMsg.textContent = read.error ? `Import: ${read.error}`
+              : `Import: ${read.filters.length} filter${read.filters.length === 1 ? '' : 's'} read.${read.warnings.length ? `\n${read.warnings.join('\n')}` : ''}`;
+            return text;
+          },
+        },
+        summaryPanel: { placement: 'right' },
+        viewOptions: { plotMode: 'hardBin' },
+        showHelpButton: true,
+      });
+    }
+    filter = readStored(FILTER_KEY, STARTS.wafer) ?? undefined;
+    saved = readStored(SAVED_KEY, STARTER_SAVED);
+    render();
+
+    document.querySelectorAll('[data-start]').forEach(b => b.addEventListener('click', () => {
+      start = b.dataset.start;
+      document.querySelectorAll('[data-start]').forEach(x => x.classList.toggle('active', x === b));
+      filter = STARTS[start];
+      store(FILTER_KEY, filter ?? null);
+      render();
+    }));
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      filter = STARTS[start];
+      saved = STARTER_SAVED;
+      store(FILTER_KEY, undefined); store(SAVED_KEY, undefined);
+      render();
+    });
+  </script>
+
+</body>
+</html>

@@ -36,12 +36,14 @@ import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { waferPopulation } from './chartPopulation.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { plotStoreFor, type PlotStore } from './plotStore.js';
-import { readFilter, type PlotFilter, type PlotSpec } from '../stats/plotSpec.js';
-import { buildFilterEditor, buildFilterStrip } from './filterEditor.js';
+import type { PlotFilter, PlotSpec } from '../stats/plotSpec.js';
+import type { SavedFilter } from '../stats/filterFile.js';
+import { createPageFilter, type PageFilterController } from './pageFilter.js';
+import { bandButton as makeBandButton } from './filterButton.js';
 import { itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
 import { describeWaferPopulation, populationStat } from '../stats/population.js';
-import { LEADING, ALPHA, SPACE, EDGE_GUTTER, FONT, CLR, RADIUS, SHADOW, openModal, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
+import { LEADING, ALPHA, SPACE, EDGE_GUTTER, FONT, CLR, RADIUS, SHADOW, controlStyle, wireControlHover, wireTooltip, type SaveImageHandler, type SaveTextHandler } from './toolbar.js';
 import { ICONS } from './icons.js';
 import { renderCapabilityPanel } from './charts/capability.js';
 import { renderGroupComparisonPanel } from './charts/groupComparison.js';
@@ -61,7 +63,7 @@ import { renderDataSection, type DataView } from './dataTab.js';
 import { sourceFromDies, toPlotItems } from './plotItems.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { renderPlotCard, type CardChoice } from './plotCard.js';
-import { orderFieldValues, axisValues, applyConditions, fieldCatalogue, fieldExtent, fieldValues, type ConditionsApplied, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
+import { orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
 import type { CardSpec } from '../stats/cardSpec.js';
 import { buildSynthesis, synthesisKey, type SynthesisTarget } from '../stats/synthesis.js';
 import { commonPassBins } from '../core/passBins.js';
@@ -130,14 +132,29 @@ export interface InsightsOptions {
    */
   onPickPlotsFile?: () => Promise<string | null>;
   /**
-   * The Insights filter to start with: conditions every tab's wafers and dies must meet (one split, the edge ring, a
-   * range of a test), with `off` to keep them unapplied. It is view state, like Group by: the reader edits it from the
-   * Filter button, it is shown above every tab whenever it exists, and it is never written into a plots file. Keep it
-   * from `onFilterChange` to restore it.
+   * The page filter to start with: conditions the wafers and dies of the gallery, the map and every Insights tab must
+   * meet (one split, the edge ring, a range of a test), with `off` to keep them unapplied. It is one filter for all of
+   * them: a wafer condition removes a wafer's card, a die condition draws the dies it drops dimmed on a map. It is view
+   * state, like Group by: the reader edits it from the Filter button, it is shown above the view whenever it exists, and
+   * it is never written into a plots file. Keep it from `onFilterChange` to restore it.
    */
   filter?: PlotFilter;
   /** Called with the filter after the reader applies, switches, or removes it (`undefined` once removed). */
   onFilterChange?: (filter: PlotFilter | undefined) => void;
+  /**
+   * Filters the reader has saved under a name, to start with (`SavedFilter`: `id`, `name`, `conditions`). The Filter
+   * window lists them to load into the editor, and Export… / Import… move them as a `wafermap-filters` file
+   * (`readFiltersFile` / `writeFiltersFile`). Read leniently, like a plots file: one that cannot be read is left out and
+   * logged. Keep them from `onSavedFiltersChange`.
+   */
+  savedFilters?: SavedFilter[];
+  /** Called with the whole list after the reader saves, deletes or imports a filter. */
+  onSavedFiltersChange?: (filters: SavedFilter[]) => void;
+  /**
+   * Choose a filters file to import, resolving to its text, or `null` when cancelled. Without it the browser's own file
+   * input is used; a desktop host passes its native dialog, as with `onPickPlotsFile`.
+   */
+  onPickFiltersFile?: () => Promise<string | null>;
   /**
    * Open the Insights view on mount instead of starting on the map/grid.
    * Default false — the tab is offered, the map is what you see first.
@@ -226,6 +243,10 @@ export interface InsightsTabDeps {
   /** See `InsightsOptions.filter` and `onFilterChange`. */
   filter?: PlotFilter;
   onFilterChange?: (filter: PlotFilter | undefined) => void;
+  /** Whether the tab row carries its own Filter button. A host whose chrome already has one (the gallery, the map) turns it off, so the button keeps one place. Default true. */
+  showFilterButton?: boolean;
+  /** The page filter the maps and the gallery share; created from `filter` and `onFilterChange` when omitted. */
+  pageFilter?: PageFilterController;
   /** Opens the user guide. Rendered as an icon at the end of the tab row —
    *  while Insights is showing, the map toolbar is hidden (it held only a
    *  back-to-gallery button, which the back tab already provides, and this
@@ -306,21 +327,6 @@ const DATA_VIEW: { key: InsightsView; label: string } = { key: 'data', label: 'D
 
 /** Last: the reader's own plots (plotTab.ts). */
 const PLOT_VIEW: { key: InsightsView; label: string } = { key: 'plot', label: 'My plots' };
-
-/**
- * `insights.filter` as the host gave it, read by the plots file's own reader: a host restores it from storage, where it
- * may be malformed or written by another version. A condition that cannot be read is left out and the problem logged;
- * the band then states the filter that is applied, so nothing is filtered unseen.
- */
-function readFilterOption(raw: unknown): PlotFilter | undefined {
-  if (raw === undefined || raw === null) return undefined;
-  const warnings: string[] = [];
-  const isObj = typeof raw === 'object' && !Array.isArray(raw);
-  const filter = isObj ? readFilter(JSON.parse(JSON.stringify(raw)) as Record<string, unknown>, 'insights.filter', warnings) : undefined;
-  if (!filter) warnings.push('insights.filter: needs at least one condition, so no filter is applied');
-  if (warnings.length) console.warn(`[wafermap] ${warnings.join('; ')}`);
-  return filter;
-}
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest, locateDie } = deps;
@@ -450,10 +456,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     marginTop: '0',
     paddingLeft: contentInset, paddingRight: contentInset } as Partial<CSSStyleDeclaration>);
 
-  // The Insights filter, between the tabs and what they show: present on every tab whenever a filter exists, on or off.
-  const filterBandEl = doc.createElement('div');
-  filterBandEl.dataset.wmapInsightsFilter = '1';
-  Object.assign(filterBandEl.style, { display: 'none', marginLeft: contentInset, marginRight: contentInset, marginBottom: SPACE.lg } as Partial<CSSStyleDeclaration>);
+  // The page filter, between the tabs and what they show: present on every tab whenever a filter exists, on or off.
+  const pageFilter = deps.pageFilter ?? createPageFilter({ doc, initial: deps.filter, onChange: deps.onFilterChange, attributes: deps.attributes, getRingCount: deps.getRingCount });
+  const filterBand = pageFilter.createBand(() => facetItems(), { marginLeft: contentInset, marginRight: contentInset, marginBottom: SPACE.lg });
+  const filterBandEl = filterBand.el;
 
   rootEl.appendChild(metaStripEl);
   rootEl.appendChild(tabBar);
@@ -474,15 +480,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // Sweeps are plots now: the old Sweeps tab opens the Plot tab, where they are.
   let activeView: InsightsView = deps.defaultView === 'sweeps' ? 'plot' : deps.defaultView ?? 'overview';
   let analysisGroupKey: string | undefined;
-  /** The Insights filter (see `InsightsOptions.filter`): view state, applied in `render` before Group by. */
-  let pageFilter: PlotFilter | undefined = readFilterOption(deps.filter);
   /** Whether the filter is narrowing what the tabs show right now: the host's lot stats describe every die, so not then. */
   let filtering = false;
-  const setPageFilter = (f: PlotFilter | undefined): void => {
-    pageFilter = f;
-    deps.onFilterChange?.(f ? JSON.parse(JSON.stringify(f)) as PlotFilter : undefined);
-    render();
-  };
+  pageFilter.subscribe(() => render());
   // The Data tab's own choices live here for the same reason as the shared test
   // below: `render()` rebuilds the section, and the choice must outlive that.
   let dataView: DataView = 'statistics';
@@ -1221,7 +1221,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   /**
    * Worth a look: the items "What stands out" lists beside the map (the results synthesis, one list for both), each
    * drawn as the chart that shows it, with the sentence that says why and Show on map, then the same "also" line. The
-   * list describes the whole lot, so while the Insights filter or Show narrows the population it says so instead of
+   * list describes the whole lot, so while the filter or Show narrows the population it says so instead of
    * drawing charts of a population the list was not made from. Null when there is no analysis to make it from.
    */
   function renderWorthALook(items: Item[], allTestDefs: TestDef[]): { el: HTMLElement; destroy: () => void } | null {
@@ -1242,7 +1242,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       el.appendChild(p);
     };
     if (filtering || activeSectionGroup !== null) {
-      line('Worth a look describes the whole lot, as What stands out beside the map does. Switch the Insights filter off, or Show all groups, to see it here.', 'wmapWorthNarrowed');
+      line('Worth a look describes the whole lot, as What stands out beside the map does. Switch the filter off, or Show all groups, to see it here.', 'wmapWorthNarrowed');
       return { el, destroy: () => {} };
     }
     const synthesis = buildSynthesis(summary, { passBins: commonPassBins(items.map(it => it.passBins)), attributes: deps.attributes });
@@ -1739,135 +1739,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return { card: wrap, destroy: () => { correlation.destroy(); scatter.destroy(); } };
   }
 
-  /** The loaded wafers as plot items, the form the filter (`applyConditions`) and its field lists read. */
-  function filterPopulation(loaded: Item[]): { items: PlotItem[]; ctx: PlotContext } {
-    const items = toPlotItems(loaded.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
-    return { items, ctx: { testDefs: mergeTestDefs(loaded).defs, curation } };
-  }
-
-  /**
-   * The wafers and dies the Insights filter keeps. A wafer kept whole keeps its own summary; one whose dies a condition
-   * narrowed loses it, since the summary describes every die. A filter that cannot be applied (a field these wafers
-   * lack) filters nothing, and the band says so.
-   */
-  function applyPageFilter(loaded: Item[]): { items: Item[]; result?: ConditionsApplied } {
-    if (!pageFilter || pageFilter.off) return { items: loaded };
-    const pop = filterPopulation(loaded);
-    const result = applyConditions(pageFilter.conditions, pop.items, pop.ctx);
-    if (result.issue) return { items: loaded, result };
-    const items = result.index.map((i, k) => {
-      const it = loaded[i], dies = result.items[k].dies as Die[];
-      return dies === it.dies ? it : { ...it, dies, statsSummary: undefined };
-    });
-    return { items, result };
-  }
-
-  function bandButton(text: string, hook: string, hint: string, onClick: () => void): HTMLButtonElement {
-    const b = doc.createElement('button');
-    b.type = 'button';
-    b.textContent = text;
-    b.dataset[hook] = '1';
-    Object.assign(b.style, { ...controlStyle('outlined'), fontSize: FONT.body, padding: `0 ${SPACE.md}` } as Partial<CSSStyleDeclaration>);
-    wireControlHover(b);
-    wireTooltip(b, hint);
-    b.addEventListener('click', onClick);
-    return b;
-  }
-
-  /** The band above every tab: the filter, what it kept, and Edit / Remove. Hidden only when there is no filter. */
-  function renderFilterBand(result: ConditionsApplied | undefined): void {
-    filterBandEl.replaceChildren();
-    filterBandEl.style.display = pageFilter ? '' : 'none';
-    if (!pageFilter) return;
-    const actions = [
-      bandButton('Edit…', 'wmapInsightsFilterEdit', 'Change the conditions', () => openFilterModal()),
-      bandButton('Remove', 'wmapInsightsFilterRemove', 'Delete the filter: every tab shows every wafer and die again', () => setPageFilter(undefined)),
-    ];
-    if (result?.issue) {
-      const warn = doc.createElement('div');
-      warn.dataset.wmapInsightsFilterIssue = '1';
-      warn.setAttribute('role', 'status');
-      Object.assign(warn.style, {
-        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.md, padding: `${SPACE.xs} ${SPACE.md}`,
-        background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, color: CLR.warnText, fontSize: FONT.body,
-      } as Partial<CSSStyleDeclaration>);
-      const t = doc.createElement('span');
-      t.textContent = `The Insights filter cannot be applied to these wafers (${result.issue}), so nothing is filtered.`;
-      const end = doc.createElement('span');
-      Object.assign(end.style, { display: 'inline-flex', gap: SPACE.sm, marginLeft: 'auto' } as Partial<CSSStyleDeclaration>);
-      end.append(...actions);
-      warn.append(t, end);
-      filterBandEl.appendChild(warn);
-      return;
-    }
-    const n = (v: number) => v.toLocaleString('en-GB');
-    const kept = result
-      ? `${n(result.wafers.kept)} of ${n(result.wafers.total)} wafer${result.wafers.total === 1 ? '' : 's'} · ${n(result.dies.kept)} of ${n(result.dies.total)} dies`
-      : undefined;
-    filterBandEl.appendChild(buildFilterStrip({
-      doc, filter: pageFilter, testDefs: mergeTestDefs(facetItems()).defs, attributes: curation, label: 'Insights filter', kept, actions,
-      onToggle: on => {
-        if (!pageFilter) return;
-        const next: PlotFilter = { ...pageFilter };
-        if (on) delete next.off; else next.off = true;
-        setPageFilter(next);
-      },
-    }));
-  }
-
-  /**
-   * The Insights filter's editor, in a modal: the conditions are too many controls for the tab bar. Changes are a draft,
-   * with what they would keep stated live, until Apply; Cancel, Escape and ✕ leave the filter as it was.
-   */
-  function openFilterModal(): void {
-    const loaded = facetItems();
-    const pop = filterPopulation(loaded);
-    let draft: PlotFilter | undefined = pageFilter ? JSON.parse(JSON.stringify(pageFilter)) as PlotFilter : undefined;
-    let apply: HTMLButtonElement | undefined;
-    const handle = openModal({
-      title: 'Filter Insights', anchor: rootEl, ownerDocument: doc,
-      // An editor's height, not its content's: a field list opens inside the window and needs room to show its choices.
-      boxSize: { width: 'min(92vw, 640px)', height: 'min(85vh, 640px)' }, maximizable: false,
-      // With nothing to apply yet, start where the reader begins: adding a condition.
-      initialFocus: () => (draft ? apply : editor.el.querySelector<HTMLButtonElement>('[data-wmap-filter-add]') ?? apply),
-      onClose: () => {},
-    });
-    handle.box.dataset.wmapInsightsFilterModal = '1';
-    const body = doc.createElement('div');
-    Object.assign(body.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg, padding: SPACE.xl, color: CLR.text, fontSize: FONT.body, overflowY: 'auto', flex: '1 1 auto', minHeight: '0' } as Partial<CSSStyleDeclaration>);
-    const intro = doc.createElement('p');
-    intro.style.margin = '0';
-    intro.textContent = 'Every Insights tab shows only the wafers and dies that meet every condition. A condition on a wafer field '
-      + '(split, yield) keeps whole wafers; one on a die field (bin, ring, a test) keeps those dies inside them. The filter is '
-      + 'shown above every tab for as long as it exists, and can be switched off there without losing it.';
-    const preview = doc.createElement('div');
-    preview.dataset.wmapInsightsFilterPreview = '1';
-    preview.setAttribute('aria-live', 'polite');
-    Object.assign(preview.style, { fontWeight: '600', color: CLR.value } as Partial<CSSStyleDeclaration>);
-    const showPreview = () => {
-      if (!draft || draft.off) { preview.textContent = draft ? 'Off: every wafer and die is shown.' : 'No conditions: every wafer and die is shown.'; return; }
-      const r = applyConditions(draft.conditions, pop.items, pop.ctx);
-      preview.textContent = r.issue ? `Cannot be applied: ${r.issue}`
-        : `Keeps ${r.wafers.kept.toLocaleString('en-GB')} of ${r.wafers.total.toLocaleString('en-GB')} wafers · ${r.dies.kept.toLocaleString('en-GB')} of ${r.dies.total.toLocaleString('en-GB')} dies`;
-    };
-    const editor = buildFilterEditor({
-      doc, catalogue: fieldCatalogue(pop.items, pop.ctx), filter: draft, testDefs: pop.ctx.testDefs, attributes: curation, switchLabel: 'Filter Insights',
-      valuesOf: f => fieldValues(f, pop.items, pop.ctx), extentOf: f => fieldExtent(f, pop.items, pop.ctx),
-      onChange: f => { draft = f; showPreview(); },
-    });
-    showPreview();
-    // Cancel and Apply stay at the foot of the window, below what scrolls.
-    const row = doc.createElement('div');
-    Object.assign(row.style, { display: 'flex', justifyContent: 'flex-end', gap: SPACE.md, flexWrap: 'wrap', flexShrink: '0',
-      padding: `${SPACE.md} ${SPACE.xl}`, borderTop: `1px solid ${CLR.menuBorder}` } as Partial<CSSStyleDeclaration>);
-    const cancel = bandButton('Cancel', 'wmapInsightsFilterCancel', 'Close without changing the filter', () => handle.close());
-    apply = bandButton('Apply', 'wmapInsightsFilterApply', 'Filter every Insights tab by these conditions', () => { handle.close(); setPageFilter(draft); });
-    for (const b of [cancel, apply]) b.style.padding = `${SPACE.sm} ${SPACE.lg}`;
-    row.append(cancel, apply);
-    body.append(intro, editor.el, preview);
-    handle.contentWrap.style.flexDirection = 'column';
-    handle.contentWrap.append(body, row);
-  }
+  const bandButton = (text: string, hook: string, hint: string, onClick: () => void): HTMLButtonElement => makeBandButton(doc, text, hook, hint, onClick);
+  const openFilterModal = (): void => pageFilter.openEditor(rootEl, facetItems());
 
   function render(opts?: { keepSections?: boolean }): void {
     if (!opts?.keepSections) dropSectionCache();
@@ -1880,10 +1753,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     for (const v of views) tabBar.appendChild(makeTabButton(v.key, v.label));
 
     const loadedItems = facetItems();
-    const filtered = applyPageFilter(loadedItems);
+    const filtered = pageFilter.keep(loadedItems);
     const allItems = filtered.items;
-    filtering = allItems !== loadedItems;
-    renderFilterBand(filtered.result);
+    filtering = filtered.narrowing;
+    filterBand.refresh(filtered.result, loadedItems);
     renderMetadataStrip(allItems);
     const facetTable = buildFacetTable(allItems, { facetableOnly: true, curation }).filter(f => f.splittable);
     dividingFields = facetTable.map(f => ({ key: f.key, label: f.label }));
@@ -1896,8 +1769,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       display: 'flex', gap: SPACE.md, alignItems: 'center',
       marginLeft: SPACE.xxl, paddingBottom: SPACE.xs,
     } as Partial<CSSStyleDeclaration>);
-    controlsRow.appendChild(bandButton('Filter…', 'wmapInsightsFilterOpen',
-      'Show only the wafers and dies that meet conditions you set, on every Insights tab', () => openFilterModal()));
+    if (deps.showFilterButton !== false) {
+      controlsRow.appendChild(bandButton('Filter…', 'wmapInsightsFilterOpen',
+        'Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab', () => openFilterModal()));
+    }
     let groupLabelText: string | undefined;
     if (facetTable.length > 0) {
       controlsRow.appendChild(makeLabeledSelect(
@@ -2035,7 +1910,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       // The filter kept nothing: say so where the charts would be, rather than draw every chart empty.
       const none = doc.createElement('div');
       none.dataset.wmapInsightsFilterEmpty = '1';
-      none.textContent = 'The Insights filter keeps no wafer and no die. Edit the filter or switch it off to see the data.';
+      none.textContent = 'The filter keeps no wafer and no die. Edit the filter or switch it off to see the data.';
       Object.assign(none.style, { color: CLR.label, fontSize: FONT.body, padding: SPACE.xl } as Partial<CSSStyleDeclaration>);
       bodyEl.appendChild(none);
       return;

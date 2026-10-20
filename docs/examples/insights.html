@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Insights — the built-in chart suite — wafermap guide</title>
+  <title>Chart gallery — every chart and table — wafermap guide</title>
   <link rel="stylesheet" href="demo.css">
   <script src="demo-nav.js" defer></script>
   <script type="importmap">{ "imports": {
@@ -17,29 +17,24 @@
     .demo-content { padding: 0; }
     #stage { width: 100%; padding: 14px; box-sizing: border-box; }
 
-    .chart-index {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      gap: 14px;
-      margin: 4px 14px 18px;
+    /* The gallery: a tile per chart, its thumbnail above its name and what it shows. */
+    .chart-index { display: flex; flex-direction: column; gap: 18px; margin: 4px 14px 18px; }
+    .chart-index h3 { margin: 0 0 2px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    .chart-index section > p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .tile {
+      display: flex; flex-direction: column; gap: 4px; padding: 0 0 10px; overflow: hidden; text-decoration: none; color: inherit;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--surface, #fff);
     }
-    .chart-index section {
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px 14px;
-      background: var(--surface, #fff);
-    }
-    .chart-index h3 {
-      margin: 0 0 4px;
-      font-size: 13px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    .chart-index p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
-    .chart-index ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
-    .chart-index li strong { font-weight: 600; }
-    .chart-index .look { color: var(--muted); }
+    .tile:hover, .tile:focus-visible { border-color: var(--accent, #1a6bbf); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12); }
+    .tile img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; object-position: top left; background: #f4f6f8; border-bottom: 1px solid var(--border); }
+    .tile strong { padding: 0 10px; font-size: 13px; font-weight: 600; }
+    .tile span { padding: 0 10px; font-size: 12px; line-height: 1.4; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { font-size: 13px; border: 1px solid var(--border); border-radius: 12px; padding: 1px 10px; text-decoration: none; }
+    .live-title { margin: 6px 14px 0; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    .more { margin: 0 14px 14px; font-size: 13px; line-height: 1.55; }
+    .more summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; }
     .demo-intro .clicks { margin: 4px 0 0; padding-left: 20px; }
   </style>
 </head>
@@ -48,89 +43,116 @@
   <header class="demo-header">
     <span class="demo-logo">wafer<em>map</em></span>
     <div class="demo-sep"></div>
-    <span class="demo-title">Insights — the built-in chart suite</span>
+    <span class="demo-title">Chart gallery — every chart and table</span>
     <span class="demo-desc" id="banner"></span>
   </header>
 
   <div class="demo-intro">
-    Everything below is drawn by the library from the same data the map already has.
-    There is no charting call to make and no second library to add: every map and gallery
-    has a <strong>Maps | Insights</strong> switch (<code>insights: { enabled: false }</code>
-    removes it), opening eleven chart panels across three views, and the same numbers as
-    tables in a fourth. This page opens on that tab, with
-    <code>insights: { defaultOpen: true }</code>, because the charts are the subject here
-    rather than the map.
-    <br><br>
-    <strong>Click things.</strong> The charts are linked to each other and to the maps, and that
-    is most of their value:
-    <ul class="clicks">
+    Every chart and table the library draws, on one lot. Pick a tile to open it live below. A <em>chart</em> is anything drawn with
+    marks and axes; a <em>plot</em> is a chart you build and keep, and <strong>My plots</strong> holds one of each, supplied here
+    through <code>insights.plots</code> (<a href="insights-plots.html">Plots, tables and attributes</a> shows how a host keeps them).
+    Every map and gallery gets this tab with a <strong>Maps | Insights</strong> switch; <code>insights: { enabled: false }</code> removes it.
+  </div>
+
+  <details class="more">
+    <summary>The lot, and what to click</summary>
+    The lot is eight wafers split across two process corners (<strong>POR</strong> and <strong>Hi-dose</strong>, a ~50&nbsp;mV Vth offset),
+    with three parametric tests that carry real spec limits, a functional continuity test, a reticle grid and a radial process gradient.
+    That is deliberate: each chart needs something true in the data or it is only a picture of noise. Use <strong>Group by → Process
+    Split</strong> in the Insights toolbar to separate the two corners (the comparison and the difference map appear with it).
+    The charts are linked to each other and to the maps:
+    <ul>
       <li>a wafer's bar, box or point opens that wafer's map, on the test the chart is about; right-click it to chart that wafer alone</li>
       <li>a test in <em>Process capability</em> moves the box plot, histogram and trend to that test</li>
       <li>a cell of the correlation matrix plots that pair in the scatter; drag a rectangle over the scatter to chart and tabulate the dies inside it</li>
       <li>a bin in the pareto, a test in the pass-rate chart, a bar of the histogram, or a ring or quadrant of the yield diagrams opens the same menu on the dies it counts</li>
       <li>a row of the <em>Dies</em> table rings that die on its wafer's map</li>
     </ul>
-    <br><br>
-    The lot is eight wafers split across two process corners (<strong>POR</strong> and
-    <strong>Hi-dose</strong>, a ~50&nbsp;mV Vth offset), with three parametric tests
-    that carry real spec limits, a functional continuity test, and a radial process
-    gradient. That is deliberate: each chart below needs something true in the data or
-    it is only a picture of noise. Use <strong>Group by → Process Split</strong> in the
-    Insights toolbar to separate the two corners.
-  </div>
+  </details>
 
+  <!-- chart-index:start (generated by scripts/build-chart-index.mjs from packages/stats/chartCatalogue.ts) -->
   <div class="chart-index">
     <section>
-      <h3>Overview &mdash; 5 panels</h3>
+      <h3>Overview &mdash; 9 cards</h3>
       <p>Where the yield went, and which wafers differ.</p>
-      <ul>
-        <li><strong>Yield by wafer</strong> — every wafer in the lot, sortable by yield or by ID.
-          <span class="look">The pass bins are named in the title, not assumed.</span></li>
-        <li><strong>Hard bin pareto</strong> — failing bins ranked by count, with a soft-bin toggle.
-          <span class="look">Names come from <code>hbinDefs</code>, not bin numbers.</span></li>
-        <li><strong>Parametric pass rate</strong> — pass rate per test, judged by its limits, by the tester's own flag, or as a functional test.
-          <span class="look">Ranks which test is costing you most, and says how many dies the limits and the tester judged differently.</span></li>
-        <li><strong>Ring yield</strong> &amp; <strong>Quadrant yield</strong> — yield per region on a wafer-shaped diagram, labelled in place.
-          <span class="look">Look for the edge ring falling away from the core.</span></li>
-      </ul>
+      <div class="tiles">
+        <a class="tile" href="#live" data-tab="overview" data-id="pat-verdict-map" title="Each die coloured by its part average testing verdict (within the limits, an outlier or failing), one map per wafer, to show where the PAT outliers sit."><img src="thumbs/pat-verdict-map.webp" alt="" loading="lazy"><strong>PAT verdict map</strong><span>Each die coloured by its part average testing verdict (within the limits, an outlier or failing), one map per wafer, to show where the PAT outliers sit.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="yield-by-wafer" title="Yield of each wafer or group: passing dies as a share of judged dies, with partial and edge-excluded dies left out. The line is the median bar."><img src="thumbs/yield-by-wafer.webp" alt="" loading="lazy"><strong>Yield by wafer</strong><span>Yield of each wafer or group: passing dies as a share of judged dies, with partial and edge-excluded dies left out. The line is the median bar.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="bin-pareto" title="Dies in each bin, largest first, so the bins that cost the most yield lead. Shown alone, the line is the running share of all dies."><img src="thumbs/bin-pareto.webp" alt="" loading="lazy"><strong>Bin pareto</strong><span>Dies in each bin, largest first, so the bins that cost the most yield lead. Shown alone, the line is the running share of all dies.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="pass-rate-by-test" title="The share of judged dies that pass each test, lowest first, so the tests that fail the most dies lead."><img src="thumbs/pass-rate-by-test.webp" alt="" loading="lazy"><strong>Pass rate by test</strong><span>The share of judged dies that pass each test, lowest first, so the tests that fail the most dies lead.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="ring-yield" title="Yield of each ring, from the wafer centre to its edge, to show a radial pattern."><img src="thumbs/ring-yield.webp" alt="" loading="lazy"><strong>Ring yield</strong><span>Yield of each ring, from the wafer centre to its edge, to show a radial pattern.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="quadrant-yield" title="Yield of each quarter of the wafer, to show a one-sided pattern."><img src="thumbs/quadrant-yield.webp" alt="" loading="lazy"><strong>Quadrant yield</strong><span>Yield of each quarter of the wafer, to show a one-sided pattern.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="reticle-cell-yield" title="Yield of each position in the reticle, pooled over every shot on every wafer. A cell low everywhere points at the mask rather than the wafer."><img src="thumbs/reticle-cell-yield.webp" alt="" loading="lazy"><strong>Reticle cell yield</strong><span>Yield of each position in the reticle, pooled over every shot on every wafer. A cell low everywhere points at the mask rather than the wafer.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="what-divides-yield" title="The wafer and lot fields ranked by how strongly they divide yield, as places to look for a cause."><img src="thumbs/what-divides-yield.webp" alt="" loading="lazy"><strong>What divides yield</strong><span>The wafer and lot fields ranked by how strongly they divide yield, as places to look for a cause.</span></a>
+        <a class="tile" href="#live" data-tab="overview" data-id="part-average-testing-pat" title="Dies outside part average testing limits, set from each wafer’s own spread of each test (the AEC-Q001 method), by wafer and by test."><img src="thumbs/part-average-testing-pat.webp" alt="" loading="lazy"><strong>Part average testing (PAT)</strong><span>Dies outside part average testing limits, set from each wafer’s own spread of each test (the AEC-Q001 method), by wafer and by test.</span></a>
+      </div>
     </section>
     <section>
-      <h3>Distributions &mdash; 4 panels</h3>
-      <p>The shape of each measurement, not just its map colour.</p>
-      <ul>
-        <li><strong>Value histogram</strong> — one test's distribution with its limits marked.
-          <span class="look">Vth is broad because it pools the two splits; Group by → Process Split draws them as two distributions about 50&nbsp;mV apart.</span></li>
-        <li><strong>Test value distribution</strong> — box plots per test or per wafer.
-          <span class="look">Compare spread across the lot.</span></li>
-        <li><strong>Process capability</strong> — Cp/Cpk against the spec limits.
-          <span class="look">Needs limits; this is why <code>testDefs</code> carry them.</span></li>
-        <li><strong>Wafer-to-wafer trend</strong> — a metric across the lot in order.
-          <span class="look">The two splits separate here.</span></li>
-      </ul>
+      <h3>Distributions &mdash; 6 cards</h3>
+      <p>The shape of each measurement, not just its map colour. The comparison and the difference map appear once Group by is on.</p>
+      <div class="tiles">
+        <a class="tile" href="#live" data-tab="distributions" data-id="difference-map" title="One group’s wafer map less another’s, die position by die position, to show where on the wafer they differ."><img src="thumbs/difference-map.webp" alt="" loading="lazy"><strong>Difference map</strong><span>One group’s wafer map less another’s, die position by die position, to show where on the wafer they differ.</span></a>
+        <a class="tile" href="#live" data-tab="distributions" data-id="test-value-distribution" title="How one test’s values spread on each wafer or group: the box holds the middle half of the dies, the line inside it is the median, and the whiskers reach the lowest and highest values."><img src="thumbs/test-value-distribution.webp" alt="" loading="lazy"><strong>Test value distribution</strong><span>How one test’s values spread on each wafer or group: the box holds the middle half of the dies, the line inside it is the median, and the whiskers reach the lowest and highest values.</span></a>
+        <a class="tile" href="#live" data-tab="distributions" data-id="value-histogram" title="How one test’s values are distributed: the number of dies in each value range, with the test’s limits marked."><img src="thumbs/value-histogram.webp" alt="" loading="lazy"><strong>Value histogram</strong><span>How one test’s values are distributed: the number of dies in each value range, with the test’s limits marked.</span></a>
+        <a class="tile" href="#live" data-tab="distributions" data-id="wafer-to-wafer-trend" title="Each wafer’s mean of one test in wafer order, with a band of one standard deviation either side, to show drift through the lot."><img src="thumbs/wafer-to-wafer-trend.webp" alt="" loading="lazy"><strong>Wafer-to-wafer trend</strong><span>Each wafer’s mean of one test in wafer order, with a band of one standard deviation either side, to show drift through the lot.</span></a>
+        <a class="tile" href="#live" data-tab="distributions" data-id="process-capability" title="Every test with limits on one scale, the low limit at 0 and the high limit at 1, sorted lowest Ppk first, so the tests closest to their limits lead."><img src="thumbs/process-capability.webp" alt="" loading="lazy"><strong>Process capability</strong><span>Every test with limits on one scale, the low limit at 0 and the high limit at 1, sorted lowest Ppk first, so the tests closest to their limits lead.</span></a>
+        <a class="tile" href="#live" data-tab="distributions" data-id="comparison-by-group" title="Yield and each test compared between groups, counting each wafer once, with how likely a difference this large is by chance."><img src="thumbs/comparison-by-group.webp" alt="" loading="lazy"><strong>Comparison by group</strong><span>Yield and each test compared between groups, counting each wafer once, with how likely a difference this large is by chance.</span></a>
+      </div>
     </section>
     <section>
-      <h3>Correlation &mdash; 2 panels</h3>
+      <h3>Correlation &mdash; 2 cards</h3>
       <p>Which measurements move together — the question a wafer map cannot answer.</p>
-      <ul>
-        <li><strong>Test correlation matrix</strong> — pairwise r across every test.
-          <span class="look">Idsat and Vth are coupled by the same process gradient: a moderate negative r.</span></li>
-        <li><strong>Test scatter</strong> — any two tests against each other, with limits.
-          <span class="look">Pick the pair the matrix flagged.</span></li>
-      </ul>
+      <div class="tiles">
+        <a class="tile" href="#live" data-tab="correlation" data-id="test-scatter" title="One test against another, a point per die, to show whether the two move together. r is the correlation coefficient and n the number of dies."><img src="thumbs/test-scatter.webp" alt="" loading="lazy"><strong>Test scatter</strong><span>One test against another, a point per die, to show whether the two move together. r is the correlation coefficient and n the number of dies.</span></a>
+        <a class="tile" href="#live" data-tab="correlation" data-id="test-correlation-matrix" title="The correlation of every pair of tests. A strong colour means two tests move together; click a cell to show the pair in the scatter."><img src="thumbs/test-correlation-matrix.webp" alt="" loading="lazy"><strong>Test correlation matrix</strong><span>The correlation of every pair of tests. A strong colour means two tests move together; click a cell to show the pair in the scatter.</span></a>
+      </div>
+    </section>
+    <section>
+      <h3>My plots &mdash; 13 charts</h3>
+      <p>One of each chart a plot can be. New plot builds your own, and a saved plot draws on the next lot.</p>
+      <div class="tiles">
+        <a class="tile" href="#live" data-tab="plot" data-id="scatter-plot" title="One field against another, a point per die or per wafer, to show whether they move together."><img src="thumbs/scatter-plot.webp" alt="" loading="lazy"><strong>Scatter plot</strong><span>One field against another, a point per die or per wafer, to show whether they move together.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="histogram" title="How a value is distributed: the number of dies or wafers in each value range."><img src="thumbs/histogram.webp" alt="" loading="lazy"><strong>Histogram</strong><span>How a value is distributed: the number of dies or wafers in each value range.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="box-plot" title="How a value spreads in each category: the box holds the middle half, the line inside it is the median, and the whiskers reach the lowest and highest values."><img src="thumbs/box-plot.webp" alt="" loading="lazy"><strong>Box plot</strong><span>How a value spreads in each category: the box holds the middle half, the line inside it is the median, and the whiskers reach the lowest and highest values.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="bar-chart" title="A count, a share or a summary value for each category, side by side."><img src="thumbs/bar-chart.webp" alt="" loading="lazy"><strong>Bar chart</strong><span>A count, a share or a summary value for each category, side by side.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="line-chart" title="A summary value in order along the X axis (wafer order, a test, a condition), to show a trend."><img src="thumbs/line-chart.webp" alt="" loading="lazy"><strong>Line chart</strong><span>A summary value in order along the X axis (wafer order, a test, a condition), to show a trend.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="probability-plot" title="The share of values at or below each value, a curve per colour, so whole distributions compare, tails included."><img src="thumbs/probability-plot.webp" alt="" loading="lazy"><strong>Probability plot</strong><span>The share of values at or below each value, a curve per colour, so whole distributions compare, tails included.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="control-chart" title="One value per wafer in order against its centre line and control limits, with the points that break a Western Electric rule marked."><img src="thumbs/control-chart.webp" alt="" loading="lazy"><strong>Control chart</strong><span>One value per wafer in order against its centre line and control limits, with the points that break a Western Electric rule marked.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="capability-goal-plot" title="Each test with both limits placed by how far its mean is off centre and how wide its spread is, as shares of its limit window. A test outside the solid triangle is short of Ppk 1.33."><img src="thumbs/capability-goal-plot.webp" alt="" loading="lazy"><strong>Capability goal plot</strong><span>Each test with both limits placed by how far its mean is off centre and how wide its spread is, as shares of its limit window. A test outside the solid triangle is short of Ppk 1.33.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="heatmap" title="A value for every pair of two categories, as a colour, to show where the two interact."><img src="thumbs/heatmap.webp" alt="" loading="lazy"><strong>Heatmap</strong><span>A value for every pair of two categories, as a colour, to show where the two interact.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="pareto" title="Categories largest first with a line for their running share, to show which few account for most of the total."><img src="thumbs/pareto.webp" alt="" loading="lazy"><strong>Pareto</strong><span>Categories largest first with a line for their running share, to show which few account for most of the total.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="stacked-bars-and-shares" title="Each bar split into its colours, as counts or as each colour’s share of its own total, to show what a category is made of."><img src="thumbs/stacked-bars-and-shares.webp" alt="" loading="lazy"><strong>Stacked bars and shares</strong><span>Each bar split into its colours, as counts or as each colour’s share of its own total, to show what a category is made of.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="nested-categories" title="A box or bar with categories inside categories, such as lots with their wafers, to show whether variation sits between or within the groups."><img src="thumbs/nested-categories.webp" alt="" loading="lazy"><strong>Nested categories</strong><span>A box or bar with categories inside categories, such as lots with their wafers, to show whether variation sits between or within the groups.</span></a>
+        <a class="tile" href="#live" data-tab="plot" data-id="panels-small-multiples" title="One small chart per value of a field, on shared axes, to compare the same view across groups side by side."><img src="thumbs/panels-small-multiples.webp" alt="" loading="lazy"><strong>Panels (small multiples)</strong><span>One small chart per value of a field, on shared axes, to compare the same view across groups side by side.</span></a>
+      </div>
     </section>
     <section>
       <h3>Data &mdash; 3 tables</h3>
       <p>The numbers behind the charts, to read, copy or export.</p>
-      <ul>
-        <li><strong>Statistics</strong> — the Test Values and Functional Tests tables, with their N stated; one set per group.</li>
-        <li><strong>Dies</strong> — every die, a column per test. Sortable, scrolls smoothly at any size, exports wide or long.
-          <span class="look">Try Long: one row per die per test.</span></li>
-        <li><strong>Wafers</strong> — one row per wafer: split, yield and the mean of each test.
-          <span class="look">Sort by a mean to see the two splits separate.</span></li>
-      </ul>
+      <div class="tiles">
+        <a class="tile" href="#live" data-tab="data" data-id="statistics-table" title="One row per test and group: the count, mean, spread, extremes, limits and capability, to read the numbers behind the charts."><img src="thumbs/statistics-table.webp" alt="" loading="lazy"><strong>Statistics table</strong><span>One row per test and group: the count, mean, spread, extremes, limits and capability, to read the numbers behind the charts.</span></a>
+        <a class="tile" href="#live" data-tab="data" data-id="dies-table" title="One row per die with its position, bin and values, to see exactly which dies a chart counts; it exports to CSV."><img src="thumbs/dies-table.webp" alt="" loading="lazy"><strong>Dies table</strong><span>One row per die with its position, bin and values, to see exactly which dies a chart counts; it exports to CSV.</span></a>
+        <a class="tile" href="#live" data-tab="data" data-id="wafers-table" title="One row per wafer with its attributes and its yield, to check what each wafer is and to compare them."><img src="thumbs/wafers-table.webp" alt="" loading="lazy"><strong>Wafers table</strong><span>One row per wafer with its attributes and its yield, to check what each wafer is and to compare them.</span></a>
+      </div>
+    </section>
+    <section>
+      <h3>Shown on their own pages</h3>
+      <p>The maps, the sweeps and the menu on picked dies are not on this page; each has its own.</p>
+      <div class="chips">
+        <a class="chip" href="display-control.html" title="Each die coloured by its hard or soft bin, passing bins in greens and failing bins in other colours, to show where the failures are.">Bin map</a>
+        <a class="chip" href="test-values.html" title="Each die coloured by one test’s value on a colour scale, with the test’s limits on the colour bar, to show where on the wafer the value shifts.">Test value map</a>
+        <a class="chip" href="test-values.html" title="Each die coloured by whether its value for one test lies inside the test’s limits, with the dies below the low limit and above the high limit marked apart, to show where a test fails its limits.">Limit pass/fail map</a>
+        <a class="chip" href="test-values.html" title="Each die coloured by the pass or fail the tester recorded for one test, to show where a test failed, whether or not it has a measured value.">Test pass/fail map</a>
+        <a class="chip" href="metadata-mode.html" title="Each die coloured by an attribute the data carries (a test site, a probe step, a zone), to show whether a pattern follows it.">Die attribute map</a>
+        <a class="chip" href="lot-stack-analysis.html" title="The wafers of a lot laid over one another die by die: how often a bin occurs, or a value’s mean, median or spread at each position, to show what repeats from wafer to wafer.">Stacked map</a>
+        <a class="chip" href="drilldown.html" title="How one test’s values are distributed over the dies picked: the number of dies in each value range, with the test’s limits marked.">Histogram of the dies picked</a>
+        <a class="chip" href="sweeps.html" title="A measured value against a swept condition, a curve per series, to show how the part responds across the range.">Sweep</a>
+      </div>
     </section>
   </div>
+  <!-- chart-index:end -->
 
+  <h2 class="live-title" id="live">Live</h2>
   <div class="demo-content">
     <div id="stage"><div id="gallery"></div></div>
   </div>
@@ -163,6 +185,8 @@
         waferConfig: makeWaferConfig(i),
         dieConfig:   DIE_CONFIG,
         passBins:    PASS_BINS,
+        // A reticle grid, so the lot has reticle cells to take a yield from.
+        reticleConfig: { width: 4, height: 3, anchorDie: { x: 0, y: 0 } },
         testDefs,
         hbinDefs:    HBIN_DEFS,
         sbinDefs:    SBIN_DEFS,
@@ -178,12 +202,33 @@
       computePerTestStats: true,
     });
 
+    // My plots: one of each chart a plot can be, as a host supplies them (insights.plots). Each is a recipe with no lot in it:
+    // the tests are named by number, the split by its metadata key. Order follows the index above.
+    const VTH = { test: 1060, name: 'Vth' };
+    const SPLIT = { meta: 'processSplit' };
+    const TESTS = { tests: [1050, 1060, 1070], names: { 1050: 'Idsat', 1060: 'Vth', 1070: 'Ioff' } };
+    const plots = [
+      { id: 'gallery-scatter',     chart: 'scatter',     fields: { x: { test: 1050, name: 'Idsat' }, y: VTH, color: SPLIT }, fit: 'linear' },
+      { id: 'gallery-histogram',   chart: 'histogram',   fields: { y: VTH, color: SPLIT }, normalCurve: true },
+      { id: 'gallery-box',         chart: 'box',         fields: { x: { builtin: 'wafer' }, y: VTH, color: SPLIT } },
+      { id: 'gallery-bar',         chart: 'bar',         fields: { x: SPLIT, y: { builtin: 'yield' }, color: SPLIT } },
+      { id: 'gallery-line',        chart: 'line',        fields: { x: { builtin: 'waferOrder' }, y: VTH, color: { none: true } }, aggregate: 'mean', spread: 'sd' },
+      { id: 'gallery-probability', chart: 'probability', fields: { y: VTH, color: SPLIT } },
+      { id: 'gallery-control',     chart: 'control',     fields: { x: { builtin: 'waferOrder' }, y: VTH } },
+      { id: 'gallery-goal',        chart: 'goal',        fields: { color: SPLIT } },
+      { id: 'gallery-heatmap',     chart: 'heatmap',     fields: { x: { builtin: 'wafer' }, y: TESTS }, aggregate: 'mean', normalize: 'zscore' },
+      { id: 'gallery-pareto',      chart: 'bar',         fields: { x: { builtin: 'hbin' }, color: { none: true } }, sort: 'value', cumulative: true },
+      { id: 'gallery-stacked',     chart: 'bar',         fields: { x: { builtin: 'wafer' }, color: { builtin: 'hbin' } }, stack: 'percent' },
+      { id: 'gallery-nested',      chart: 'box',         fields: { x: [SPLIT, { builtin: 'wafer' }], y: VTH, color: SPLIT } },
+      { id: 'gallery-panels',      chart: 'histogram',   fields: { y: VTH, color: SPLIT, facet: { builtin: 'ring' } } },
+    ];
+
     renderWaferGallery(document.getElementById('gallery'), items, {
       lotStatsSummary,
       // defaultOpen lands the reader on the charts. Without it the Insights tab
       // is a toolbar button, which is right for a map-first page and wrong for
       // this one.
-      insights:       { enabled: true, defaultOpen: true, defaultView: 'overview' },
+      insights:       { enabled: true, defaultOpen: true, defaultView: 'overview', plots },
       summaryPanel:   { placement: 'right' },
       viewOptions:    { plotMode: 'value', activeTest: TEST_DEFS[1].testNumber },
       showHelpButton: true,
@@ -194,6 +239,18 @@
       `${WAFER_COUNT} wafers · ${items.reduce((n, i) => n + i.dies.length, 0).toLocaleString()} dies · `
       + `${testDefs.length} tests · ${lotStatsSummary.findings.length} lot findings (${notable} notable) · `
       + `insights { enabled: true, defaultOpen: true }`;
+  </script>
+
+  <script>
+    // A tile opens its chart live: the Insights tab it is on, then the live view in sight.
+    document.addEventListener('click', e => {
+      const tile = e.target.closest('.tile');
+      if (!tile) return;
+      e.preventDefault();
+      const tab = document.querySelector(`[data-wmap-insights-tab="${tile.dataset.tab}"]`);
+      if (tab) tab.click();
+      document.getElementById('live').scrollIntoView({ behavior: 'smooth' });
+    });
   </script>
 
 </body>

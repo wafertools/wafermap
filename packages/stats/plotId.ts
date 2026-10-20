@@ -8,3 +8,8 @@ export function newPlotId(): string {
   const rand = Math.floor(Math.random() * 0x100000000).toString(36).padStart(7, '0');
   return `plot-${Date.now().toString(36)}-${rand}-${(counter++).toString(36)}`;
 }
+
+/** A new saved-filter id, unique across a session and, with the random part, across files. */
+export function newFilterId(): string {
+  return newPlotId().replace(/^plot-/, 'filter-');
+}

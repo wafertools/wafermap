@@ -24,6 +24,8 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.37.0] — 2026-10-20
+
 ### Added
 
 - **A group shift is an item in What stands out and Worth a look.** In a lot, every wafer field Group by offers is
@@ -40,16 +42,30 @@ under `### Breaking`.
   histogram or pass rate, a trend as a control chart; a yield or pass rate with each bar's value and the median of the
   bars), each saying in one sentence why it is shown (the panel's whole sentence on hover), with Show on map going back to the
   map with the item shown as its row shows it. Each of the panel's top rows gains a Chart link to its card. It
-  describes the whole lot, so it says so in place of the cards while the Insights filter or Show narrows the
+  describes the whole lot, so it says so in place of the cards while the filter or Show narrows the
   population.
-- **An Insights filter.** **Filter…** beside Group by narrows every Insights tab to the wafers and dies that meet
-  conditions the reader sets, the same conditions a plot's filter takes, edited in a window that states what they would
-  keep before **Apply**. While a filter exists a line above every tab states it with the wafers and dies it keeps
-  (*2 of 3 wafers · 48 of 72 dies*), a switch that turns it off without losing it, **Edit…** and **Remove**; a filter
-  naming a field the wafers lack filters nothing and says so. It is view state: `insights.filter` starts it,
-  `onFilterChange` reports it, and it is never written into a plots file. `insights.filter` is read as a plots file's
-  filter is, so one restored from storage that holds a condition it cannot read keeps the rest and logs what it left out. Where its die conditions narrow a wafer,
-  the views compute that wafer's figures from the dies kept rather than from the wafer's own summary.
+- **A page filter on the maps, the gallery and Insights.** **Filter…**, last in the toolbar row, in the same place on a map,
+  in the gallery and in Insights, narrows all three to the wafers and dies that meet conditions the reader sets, the
+  same conditions a plot's filter takes, edited in a window that states what they would keep before **Apply**. It is one
+  filter: setting it in any view sets it in the others. A condition on a wafer field (split, yield) removes that wafer's
+  card from the gallery; one on a die field (bin, ring, a test) draws the dies it drops dimmed on every map and leaves
+  them out of the legend, the yield and every figure beside the map (`Die.filteredOut`, which `isYieldEligibleDie`
+  honours). While a filter exists a line above the view states it with the wafers and dies it keeps (*2 of 3 wafers ·
+  48 of 72 dies*), a switch that turns it off without losing it, **Edit…** and **Remove**; a filter naming a field the
+  wafers lack filters nothing and says so. The analysis runs again over the wafers and dies a filter keeps, so the
+  Summary panel and button, What stands out, the findings and warnings, each wafer's own summary, the report and the
+  tables all describe what is shown, on a map and in the gallery alike; removing the filter brings back the host's.
+  It is view state: `insights.filter` starts it, `onFilterChange` reports it, and it is never written into a plots file.
+  `insights.filter` is read as a plots file's filter is, so one restored from storage that holds a condition it cannot
+  read keeps the rest and logs what it left out.
+- **Saved filters, with a file to move them.** The Filter window lists filters saved under a name: **Save** keeps the
+  conditions in the editor (a name already used is updated), **Load** puts a saved filter's conditions in the editor
+  without applying them, **Delete** removes it, and one naming a field the open lot lacks says so. **Export…** and
+  **Import…** move the list as a `wafermap-filters` file: JSON with `format`, `version` and `filters` (each `id`, `name` and
+  `conditions`), read as leniently as a plots file (`readFiltersFile` / `writeFiltersFile`, `SavedFilter`): a condition that
+  cannot be read is named and left out, a bare list or a bare condition is accepted, and an import adds a filter whose id is
+  already saved as a copy. `insights.savedFilters` starts the list, `onSavedFiltersChange` reports it, and
+  `onPickFiltersFile` supplies a desktop host's own file dialog.
 - **A scatter plot states r and n**, Pearson's r over every point drawn (the rule the correlation matrix uses), in its
   footnote, and warns when its points pool several values of a split or lot field that neither the colour nor the panels
   divide by (a trend across them may be the groups' offset: Simpson's paradox).

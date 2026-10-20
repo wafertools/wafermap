@@ -51,9 +51,11 @@ there; **Reset orientation** leaves it as it is.
 | Solid colour            | Active plot value — bin category or test measurement                               |
 | Neutral grey (interior) | No data — die has no bin or test result in the loaded dataset                      |
 | Dimmed fill (interior)  | Edge-excluded die — falls within the edge exclusion band configured for this wafer |
+| Faded grey              | Die the **Filter…** drops — it does not meet the filter's conditions (see [Filtering wafers and dies](#filtering-wafers-and-dies)) |
 
 A no-data die is not a fail; it simply has no result recorded. Edge-excluded dies are shown dimmed and are
-not counted in yield calculations.
+not counted in yield calculations. Dies the filter drops are drawn faded and are counted nowhere: not in the legend, the
+yield, the Summary panel or the findings.
 
 ### 1.4 Legend and colorbar
 
@@ -235,6 +237,10 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                                                                                                      |
 
+**Filter…** is the last button in the row, at the right edge, with the **Summary** button and the **Maps | Insights** switch
+before it; it does not move between the map, the gallery and Insights. It narrows the map, the gallery and every
+Insights tab to the wafers and dies that meet conditions you set (see [Filtering wafers and dies](#filtering-wafers-and-dies)).
+
 **This guide's own window** (and a gallery card detached into its own window,
 see [Section 3 — Gallery](#gallery) below) is a floating window, not a modal —
 its header shows collapse, maximize, and close buttons, and it can be dragged
@@ -350,6 +356,9 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the wafers shown. Collected across every wafer and de-duplicated, so a problem affecting all of them is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
 
+**Filter…** sits last in the row, as on a single map: one filter for the gallery, a single map and Insights (see
+[Filtering wafers and dies](#filtering-wafers-and-dies)).
+
 Right-click a card anywhere outside its map to chart that wafer on its own — a
 histogram, process capability or a sweep (see
 [Charting dies and wafers](#44-charting-dies-and-wafers)).
@@ -361,6 +370,96 @@ becomes a placeholder whose own button reattaches it; closing the detached
 window does the same.
 
 <div data-wmap-demo="gallery" class="wmap-demo"></div>
+
+### Filtering wafers and dies
+
+**Filter…** keeps only the wafers and dies that meet conditions you set. It is one filter for everything you are looking
+at: the cards of a gallery, a single map and every Insights tab, so setting it in one view sets it in the others.
+
+It opens a window where you add conditions. Each is on one field and all of them must hold:
+
+- a **category** field (a split, a lot, a bin, a ring, a pass/fail verdict) keeps the values you tick;
+- a **number** field (a test, a wafer's yield) keeps a range, either end left open, started at the data's own range so
+  adding it changes nothing until you narrow it;
+- **is not** / **outside** turns a condition round, to keep everything else.
+
+The window says as you edit how many wafers and dies the conditions would keep (*Keeps 2 of 3 wafers · 48 of 72 dies*).
+**Apply** filters; **Cancel** leaves things as they were.
+
+![The Filter window with one condition, what it would keep, and the saved filters](images/guide-filter-editor.png)
+
+*The Filter window: a condition on the process split, what it would keep (3 of 6 wafers), and below it the saved filters.*
+
+**What each kind of condition does.** A condition on a *wafer* field (split, lot, yield) keeps whole wafers: the others'
+cards leave the gallery. A condition on a *die* field (bin, ring, a test) keeps those dies inside the wafers kept: on every
+map the dies it drops are drawn dimmed, so the wafer's outline and where they were stay readable. A die with no value for
+a condition's field meets no condition, negated or not. A wafer condition is judged on the whole wafer, before die
+conditions narrow it, so *yield below 90 %* means the wafer's yield.
+
+![A gallery filtered to the Hi-dose wafers, with the line that states the filter above the cards](images/guide-filter-gallery.png)
+
+*A wafer filter: only the Hi-dose wafers' cards remain, the line above them states the filter and what it kept, and the Summary panel describes those three wafers.*
+
+![Maps with a die filter on: the dies the filter drops are drawn faded](images/guide-filter-dies.png)
+
+*A die filter (bin 1 in the east quadrants): every wafer stays, and the dies it drops are drawn faded.*
+
+**Everything is analysed again over what is kept.** The legend, the yield, the **Summary** panel and its button, What
+stands out, the findings and warnings, each wafer's own summary, the report and the tables all describe the wafers
+and dies that remain, on a map and in the gallery alike, not the whole lot. Removing the filter, or switching it off, brings
+back the analysis you started with. In a stacked view, the wafers dropped are not stacked.
+
+**Filtering is never hidden.** While a filter exists, a line above the view states it, with what it keeps
+(*Filter on: Split is A — 2 of 3 wafers · 48 of 72 dies*), **Edit…** and **Remove**. Its switch turns the filter off without
+losing it, and the line stays, saying the filter is off, until you remove it. A filter that names a field these wafers do
+not have (a test this lot lacks) filters nothing, and the line says so.
+
+The filter is view state, like **Group by**: it is not part of any plot or plots file, and a host application can remember
+it for the next lot.
+
+#### Saved filters
+
+Conditions you use again can be saved. In the Filter window, type a name and press **Save** to keep the conditions you
+have set; saving under a name already used updates that filter. **Load** puts a saved filter's conditions in the window
+without applying them, so you see what they keep first, and **Delete** removes it. A saved filter that names a field this
+lot lacks says so beside its name, and can still be loaded.
+
+**Export…** writes all your saved filters to a file, to share or keep a copy, and **Import…** adds the filters from a file
+written that way. An import never replaces: a filter whose id is already saved is added as a copy.
+
+![Loading a saved filter into the Filter window: its conditions replace the ones in the editor, and nothing is applied until Apply](images/guide-filter-saved.png)
+
+The file is JSON, so it can be written or edited by hand, and a host application can generate one:
+
+```json
+{
+  "format": "wafermap-filters",
+  "version": 1,
+  "filters": [
+    {
+      "id": "ne-fails",
+      "name": "Bin 2 in the north-east quadrant",
+      "conditions": [
+        { "field": { "builtin": "hbin" }, "values": ["Bin 2"] },
+        { "field": { "builtin": "quadrant" }, "values": ["NE"] }
+      ]
+    },
+    {
+      "id": "good-vth",
+      "name": "Vth between 0.2 and 0.8 V",
+      "conditions": [ { "field": { "test": 1001 }, "min": 0.2, "max": 0.8 } ]
+    }
+  ]
+}
+```
+
+Each filter has an `id` (any text, unique in the file), a `name` and its `conditions`. A condition names its `field` and
+either `values` to keep (a category) or `min` / `max` (a number), with `"not": true` to keep the rest. A field is one of:
+`{ "builtin": "hbin" }` (also `sbin`, `ring`, `quadrant`, `yield` and the other built-in die and wafer fields),
+`{ "test": 1001 }` (a test, by number) or `{ "meta": "split" }` (a wafer attribute, by the name it has in the data).
+A value is written as the Filter window lists it: a bin as `"Bin 2"`, a ring as `"Ring 1"`, a quadrant as `"NE"`. The reader is forgiving: it keeps every filter it can read and
+tells you which condition it left out, takes a plain list of filters, takes a lone condition written without its list, and
+makes up a missing `id` or `name`.
 
 ---
 
@@ -564,7 +663,8 @@ glance, with findings sitting directly under the headline numbers so a clicked
 finding can highlight the affected dies right there. The **Summary** button in the row
 above the map, just before Map | Insights, opens and closes it, and shows as pressed while
 it is open. The **▸** button at the end of the panel's title closes it too, and stays in
-view as the panel scrolls.
+view as the panel scrolls. While a **Filter…** is on, the panel describes the wafers and dies the filter
+keeps, analysed again over them, not the whole lot (see [Filtering wafers and dies](#filtering-wafers-and-dies)).
 
 <div data-wmap-demo="summary-panel" class="wmap-demo"></div>
 
@@ -887,13 +987,10 @@ each panel differently depending on what makes sense for that chart type. Group 
 separates whole wafers; to separate the dies within each wafer, a plot's own
 **Compare by** choices (see [Plots](#plots)) take die regions, bins, sites and
 pass/fail tests as well.
-**Filter…**, beside Group by, narrows every Insights tab at once to the wafers and dies that meet conditions you set:
-one split, the edge ring, bin 1, a range of a test, wafers below a yield. It opens a window with the same conditions a
-plot's own filter has, saying as you edit how many wafers and dies they keep; **Apply** filters, **Cancel** leaves
-things as they were. While a filter exists a line above every tab states it, with what it keeps
-(*2 of 3 wafers · 48 of 72 dies*), **Edit…** and **Remove**; its switch turns it off without losing it, and the line
-stays, saying the filter is off, until you remove it. A filter that names a field these wafers do not have filters
-nothing, and the line says so. Group by and **Show** then work on what the filter kept. The map views are not filtered.
+The **Filter…** button, at the right of the toolbar row, narrows every Insights tab at once, the maps and the gallery with
+them (see [Filtering wafers and dies](#filtering-wafers-and-dies)). The line that states the filter sits above the tabs,
+with what it keeps (*2 of 3 wafers · 48 of 72 dies*), **Edit…** and **Remove**. Group by and **Show** then work on what the
+filter kept.
 
 Histogram, correlation, and scatter also offer a **Wafer** picker to narrow
 from "all wafers pooled" down to one wafer at a time. Clicking a yield bar or
@@ -1497,8 +1594,8 @@ see how much the values vary, CI to see how well the mean is pinned down.
 The **Control** chart is an individuals (I) chart: one value per wafer in order, with the centre at the mean and
 control limits at ±3σ. σ is estimated from the average **moving range** (the difference between each value and the one
 before) divided by 1.128, so it measures wafer-to-wafer noise and a slow drift does not widen the limits it is
-judged against. Control limits describe what the process does, not what the customer wants: they are not specification
-limits. Points are flagged by four Western Electric rules, each at the point that completes it: **1** one point beyond 3σ,
+judged against. The control limits are worked out from the wafers on the chart: they say what this run normally does,
+not what any limit your team sets for the test allows, and so answer a different question. Points are flagged by four Western Electric rules, each at the point that completes it: **1** one point beyond 3σ,
 **2** two of three beyond 2σ on the same side, **3** four of five beyond 1σ on the same side, **4** eight in a row on one
 side of the centre. A flag means the point is unlikely to be chance if the process were stable; with many points a
 few false flags are expected. **Limits from the first** sets the centre and σ from a baseline of earlier wafers and

@@ -5,7 +5,7 @@ import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitl
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
 import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, PATH_SHAPES, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
-import { buildWaferMap, defaultBinMode, getTestPassStatus, isParametricTest, isBuiltMap } from '../renderer/buildWaferMap.js';
+import { buildWaferMap, computeCoverage, computeYield, defaultBinMode, getTestPassStatus, isParametricTest, isBuiltMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
@@ -37,6 +37,8 @@ import { selectionPopulation, waferPopulation, type DrilldownSource } from './ch
 import { sourceFromBins } from './plotItems.js';
 import { createIdentityHeader, collapsedLabel, type IdentityHeaderController } from './identityHeader.js';
 import { getDieKey, hasPosition, isPositionedDie } from '../core/dies.js';
+import { bandButton } from './filterButton.js';
+import type { PageFilterController } from './pageFilter.js';
 import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
@@ -1049,11 +1051,22 @@ export function renderWaferMapCard(
   // Maps | Insights, first in the row and in the same place in both views. Present whenever
   // Insights is, with or without the toolbar: it is how a user finds Insights and how they leave it.
   let viewSwitch: ViewSwitch | null = null;
+  let filterButtonEl: HTMLButtonElement | null = null;
   if (insightsEnabled) {
     viewSwitch = createViewSwitch(ownerDocument, 'Map', 'wafer', open => setInsightsOpen(open));
     // Right-aligned by the toolbar's own margin when there is one; alone, it takes the margin itself.
     if (!showToolbar) viewSwitch.el.style.marginLeft = 'auto';
     chromeRowEl.appendChild(viewSwitch.el);
+  }
+  // Filter: the page filter's editor, last in the row, so it keeps one place (the trailing edge) on the map, in the gallery
+  // and in Insights alike, whichever buttons before it come and go. Its band appears above the map once a filter exists.
+  if (insightsEnabled) {
+    filterButtonEl = bandButton(ownerDocument, 'Filter…', 'wmapMapFilterOpen',
+      'Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab',
+      () => { void ensurePageFilter().then(ctl => ctl.openEditor(filterButtonEl ?? container, [filterSource()])); });
+    // Ordered with the Summary button and the view switch (`order: 1`), after which it comes in the row: last, whatever order they are added in.
+    filterButtonEl.style.order = '1';
+    chromeRowEl.appendChild(filterButtonEl);
   }
   // Zoom bounds, relative to the fitted view.
   const minZoom = 0.4;
@@ -1075,6 +1088,12 @@ export function renderWaferMapCard(
   const disposeOverlayZ = applyOverlayZ(zIndex);
 
   let currentStatsSummary = options.statsSummary;
+  /** Whether the filter drops anything here: the precomputed yield, coverage and summary then describe dies not shown. */
+  let filterNarrowing = false;
+  /** The analysis of the dies the filter keeps, run again whenever the filter or the data changes; unset when none is shown. */
+  let filteredSummary: StatsSummary | undefined;
+  /** What the Summary panel, the findings and the warnings describe: the host's analysis, or while the filter narrows, its rerun over what is kept. */
+  const statsNow = (): StatsSummary | undefined => (filterNarrowing ? filteredSummary : currentStatsSummary);
 
   // Collected once from every source the library has — geometry advisories on
   // the result AND analysis advisories on the summary. Recomputed whenever the
@@ -1094,7 +1113,7 @@ export function renderWaferMapCard(
   let warningUiReady = false;
   function refreshWarnings(): void {
     const next = collectWarnings({
-      result, statsSummary: currentStatsSummary,
+      result, statsSummary: statsNow(),
       extra: binColorAdvisory ? [binColorAdvisory] : [] });
     const changed = next.length !== currentWarnings.length
       || next.some((w, i) => w.code !== currentWarnings[i]?.code || w.message !== currentWarnings[i]?.message);
@@ -1113,7 +1132,74 @@ export function renderWaferMapCard(
 
   // ── Mutable state ──────────────────────────────────────────────────────────
   let wafer           = result.wafer;
+  /** The dies as the host gave them; `currentDies` is what the page filter leaves of them, the dropped ones flagged. */
+  let sourceDies      = result.dies;
   let currentDies     = result.dies;
+
+  // ── Page filter ───────────────────────────────────────────────────────────
+  // The same filter the gallery and Insights use (pageFilter.ts), loaded when first needed. Here it can only drop dies,
+  // or this one wafer whole: a map draws what it drops dimmed, and the band says what the filter kept.
+  let pageFilter: PageFilterController | null = null;
+  let pageFilterLoad: Promise<PageFilterController> | null = null;
+  let filterBand: ReturnType<PageFilterController['createBand']> | null = null;
+  const filterSource = () => ({
+    dies: sourceDies, wafer, label: hostLabel() ?? 'Wafer', identity: mapIdentity(), waferIndex: 0,
+    passBins, testDefs, statsSummary: currentStatsSummary,
+  });
+  function deriveDies(): Die[] {
+    const f = pageFilter?.get();
+    filteredSummary = undefined;
+    if (!pageFilter || !f || f.off) { filterNarrowing = false; return sourceDies; }
+    const m = pageFilter.mark([filterSource()]);
+    filterNarrowing = m.narrowing;
+    const dies = m.items[0].dies;
+    // The analysis is rerun over the dies kept, with the options the host's own ran with, so the findings, stats and
+    // warnings all describe what is shown. Only where there was an analysis to begin with and the map is a built one.
+    if (filterNarrowing && currentStatsSummary && isBuiltMap(currentResult)) {
+      const kept = dies.filter(d => !d.filteredOut);
+      try {
+        filteredSummary = kept.length === 0 ? undefined : analyzeWaferMap({
+          ...currentResult, dies: kept,
+          yield: computeYield(dies, passBins, currentResult.yield?.yieldPercentGross != null ? 'denominator-only' : 'exclude'),
+          dataCoverage: computeCoverage(kept),
+        }, currentStatsSummary.analysisOptions);
+      } catch { filteredSummary = undefined; }
+    }
+    return dies;
+  }
+  function refreshFilterBand(): void {
+    if (!pageFilter || !filterBand) return;
+    const sources = [filterSource()];
+    filterBand.refresh(pageFilter.keep(sources).result, sources);
+    filterBand.el.style.display = pageFilter.get() && !insightsOpen ? '' : 'none';
+  }
+  /** The filter changed (or just loaded): derive the dies again and redraw. */
+  function applyPageFilter(): void {
+    currentDies = deriveDies();
+    refreshFilterBand();
+    rebuildView();
+    render();
+    // The analysis was rerun over the dies kept (or the host's is back): findings, warnings, panel and button follow it.
+    applyStatsSummary(currentStatsSummary);
+  }
+  /** Load the filter (once), starting from the host's: resolves with the controller Insights shares. */
+  function ensurePageFilter(): Promise<PageFilterController> {
+    pageFilterLoad ??= import('./pageFilter.js').then(({ createPageFilter }) => {
+      const ctl = createPageFilter({
+        doc: ownerDocument, initial: insightsOpts?.filter, onChange: insightsOpts?.onFilterChange,
+        savedFilters: insightsOpts?.savedFilters, onSavedFiltersChange: insightsOpts?.onSavedFiltersChange,
+        pickFiltersFile: insightsOpts?.onPickFiltersFile, onSaveText: options.onSaveText,  // the file is the reader's, not this lot's: no lot or wafer prefix
+        attributes: options.attributes, getRingCount: () => requireRingCount(currentResult, 'renderWaferMap'),
+      });
+      pageFilter = ctl;
+      filterBand = ctl.createBand(() => [filterSource()], { marginLeft: chromeInset, marginRight: chromeInset, marginBottom: SPACE.lg });
+      outerFrame.insertBefore(filterBand.el, mapBox);
+      ctl.subscribe(() => { if (!destroyed) applyPageFilter(); });
+      if (ctl.get() && !destroyed) applyPageFilter();
+      return ctl;
+    });
+    return pageFilterLoad;
+  }
   // Selected die keys ("i,j") — key-based so references survive scene rebuilds.
   let selectedKeys    = new Set<string>();
   /** The die a table row asked to show (see `locateDie`); ringed until the next click or Esc. */
@@ -1281,8 +1367,9 @@ export function renderWaferMapCard(
   function ensureInsightsTab(): Promise<InsightsTabHandle | null> {
     if (!insightsEnabled) return Promise.resolve(null);
     if (insightsTab) return Promise.resolve(insightsTab);
-    insightsLoad ??= import('./insightsTab.js').then(({ createInsightsTab }) => {
+    insightsLoad ??= Promise.all([import('./insightsTab.js'), ensurePageFilter()]).then(([{ createInsightsTab }, sharedFilter]) => {
       insightsTab = createInsightsTab({
+      pageFilter: sharedFilter, showFilterButton: false,
       // The charts' axis settings are preferences: start from them, and report a reader's change
       // without redrawing the map (nothing on it depends on them).
       initialAxisPrefs: axisPrefsFromOptions(viewOpts),
@@ -1293,7 +1380,7 @@ export function renderWaferMapCard(
       },
       attributes: options.attributes,
       getItems: () => [{
-        wafer, dies: currentDies, hbinDefs, sbinDefs, testDefs,
+        wafer, dies: sourceDies, hbinDefs, sbinDefs, testDefs,
         // The host's own label, raw — Insights derives its display label and
         // the identity from it. A display label here ("Wafer 1 (no ID)")
         // would reach chart titles as though it were an ID.
@@ -1309,17 +1396,16 @@ export function renderWaferMapCard(
       onSaveText: exportHooks.onSaveText,
       defaultView: insightsOpts?.defaultView,
       plotStore, onPickPlotsFile: insightsOpts?.onPickPlotsFile,
-      filter: insightsOpts?.filter, onFilterChange: insightsOpts?.onFilterChange,
       // A Worth a look card's Show on map: back to the map, showing the item as its row in the panel does, with the panel
       // open so the row is seen beside it.
       showOnMap: (target) => {
         setInsightsOpen(false);
         if (target.kind === 'test') showTestOnMap(target.testNumber);
         else {
-          const finding = currentStatsSummary?.findings.find(f => f.id === target.id);
+          const finding = statsNow()?.findings.find(f => f.id === target.id);
           if (finding) showFindingOnMap(finding);
         }
-        if (currentStatsSummary) setSummaryPanelOpen(true);
+        if (statsNow()) setSummaryPanelOpen(true);
       },
       // Both of these are FALLBACKS, passed only when the toolbar cannot carry
       // them. The toolbar now stays visible while Insights is open, so its own
@@ -1466,6 +1552,8 @@ export function renderWaferMapCard(
     const wasOpen = insightsOpen;
     insightsOpen = open;
     viewSwitch?.setInsightsOpen(open);
+    // Insights states the filter in its own band; the Filter button stays where it is.
+    if (filterBand) filterBand.el.style.display = pageFilter?.get() && !open ? '' : 'none';
     // Chrome first, and synchronously: every toggle below acts on toolbar
     // elements that already exist, so the view responds to the click even
     // while the chart suite is still being fetched. Only revealing the tab
@@ -1701,7 +1789,10 @@ export function renderWaferMapCard(
   // analysis it is offering.
   /** Show `summary` everywhere the map shows its analysis: warnings, the Summary panel (mounting it if late). */
   function applyStatsSummary(summary: StatsSummary | undefined): void {
+    const changed = summary !== currentStatsSummary;
     currentStatsSummary = summary;
+    // A new analysis while the filter narrows: the one shown is rerun over the dies kept.
+    if (changed && filterNarrowing) { currentDies = deriveDies(); rebuildView(); render(); }
     // Analysis raises its own advisories (an option correction, say), so a
     // summary arriving late can introduce warnings that were not present when
     // the toolbar was built. Rebuild it rather than leaving them unreachable.
@@ -1739,7 +1830,7 @@ export function renderWaferMapCard(
   // Only a built map can be analysed again; a hand-built one gets no offer.
   const findingsNotice = (): FindingsNotice | undefined => hostFindingsNotice
     ?? (options.testValueOffer ? options.testValueOffer() : undefined)
-    ?? (!options.testValueOffer && isBuiltMap(currentResult) ? testValueNotice(currentStatsSummary?.stats.testValueAnalysis, 1, analysingTestValues, analyseTestValues) : undefined);
+    ?? (!options.testValueOffer && isBuiltMap(currentResult) ? testValueNotice(statsNow()?.stats.testValueAnalysis, 1, analysingTestValues, analyseTestValues) : undefined);
   function analyseTestValues(): void {
     const summary = currentStatsSummary;
     const built = currentResult;
@@ -1812,10 +1903,12 @@ export function renderWaferMapCard(
     stalePanels.delete(el);
     const run = runChunked(renderWaferSummaryContentSteps(el, {
       wafer, dies: currentDies,
-      yieldSummary: currentResult.yield,
-      dataCoverage: currentResult.dataCoverage,
+      yieldSummary: filterNarrowing
+        ? computeYield(currentDies, passBins, currentResult.yield?.yieldPercentGross != null ? 'denominator-only' : 'exclude')
+        : currentResult.yield,
+      dataCoverage: filterNarrowing ? computeCoverage(currentDies.filter(d => !d.filteredOut)) : currentResult.dataCoverage,
       hbinDefs, sbinDefs, testDefs,
-      statsSummary: currentStatsSummary,
+      statsSummary: statsNow(),
       // Same collected set the toolbar indicator shows — including the geometry
       // advisories, which no UI surfaced before.
       warnings: warningsDisplay ? currentWarnings : [],
@@ -1843,7 +1936,7 @@ export function renderWaferMapCard(
       // A close button only when there is a way back in: the Summary button, which exists with a
       // toolbar and shows with a summary. Read from those, not from `summaryToggle`: the panel's
       // first render comes before the toolbar is built.
-      onClose: showToolbar && currentStatsSummary ? () => setSummaryPanelOpen(false) : undefined,
+      onClose: showToolbar && statsNow() ? () => setSummaryPanelOpen(false) : undefined,
       activeTest: summaryActiveTest,
       onTestClick: (testNumber) => {
         if (summaryActiveTest === testNumber) {
@@ -1877,7 +1970,7 @@ export function renderWaferMapCard(
     summaryActiveFindingId = null;
     summaryActiveTest = testNumber;
     applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
-    selectionFromKeys(currentStatsSummary?.stats.testFailures?.[testNumber]?.dieKeys);
+    selectionFromKeys(statsNow()?.stats.testFailures?.[testNumber]?.dieKeys);
     renderSummaryPanel();
   }
 
@@ -1912,7 +2005,7 @@ export function renderWaferMapCard(
     summaryPanelWrapper = wrapWithSummaryPanel(canvasWrap, summaryPanelEl, placement);
     parent?.insertBefore(summaryPanelWrapper, next);
     renderSummaryPanel();
-  } else if (currentStatsSummary) {
+  } else if (statsNow()) {
     // Auto-mount a persistent Summary panel when statsSummary is provided without an
     // explicit placement. Mounted independently of the toolbar so a chromeless map
     // (showToolbar: false) can still render a persistent panel beside it; the toolbar
@@ -2015,9 +2108,9 @@ export function renderWaferMapCard(
     syncSceneSeparators?.();
     const panelEl = summaryPanelEl ?? autoSummaryPanelEl;
     summaryToggle.sync({
-      visible: summaryToggleAllowed && !!currentStatsSummary && !!panelEl && !insightsOpen,
+      visible: summaryToggleAllowed && !!statsNow() && !!panelEl && !insightsOpen,
       open: !!panelEl && panelEl.style.display !== 'none',
-      notable: !!currentStatsSummary?.hasNotableFindings,
+      notable: !!statsNow()?.hasNotableFindings,
     });
   }
 
@@ -2436,6 +2529,8 @@ export function renderWaferMapCard(
       // share width with a docked summary panel (wrapWithSummaryPanel wraps
       // it in a flex row), and the Insights overlay covers the *full*
       chromeRowEl.appendChild(toolbar);
+      // The toolbar joins the row after the Filter button was placed; Filter stays last.
+      if (filterButtonEl) chromeRowEl.appendChild(filterButtonEl);
       syncChromeRowVisibility();
 
       // No hover show/hide. The bar used to sit at 0.35 opacity and fade in
@@ -3619,12 +3714,15 @@ export function renderWaferMapCard(
   // runs, and the row would keep its default `flex` — which is exactly the
   // empty-band case this is here to prevent.
   syncChromeRowVisibility();
+  // A filter the host restored is applied as soon as the filter has loaded.
+  if (insightsEnabled && insightsOpts?.filter !== undefined) void ensurePageFilter();
 
   return {
     setResult(newResult: WaferMapResult): void {
       currentResult = newResult;
       wafer         = newResult.wafer;
-      currentDies   = newResult.dies;
+      sourceDies    = newResult.dies;
+      currentDies   = deriveDies();
       hbinDefs      = newResult.hbinDefs;
       sbinDefs      = newResult.sbinDefs;
       testDefs      = newResult.testDefs;
@@ -3638,6 +3736,7 @@ export function renderWaferMapCard(
       refreshMetadataBadge();
       rebuildView();
       render();
+      refreshFilterBand();
       if (summaryPanelEl) renderSummaryPanel();
     },
 

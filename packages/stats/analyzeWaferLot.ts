@@ -839,3 +839,26 @@ export async function analyzeWaferLotAsync(
   signal?.throwIfAborted();
   return analyzeWaferLot(results, { ...lotOptions, perWaferSummaries: summaries });
 }
+
+/**
+ * A lot analysed over some of a caller's wafers, with every wafer index put back to the caller's own: `positions[i]` is
+ * where the wafer given i-th sits in the caller's list. A filter's lot analysis covers only the wafers it keeps, yet
+ * the gallery's cards, rows and highlights are numbered by the whole list.
+ */
+export function remapLotWaferIndices(lot: LotStatsSummary, positions: readonly number[]): LotStatsSummary {
+  const at = (i: number): number => positions[i] ?? i;
+  return {
+    ...lot,
+    perWafer: lot.perWafer.map(w => ({ ...w, waferIndex: at(w.waferIndex) })),
+    lotYieldSeries: lot.lotYieldSeries.map(w => ({ ...w, waferIndex: at(w.waferIndex) })),
+    ...(lot.perWaferTestStats ? { perWaferTestStats: lot.perWaferTestStats.map(w => ({ ...w, waferIndex: at(w.waferIndex) })) } : {}),
+    findings: lot.findings.map(f => {
+      const h = f.highlight;
+      if (!h || h.kind !== 'wafer') return f;
+      const byWafer = h.dieKeysByWafer
+        ? Object.fromEntries(Object.entries(h.dieKeysByWafer).map(([k, v]) => [at(Number(k)), v]))
+        : undefined;
+      return { ...f, highlight: { ...h, waferIndices: h.waferIndices.map(at), ...(byWafer ? { dieKeysByWafer: byWafer } : {}) } };
+    }),
+  };
+}

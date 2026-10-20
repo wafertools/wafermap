@@ -1,5 +1,5 @@
 import { DIE_REGIONS, type DieRegionKey, type RegionContext } from './dieRegions.js';
-import { isPositionedDie, diePassStatus, getDieKey } from '../core/dies.js';
+import { isYieldEligibleDie, isPositionedDie, diePassStatus, getDieKey } from '../core/dies.js';
 import type { Die, PositionedDie } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { ReticleConfig } from '../renderer/buildWaferMap.js';
@@ -69,7 +69,7 @@ export function buildRegionYieldData(
       if (!order.includes(region.key)) order.push(region.key);
       const acc = totals.get(region.key) ?? { label: region.label, pass: 0, total: 0 };
       for (const d of region.dies) {
-        if (d.partial || d.edgeExcluded) continue;
+        if (!isYieldEligibleDie(d)) continue;
         const verdict = diePassStatus(d, passSet);
         if (verdict === undefined) continue;
         acc.total++;
@@ -98,7 +98,7 @@ export function diesInRegion(
   regionBuilder: (dies: PositionedDie[], wafer: Wafer, ringCount: number) => StatsRegion[],
 ): Die[] {
   const region = regionBuilder(dies.filter(isPositionedDie), wafer, ringCount).find(r => r.key === key);
-  return region ? region.dies.filter(d => !d.partial && !d.edgeExcluded && (d.hbin ?? d.sbin) !== undefined) : [];
+  return region ? region.dies.filter(d => isYieldEligibleDie(d) && (d.hbin ?? d.sbin) !== undefined) : [];
 }
 
 // ── Shared ordering / adjacency utilities ──────────────────────────────────

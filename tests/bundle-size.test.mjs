@@ -172,6 +172,19 @@ const stubDrilldown = {
   },
 };
 
+// The page filter (pageFilter.ts: the conditions' evaluator, its band and its editor window) loads when a filter
+// exists or the Filter button is first used. Stubbed so the threshold measures what is downloaded up front.
+const stubPageFilter = {
+  name: 'stub-pagefilter',
+  setup(b) {
+    b.onResolve({ filter: /\/pageFilter\.js$/ }, () => ({ path: 'pagefilter', namespace: 'pagefilter' }));
+    b.onLoad({ filter: /.*/, namespace: 'pagefilter' }, () => ({
+      contents: 'export const createPageFilter = () => ({});',
+      loader: 'js',
+    }));
+  },
+};
+
 // The Data tables (dataTab.ts: the Statistics, Dies and Wafers tables, the virtual table under them
 // and the CSV writer) open from the Summary panel's "Data tables" button and from drilldown, and
 // load on first use. Stubbed so the threshold measures what is downloaded up front.
@@ -235,7 +248,7 @@ test('wafermap (root) bundle size is within threshold', async () => {
 });
 
 test('wafermap/render initial chunk size is within threshold', async () => {
-  const { bytes, gzipped } = await bundleSize(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubDataTab, stubReport, stubLotAnalysisOnDemand]);
+  const { bytes, gzipped } = await bundleSize(resolve(dist, 'packages/canvas-adapter/index.js'), [stubGuide, stubInsights, stubDrilldown, stubDataTab, stubReport, stubPageFilter, stubLotAnalysisOnDemand]);
   assert.ok(
     bytes <= THRESHOLDS['wafermap/render (initial)'],
     `wafermap/render initial chunk too large: ${bytes} minified bytes, ${gzipped} gzipped (threshold ${THRESHOLDS['wafermap/render (initial)']} minified). Check for new static imports of heavy modules.`,

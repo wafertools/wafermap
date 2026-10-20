@@ -157,7 +157,7 @@ const flip = input => { input.checked = !input.checked; input.dispatchEvent(new 
 test('the Insights filter is stated above every tab, with what it keeps', () => {
   const { tab } = mount({ filter: { conditions: [SPLIT_A] } });
   assert.notEqual(band(tab).style.display, 'none');
-  assert.match(bandText(tab), /Insights filter on:.*Split is A.*2 of 3 wafers · 48 of 72 dies/);
+  assert.match(bandText(tab), /Filter on:.*Split is A.*2 of 3 wafers · 48 of 72 dies/);
   for (const view of ['distributions', 'data', 'plot']) {
     tab.el.querySelector(`[data-wmap-insights-tab="${view}"]`).click();
     assert.match(bandText(tab), /2 of 3 wafers/, `still stated on ${view}`);
@@ -169,7 +169,7 @@ test('switched off, the band stays, says so, and the host is told; Remove delete
   flip(band(tab).querySelector('[data-wmap-filter-strip-switch] input'));
   assert.deepEqual(changes.at(-1), { conditions: [SPLIT_A], off: true });
   assert.equal(band(tab).querySelector('[data-wmap-filter-strip]').dataset.wmapFilterStrip, 'off');
-  assert.match(bandText(tab), /Insights filter off.*would keep only: Split is A/);
+  assert.match(bandText(tab), /Filter off.*would keep only: Split is A/);
   band(tab).querySelector('[data-wmap-insights-filter-remove]').click();
   assert.equal(changes.at(-1), undefined);
   assert.equal(band(tab).style.display, 'none');
