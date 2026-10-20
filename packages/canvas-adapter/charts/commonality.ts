@@ -6,7 +6,8 @@ import { rankCommonality, measureLabel, type CommonalityField, type CommonalityW
 import { formatP } from '../../stats/groupCompare.js';
 import type { FacetCuration } from '../../stats/facets.js';
 import { CLR, FONT, SPACE, controlStyle, wireControlHover, wireTooltip } from '../toolbar.js';
-import { cardShell, firstRowsToggle, renderEmptyState } from './chartShell.js';
+import { cardShell, firstRowsToggle, guideCite, renderEmptyState } from './chartShell.js';
+import { GUIDE_SECTIONS } from '../../stats/guideSections.js';
 import { cardAbout } from './cardAbout.js';
 
 export interface CommonalityPanelOptions {
@@ -43,11 +44,12 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
 
   const note = doc.createElement('div');
   const parts = [
-    `Every wafer field, compared for yield and for the ${result.bins.length} most common fail bin${result.bins.length === 1 ? '' : 's'}, with each wafer as one value. Ranked by q (Welch's p adjusted for the ${result.rows.length} comparisons). A low q says the groups differ by more than wafer-to-wafer noise; it does not say why. How to read this: User guide, section 10.3.`,
+    `Every wafer field, compared for yield and for the ${result.bins.length} most common fail bin${result.bins.length === 1 ? '' : 's'}, with each wafer as one value. Ranked by q (Welch's p adjusted for the ${result.rows.length} comparisons). A low q says the groups differ by more than wafer-to-wafer noise; it does not say why.`,
   ];
   if (result.confounded.length) parts.push(`These fields group the wafers identically, so the wafers cannot tell them apart: ${result.confounded.map(([a, b]) => `${a.label} and ${b.label}`).join('; ')}.`);
   if (result.untestable.length) parts.push(`Not compared, with no two groups of two or more wafers: ${result.untestable.map(f => f.label).join(', ')}.`);
-  note.textContent = parts.join(' ');
+  note.textContent = parts.join(' ') + ' ';
+  note.append(guideCite(doc, GUIDE_SECTIONS.dividesYield), '.');
   Object.assign(note.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   body.appendChild(note);
 

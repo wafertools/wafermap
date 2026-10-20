@@ -70,7 +70,8 @@ test('openWaferMapGuide strips each guide\'s own leading section number from the
   const hostHeading = content.querySelector('#host-marker');
   assert.equal(hostHeading.textContent, 'Host Section');
 
-  const wmapHeading = content.querySelector('[id="1-reading-the-map"]'); // CSS ids can't start with a digit unescaped
+  const wmapHeading = content.querySelector('[id="wmap-reading-the-map"]');
   assert.ok(wmapHeading, "expected wmap's own first section heading to be present");
   assert.equal(wmapHeading.textContent, 'Reading the map');
+  assert.equal(content.querySelector('[id="wmap-die-grid-and-coordinates"]').textContent, 'Die grid and coordinates', 'a sub-section too');
 });

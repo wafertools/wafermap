@@ -7,7 +7,8 @@ import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import type { RenderableWaferMap } from '../renderWaferMap.js';
 import { CLR, FONT, SPACE, controlStyle, wireControlHover, wireTooltip } from '../toolbar.js';
-import { cardShell, firstRowsToggle } from './chartShell.js';
+import { cardShell, firstRowsToggle, guideCite } from './chartShell.js';
+import { GUIDE_SECTIONS } from '../../stats/guideSections.js';
 import { cardAbout } from './cardAbout.js';
 
 export interface PatCardOptions {
@@ -32,7 +33,8 @@ export function renderPatCard(o: PatCardOptions): { card: HTMLElement; destroy: 
 
   const note = doc.createElement('div');
   note.textContent = `Dynamic limits for each of the ${sum.tests} test${sum.tests === 1 ? '' : 's'} with both limits, set per wafer at the median ± ${PAT_K} robust standard deviations (interquartile range ÷ 1.35) of the dies that pass, never wider than the specification limits (the test's own where a test has none), and only where a wafer has ${PAT_MIN_DIES} or more passing values. `
-    + `An outlier passes its bin and every test limit but lies outside the PAT limits of at least one test. Overall: ${sum.total.outliers.toLocaleString('en-GB')} outlier${sum.total.outliers === 1 ? '' : 's'} in ${sum.total.judged.toLocaleString('en-GB')} dies (${pct(sum.total.outliers, sum.total.judged)}). How to read this, and how it differs from AEC-Q001: User guide, section 10.12.`;
+    + `An outlier passes its bin and every test limit but lies outside the PAT limits of at least one test. Overall: ${sum.total.outliers.toLocaleString('en-GB')} outlier${sum.total.outliers === 1 ? '' : 's'} in ${sum.total.judged.toLocaleString('en-GB')} dies (${pct(sum.total.outliers, sum.total.judged)}). `;
+  note.append(guideCite(doc, GUIDE_SECTIONS.pat, 'How to read this, and how it differs from AEC-Q001'), '.');
   Object.assign(note.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
   body.appendChild(note);
 

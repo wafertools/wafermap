@@ -246,7 +246,7 @@ test('printing again after a change reads the new setting', () => {
   assert.match(block.textContent, /Test: Idsat/);
 });
 
-test('a card’s ⋯ menu is a command menu its button opens and closes, with Expand left out once expanded', () => {
+test('a card’s ⋯ menu is a command menu its button opens and closes; Expand is a button of its own', () => {
   const shell = cardShell('T', undefined, document);
   document.getElementById('root').appendChild(shell.card);
   shell.body.appendChild(document.createElement('canvas'));
@@ -257,14 +257,20 @@ test('a card’s ⋯ menu is a command menu its button opens and closes, with Ex
   const menu = document.querySelector('[data-wmap-card-menu-list]');
   assert.equal(menu.getAttribute('role'), 'menu');
   assert.equal(btn.getAttribute('aria-expanded'), 'true');
-  assert.deepEqual([...menu.querySelectorAll('[role="menuitem"]')].map(r => r.textContent), ['Save as PNG', 'Expand']);
+  assert.deepEqual([...menu.querySelectorAll('[role="menuitem"]')].map(r => r.textContent), ['Save as PNG']);
   btn.click();
   assert.ok(!document.querySelector('[data-wmap-card-menu-list]'), 'its button closes it');
   assert.equal(btn.getAttribute('aria-expanded'), 'false');
-  shell.card.dataset.wmapExpanded = '1';
   btn.click();
-  assert.deepEqual([...document.querySelectorAll('[data-wmap-card-menu-list] [role="menuitem"]')].map(r => r.textContent), ['Save as PNG']);
   document.querySelector('[data-wmap-card-menu-list]').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.ok(!document.querySelector('[data-wmap-card-menu-list]'), 'Escape closes it');
-  delete shell.card.dataset.wmapExpanded;
+  // Expand: one click, on the header; hidden while the card is in its window, back when it closes.
+  const expand = shell.card.querySelector('[data-wmap-card-expand]');
+  assert.equal(expand.getAttribute('aria-label'), 'Expand');
+  expand.click();
+  assert.equal(shell.card.dataset.wmapExpanded, '1', 'the card is in its window');
+  assert.equal(expand.style.display, 'none', 'no Expand inside its own window');
+  document.querySelector('.wmap-overlay-box').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(shell.card.dataset.wmapExpanded, undefined, 'closed, the card is back');
+  assert.equal(expand.style.display, 'flex', 'and offers Expand again');
 });

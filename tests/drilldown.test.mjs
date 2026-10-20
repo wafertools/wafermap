@@ -182,7 +182,7 @@ test('the value histogram offers Edit as plot: the same test as a draft plot ove
   rows().find(r => r.textContent === 'Value histogram').click();
   const card = document.querySelector('.wmap-overlay-box [data-wmap-chart-card]');
   assert.ok(cardMenuLabels(card).includes('Edit as plot'), 'Edit as plot in the card’s menu');
-  assert.ok(!cardMenuLabels(card).includes('Expand'), 'a card in its window does not offer to expand again');
+  assert.equal(card.querySelector('[data-wmap-card-expand]').style.display, 'none', 'a card in its window does not offer to expand again');
   assert.equal(document.querySelector('.wmap-overlay-box [data-wmap-population]').textContent, 'Population: 24 dies on W07', 'the population line');
   const before = store.get().length;
   cardMenuAction(card, 'Edit as plot');

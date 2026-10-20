@@ -224,6 +224,15 @@ under `### Breaking`.
 
 ### Changed
 
+- **"How to read this" opens the user guide at its section.** The PAT card, What divides yield, the Comparison by table,
+  process capability, the difference map and the probability, control, goal and heatmap plots name the guide section
+  that explains them by its title; a plot also names the section for a fit line or y = x, a band, rescaled values,
+  ranges, panels, what-if limits or a wafer-by-wafer comparison while it shows one. Each title is a link
+  that opens the guide there beside the app (its own window where the platform allows one, a floating window over the
+  app otherwise). An open guide moves to the section and comes to the front. A saved image or print names the section.
+  The guide's own cross-references name their sections too.
+- **Guide window heading ids are the section titles**, prefixed `wmap-` (`wmap-part-average-testing-pat`), without the
+  section number, so a link into the guide survives renumbering and cannot clash with a host extension's headings.
 - **The lot summary report's comparison of wafer fields is headed Group Comparison**, as it compares the wafers by
   any field Group by offers (lot, program, process split).
 - **What stands out ranks parametric signals with yield loss.** A test whose values shift in a region (a test-value
@@ -253,9 +262,9 @@ under `### Breaking`.
   columns of the Dies table and its CSV name an attribute by the host's `attributes` label, as Group by, the field
   list, the Wafers table and the reports already did; without one, by the default label or the key spelled out.
 
-- **One ⋯ menu on every chart card** holds Save as PNG, Expand, Edit as plot and About this chart, in place of the camera
-  and expand icons. It is a keyboard-operable command menu; a table leaves out Save as PNG and a card already in its own
-  window leaves out Expand.
+- **One ⋯ menu on every chart card** holds Save as PNG, Edit as plot and About this chart, in place of the camera icon.
+  It is a keyboard-operable command menu; a table leaves out Save as PNG. **Expand** stays a button of its own beside
+  it, hidden while the card is in its own window.
 - **Plots read the dies a yield judges.** Every plot leaves out partial dies and dies inside the edge exclusion, as the
   Insights cards (bin pareto, boxplot, trend, capability) do, so a plot and a card of the same thing give the same
   numbers. Counts, means, boxes and histograms on a lot with edge exclusion move accordingly; the footnote states how many

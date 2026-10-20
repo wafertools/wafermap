@@ -9,7 +9,8 @@ import type { Die } from '../core/dies.js';
 import { testLabel } from '../renderer/testLabel.js';
 import { fmt } from '../renderer/fmt.js';
 import { CLR, FONT, SPACE } from './toolbar.js';
-import { cardShell, makeListSelect, renderEmptyState, type SaveImageHandler } from './charts/chartShell.js';
+import { cardShell, guideCite, makeListSelect, renderEmptyState, type SaveImageHandler } from './charts/chartShell.js';
+import { GUIDE_SECTIONS } from '../stats/guideSections.js';
 import { renderWaferMap, type RenderableWaferMap, type WaferMapController } from './renderWaferMap.js';
 import { cardAbout } from './charts/cardAbout.js';
 
@@ -70,6 +71,7 @@ export function renderDifferenceMapPanel(o: DifferenceMapPanelOptions): { card: 
       ? `${what}: ${a} (${ga.items.length} wafer${ga.items.length === 1 ? '' : 's'}) minus ${b} (${gb.items.length}), each the mean over its wafers at the position${measure === YIELD ? ' of the share passing' : ''}. `
         + `${r.compared.toLocaleString('en-GB')} positions compared; the colours run from −${fmt(r.maxAbs, unit)} to +${fmt(r.maxAbs, unit)}, zero in the middle. Grey: a position one group has no value at.`
       : `${a} and ${b} have no position with a value of ${what} in common.`;
+    if (r.compared) note.append(guideCite(doc, GUIDE_SECTIONS.heatmap), '.');
     const base = ga.items[0]?.source;
     if (!base || !r.compared) return;
     // The first wafer's geometry and orientation, without its identity: this map is no single wafer.

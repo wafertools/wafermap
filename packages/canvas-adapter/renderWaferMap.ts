@@ -10,7 +10,7 @@ import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult }
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
 import { analyzeWaferMap } from '../stats/analyzeWaferMap.js';
 import { SHADOW, LEADING, wireControlHover, SPACE, EDGE_GUTTER, RADIUS, FONT, CLR, applyOverlayZ, getTooltip, hideTooltip, positionTooltip, createToolbarHelpers, buildModeMenuEl, openReparentedModal, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireExpandToggle, nextFrame, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
-import { openUserGuideWindow, type UserGuideExtension } from './guideWindow.js';
+import { openUserGuideWindow, registerGuideOpener, type UserGuideExtension } from './guideWindow.js';
 import { waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
@@ -3602,14 +3602,17 @@ export function renderWaferMapCard(
     render();
   }
 
-  function openGuideWindow(): void {
+  function openGuideWindow(section?: string): void {
     import('./userGuideHtml.js').then(m => openUserGuideWindow(
       { buildWaferMap, renderWaferMap, renderWaferGallery: undefined, analyzeWaferMap },
       m.USER_GUIDE_HTML,
       userGuideExtension,
       container,
+      section,
     ));
   }
+  // A card's "How to read this" link opens this renderer's guide (its host's extension) while it is mounted.
+  const unregisterGuideOpener = registerGuideOpener(section => openGuideWindow(section));
 
   // Once, after every optional piece of chrome has had its chance to mount:
   // with neither a toolbar nor an identity, none of the call sites above ever
@@ -3709,7 +3712,7 @@ export function renderWaferMapCard(
       setExpandShown(visible);
     },
 
-    openUserGuide: openGuideWindow,
+    openUserGuide: () => openGuideWindow(),
 
     setInsightsOpen(open: boolean): void {
       setInsightsOpen(open);
@@ -3717,6 +3720,7 @@ export function renderWaferMapCard(
 
     destroy(): void {
       destroyed = true;
+      unregisterGuideOpener();
       plotStore.flush();
       for (const run of panelRuns.values()) run.cancel();
       panelRuns.clear();

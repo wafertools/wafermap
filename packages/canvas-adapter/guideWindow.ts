@@ -19,12 +19,48 @@ import { CLR, FONT, RADIUS, MOTION, wireControlHover, copyWmapThemeTokens, syncW
 // (buildWaferMap/renderWaferMap/renderWaferGallery/analyzeWaferMap) — never
 // host-app state — so it doesn't matter which map's help button opened it.
 
-/** Only `.close()` is ever called on this — deliberately narrower than
- *  `OverlayHandle` so both the floating-window branch (which returns a real
- *  `OverlayHandle`, a structural superset) and the popup branch (which has
- *  no backdrop/box/contentWrap to speak of) can satisfy it without a cast. */
-interface GuideHandle { close: () => void; }
+/** Deliberately narrower than `OverlayHandle`, so the floating-window branch
+ *  and the popup branch (which has no backdrop/box/contentWrap to speak of)
+ *  both satisfy it. `show` brings the open guide forward, at a section when
+ *  given (a heading id), and returns false when the window has gone. */
+interface GuideHandle { close: () => void; show: (section?: string) => boolean; }
 let openGuideHandle: GuideHandle | null = null;
+
+/** Scrolls the guide to a heading by id: at once in a guide already open, after layout in one just built. */
+function scrollGuideTo(content: HTMLElement, section: string | undefined, laidOut = false): void {
+  if (!section) return;
+  const el = content.querySelector<HTMLElement>(`[id="${section}"]`);
+  if (!el) return;
+  const win = content.ownerDocument.defaultView;
+  const go = (): void => el.scrollIntoView({ block: 'start' });
+  if (laidOut || !win?.requestAnimationFrame) go(); else win.requestAnimationFrame(() => win.requestAnimationFrame(go));
+}
+
+// ── Opening the guide at a section, from anywhere ──────────────────────────────
+//
+// A card's "How to read this" link opens the guide at its section. The card may
+// be in Insights, a plot window, a drilldown window or an expanded card's window,
+// none of which knows the renderer that made it; the renderer is what knows how to
+// open the guide (its host's `userGuideExtension`, its demo api). So each renderer
+// registers its opener while it is mounted, and a link uses the latest: a host
+// shows one guide (tsmap's main view), and every renderer opens the same wmap
+// guide. With none mounted, the guide opens without a host extension.
+
+type GuideOpener = (section?: string) => void;
+const guideOpeners: GuideOpener[] = [];
+
+/** A renderer's guide opener, used by links while it is mounted. Returns the unregister function (call on destroy). */
+export function registerGuideOpener(open: GuideOpener): () => void {
+  guideOpeners.push(open);
+  return () => { const i = guideOpeners.lastIndexOf(open); if (i >= 0) guideOpeners.splice(i, 1); };
+}
+
+/** Opens the user guide at a section (a heading id, `GUIDE_SECTIONS`), or moves an open guide to it. */
+export function openGuideAt(section: string, anchor?: Element): void {
+  const open = guideOpeners[guideOpeners.length - 1];
+  if (open) open(section);
+  else openWaferMapGuideAt(undefined, anchor, section);
+}
 
 type GuideApi = { buildWaferMap: unknown; renderWaferMap: unknown; renderWaferGallery: unknown; analyzeWaferMap: unknown };
 
@@ -313,7 +349,8 @@ function buildGuideToc(doc: Document, content: HTMLElement, showSearch: boolean)
   // position/nesting in the one combined document carry the order instead.
   // Only the heading's first text node is touched, so any inline markup
   // inside it (a link, code span, etc.) is left alone.
-  const NUMBER_PREFIX = /^\s*\d+(?:\.\d+)*\.\s+/;
+  // "8. " and "10.3 " alike: a sub-section's number has no closing full stop.
+  const NUMBER_PREFIX = /^\s*\d+(?:\.\d+)*\.?\s+/;
   for (const h of content.querySelectorAll<HTMLElement>('h2[id],h3[id],h4[id]')) {
     const first = h.firstChild;
     if (first?.nodeType === Node.TEXT_NODE) {
@@ -424,7 +461,7 @@ function activateGuideScripts(content: HTMLElement, targetWindow: Window): (() =
 }
 
 /** In-page fallback — unchanged from before `window.open` support was added. */
-function openGuideInFloatingWindow(title: string, contentHtml: string, api: GuideApi, anchor?: Element): OverlayHandle {
+function openGuideInFloatingWindow(title: string, contentHtml: string, api: GuideApi, anchor?: Element, section?: string): GuideHandle {
   // Derive from `anchor`, not the bare global — `anchor` (the help button) can
   // live inside a gallery card detached into its own popup window, and without
   // this the guide content builds into the OPENER's document while the floating
@@ -443,6 +480,7 @@ function openGuideInFloatingWindow(title: string, contentHtml: string, api: Guid
   // Assigned below, after activateGuideScripts runs — but onClose only ever
   // fires later, from real user interaction, well after that assignment.
   let destroyDemos: (() => void) | undefined;
+  let guideHandle: GuideHandle | undefined;
   const handle = openFloatingWindow({
     title,
     anchor,
@@ -465,7 +503,7 @@ function openGuideInFloatingWindow(title: string, contentHtml: string, api: Guid
       content.style.setProperty('--wmap-guide-reading-width', isMaximized ? '1000px' : '720px');
     },
     onClose: () => {
-      if (openGuideHandle === handle) openGuideHandle = null;
+      if (openGuideHandle === guideHandle) openGuideHandle = null;
       // The 13 live demo widgets are never reachable any other way once this
       // closes — this is an in-page overlay, not a real popup, so closing it
       // is just box.remove(): the host page's JS realm (and every demo's
@@ -477,7 +515,16 @@ function openGuideInFloatingWindow(title: string, contentHtml: string, api: Guid
   });
   handle.contentWrap.appendChild(content);
   destroyDemos = activateGuideScripts(content, ownerWindow);
-  return handle;
+  scrollGuideTo(content, section);
+  return guideHandle = {
+    close: handle.close,
+    show: (at) => {
+      if (!handle.box.isConnected) return false;
+      handle.bringToFront();
+      scrollGuideTo(content, at, true);
+      return true;
+    },
+  };
 }
 
 /** Real, separate OS window — draggable outside the host window's own
@@ -487,7 +534,7 @@ function openGuideInFloatingWindow(title: string, contentHtml: string, api: Guid
  *  `ResizeObserver` callbacks in some engines), an explicit font stack
  *  (a popup never inherits the host page's own CSS reset), and a themed,
  *  synced `--wmap-*` copy (see `syncWmapPopupTheme`'s doc comment). */
-function openGuideInPopup(popupWin: Window, title: string, contentHtml: string, api: GuideApi): GuideHandle {
+function openGuideInPopup(popupWin: Window, title: string, contentHtml: string, api: GuideApi, section?: string): GuideHandle {
   const doc = popupWin.document;
   doc.title = title;
   Object.assign(doc.documentElement.style, { height: '100%' });
@@ -512,6 +559,7 @@ function openGuideInPopup(popupWin: Window, title: string, contentHtml: string, 
   Object.assign(content.style, { flex: '1', overflow: 'auto', minHeight: '0', minWidth: '0' });
   doc.body.appendChild(content);
   const destroyDemos = activateGuideScripts(content, popupWin);
+  scrollGuideTo(content, section);
 
   let closed = false;
   const cleanup = () => {
@@ -529,7 +577,15 @@ function openGuideInPopup(popupWin: Window, title: string, contentHtml: string, 
   };
   const closePollId = setInterval(() => { if (popupWin.closed) cleanup(); }, 400);
   popupWin.addEventListener('pagehide', cleanup);
-  const handle: GuideHandle = { close: () => { if (!popupWin.closed) popupWin.close(); cleanup(); } };
+  const handle: GuideHandle = {
+    close: () => { if (!popupWin.closed) popupWin.close(); cleanup(); },
+    show: (at) => {
+      if (popupWin.closed) { cleanup(); return false; }
+      popupWin.focus();
+      scrollGuideTo(content, at, true);
+      return true;
+    },
+  };
   return handle;
 }
 
@@ -557,7 +613,11 @@ export function openUserGuideWindow(
   // Only used by the in-page fallback below — a real popup (the common case)
   // is a separate OS window, unaffected by the host page's own stacking.
   anchor?: Element,
+  /** A heading id to open at (`GUIDE_SECTIONS`). An open guide is brought forward and moved there, not reopened, so
+   *  the reader keeps the window where they put it, beside the app. */
+  section?: string,
 ): void {
+  if (openGuideHandle && section && openGuideHandle.show(section)) return;
   if (openGuideHandle) { openGuideHandle.close(); openGuideHandle = null; }
 
   const title = extension?.title ?? 'Wafer Map — User Guide';
@@ -571,8 +631,8 @@ export function openUserGuideWindow(
   const ownerWindow = anchor?.ownerDocument.defaultView ?? window;
   const popupWin = ownerWindow.open('', '_blank', 'width=800,height=820');
   openGuideHandle = popupWin
-    ? openGuideInPopup(popupWin, title, contentHtml, api)
-    : openGuideInFloatingWindow(title, contentHtml, api, anchor);
+    ? openGuideInPopup(popupWin, title, contentHtml, api, section)
+    : openGuideInFloatingWindow(title, contentHtml, api, anchor, section);
 }
 
 /**
@@ -592,6 +652,10 @@ export function openUserGuideWindow(
  * them — a static import here would cycle back.
  */
 export function openWaferMapGuide(extension?: UserGuideExtension, anchor?: Element): void {
+  openWaferMapGuideAt(extension, anchor);
+}
+
+function openWaferMapGuideAt(extension: UserGuideExtension | undefined, anchor: Element | undefined, section?: string): void {
   Promise.all([
     import('./userGuideHtml.js'),
     import('./renderWaferMap.js'),
@@ -602,6 +666,7 @@ export function openWaferMapGuide(extension?: UserGuideExtension, anchor?: Eleme
       guide.USER_GUIDE_HTML,
       extension,
       anchor,
+      section,
     );
   });
 }

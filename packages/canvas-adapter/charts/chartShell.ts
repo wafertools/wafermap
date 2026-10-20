@@ -8,6 +8,8 @@
 import { SHADOW, LEADING, wireTooltip, wireControlHover, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, Z_BASE, menuLayerFor, wireListNavigation, MENU_SEARCH_THRESHOLD, makeMenuSearchBox, markMenuTrigger, markNoPrint, openCommandMenu, type CheckMenuRow, saveImageBlob, openReparentedModal, type OverlayHandle, type SaveImageHandler } from '../toolbar.js';
 import { ICONS } from '../icons.js';
 import type { CardAboutLine } from './cardAbout.js';
+import { openGuideAt } from '../guideWindow.js';
+import type { GuideSection } from '../../stats/guideSections.js';
 import { minOf, maxOf } from '../../core/utils.js';
 import { robustFence } from '../../stats/math.js';
 import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
@@ -25,10 +27,10 @@ export type { SaveImageHandler };
 // free this way too, matching the wafer-map popups' own feature set.
 
 /**
- * Opens a card in its own resizable window. While it is there (`data-wmap-expanded`) the card's ⋯ menu leaves out
- * Expand: expanding a card already in its window would reparent it into a second, nested window and leave the first
- * one empty. The flag is on the card, so a card opened straight into a window by something other than its own menu (a
- * drilldown) gets the same treatment.
+ * Opens a card in its own resizable window. While it is there (`data-wmap-expanded`) the card's Expand button is
+ * hidden: expanding a card already in its window would reparent it into a second, nested window and leave the first
+ * one empty. The flag is on the card, so a card opened straight into a window by something other than its own button
+ * (a drilldown) gets the same treatment.
  *
  * `opts.anchor` is for a card that is not on the page yet (see
  * `ReparentModalOptions.anchor`); `opts.onClosed` runs once the modal has
@@ -53,6 +55,10 @@ export function openChartExpandModal(
   // a modal several times taller.
   Object.assign(card.style, { flex: '1', minHeight: '0', alignSelf: 'stretch', border: 'none', borderRadius: '0' } as Partial<CSSStyleDeclaration>);
   card.dataset.wmapExpanded = '1';
+  // The card's own Expand button (the first, not a panel's inside a grid card).
+  const expandBtn = card.querySelector<HTMLElement>(':scope > div > [data-wmap-card-expand]');
+  const showExpand = (on: boolean): void => { if (expandBtn) expandBtn.style.display = on ? 'flex' : 'none'; };
+  showExpand(false);
 
   const handle = openReparentedModal([card], {
     title,
@@ -62,10 +68,11 @@ export function openChartExpandModal(
     onClosed: () => {
       delete card.dataset.wmapExpanded;
       card.setAttribute('style', savedStyle);
+      showExpand(true);
       opts.onClosed?.();
     },
   });
-  if (!handle) { delete card.dataset.wmapExpanded; card.setAttribute('style', savedStyle); return null; } // already expanded — re-entrancy guard
+  if (!handle) { delete card.dataset.wmapExpanded; card.setAttribute('style', savedStyle); showExpand(true); return null; } // already expanded — re-entrancy guard
 
   // A list of rows opens tall enough to show every row (within the viewport)
   // rather than at a fixed size that is mostly empty for a short list. Its
@@ -905,7 +912,7 @@ export interface CardShell {
   setPngCanvas(make: () => HTMLCanvasElement | null): void;
   /** The one line "About this chart" (or "About this table") shows (`cardAbout`). Absent = the menu has no About row. */
   setAbout(line: CardAboutLine | undefined): void;
-  /** Rows of the card's own in its ⋯ menu, after Save as PNG and Expand (Edit as plot). Read each time the menu opens. */
+  /** Rows of the card's own in its ⋯ menu, after Save as PNG (Edit as plot). Read each time the menu opens. */
   setMenuRows(read: () => CardMenuRow[]): void;
 }
 
@@ -1030,6 +1037,16 @@ export function cardFrameStyle(): Partial<CSSStyleDeclaration> {
   };
 }
 
+/** A card header's square icon button (Expand, ⋯). */
+function styleHeaderBtn(btn: HTMLButtonElement): void {
+  Object.assign(btn.style, {
+    ...controlStyle('outlined'),
+    color: CLR.label, padding: '0', width: '22px', height: '22px', lineHeight: LEADING.none, flexShrink: '0',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  } as Partial<CSSStyleDeclaration>);
+  wireControlHover(btn);
+}
+
 export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDocument: Document = document, opts: CardShellOptions = {}): CardShell {
   const card = ownerDocument.createElement('div');
   // Stable test/tooling hooks — this card carries no other id/class, and
@@ -1058,19 +1075,27 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
   // only serves the header, so the two never fight over the same element.
   const headerTip = makeTooltip(card);
 
-  // One ⋯ menu for everything the card offers about itself, rather than an icon each: a header of icons grows with every
-  // new action, and the reader had to learn each glyph. Its rows are built when it opens, from what the card holds then.
+  // Expand is a button of its own, as it is used all the time: in a menu it was two clicks for the commonest action.
+  // Hidden while the card is in its window (`openChartExpandModal`).
+  const expandBtn = card.ownerDocument.createElement('button');
+  expandBtn.type = 'button';
+  expandBtn.setAttribute('aria-label', 'Expand');
+  expandBtn.innerHTML = ICONS.expand;
+  expandBtn.dataset.wmapCardExpand = '1';
+  styleHeaderBtn(expandBtn);
+  attachChartTip(expandBtn, card, headerTip, 'Expand');
+  markNoPrint(expandBtn);
+  expandBtn.addEventListener('click', () => { if (!isExpandedCard(card)) openChartExpandModal(card, heading.textContent ?? title); });
+  headingRow.appendChild(expandBtn);
+
+  // One ⋯ menu for everything else the card offers about itself, rather than an icon each: a header of icons grows with
+  // every new action, and the reader had to learn each glyph. Its rows are built when it opens, from what the card holds then.
   const menuBtn = card.ownerDocument.createElement('button');
   menuBtn.type = 'button';
   menuBtn.setAttribute('aria-label', 'Chart actions');
   menuBtn.innerHTML = ICONS.more;
   menuBtn.dataset.wmapCardMenu = '1';
-  Object.assign(menuBtn.style, {
-    ...controlStyle('outlined'),
-    color: CLR.label, padding: '0', width: '22px', height: '22px', lineHeight: LEADING.none, flexShrink: '0',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  } as Partial<CSSStyleDeclaration>);
-  wireControlHover(menuBtn);
+  styleHeaderBtn(menuBtn);
   attachChartTip(menuBtn, card, headerTip, 'Chart actions');
   markMenuTrigger(menuBtn, false);
   markNoPrint(menuBtn);
@@ -1099,8 +1124,6 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
       ({ label, active: false, action: true, enabled: !disabledHint, disabledHint, onClick: () => { closeMenu?.(); run(); } });
     // A card that draws no canvas (a table) has no image to save; a panel of a grid is saved with its grid.
     if (opts.png !== false && (pngCanvas || card.querySelector('canvas'))) rows.push(act('Save as PNG', savePng));
-    // A card already in its expand window does not offer to expand again (that would nest a second, empty window).
-    if (!isExpandedCard(card)) rows.push(act('Expand', () => openChartExpandModal(card, heading.textContent ?? title)));
     for (const r of extraRows?.() ?? []) rows.push(act(r.label, r.onClick, r.disabledHint));
     if (about) {
       const shown = aboutLine.style.display !== 'none';
@@ -1165,6 +1188,43 @@ export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDo
     setAbout: line => { about = line; showAbout(!!line && aboutLine.style.display !== 'none'); },
     setMenuRows: read => { extraRows = read; },
   };
+}
+
+/**
+ * "How to read this: *Control charts* in the user guide" (no full stop), the title a link that opens the guide at that
+ * section, beside the app (a separate window where the platform allows one, otherwise a floating window over it); an
+ * open guide moves there. A saved image or print carries `guideCiteText` instead.
+ */
+export function guideCite(doc: Document, section: GuideSection, lead = 'How to read this'): HTMLSpanElement {
+  const span = doc.createElement('span');
+  span.append(`${lead}: `, guideLink(doc, section), ' in the user guide');
+  return span;
+}
+
+/** A section's title as a link that opens the guide there. */
+function guideLink(doc: Document, section: GuideSection): HTMLButtonElement {
+  const link = doc.createElement('button');
+  link.type = 'button';
+  link.textContent = section.title;
+  link.dataset.wmapGuideLink = section.id;
+  Object.assign(link.style, {
+    border: 'none', background: 'none', padding: '0', font: 'inherit', color: CLR.iconActive,
+    textDecoration: 'underline', cursor: 'pointer',
+  } as Partial<CSSStyleDeclaration>);
+  link.addEventListener('click', () => openGuideAt(section.id, link));
+  return link;
+}
+
+/** A footnote's "how to read this: *A* and *B* in the user guide", each title a link (`guideCite`). Nothing for none. */
+export function appendGuideCites(el: HTMLElement, sections: readonly GuideSection[]): void {
+  if (sections.length === 0) return;
+  const doc = el.ownerDocument;
+  el.append(' · how to read this: ');
+  sections.forEach((s, i) => {
+    if (i > 0) el.append(i === sections.length - 1 ? ' and ' : ', ');
+    el.append(guideLink(doc, s));
+  });
+  el.append(' in the user guide');
 }
 
 /** A text box's look in an editor: the one style the plot, sweep and filter editors' boxes share. */

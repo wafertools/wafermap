@@ -15,14 +15,15 @@ import { CONTROL_RULE_TEXT } from '../../stats/control.js';
 import { PAT_VERDICT_LABEL } from '../../stats/pat.js';
 import { fmt } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
-import { binOfLabel, plotFootnote, plotTestNumber, plotTitle, probabilityPosition, type PassFailCells, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
+import { binOfLabel, plotFootnote, plotGuideSections, plotTestNumber, plotTitle, probabilityPosition, type PassFailCells, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
-  cardShell, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
+  cardShell, appendGuideCites, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
   renderEmptyState, isExpandedCard, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
   WAFER_MENU_HINT, type CardMenuRow, type LimitLine, type SaveImageHandler, type SeriesLegendItem, type WaferContextMenuHandler,
 } from './chartShell.js';
+import { guideCitesText } from '../../stats/guideSections.js';
 import { categorical } from './palette.js';
 import { NO_DATA_FILL } from '../../renderer/colorMap.js';
 import type { BinColors } from '../../renderer/binColors.js';
@@ -1643,6 +1644,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     hint.textContent = options.panel
       ? `${r.population.wafers.toLocaleString('en-GB')} wafer${r.population.wafers === 1 ? '' : 's'} · ${r.population.dies.toLocaleString('en-GB')} dies`
       : plotFootnote(r) + (r.facets ? '' : interact);
+    if (!options.panel) appendGuideCites(hint, plotGuideSections(r));
     markNoPrint(hint);   // on paper the card's print block says this, without the instructions to click
     above = doc.createElement('div');
     above.style.display = 'flow-root';   // keeps the legend's margin inside, so the canvas starts below it
@@ -1975,7 +1977,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     if (!r || !r.marks) return undefined;
     const gradient = resolveValueColorFn();
     return {
-      caption: [plotFootnote(r), ...(r.fitNotes ?? []), ...r.notes],
+      caption: [plotFootnote(r), ...(r.fitNotes ?? []), ...r.notes, ...guideCitesText(plotGuideSections(r))],
       legend: r.groups.length > 1 && !r.colorRepeatsX ? r.groups.map((g, i) => ({ label: g || '(none)', color: colorOf(i) })) : undefined,
       colorbar: r.colorScale ? { label: r.colorScale.label, lo: fmt(r.colorScale.lo, r.colorScale.unit), hi: fmt(r.colorScale.hi, r.colorScale.unit), color: gradient } : undefined,
     };

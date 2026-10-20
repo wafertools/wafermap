@@ -216,7 +216,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 
 |                                                               | Control            | Description                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Section 2](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                                                                                               |
+| <img src="images/icons/mode.svg" width="20" height="20">      | Plot mode          | Switches the active plot mode (see [Plot modes](#2-plot-modes)). When multiple tests are available, a test selector appears alongside it.                                                                                                                                                               |
 | <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: axis labels, XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Limit pass/fail (Test Value mode with limits), Test pass/fail (Test Value mode, active test is functional or has recorded verdicts), and **Mark failing dies** (bin modes only). **Compact layout** and **Layout diagnostics** sit at the top of the menu (see [Compact layout](#compact-layout)). **Clear overlays** at the foot turns off everything in the menu at once, and is greyed when nothing is on — so the menu also answers "is anything active?" without you auditing every row. |
 | <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Picks the colours for the map on screen. In Hard Bin and Soft Bin modes it lists **bin colours** (Default, Colour-blind safe); in every other mode — including the stacked modes, which show values — it lists **value colours**. The two are separate choices, so changing one never resets the other. Value gradients run dark at the low end and bright at the high end, so on a stacked map the healthy wafer sits back and a defect ring or scratch stands out; **Reverse gradient** flips that when the low end is the one you care about. When bin definitions carry their own colours, **Use colours from bin definitions** turns them on or off. (**Mark failing dies** is in Overlays, beside the pass/fail display it belongs with.) |
 | <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive. Hidden whenever a pass/fail display is active or the active test is functional.                                                                       |
@@ -228,9 +228,9 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/zoomOut.svg" width="20" height="20">   | Zoom out           | Zooms out one step.                                                                                                                                                                                                                                                                                    |
 | <img src="images/icons/reset.svg" width="20" height="20">     | Reset zoom         | Returns the map to the default fitted view.                                                                                                                                                                                                                                                            |
 | <img src="images/icons/pan.svg" width="20" height="20">       | Pan mode           | Click and drag to pan the map.                                                                                                                                                                                                                                                                         |
-| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Section 4.3](#43-box-select)). This is the mode a map opens in.                                                                                                                                                                             |
-| <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Section 4.4](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
-| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Each chart can also be expanded on its own, from its ⋯ menu. |
+| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Box select         | Click and drag to select a rectangular group of dies (see [Box select](#43-box-select)). This is the mode a map opens in.                                                                                                                                                                             |
+| <img src="images/icons/drilldown.svg" width="20" height="20"> | Chart | Opens a menu of charts drawn from the selected dies, or from the whole wafer when nothing is selected (see [Charting dies and wafers](#44-charting-dies-and-wafers)). Only shown when there is something to chart. |
+| <img src="images/icons/expand.svg" width="20" height="20">    | Expand             | Opens the map in an enlarged modal overlay. Opening the Summary panel in it widens the modal by the panel's width, so the map keeps its size. A maximise button in the modal grows it to fill the window (or press **F**). Press **Esc** or click outside to close. Useful for detailed inspection without changing the main view. Works in the Insights view too, where it opens the whole chart suite in a wide modal — useful because those charts interact and are best read side by side. Each chart can also be expanded on its own, with the expand button beside its ⋯. |
 | <img src="images/icons/download.svg" width="20" height="20">  | Save image         | Downloads the current map view as a PNG. Captures the canvas as displayed, including all active overlays and the legend.                                                                                                                                                                               |
 | <img src="images/icons/warning.svg" width="20" height="20">   | Data warnings      | Appears **only when there is something to report** about the data behind the map. Click it for the details. A red ⛔ means the map may be positionally wrong — usually that wafer geometry was guessed rather than supplied, so dies may not sit where they appear to. An amber ⚠ means something expected is missing or was skipped, but what is drawn is correct. |
 | <img src="images/icons/help.svg" width="20" height="20">      | User guide         | Opens this guide.                                                                                                                                                                                                                                                                                      |
@@ -321,7 +321,7 @@ it as a file and send it to whoever supports this software.
 | **F**                    | Maximise / restore the modal (when expanded)            |
 | **Esc**                  | Close the expanded modal, or clear the die selection    |
 | **Ctrl / Cmd + click**   | Add a die to the current selection                      |
-| **Right-click**, **Menu key** or **Shift + F10** | Chart the selected dies, or the whole wafer (see [Section 4.4](#44-charting-dies-and-wafers)) |
+| **Right-click**, **Menu key** or **Shift + F10** | Chart the selected dies, or the whole wafer (see [Charting dies and wafers](#44-charting-dies-and-wafers)) |
 | **Mouse wheel / scroll** | Zoom in and out at the cursor                           |
 | **Ctrl / Cmd + `+`** / **`-`** | Zoom in / zoom out                                |
 | **Ctrl / Cmd + `0`**     | Reset zoom to the fitted view                           |
@@ -341,7 +341,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Picks bin colours (bin modes) or value colours (other modes) for all cards, including **Reverse gradient**.                                                                                                         |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
 | <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns. **Auto** fits as many cards as stay readable; a number divides the full width between that many columns.                                             |
-| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Select on every wafer | A toggle. Off (the default), each card selects on its own. A badge counts the selected die positions; clicking the button while something is selected clears it. On, a box, a click or a clear on any card applies to every card at the same die positions, so a region is read lot-wide; right-click then opens charts and tables of those dies across all the wafers (see [Section 4.3](#43-box-select)). |
+| <img src="images/icons/boxSelect.svg" width="20" height="20"> | Select on every wafer | A toggle. Off (the default), each card selects on its own. A badge counts the selected die positions; clicking the button while something is selected clears it. On, a box, a click or a clear on any card applies to every card at the same die positions, so a region is read lot-wide; right-click then opens charts and tables of those dies across all the wafers (see [Box select](#43-box-select)). |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
@@ -352,7 +352,7 @@ The gallery control bar applies to all cards simultaneously.
 
 Right-click a card anywhere outside its map to chart that wafer on its own — a
 histogram, process capability or a sweep (see
-[Section 4.4](#44-charting-dies-and-wafers)).
+[Charting dies and wafers](#44-charting-dies-and-wafers)).
 
 Click a card's expand button to detach it into its own separate window with the
 complete single-map toolbar (falls back to a floating window inside the page if
@@ -754,14 +754,14 @@ bin 1 (Pass) or bin 2 (Fail) at that location.*
 The **Insights** side of the **Maps | Insights** switch (at the far right of the toolbar row, single map or
 gallery) swaps the wafer view for a chart suite computed from the same die data — without leaving the
 toolbar. Choose **Maps** to return to the map; the switch stays where it is. Independent of the Findings
-sidebar (Section 6) — the two toggle independently, and opening one never
+sidebar (see [Summary panel](#6-summary-panel)) — the two toggle independently, and opening one never
 hides the other's toolbar button, since Findings has nothing to highlight
 against once the map is replaced.
 
 Any chart mark that stands for one wafer — a bar in *Yield by wafer*, a box in
 *Test value distribution*, a point in *Wafer-to-wafer trend* — can be
 right-clicked to chart that wafer on its own (see
-[Section 4.4](#44-charting-dies-and-wafers)); its tooltip says so.
+[Charting dies and wafers](#44-charting-dies-and-wafers)); its tooltip says so.
 
 Insights is organised into three chart sub-tabs, a **Data** sub-tab holding the
 same numbers as tables (see *Data tables* below), and a **My plots** sub-tab for your
@@ -837,7 +837,7 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   many tests were compared, Benjamini–Hochberg; the table is sorted by it), and the **largest shift** in wafer-to-wafer
   standard deviations and as a share of the limit window. Choose a **Control** (the process of record) and each other
   group's cell adds its difference from the control with a Holm-adjusted p. Click a test to show it in the panels below.
-  **Comparison CSV** saves the table. [Section 10.2](#102-comparing-groups-of-wafers) explains each figure. Narrowing **Show** to one group leaves nothing to compare, so the table is not shown.
+  **Comparison CSV** saves the table. [Comparing groups of wafers](#102-comparing-groups-of-wafers) explains each figure. Narrowing **Show** to one group leaves nothing to compare, so the table is not shown.
 
   The box plot, histogram, trend and the Correlation tab's scatter draw the
   test's limits as dashed lines. A test can have two kinds: **test limits**
@@ -877,7 +877,7 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   point to see which wafer and die it is; **click** it to open that wafer on the
   X test. **Drag** a rectangle over the plot to select the dies inside it — across
   as many wafers as they fall on — and a menu opens with charts and tables of
-  just those dies (see [Section 4.4](#44-charting-dies-and-wafers)). The
+  just those dies (see [Charting dies and wafers](#44-charting-dies-and-wafers)). The
   selection stays ringed until you change the X or Y test or click empty space.
 
 In a gallery with more than one wafer, a **Group by** control appears whenever
@@ -990,7 +990,7 @@ warns when that is more than a spreadsheet can open (1,048,576).
 The **My plots** sub-tab is where you build your own charts. **+ New plot** starts one,
 already filled in with the first two tests of the lot, and opens it beside a large
 copy of the chart. **Edit as plot**, in the ⋯ menu of an Insights chart, opens that chart as a plot of your own (see
-*A chart's menu* below). **Add examples** draws plots to start from, or to see what each chart and
+*A chart's buttons* below). **Add examples** draws plots to start from, or to see what each chart and
 setting is for. They are chosen from the lot in view: the *lead* test is the one that varies most from wafer to
 wafer (for a single wafer, the one that follows distance from the centre most), its partner the test that tracks it
 best, and the split is the lot field that best explains the lead test. The examples are a scatter of the lead
@@ -1147,7 +1147,7 @@ In **Setup**, choose the **chart type**, then the field for each role:
   categories (a bar counts outliers per wafer) or the panels. A plot of one wafer, a panel per wafer included, also
   draws that wafer's PAT limits as dotted lines labelled *PAT lo* / *PAT hi*; a plot of several wafers has several sets
   and draws none. The limits are always the whole wafer's, even in a panel of one ring.
-  [Section 10.12](#1012-part-average-testing-pat) explains how the limits are set and what this does and does not cover.
+  [Part average testing (PAT)](#1012-part-average-testing-pat) explains how the limits are set and what this does and does not cover.
   The Overview shows the same verdicts as a **Part average testing (PAT)** card: for each wafer, the dies within the PAT
   limits, the outliers and the rate, the dies that fail anyway, and which tests the outliers are outside on. The Dies
   table (Data tab) has a **PAT** column, and **PAT tests** where there are outliers, in the CSV too; a selection that
@@ -1159,7 +1159,7 @@ In **Setup**, choose the **chart type**, then the field for each role:
   colours with one legend and one statement above them. A wafer field (split, lot) gives each panel its whole wafers; a
   die field (ring, site, bin) the dies with that value from every wafer; **Test**, with several tests as the values,
   one test a panel. So "one scatter per split" or "a histogram per ring" is one plot. Rescaled values are measured over
-  the whole population, so a panel is not re-centred on itself and panels compare. Each panel's ⋯ menu has its own Expand, and
+  the whole population, so a panel is not re-centred on itself and panels compare. Each panel has its own expand button, and
   the plot's Save as PNG saves the whole grid. At most 24 panels; a field on the X axis or the colour cannot also make
   the panels.
 - **Wafer-level comparison** (box and bar of one measured test): when the categories or the colour are a wafer field
@@ -1285,7 +1285,7 @@ most at that level.
 not dies — so the group or wafer selected in the panels above it decides the
 population, and the card's die count states what that came to. To sweep a
 hand-picked set of dies instead, select them on a map and right-click (see
-[Section 4.4](#44-charting-dies-and-wafers)).
+[Charting dies and wafers](#44-charting-dies-and-wafers)).
 
 Two measurements are drawn on the plot and restated underneath:
 
@@ -1347,13 +1347,13 @@ the card is drawn in test order with **the crossing and widths not measured**.
 Pairing the remaining values with the remaining tests would put every later point
 at the wrong level, which gives a plausible curve and a wrong crossing.
 
-### A chart's menu
+### A chart's buttons
 
-Every chart card has a **⋯** button at the right of its title. Its menu holds what the card offers about itself:
+Every chart card has two buttons at the right of its title. **Expand** (the toolbar's expand icon) opens the chart on its own in a large window; a chart already in its window does not show it. The **⋯**
+button opens a menu of what else the card offers about itself:
 
 - **Save as PNG** saves the chart (see *Exporting a chart* below). A table has no image to save and offers its CSV
   instead.
-- **Expand** opens the chart on its own in a large window. A chart already in its window does not offer it.
 - **Edit as plot**, on the Insights charts drawn as plots (yield, bin pareto, pass rate, box plot, histogram, trend,
   scatter, and the value histogram of a selection), opens the chart as a draft plot of your own, drawn over the same
   wafers: the test and Group by it shows now are filled in as its own fields, so it draws the same thing on the next lot
@@ -1364,10 +1364,18 @@ Every chart card has a **⋯** button at the right of its title. Its menu holds 
 
 Use the arrow keys to move through the menu, **Enter** to choose, **Esc** to close it.
 
+**How to read this.** A chart whose statistics this guide explains ends its note with **How to read this** and the
+section's title: PAT, What divides yield, the Comparison by table, process capability, the difference map, and the
+probability, control, goal and heatmap plots. A plot also names a section while it uses what that section explains: a fit
+line or the y = x line, a band, rescaled values, ranges of a number, panels, what-if limits, or groups compared wafer by
+wafer. A plain chart names none, as its **About this chart** says all there is. Each title is a link: it opens this guide at that section, beside the app, so you can read it with the chart in view. If the
+guide is already open, it moves to the section and comes to the front rather than opening again. A saved image or a
+printed page names the section instead.
+
 ### Exporting a chart
 
 **Save as PNG** in a chart's ⋯ menu saves the current view as a PNG at the displayed resolution. To get a clean
-full-resolution render, choose **Expand** first to open it in the large window, then **Save as PNG**.
+full-resolution render, press **Expand** first to open it in the large window, then choose **Save as PNG**.
 
 The saved image is the chart as shown, under a header that says what it is: its **title**,
 what its controls are set to (**Test: vth_n_mV · 1001**, **Wafer: W03**, **Sort: yield**), the
@@ -1378,7 +1386,7 @@ point to open this wafer") are left out. A chart on the **My plots** tab carries
 its wafers and dies in the same place. The image takes the card's own background, so a dark
 theme saves a dark chart. The file name identifies the lot, wafers and chart (see below).
 
-**Printing.** The dropdowns, toggles and buttons (the ⋯ menu button and, on the My plots tab, New
+**Printing.** The dropdowns, toggles and buttons (Expand, the ⋯ menu button and, on the My plots tab, New
 plot, Add examples, Import, Export, Delete all, Edit, Duplicate and Delete) are left off the printed page.
 In their place each chart prints a small block under its title giving the same settings and
 lines as the saved image, so a printed histogram says which test it is of.
@@ -1447,7 +1455,7 @@ the evidence, not a fault; more wafers are what settle it.
 
 ### 10.3 What divides yield
 
-The **What divides yield** card applies 10.2 to every wafer field at once, for yield and for each of the five most
+The **What divides yield** card makes the comparison [Comparing groups of wafers](#102-comparing-groups-of-wafers) describes for every wafer field at once, for yield and for each of the five most
 common fail bins (a bin's value is its share of a wafer's judged dies). Rows are ranked by q, so the fields at the top
 separate the wafers more clearly than wafer-to-wafer noise would. The **Group by** button regroups every chart by that
 field. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and

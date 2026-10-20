@@ -16,7 +16,8 @@ import { buildCapabilityData, type CapabilityDatum, type CapabilityItem } from '
 import { capabilityColor } from './palette.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { LEADING, SPACE, fontPx, FONT, CLR } from '../toolbar.js';
-import { cardShell, isExpandedCard, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
+import { cardShell, guideCite, isExpandedCard, chartFillHeight, applyCanvasFlow, observeResize, makeTooltip, positionChartTooltip, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, chartSwatchCss, prepareCanvas, chartDpr } from './chartShell.js';
+import { GUIDE_SECTIONS } from '../../stats/guideSections.js';
 import { fmt } from '../../renderer/fmt.js';
 import { limitSetName } from '../../renderer/valueFilter.js';
 import { escHtml } from '../../core/utils.js';
@@ -181,6 +182,7 @@ export function renderCapabilityPanel(options: CapabilityPanelOptions): Capabili
             + '(Lo limit = 0, Hi limit = 1) where it has no spec limits, worst Ppk first. '
           : `Normalised to ${limitNames(basis).noun} (${limitNames(basis).lo} = 0, ${limitNames(basis).hi} = 1), worst Ppk first. `)
         + 'Tests without both limits are normalised to their own observed range and drawn muted/dashed.';
+    if (!allUnspec) method.append(' ', guideCite(card.ownerDocument, GUIDE_SECTIONS.goal), '.');
     Object.assign(method.style, {
       color: CLR.label, fontSize: FONT.body, lineHeight: LEADING.base, marginTop: SPACE.xs, maxWidth: '78ch',
     } as Partial<CSSStyleDeclaration>);

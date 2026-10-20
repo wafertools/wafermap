@@ -673,7 +673,7 @@ test('Edit as plot on an Insights card opens it as a draft plot with its test fi
   let saved;
   const tab = mountInsightsWith(items, lot, { onPlotsChange: p => { saved = p; } });
   const card = boxplotCard(tab);
-  assert.deepEqual(cardMenuLabels(card), ['Save as PNG', 'Expand', 'Edit as plot', 'About this chart']);
+  assert.deepEqual(cardMenuLabels(card), ['Save as PNG', 'Edit as plot', 'About this chart']);
   cardMenuAction(card, 'Edit as plot');
   const win = await waitFor(() => dom.window.document.querySelector('[data-wmap-plot-window]'), 'the plot editor');
   assert.match(win.textContent, /This is a draft/);

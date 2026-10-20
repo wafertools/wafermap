@@ -11,7 +11,7 @@ import { metadataValueColor } from '../renderer/colorMap.js';
 import { resolveCanvasTheme } from './canvasTheme.js';
 import { ICONS } from './icons.js';
 import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_GUTTER, MAP_CHROME_INSET, RADIUS, FONT, CLR, sevColor, MODE_LABELS, BIN_LEGEND_MODES, STACKED_MODES, applyOverlayZ, getTooltip, hideTooltip, createToolbarHelpers, buildModeMenuEl, openDetachWindow, openFloatingWindow, openModal, copyWmapThemeTokens, syncWmapPopupTheme, makePaletteBtn, makeLogScaleBtn, makeLegendStyleBtn, makeOverlaysBtn, makeOrientationBtn, menuLayerFor, saveImageBlob, markMenuTrigger, wireMenuA11y, wireTooltip, requestedPassFailDisplay, overlayMenuRows, anyOverlayActive, openCompactDiagnostics, roomForPanel, logWmapVersionOnce, type ModeEntry, type SaveImageHandler, type SaveTextHandler, type CheckMenuRow, type OverlayHandle , buildDataModeEntries, metadataKeyHasData, metadataModeEntry} from './toolbar.js';
-import { openReportModal, openUserGuideWindow, type UserGuideExtension } from './guideWindow.js';
+import { openReportModal, openUserGuideWindow, registerGuideOpener, type UserGuideExtension } from './guideWindow.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
@@ -2316,14 +2316,17 @@ export function renderWaferGallery(
   // (below) both call this same function — a host can trigger the guide
   // programmatically (e.g. from its own combined help menu) whether or not
   // `showHelpButton` ever rendered a wmap toolbar button at all.
-  function openGuideWindow(): void {
+  function openGuideWindow(section?: string): void {
     import('./userGuideHtml.js').then(m => openUserGuideWindow(
       { buildWaferMap, renderWaferMap, renderWaferGallery, analyzeWaferMap },
       m.USER_GUIDE_HTML,
       userGuideExtension,
       container,
+      section,
     ));
   }
+  // A card's "How to read this" link opens this renderer's guide (its host's extension) while it is mounted.
+  const unregisterGuideOpener = registerGuideOpener(section => openGuideWindow(section));
   if (showHelpButton) {
     barEl.appendChild(makeSep());
     barEl.appendChild(makeBtn('help', 'User guide', () => openGuideWindow()));
@@ -4432,9 +4435,10 @@ export function renderWaferGallery(
       refreshLotSummaryButton();
     },
 
-    openUserGuide: openGuideWindow,
+    openUserGuide: () => openGuideWindow(),
 
     destroy(): void {
+      unregisterGuideOpener();
       plotStore.flush();
       cancelTestValueRun();
       buildGeneration++; // cancel any pending factory resolvers

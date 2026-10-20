@@ -79,12 +79,25 @@ md = md.replace(/!?\[([^\]]*)\]\(images\/(?!icons\/)[^)]+\)\n(\n\*[^\n]*\n?[^\n]
 
 // ── Configure marked: add id attributes to headings ──────────────────────────
 // marked does not emit id= by default. We need them so internal anchor links
-// (#2-plot-modes etc.) can be resolved via querySelector inside the guide window.
-// slugify() matches the slug format user-guide.md's internal links use.
+// can be resolved via querySelector inside the guide window, and so the app can
+// open the guide at a section (a card's "How to read this" link).
+//
+// The id is the heading's TITLE, without its number, prefixed `wmap-`: the guide
+// window strips the numbers (a host's own guide comes first and numbers from 1
+// too), so a number is never something the reader can see, and a renumbered
+// guide must not break a link. The prefix keeps the ids apart from a host's own
+// headings in the same window. user-guide.md's own links use the numbered slugs
+// the docs site makes (#44-charting-dies-and-wafers); `numberedToId` maps them.
+const NUMBER_PREFIX = /^\s*\d+(?:\.\d+)*\.?\s+/;
+const numberedToId = new Map();
+const headingIds = new Set();
 const renderer = new Renderer();
 renderer.heading = ({ text, depth, tokens }) => {
   const rawText = tokens.map(t => t.raw ?? '').join('');
-  const id = slugify(rawText);
+  const id = `wmap-${slugify(rawText.replace(NUMBER_PREFIX, ''))}`;
+  if (headingIds.has(id)) throw new Error(`build-user-guide: two headings would share the id "${id}"; give one a distinct title`);
+  headingIds.add(id);
+  numberedToId.set(slugify(rawText), id);
   const inner = marked.parseInline(text);
   return `<h${depth} id="${id}">${inner}</h${depth}>\n`;
 };
@@ -137,7 +150,11 @@ bodyHtml = bodyHtml.replace(
 //   - headings have matching id attributes (added by the renderer above)
 bodyHtml = bodyHtml.replace(
   /href="#([^"]+)"/g,
-  (_, id) => `href="#${id}" onclick="(function(e){e.preventDefault();var g=e.target.closest('.wmap-guide');var el=g&&g.querySelector('[id=\\'${id}\\']');if(el)el.scrollIntoView({behavior:'smooth'});})(event)"`,
+  (_, ref) => {
+    const id = numberedToId.get(ref) ?? (headingIds.has(ref) ? ref : undefined);
+    if (!id) throw new Error(`build-user-guide: a link to #${ref}, which is no heading of the guide`);
+    return `href="#${id}" onclick="(function(e){e.preventDefault();var g=e.target.closest('.wmap-guide');var el=g&&g.querySelector('[id=\\'${id}\\']');if(el)el.scrollIntoView({behavior:'smooth'});})(event)"`;
+  },
 );
 
 // ── Wrap with scoped inline styles ───────────────────────────────────────────

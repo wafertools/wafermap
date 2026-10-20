@@ -13,6 +13,7 @@
 //     wafers in a cell; `mean` of the yield field is the mean of per-wafer yields, and is labelled so.
 //   - A wafer-level field (yield, metadata) cannot be split by a die-level one; that is an issue, not a chart.
 
+import { GUIDE_SECTIONS, type GuideSection } from './guideSections.js';
 import type { Die } from '../core/dies.js';
 import { hasPosition, isYieldEligibleDie } from '../core/dies.js';
 import { DIE_REGIONS, DIE_REGION_KEYS, dieRadialPosition } from './dieRegions.js';
@@ -2034,13 +2035,33 @@ export function plotFootnote(resolved: ResolvedPlot): string {
   if (resolved.excluded) {
     for (const f of resolved.excluded.fields) parts.push(`${f.count.toLocaleString('en-GB')} ${f.field} value${f.count === 1 ? '' : 's'} outside ${resolved.excluded.limitSet} excluded`);
   }
-  const guide = GUIDE_SECTION[resolved.spec.chart];
-  if (guide) parts.push(`how to read this: User guide, section ${guide}`);
   return parts.join(' · ');
 }
 
-/** The user-guide section that explains how to read a chart type's statistics. */
-const GUIDE_SECTION: Partial<Record<PlotSpec['chart'], string>> = { probability: '10.4', control: '10.7', goal: '10.8', heatmap: '10.11' };
+/**
+ * The user-guide sections that explain what a plot shows, a card linking each after its footnote: its chart type's
+ * statistics, and each of these only while the plot uses it: groups compared wafer by wafer, a fit line or the y = x
+ * line, a band, rescaled values, ranges of a number, panels, what-if limits. None for a plain chart (its About line
+ * says all there is).
+ */
+export function plotGuideSections(resolved: ResolvedPlot): GuideSection[] {
+  const { spec } = resolved;
+  const f = spec.fields ?? {};
+  const fields = [...xFieldsOf(f.x), f.y, f.color, f.rows, f.facet];
+  const out = [
+    GUIDE_SECTION[spec.chart],
+    resolved.comparison && GUIDE_SECTIONS.groups,
+    (resolved.fitNotes?.length || (spec.identity && resolved.marks?.type === 'scatter')) && GUIDE_SECTIONS.fit,
+    (resolved.marks?.type === 'line' && resolved.marks.band) && GUIDE_SECTIONS.bands,
+    resolved.normalization && GUIDE_SECTIONS.rescaling,
+    (fields.some(isBinned) || resolved.facets || resolved.whatIf) && GUIDE_SECTIONS.ranges,
+  ];
+  return [...new Set(out.filter((s): s is GuideSection => !!s))];
+}
+
+const GUIDE_SECTION: Partial<Record<PlotSpec['chart'], GuideSection>> = {
+  probability: GUIDE_SECTIONS.probability, control: GUIDE_SECTIONS.control, goal: GUIDE_SECTIONS.goal, heatmap: GUIDE_SECTIONS.heatmap,
+};
 
 
 // ── what can be chosen ────────────────────────────────────────────────────────────────────────────────────
