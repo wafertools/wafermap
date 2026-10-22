@@ -512,7 +512,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 **Notes.**
 
 - **Pooled groups can mislead.** When the dies pool several values of a split, lot or other field, the card warns that correlations may be misleading (Simpson's paradox); use **Group by**, or the **Wafer** picker, to narrow to like-for-like.
-- **With Group by on, the matrix shows one group at a time** (its own Group dropdown), because pooling groups would hide the difference.
+- **With Group by on, Show decides the dies.** Pick one group in **Show** to see the correlations inside it; with **All groups** the matrix pools every wafer, and the card warns when that mixes groups.
 - **Dies on one wafer are not independent**, so a pair's n overstates how well it is known.
 - **Correlation says two tests move together, not why.**
 
@@ -707,7 +707,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 - **Ppk here uses the plain standard deviation over every die.** Cp and Cpk in the tables use the pooled within-wafer standard deviation, so the two can differ.
 - **Below 30 dies a Ppk is a rough estimate**, and capability indices assume roughly normal values: look at the [histogram](#value-histogram) before quoting one.
 - **The bands are the card's own.** 1.33 is a common target; yours may be different, and the thresholds are a reading aid, not a statement of what is acceptable.
-- **With Group by on, the card shows one group at a time** (its own Group dropdown), because pooling groups would hide exactly what differs.
+- **With Group by on, Show decides the dies.** Pick one group in **Show** to see its capability; with **All groups** the card pools every wafer.
 
 **Where to find it.** **Insights ▸ Distributions**. For the same data as a triangle, see the [capability goal plot](#capability-goal-plot).
 

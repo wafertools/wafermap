@@ -1709,8 +1709,9 @@ const openCommandMenus = new WeakMap<Document, () => void>();
 /**
  * Open a command menu (`role="menu"`, rows that act and are done) under `at`: a card's ⋯ menu, the drilldown menu at
  * a click. `anchor` is an on-page element of the triggering render; it resolves the menu layer and gets focus back on
- * Escape. A `trigger` button has its `aria-expanded` kept in step. The menu flips to stay on screen and closes on an
- * outside press, Escape, Tab, the window losing focus, or another command menu opening. Returns its close function.
+ * Escape. A `trigger` button has its `aria-expanded` kept in step. The menu scrolls when taller than the window, flips
+ * to stay on screen, and closes on an outside press, Escape, Tab, the window losing focus, or another command menu
+ * opening. Returns its close function.
  */
 export function openCommandMenu(
   at: DOMRect,
@@ -1730,7 +1731,10 @@ export function openCommandMenu(
   if (opts.hook) menu.dataset[opts.hook] = '1';
   menuLayerFor(anchor).appendChild(menu);
 
-  // Keep it on screen: a menu opened near the bottom or right edge flips to the other side rather than running out.
+  // Keep it on screen: a menu taller than the window scrolls inside it (the drilldown menu lists every saved plot),
+  // and a menu opened near the bottom or right edge flips to the other side rather than running out.
+  const room = win.innerHeight - 8;
+  if (menu.getBoundingClientRect().height > room) Object.assign(menu.style, { maxHeight: `${room}px`, overflowY: 'auto' });
   const r = menu.getBoundingClientRect();
   if (r.bottom > win.innerHeight - 4) menu.style.top = `${Math.max(4, at.top - r.height)}px`;
   if (r.right > win.innerWidth - 4) menu.style.left = `${Math.max(4, win.innerWidth - r.width - 4)}px`;

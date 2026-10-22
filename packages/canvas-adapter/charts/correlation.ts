@@ -3,11 +3,9 @@
 // `onSelectPair` so the scatter panel can update its X/Y in place. Ported
 // from tsmap's charts/correlation.ts.
 //
-// Grouping matches tsmap's actual UX (verified by reading the real source,
-// not assumed): its own "Group: <value> ▾" restrict-to-one-group dropdown,
-// same pattern as capability — pooling across groups is misleading
-// (Simpson's paradox), so the matrix is always restricted to a single group
-// when grouping is on, never averaged/combined across groups.
+// Grouping is the Insights tab's "Show:" scope, not this panel's: it draws the
+// population it is given, and warns (Simpson's paradox) when that population
+// mixes the values of a wafer field.
 //
 // Deliberate simplification vs. tsmap's exact shape: tsmap's `filter`
 // callback and `initialLimit`/`onLimitChange` exist because `main.ts` owns

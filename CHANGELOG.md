@@ -47,6 +47,8 @@ under `### Breaking`.
 - **PAT: a die failing its bin is in "Fails (bin or limits)" even when none of its limited tests has a value.**
 - **The gallery's filtered Summary follows `setItems()` and `setLotStatsSummary()`.** With a filter on, the lot analysis
   is rerun over the new items or the host's new analysis, so the panel and findings describe what is shown.
+- **A command menu taller than the window scrolls inside it.** The right-click menu lists every saved plot, and with many
+  of them its last rows, **New plot…**, **New sweep…** and the tables, stay reachable.
 
 ## [0.37.0] — 2026-10-20
 
