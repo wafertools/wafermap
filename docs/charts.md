@@ -106,19 +106,19 @@ The test numbers and wafer attributes in the examples (`1060`, `processSplit`) a
 
 ![A PAT verdict map: dies coloured by their part average testing verdict](examples/thumbs/pat-verdict-map.webp)
 
-*Each die coloured by its part average testing verdict (within the limits, an outlier or failing), one map per wafer, to show where the PAT outliers sit.*
+*Each die coloured by its part average testing verdict (within the limits, an outlier or failing), on the map or on every wafer of a gallery, to show where the PAT outliers sit.*
 
 **Why it is useful.** The [PAT card](#part-average-testing-pat) says how many dies are outliers on each wafer and which tests drive it; the map says *where they are*. Outliers that cluster in one region point at a process or probe effect; scattered ones look like noise.
 
-**How to read it.** One map per wafer, each die coloured by its verdict: *within PAT limits* in blue, *PAT outlier* in amber, *fails* (rejected by its bin or limits already, so not an outlier) in red. The legend counts each. A die no test judged has no verdict and is drawn as no data. The maps state no yield: a verdict is not a bin.
+**How to read it.** Each die is coloured by its verdict: *within PAT limits* in blue, *PAT outlier* in amber, *fails* (rejected by its bin or limits already, so not an outlier) in red. The legend counts each, and hovering a die shows its verdict beside its bin and measurements. A die no test judged has no verdict and is drawn as no data. In a gallery every wafer uses the same three colours, so the cards compare.
 
 **Notes.**
 
-- **The verdicts are those of the PAT card**, so with a filter on they are judged over the dies the filter keeps, like every other figure in Insights.
-- **Only wafers with their own result are mapped**, since the geometry and orientation come from it.
+- **The verdicts are those of the PAT card**, so with a filter on they are judged over the dies the filter keeps, like every other figure in Insights; the dies the filter drops are drawn dimmed and carry no verdict.
+- **It is a plot mode, so the map keeps its own yield, bins and selection.** Switching to another mode shows the bins and values again.
 - **It shows what PAT would have flagged, not the screening itself**; the notes on the [PAT card](#part-average-testing-pat) apply.
 
-**Where to find it.** **Map the verdicts** on the PAT card, in **Insights ▸ Overview**, opens the maps in a window with the usual toolbar, Expand and tooltips.
+**Where to find it.** Choose **PAT verdict** in the **Plot mode** menu of a map or a gallery; it is offered when a test has both limits and a wafer has enough dies to set PAT limits from. **Map the verdicts** on the PAT card, in **Insights ▸ Overview**, goes back to the maps in that mode.
 
 **See also.** [Part average testing (PAT)](#part-average-testing-pat), [Bin map](#bin-map), [Test value map](#test-value-map).
 

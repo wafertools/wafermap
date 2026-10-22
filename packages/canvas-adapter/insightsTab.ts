@@ -240,6 +240,8 @@ export interface InsightsTabDeps {
    * or a test's value map with the dies it fails. Omitted ⇒ the Worth a look cards offer no Show on map.
    */
   showOnMap?: (target: SynthesisTarget) => void;
+  /** The PAT card's Map the verdicts: back to the maps, coloured by PAT verdict. */
+  showPatMap?: () => void;
   /** See `InsightsOptions.filter` and `onFilterChange`. */
   filter?: PlotFilter;
   onFilterChange?: (filter: PlotFilter | undefined) => void;
@@ -1210,7 +1212,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
 
     // What part-average testing sets apart: a lot with tests that have both limits gets the per-wafer table.
-    const pat = renderPatCard({ items: items.map(it => ({ ...it, ringCount: getRingCount() })), testDefs: allTestDefs, ownerDocument: doc });
+    const pat = renderPatCard({ items: items.map(it => ({ ...it, ringCount: getRingCount() })), testDefs: allTestDefs, ownerDocument: doc, showMap: deps.showPatMap });
     if (pat) outer.appendChild(pat.card);
 
     outer.appendChild(dataTabLink());

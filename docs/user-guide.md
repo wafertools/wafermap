@@ -131,6 +131,7 @@ application has loaded.
 | **Hard Bin**            | Physical sort result (hard bin number)                       | Yield categorisation, pass/fail map            |
 | **Soft Bin**            | Test-program failure category (soft bin number)              | Failure mode breakdown                         |
 | **Test Value**          | A single numeric measurement                                 | Parametric heatmap — leakage, Idsat, Vth, etc. |
+| **PAT verdict**         | Part average testing verdict of the die (within, outlier, fails) | Where the PAT outliers are, wafer by wafer  |
 | **Stacked Hard Bins**   | Hard bin occurrence counts aggregated across multiple wafers | Lot-level yield patterns                       |
 | **Stacked Soft Bins**   | Soft bin occurrence counts aggregated across multiple wafers | Lot-level failure mode patterns                |
 | **Stacked Test Values** | Aggregated test values across multiple wafers                | Lot-level parametric trends                    |
@@ -1207,10 +1208,12 @@ In **Setup**, choose the **chart type**, then the field for each role:
   The Overview shows the same verdicts as a **Part average testing (PAT)** card: for each wafer, the dies within the PAT
   limits, the outliers and the rate, the dies that fail anyway, and which tests the outliers are outside on. The Dies
   table (Data tab) has a **PAT** column, and **PAT tests** where there are outliers, in the CSV too; a selection that
-  is only part of a wafer has neither, since the limits belong to the whole wafer. **Map the verdicts** on the card opens a
-  gallery with a map of each wafer, its dies coloured by their PAT verdict (within the limits, outlier, fails anyway), so
-  the gallery's legend and value toggles show where the outliers are on each wafer. The maps state no yield: a verdict is
-  not a bin.
+  is only part of a wafer has neither, since the limits belong to the whole wafer. **Map the verdicts** on the card goes back to the
+  maps coloured by PAT verdict, which is also the **PAT verdict** entry of the **Plot mode** menu on a map and on a
+  gallery (offered when a test has both limits and a wafer has enough dies to set PAT limits from): within the limits
+  in blue, outlier in amber, fails anyway in red, so the legend and value toggles show where the outliers are on each
+  wafer. The dies keep their bins and measurements, so the tooltip shows them beside the verdict. With a filter on, the
+  verdicts are judged over the dies the filter keeps, as on the card.
 - **Panels**: one small plot per value of a category field, laid out like the gallery's cards, on shared axes and
   colours with one legend and one statement above them. A wafer field (split, lot) gives each panel its whole wafers; a
   die field (ring, site, bin) the dies with that value from every wafer; **Test**, with several tests as the values,

@@ -87,7 +87,7 @@ export const CHART_CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     id: 'pat-verdict-map', kind: 'map', title: 'PAT verdict map', tab: 'overview',
-    about: 'Each die coloured by its part average testing verdict (within the limits, an outlier or failing), one map per wafer, to show where the PAT outliers sit.',
+    about: 'Each die coloured by its part average testing verdict (within the limits, an outlier or failing), on the map or on every wafer of a gallery, to show where the PAT outliers sit.',
     see: ['part-average-testing-pat', 'bin-map', 'test-value-map'],
   },
   {

@@ -76,38 +76,31 @@ test('a lopsided test is named, a symmetric one is not, and the card says why sy
   assert.match(text, /Vth1 of 1\+0\.\d\d/);
 });
 
-test('the verdicts map as one wafer per card: a PAT verdict field, the wafer’s own geometry, no test values', async () => {
-  const { patVerdictMaps } = await import('../dist/packages/canvas-adapter/patMaps.js');
+test('the verdict mode tallies a wafer as the card does, and keeps its bins and values', async () => {
+  const { withPatVerdicts, PAT_MODE_KEY, PAT_MODE_FIELD } = await import('../dist/packages/canvas-adapter/patMode.js');
   const results = Array.from({ length: 100 }, (_, k) => ({
     x: k % 10, y: Math.floor(k / 10), hbin: k === 92 ? 2 : 1,
     testValues: { 1: k === 90 ? 5.9 : k === 91 ? 11 : k === 92 ? 3 : 5 + ((k % 10) - 4.5) / 50, 3: k },
   }));
   const source = buildWaferMap({ results, waferConfig: { diameter: 30 }, dieConfig: { width: 2, height: 2 }, passBins: [1], testDefs: DEFS });
-  const items = [{ label: 'W1', dies: source.dies, passBins: [1], ringCount: 4, source }, { label: 'No result', dies: source.dies, passBins: [1], ringCount: 4 }];
-  const maps = patVerdictMaps(items, DEFS);
-  assert.equal(maps.length, 1, 'a wafer without its own result has nothing to draw on');
-  const m = maps[0];
-  assert.equal(m.label, 'W1');
-  assert.equal(m.wafer, source.wafer, 'its geometry and orientation');
+  const dies = withPatVerdicts(source.dies, DEFS, [1]);
   const tally = {};
-  for (const d of m.dies) tally[d.metadata?.pat ?? 'none'] = (tally[d.metadata?.pat ?? 'none'] ?? 0) + 1;
+  for (const d of dies) tally[d.metadata?.[PAT_MODE_KEY] ?? 'none'] = (tally[d.metadata?.[PAT_MODE_KEY] ?? 'none'] ?? 0) + 1;
   assert.deepEqual(tally, { 'Within PAT limits': 97, 'PAT outlier': 1, 'Fails (bin or limits)': 2 });
-  assert.deepEqual(m.metadataFields.map(f => [f.key, f.label]), [['pat', 'PAT verdict']], 'named for what it is, not as a bin');
-  assert.deepEqual(m.metadataFields[0].values.map(v => v.value), ['Within PAT limits', 'PAT outlier', 'Fails (bin or limits)']);
-  assert.ok(m.dies.every(d => d.hbin === undefined && d.sbin === undefined), 'no bins to be called hard or soft');
-  assert.deepEqual(m.passBins, [], 'no yield is stated: a verdict is not a bin');
-  assert.ok(m.dies.every(d => d.testValues === undefined || Object.keys(d.testValues).length === 0), 'no test values to mistake for the verdict');
-  assert.equal(source.dies[90].hbin, 1, 'the wafer’s own dies are untouched');
+  assert.equal(PAT_MODE_FIELD.label, 'PAT verdict', 'named for what it is, not as a bin');
+  assert.deepEqual(PAT_MODE_FIELD.values.map(v => v.value), ['Within PAT limits', 'PAT outlier', 'Fails (bin or limits)']);
+  assert.ok(dies.every((d, i) => d.hbin === source.dies[i].hbin && d.testValues?.[3] === source.dies[i].testValues?.[3]), 'bins and values stay, for the tooltip');
+  assert.equal(source.dies[90].metadata?.[PAT_MODE_KEY], undefined, 'the wafer’s own dies are untouched');
 });
 
-test('the PAT card offers the maps only when the wafers have results to draw them on', () => {
+test('the PAT card offers the maps only when the host can show them', () => {
   const w = wafer('W1');
   const without = renderPatCard({ items: [w], testDefs: DEFS, ownerDocument: document });
   assert.equal(without.card.querySelector('[data-wmap-pat-maps]'), null);
-  const results = Array.from({ length: 100 }, (_, k) => ({ x: k % 10, y: Math.floor(k / 10), hbin: 1, testValues: { 1: 5 + ((k % 10) - 4.5) / 50 } }));
-  const source = buildWaferMap({ results, waferConfig: { diameter: 30 }, dieConfig: { width: 2, height: 2 }, passBins: [1], testDefs: DEFS });
-  const withSource = renderPatCard({ items: [{ ...w, source }], testDefs: DEFS, ownerDocument: document });
-  assert.ok(withSource.card.querySelector('[data-wmap-pat-maps]'));
+  let shown = 0;
+  const withMap = renderPatCard({ items: [w], testDefs: DEFS, ownerDocument: document, showMap: () => { shown++; } });
+  withMap.card.querySelector('[data-wmap-pat-maps]').click();
+  assert.equal(shown, 1);
 });
 
 test('the PAT showcase lot has planted outliers on every wafer, more where they are grouped, and a lopsided test', async () => {

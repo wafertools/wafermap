@@ -24,6 +24,18 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **PAT verdict as a plot mode.** The **Plot mode** menu of a map and of a gallery offers **PAT verdict** when a test has both
+  limits and a wafer has enough dies to set PAT limits from: each die is coloured within the PAT limits (blue), PAT outlier
+  (amber) or fails (red), with the legend, counts, tooltips, Expand and a gallery's shared colours as in the other modes. The dies
+  keep their bins and measurements, and the verdicts are judged over the dies the page filter keeps, as the PAT card's are.
+
+### Changed
+
+- **Map the verdicts on the PAT card shows the maps in that mode** instead of opening them in a window, so the map's own yield,
+  legend, selection and filter apply.
+
 ### Fixed
 
 - **A filtered wafer's gross yield and edge count leave out the dies the filter drops.** `computeYield` counts only the

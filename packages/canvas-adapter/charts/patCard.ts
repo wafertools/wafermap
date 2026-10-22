@@ -15,6 +15,8 @@ export interface PatCardOptions {
   items: ReadonlyArray<{ label: string; dies: readonly Die[]; allDies?: readonly Die[]; passBins: readonly number[]; ringCount: number; source?: RenderableWaferMap }>;
   testDefs: readonly TestDef[];
   ownerDocument?: Document;
+  /** Back to the maps, coloured by PAT verdict: the button is offered when the host can. */
+  showMap?: () => void;
 }
 
 const FIRST_ROWS = 8;
@@ -80,20 +82,16 @@ export function renderPatCard(o: PatCardOptions): { card: HTMLElement; destroy: 
     },
   });
   body.append(wrap, more);
-  // The verdicts as a map of each wafer, in a gallery: where on each wafer the outliers are, and whether they recur.
-  if (o.items.some(it => it.source)) {
+  // The verdicts as a map of each wafer: where on each wafer the outliers are, and whether they recur.
+  if (o.showMap) {
     const maps = doc.createElement('button');
     maps.type = 'button';
     maps.textContent = 'Map the verdicts';
     maps.dataset.wmapPatMaps = '1';
-    wireTooltip(maps, 'Open a map of each wafer with its dies coloured by PAT verdict: within the limits, outlier, fails anyway');
+    wireTooltip(maps, 'Show the maps with their dies coloured by PAT verdict: within the limits, outlier, fails anyway');
     Object.assign(maps.style, { ...controlStyle('outlined'), marginTop: SPACE.sm, marginLeft: SPACE.sm } as Partial<CSSStyleDeclaration>);
     wireControlHover(maps);
-    maps.addEventListener('click', () => {
-      // A failure here would otherwise vanish in the promise, leaving an empty window and nothing to say why.
-      void import('../patMaps.js').then(m => m.openPatMaps({ anchor: maps, items: o.items, testDefs: o.testDefs }))
-        .catch(e => console.error('[wafermap] The PAT verdict maps could not be drawn:', e));
-    });
+    maps.addEventListener('click', () => o.showMap!());
     body.appendChild(maps);
   }
 

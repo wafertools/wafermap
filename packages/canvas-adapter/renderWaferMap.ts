@@ -43,6 +43,7 @@ import { buildDieListSection, type DieListDisplayOptions } from './dieList.js';
 import { buildMaplessSummary } from './maplessSummary.js';
 import { resolveBinColors, binColorWarning, type BinColors } from '../renderer/binColors.js';
 import { isPassBin, requirePassBins } from '../core/passBins.js';
+import { PAT_MODE_FIELD, PAT_MODE_KEY, isPatMode, patModeOffered, withPatField, withPatVerdicts } from './patMode.js';
 import { requireRingCount } from '../core/ringCount.js';
 import { asList, toggleHighlight } from '../core/utils.js';
 import { buildCompactMap, compactLayoutOffered, type CompactMap } from '../core/compact.js';
@@ -1398,6 +1399,10 @@ export function renderWaferMapCard(
       plotStore, onPickPlotsFile: insightsOpts?.onPickPlotsFile,
       // A Worth a look card's Show on map: back to the map, showing the item as its row in the panel does, with the panel
       // open so the row is seen beside it.
+      showPatMap: () => {
+        setInsightsOpen(false);
+        applyOpts({ plotMode: 'metadata', activeTest: undefined, activeMetadataKey: PAT_MODE_KEY, passFailDisplay: 'off' });
+      },
       showOnMap: (target) => {
         setInsightsOpen(false);
         if (target.kind === 'test') showTestOnMap(target.testNumber);
@@ -1692,12 +1697,18 @@ export function renderWaferMapCard(
   let spaceHeld       = false;
   let spacePanActive  = false;
 
+  /** The fields the map names and colours metadata by: the host's, and the PAT verdict while that mode is on. */
+  const drawnMetadataFields = (): MetadataFieldDef[] | undefined => (isPatMode(viewOpts) ? withPatField(metadataFields) : metadataFields);
+
   // ── View rebuild ──────────────────────────────────────────────────────────
   function rebuildView(): void {
     const so = viewOpts;
     // The canvas draw list only ever shows positioned dies — an unpositioned
     // die is never placed on the map, only surfaced via the die-list.
-    const positioned = currentDies.filter(isPositionedDie);
+    // The PAT verdict mode draws copies of the dies carrying their verdict, judged over the dies the filter keeps.
+    const patMode = isPatMode(so);
+    const shownDies = patMode ? withPatVerdicts(currentDies, testDefs, passBins) : currentDies;
+    const positioned = shownDies.filter(isPositionedDie);
     currentView = buildView(wafer, positioned, {
       compact:                viewOpts.compact ? (viewOpts.compactMap ?? buildCompactMap(positioned)) : undefined,
       plotMode:               so.plotMode,
@@ -1741,7 +1752,7 @@ export function renderWaferMapCard(
       interactiveTransform: {
         rotation: so.rotation ?? 0,
         flipX:    so.flipX   ?? false,
-        flipY:    so.flipY   ?? false } } satisfies ViewOptions, { hbinDefs, sbinDefs, metadataFields });
+        flipY:    so.flipY   ?? false } } satisfies ViewOptions, { hbinDefs, sbinDefs, metadataFields: drawnMetadataFields() });
     dieKeyIndex = undefined;
     // Only for colours this map resolved itself. Supplied colours belong to a
     // wider population (a gallery), whose owner states the advisory once —
@@ -2338,6 +2349,8 @@ export function renderWaferMapCard(
           const metadataEntries: ModeEntry[] = (metadataFields ?? [])
             .filter(f => metadataKeyHasData(dies, f.key))
             .map(metadataModeEntry);
+          // The PAT verdict: offered where a test has both limits and the wafer has the dies to set PAT limits from.
+          if (patModeOffered([{ dies, testDefs }])) metadataEntries.push(metadataModeEntry(PAT_MODE_FIELD));
 
           const menu = buildModeMenuEl(
             btnMode.getBoundingClientRect(),
@@ -2808,7 +2821,7 @@ export function renderWaferMapCard(
       afterDies: selectedKeys.size > 0 || locatedKey !== null ? drawAfterDies : undefined,
       hbinDefs,
       sbinDefs,
-      metadataFields });
+      metadataFields: drawnMetadataFields() });
 
     binLegendRows = result.binLegendRows;
     legendBoxRect = result.legendBox ?? null;
@@ -3173,7 +3186,7 @@ export function renderWaferMapCard(
           // aggregation method on stacked-map tooltips.
           aggrMethod: currentView.aggrMethod,
           lotSize: currentView.lotSize,
-          metadataFields,
+          metadataFields: drawnMetadataFields(),
           // Active test from the built View (authoritative, like plotMode above):
           // in value mode the tooltip leads with it; ignored in bin modes.
           activeTest: currentView.activeTest,

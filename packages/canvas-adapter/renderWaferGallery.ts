@@ -5,6 +5,7 @@ import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataVa
 import { metadataCategoricalValue } from '../core/metadata.js';
 import { resolveBinColorsForMaps, mergeBinDefs, binColorWarning, mixedPassBinsWarning, binColorsEqual, type BinColors } from '../renderer/binColors.js';
 import { commonPassBins, itemPassBins } from '../core/passBins.js';
+import { PAT_MODE_FIELD, PAT_MODE_KEY, PAT_MODE_ORDER, isPatMode, patModeOffered, withPatField, withPatVerdicts } from './patMode.js';
 import { requireRingCount } from '../core/ringCount.js';
 import { NO_DATA_FILL } from '../renderer/colorMap.js';
 import { metadataValueColor } from '../renderer/colorMap.js';
@@ -744,7 +745,7 @@ export function renderWaferGallery(
    * dropped ones flagged (a card draws them dimmed), its yield and coverage over the dies kept, and its summary the
    * analysis of those dies once that has run.
    */
-  function viewItem(it: WaferMapDisplayItem, index: number): WaferMapDisplayItem {
+  function filterView(it: WaferMapDisplayItem, index: number): WaferMapDisplayItem {
     if (!pageFilter || !filterIsOn()) return it;
     const memo = viewMemo.get(it);
     if (memo && memo.v === filterVersion) return memo.item;
@@ -763,6 +764,21 @@ export function renderWaferGallery(
     viewMemo.set(it, { v: filterVersion, item: out });
     return out;
   }
+  const patMemo = new WeakMap<WaferMapDisplayItem, WaferMapDisplayItem>();
+  /**
+   * One source item as a card draws it: as the filter leaves it, and in the PAT verdict mode with each die carrying its
+   * verdict, judged over the dies the filter keeps. A copy; the host's dies are never changed.
+   */
+  function viewItem(it: WaferMapDisplayItem, index: number): WaferMapDisplayItem {
+    const f = filterView(it, index);
+    if (!isPatMode(sharedOpts)) return f;
+    const memo = patMemo.get(f);
+    if (memo) return memo;
+    const out: WaferMapDisplayItem = { ...f, dies: withPatVerdicts(f.dies, f.testDefs, itemPassBins(f)), metadataFields: withPatField(f.metadataFields) };
+    if (hiddenItems.has(f)) hiddenItems.add(out);
+    patMemo.set(f, out);
+    return out;
+  }
   const dataMemo = new WeakMap<WaferMapDisplayItem, { v: number; item: WaferMapDisplayItem | null }>();
   /**
    * One source item as everything but a card reads it (the Summary panel, the report, the tables, a stack): the dies the
@@ -773,7 +789,7 @@ export function renderWaferGallery(
     if (!pageFilter || !filterIsOn()) return it;
     const memo = dataMemo.get(it);
     if (memo && memo.v === filterVersion) return memo.item;
-    const view = viewItem(it, index);
+    const view = filterView(it, index);
     const out = view === it ? it : hiddenItems.has(view) ? null : { ...view, dies: view.dies.filter(d => !d.filteredOut) };
     dataMemo.set(it, { v: filterVersion, item: out });
     return out;
@@ -823,7 +839,7 @@ export function renderWaferGallery(
   }
   /** Items about to become cards: pre-built ones seen through the filter, factories left to resolve first. */
   const throughFilter = (list: Array<WaferMapDisplayItem | WaferMapDisplayItemFactory>): Array<WaferMapDisplayItem | WaferMapDisplayItemFactory> =>
-    (pageFilter && filterIsOn() ? list.map((e, i) => (typeof e === 'function' ? e : viewItem(e, i))) : list);
+    ((pageFilter && filterIsOn()) || isPatMode(sharedOpts) ? list.map((e, i) => (typeof e === 'function' ? e : viewItem(e, i))) : list);
 
   /** Load the filter (once) and start from the host's: resolves with the controller the maps and Insights share. */
   function ensurePageFilter(): Promise<PageFilterController> {
@@ -870,7 +886,7 @@ export function renderWaferGallery(
     if (!pageFilter) return;
     if (pendingFactoryCount > 0) { if (filterIsOn()) filterDirty = true; return; }
     filterVersion++;
-    filterNarrowing = filterIsOn() && originalItems.some((it, i) => it !== null && viewItem(it, i) !== it);
+    filterNarrowing = filterIsOn() && originalItems.some((it, i) => it !== null && filterView(it, i) !== it);
     filteredLot = undefined;
     filterAnalysisPending = filterNarrowing && !!currentLotStats;
     analyseFiltered();
@@ -883,7 +899,7 @@ export function renderWaferGallery(
     if (pendingFactoryCount > 0) { filterDirty = true; refreshFilterBand(); return; }
     filterDirty = false;
     const mode = sharedOpts.plotMode!;
-    filterNarrowing = filterIsOn() && originalItems.some((it, i) => it !== null && viewItem(it, i) !== it);
+    filterNarrowing = filterIsOn() && originalItems.some((it, i) => it !== null && filterView(it, i) !== it);
     // Until the analysis lands the old lot figures are not the filtered ones, so none stand.
     filteredLot = undefined;
     filterAnalysisPending = filterNarrowing && !!currentLotStats;
@@ -1976,6 +1992,8 @@ export function renderWaferGallery(
       .filter(f => !seenMetadataKeys.has(f.key) && seenMetadataKeys.add(f.key))
       .filter(f => metadataKeyHasData(dies, f.key))
       .map(metadataModeEntry);
+    // The PAT verdict, once the lot is in: judged per wafer, over the dies the filter keeps.
+    if (pendingFactoryCount === 0 && patModeOffered(activeItems())) metadataModeEntries.push(metadataModeEntry(PAT_MODE_FIELD));
 
     const menu = buildModeMenuEl(
       btnMode.getBoundingClientRect(),
@@ -2110,6 +2128,7 @@ export function renderWaferGallery(
     if ((sharedOpts.plotMode ?? 'hardBin') !== 'metadata') return undefined;
     const key = sharedOpts.activeMetadataKey;
     if (!key) return undefined;
+    if (isPatMode(sharedOpts)) return { key, values: [...PAT_MODE_ORDER] };
     const distinct = new Set<string>();
     for (const item of activeItems()) {
       if (!item) continue;
@@ -2677,6 +2696,10 @@ export function renderWaferGallery(
       getRingCount: () => requireRingCount({ ringCount: lotRingCount() }, 'the Insights tab'),
       defaultView: options.insights?.defaultView,
       plotStore, onPickPlotsFile: options.insights?.onPickPlotsFile,
+      showPatMap: () => {
+        setInsightsOpen(false);
+        updateShared({ plotMode: 'metadata', activeTest: undefined, activeMetadataKey: PAT_MODE_KEY, passFailDisplay: 'off' });
+      },
       // A Worth a look card's Show on map: back to the cards, showing the item as its row in the Summary panel does, with
       // the panel open so the row is seen beside them.
       showOnMap: (target) => {
@@ -3647,10 +3670,12 @@ export function renderWaferGallery(
     }
     if (CHART_PREF_KEYS.some(k => k in partial)) insightsTab?.setAxisPrefs(axisPrefsFromOptions({ ...sharedOpts, ...partial }));
     const prevMode = sharedOpts.plotMode;
+    const wasPat = isPatMode(sharedOpts);
     const prevLegendBlocked = perCardLegendBlockedReason() !== null;
     sharedOpts = { ...sharedOpts, ...partial };
     const newMode    = sharedOpts.plotMode!;
     const nowStacked = STACKED_MODES.has(newMode);
+    const nowPat = isPatMode(sharedOpts);
     const wasStacked = prevMode !== undefined && STACKED_MODES.has(prevMode);
     const hasPendingFactories = pendingFactoryCount > 0;
 
@@ -3693,8 +3718,12 @@ export function renderWaferGallery(
         if (hasPendingFactories) {
           for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
         } else {
-          buildCards(activeItems().filter((it): it is WaferMapDisplayItem => it !== null));
+          buildCards(nowPat ? throughFilter(originalItems.filter((it): it is WaferMapDisplayItem => it !== null))
+            : activeItems().filter((it): it is WaferMapDisplayItem => it !== null));
         }
+      } else if (wasPat !== nowPat && !hasPendingFactories) {
+        // Into or out of the PAT verdict mode: each card is given its dies with (or without) the verdict.
+        buildCards(throughFilter(originalItems.filter((it): it is WaferMapDisplayItem => it !== null)));
       } else {
         for (const ctrl of cardControllers) if (ctrl) ctrl.setOptions(partial);
       }
@@ -4135,7 +4164,7 @@ export function renderWaferGallery(
       const raw = factory();
       originalItems[index] = raw;
       const item = viewItem(raw, index);
-      if (item !== raw) filterNarrowing = true;
+      if (filterView(raw, index) !== raw) filterNarrowing = true;
       currentItems[index] = item;
       applyGridColumns([item]);
       const { card, ctrl, canvasWrapper, expandBtn } = buildCard(item, index, newItems.length);
