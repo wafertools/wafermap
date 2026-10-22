@@ -870,34 +870,14 @@ Insights is organised into three chart sub-tabs, a **Data** sub-tab holding the
 same numbers as tables (see *Data tables* below), and a **My plots** sub-tab for your
 own charts and sweeps (see *Plots* and *Sweep cards* below):
 
-- **Overview** — a **test pass rate** chart showing which test fails most (and,
-  with "Group by" active, whether it fails more in one split than another). It
-  offers up to three ways of judging, whichever the data supports: **Spec
-  limits** (the value against its limits), **Tester flag** (the pass/fail the
-  tester itself recorded, which a parametric test carries whether or not limits
-  were exported), and **Functional** for pass/fail-only tests. The two
-  parametric views can disagree — guard bands and dynamic limits routinely cause
-  it — so the card reports how many dies the two judged differently rather than
-  picking one for you. The tests run down the left, worst first, each with its pass rate at the end; click a test's
-  bar for the dies that fail it. The card is the size of the others whatever the number of tests: more than fit
-  scroll, with the scrollbar at its right edge or the mouse wheel over the chart, under a pass-rate axis that stays put. With nothing to judge (no limits, no recorded verdicts) the card is left out. Alongside it, headline tiles stating the population (wafers, dies analysed,
-  and for a lot the mean wafer yield — an *unweighted* mean of each wafer's own
-  yield, not the die-weighted figure), a yield bar labelled with the pass bins
-  actually in use, each bar's yield at its end and the median of the bars as a line (with Group by on, one bar per
-  group, pooled as passing dies over judged dies; click a group's bar to see its wafers, **Back** to return), a
-  hard/soft bin pareto with its cumulative share (with Group by on, a bar per group in each bin, as each group's share
-  of its own dies, so groups of different sizes compare, or as counts), and
-  ring/quadrant regional yield, and with a reticle set a **Reticle cell yield** grid: the stepper field drawn as its cells (row 0 at
-  the bottom), each filled by the yield of that position pooled over every field on every wafer and labelled with it. Hover a cell
-  for its dies, click it to chart or tabulate them. A cell that is low in all of them points at the mask rather than the wafer.
-
-  With four or more wafers and wafer fields to compare (lot, split, date, probe card…), **What divides yield** ranks
-  every field by how clearly its groups differ in yield and in the rate of each of the five most common fail bins. Each
-  wafer is one value, as in the split comparison, so n is wafers; rows are ranked by q (Welch's p adjusted for every
-  comparison in the table). A row names the worst and best groups with their mean over their wafers and the spread in
-  percentage points; **Group by** groups the whole tab by that field. A low q says the groups differ by more than
-  wafer-to-wafer noise, not why. The card also names fields it could not compare (every wafer its own value) and fields
-  that group the wafers identically, which no ranking can tell apart (a lot and its test date).
+- **Overview** — how the lot yielded: headline tiles stating the population, [Yield by wafer](https://wafertools.github.io/wafermap/charts/#yield-by-wafer), [Bin pareto](https://wafertools.github.io/wafermap/charts/#bin-pareto),
+  [Pass rate by test](https://wafertools.github.io/wafermap/charts/#pass-rate-by-test), [Ring yield](https://wafertools.github.io/wafermap/charts/#ring-yield) and [Quadrant yield](https://wafertools.github.io/wafermap/charts/#quadrant-yield), and with a reticle set
+  [Reticle cell yield](https://wafertools.github.io/wafermap/charts/#reticle-cell-yield). With four or more wafers and wafer fields to compare, [What divides yield](https://wafertools.github.io/wafermap/charts/#what-divides-yield)
+  ranks the fields by how clearly their groups differ; **Group by** on its row groups the whole tab by that field. With
+  Group by on, the yield bar and the pareto draw a bar per group (click a group's bar to see its wafers, **Back** to return). The
+  pass-rate card offers up to three ways of judging, whichever the data supports: **Spec limits**, **Tester flag** and
+  **Functional**; when the first two disagree it says how many dies they judged differently. The card is the size of the
+  others whatever the number of tests: more than fit scroll. With nothing to judge it is left out.
 - **Worth a look**, on the Overview below the yield, bin and region cards — the same items as
   **What stands out** beside the map, in the same order and words, each drawn as the chart that shows
   it: a region's loss as yield by that kind of region (each bar with its value, and the median of the bars as
@@ -908,39 +888,21 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   names), and **Show on map** goes back to the map showing it as its row does, with the Summary panel
   open on that row. The rest follow on one "Also" line. It describes the whole lot, so while the Insights
   filter or **Show** narrows the population it says so instead of drawing cards.
-- **Distributions** — process capability (Cp/Cpk/Pp/Ppk for tests with both a
-  lower and upper limit — spec limits where given, otherwise test limits; tests
-  without both still appear, normalized
-  onto their own range and sorted by variability), a test-value box plot (one box per wafer down the left, or with
-  Group by on one per group: click a group's box to see its wafers, **Back** to return), a value histogram (all wafers,
-  one wafer, or one series per group), and a **wafer-to-wafer trend** — one point per wafer at its mean with a ±1
-  standard deviation band, the mean of all wafers as a line (labelled the "lot mean" when they all come from one lot),
-  and the test's limits; drag across it to pick a run of wafers. The trend is always in slot order, deliberately: drift
-  across a cassette only reads in the physical sequence, so there is no sort control to destroy it, and it needs at
-  least two wafers. The box plot, histogram and trend are plots: each has the test picker and the axis settings
-  (*Axis includes limits*, *Clip outliers*, and which limits to draw), and a change in one reaches the others.
-  Clicking a capability box drives them onto that same test.
-
-  With **Group by** on, a **Difference map** at the foot of Distributions draws one group minus another at every die
-  position, as a wafer map: pick the two groups and a test (it follows the test the other panels show until you pick
-  one) or *Yield*. Each group's value at a position is its mean over the group's wafers there (for yield, the share
-  of them passing), as its stacked map would show it, and a position either group lacks is grey. The colours run
-  symmetrically from the largest negative difference to the largest positive, with zero in the middle. It is drawn on
-  the first wafer of the first group's geometry and orientation, so a die is where it is on every other map; the map
-  carries no wafer's identity, since it is none.
+- **Distributions** — how values spread: [Process capability](https://wafertools.github.io/wafermap/charts/#process-capability), the [test-value box plot](https://wafertools.github.io/wafermap/charts/#test-value-distribution)
+  (one box per wafer, or with Group by on one per group: click a group's box to see its wafers, **Back** to return), the
+  [value histogram](https://wafertools.github.io/wafermap/charts/#value-histogram) (all wafers, one wafer, or one series per group) and the
+  [wafer-to-wafer trend](https://wafertools.github.io/wafermap/charts/#wafer-to-wafer-trend). The trend is always in slot order, deliberately: drift across a cassette only reads
+  in the physical sequence, so there is no sort control to destroy it, and it needs at least two wafers; drag across it to pick a
+  run of wafers. The box plot, histogram and trend are plots: each has the test picker and the axis settings (*Axis includes
+  limits*, *Clip outliers*, and which limits to draw), and a change in one reaches the others. Clicking a capability box drives
+  them onto that same test.
 
   With **Group by** on (a split, a lot), the cards that compare the groups come first, under **Comparing …**: the
-  **Comparison by** table and the difference map, then the cards for each test under **Test by test**. The table compares
-  every measured test across the groups, ranked so the tests that moved are at the top. Each wafer counts once, as the mean of its dies, because dies
-  on one wafer share its processing: counted die by die, a difference no bigger than one wafer's offset would look
-  certain. So n is the number of wafers, and with two or three a group, many differences honestly come out
-  inconclusive. For each test the table gives each group's mean, **Welch p** (Welch's ANOVA, or Welch's t for two
-  groups: do the means differ, without assuming equal spreads), **Rank p** (Kruskal–Wallis, the same question on ranks,
-  which one odd wafer cannot drive; approximate with fewer than five wafers a group), **q** (Welch p adjusted for how
-  many tests were compared, Benjamini–Hochberg; the table is sorted by it), and the **largest shift** in wafer-to-wafer
-  standard deviations and as a share of the limit window. Choose a **Control** (the process of record) and each other
-  group's cell adds its difference from the control with a Holm-adjusted p. Click a test to show it in the panels below.
-  **Comparison CSV** saves the table. [Comparing groups of wafers](#102-comparing-groups-of-wafers) explains each figure. Narrowing **Show** to one group leaves nothing to compare, so the table is not shown.
+  [Comparison by](https://wafertools.github.io/wafermap/charts/#comparison-by-group) table and the [difference map](https://wafertools.github.io/wafermap/charts/#difference-map) (pick the two groups and a test or *Yield*; it follows
+  the test the other panels show until you pick one), then the cards for each test under **Test by test**. In the table,
+  choose a **Control** and each other group's cell adds its difference from it; click a test to show it in the panels below;
+  **Comparison CSV** saves the table. Narrowing **Show** to one group leaves nothing to compare, so the table is not shown.
+  [Comparing groups of wafers](#102-comparing-groups-of-wafers) explains each figure.
 
   The box plot, histogram, trend and the Correlation tab's scatter draw the
   test's limits as dashed lines. A test can have two kinds: **test limits**
@@ -969,19 +931,13 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   **Log scale** toggle, independent of the shared pair above (available once
   every plotted value is positive) — the histogram and trend charts do not
   offer one.
-- **Correlation** — a test-to-test correlation matrix and a die-level scatter
-  plot, both stating the sample size the coefficients are computed over.
-  **Max tests** (5 to 100, 20 by default) sets how many tests the matrix shows, and
-  **Correlation CSV** saves the matrix as a table.
-  Clicking a matrix cell drives the scatter plot onto that pair, where `r` and
-  `n` over every point drawn are printed (with Group by on, the colour is the group; filter the legend to look at one).
-  When the points pool several splits or lots, the scatter says so: a trend across them may be the groups' offset
-  rather than the relationship. Hover a
-  point to see which wafer and die it is; **click** it to open that wafer on the
-  X test. **Drag** a rectangle over the plot to select the dies inside it — across
-  as many wafers as they fall on — and a menu opens with charts and tables of
-  just those dies (see [Charting dies and wafers](#44-charting-dies-and-wafers)). The
-  selection stays ringed until you change the X or Y test or click empty space.
+- **Correlation** — the [test correlation matrix](https://wafertools.github.io/wafermap/charts/#test-correlation-matrix) and a die-level [scatter](https://wafertools.github.io/wafermap/charts/#test-scatter), both
+  stating the sample size the coefficients are computed over. **Max tests** (5 to 100, 20 by default) sets how many tests the
+  matrix shows, and **Correlation CSV** saves it as a table. Clicking a matrix cell drives the scatter onto that pair. Hover a
+  point to see which wafer and die it is; **click** it to open that wafer on the X test. **Drag** a rectangle over the plot to
+  select the dies inside it — across as many wafers as they fall on — and a menu opens with charts and tables of just those dies
+  (see [Charting dies and wafers](#44-charting-dies-and-wafers)). The selection stays ringed until you change the X or Y test or
+  click empty space.
 
 In a gallery with more than one wafer, a **Group by** control appears whenever
 a *wafer attribute* (lot, product, test program, temperature, split, or a custom
