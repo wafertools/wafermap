@@ -58,7 +58,7 @@ const cards = root => [...root.querySelectorAll('.wmap-gallery-card')];
 
 test('a wafer condition removes the wafer\'s card and the band says how many are kept', async () => {
   const { root, g } = mount({ conditions: [{ field: { meta: 'split' }, values: ['A'] }] });
-  await tick();
+  assert.ok(await until(() => /of 3 wafers/.test(root.querySelector('[data-wmap-insights-filter]')?.textContent ?? '')), 'the filter has loaded');
   const shown = cards(root).filter(c => c.style.display !== 'none');
   assert.equal(shown.length, 2);
   assert.equal(cards(root).length, 3, 'the slot stays so indexes keep matching');
@@ -70,7 +70,7 @@ test('a wafer condition removes the wafer\'s card and the band says how many are
 
 test('a die condition keeps every card and flags the dies it drops', async () => {
   const { root, g } = mount({ conditions: [{ field: { builtin: 'hbin' }, values: ['Bin 1'] }] });
-  await tick();
+  assert.ok(await until(() => /of 3 wafers/.test(root.querySelector('[data-wmap-insights-filter]')?.textContent ?? '')), 'the filter has loaded');
   assert.equal(cards(root).filter(c => c.style.display !== 'none').length, 3);
   assert.match(root.querySelector('[data-wmap-insights-filter]').textContent, /3 of 3 wafers · 21 of 27 dies/);
   g.destroy();
@@ -79,7 +79,7 @@ test('a die condition keeps every card and flags the dies it drops', async () =>
 test('Remove restores every card, and the host is told', async () => {
   const changes = [];
   const { root, g } = mount({ conditions: [{ field: { meta: 'split' }, values: ['A'] }] }, f => changes.push(f));
-  await tick();
+  assert.ok(await until(() => root.querySelector('[data-wmap-insights-filter-remove]')), 'the band is up once the filter has loaded');
   root.querySelector('[data-wmap-insights-filter-remove]').click();
   await tick();
   assert.equal(changes.at(-1), undefined);
@@ -166,4 +166,26 @@ test('the Filter button is the last control in the row, and stays put and visibl
     assert.ok(isLast(), `${name}: still last back on the maps`);
     ctl.destroy();
   }
+});
+
+// ── the filtered analysis follows the items and the host's analysis ───────────────────────────────────────
+
+const FILTER_A = { conditions: [{ field: { meta: 'split' }, values: ['A'] }] };
+
+test('replacing the items under a filter analyses the new items, not the ones replaced', async () => {
+  const root = document.getElementById('root');
+  root.replaceChildren();
+  const g = renderWaferGallery(root, ITEMS(), { lotStatsSummary: analyzeWaferLot(ITEMS()), insights: { enabled: true, filter: FILTER_A } });
+  root.querySelector('[data-wmap-summary-toggle] button, [data-wmap-summary-toggle]')?.click?.();
+  const dies = () => /Hard Bin Breakdown — % of dies \(N=(\d+)\)/.exec(root.textContent)?.[1];
+  assert.ok(await until(() => dies() === '18'), `the panel describes the two wafers kept (N=${dies()})`);
+  // Four wafers now, three of them in split A: 27 dies kept.
+  const next = [...ITEMS(), wafer('W04', 'A', 1)];
+  g.setItems(next);
+  assert.ok(await until(() => dies() === '27'), `the new items are analysed (N=${dies()})`);
+  // The host's analysis arrives for the same items, over a different population.
+  g.setLotStatsSummary(analyzeWaferLot(next.slice(0, 2)));
+  await tick();
+  assert.ok(await until(() => dies() !== undefined), 'the panel is rebuilt rather than left on the old figures');
+  g.destroy();
 });

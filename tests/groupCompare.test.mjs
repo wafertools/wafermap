@@ -132,3 +132,16 @@ test('a real split shift ranks first, with its share of the limit window', () =>
   assert.equal(coloured.comparison.by, 'Split');
   assert.equal(resolvePlot({ id: 'w', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1 }, color: { none: true } } }, items, { testDefs: DEFS }).comparison, undefined);
 });
+
+test('a comparison reads the dies a yield judges: partial, edge-excluded and filtered-out dies are left out', () => {
+  const items = [wafer('W1', 'A', 1.0, 7), wafer('W2', 'A', 1.0, 11), wafer('W3', 'B', 1.0, 13), wafer('W4', 'B', 1.0, 17)];
+  const meanOf = (rows, g) => rows.find(r => r.test.testNumber === 1).comparison.groups.find(s => s.key === g).mean;
+  const clean = compareTestsByGroup(items.map(it => ({ dies: it.dies, group: it.metadata.split })), DEFS);
+  const marked = items.map(it => ({
+    group: it.metadata.split,
+    dies: it.dies.map((d, k) => (k % 3 === 0 ? { ...d, testValues: { ...d.testValues, 1: 99 }, [['partial', 'edgeExcluded', 'filteredOut'][k % 9 / 3]]: true } : d)),
+  }));
+  const rows = compareTestsByGroup(marked, DEFS);
+  near(meanOf(rows, 'A'), meanOf(clean, 'A'), 0.02);
+  near(meanOf(rows, 'B'), meanOf(clean, 'B'), 0.02);
+});

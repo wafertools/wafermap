@@ -858,6 +858,9 @@ sidebar (see [Summary panel](#6-summary-panel)) — the two toggle independently
 hides the other's toolbar button, since Findings has nothing to highlight
 against once the map is replaced.
 
+The [Chart reference](https://wafertools.github.io/wafermap/charts/) describes every chart, plot and table: what it
+shows, how to read it, when to reach for it and where to find it. This section covers how the tab works.
+
 Any chart mark that stands for one wafer — a bar in *Yield by wafer*, a box in
 *Test value distribution*, a point in *Wafer-to-wafer trend* — can be
 right-clicked to chart that wafer on its own (see

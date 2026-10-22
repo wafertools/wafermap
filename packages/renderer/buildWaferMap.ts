@@ -1540,7 +1540,7 @@ export function computeCoverage(dies: Die[]): WaferMapResult['dataCoverage'] {
 export function computeYield(dies: Die[], passBins: number[], edgeDieYieldMode: 'exclude' | 'denominator-only' = 'exclude', binsAreData = true): YieldSummary {
   const passBinSet = new Set(passBins);
   const fullDies = dies.filter(d => !d.partial);
-  const edgeCount = fullDies.filter(d => d.edgeExcluded).length;
+  const edgeCount = fullDies.filter(d => d.edgeExcluded && !d.filteredOut).length;
   const partialDies = dies.filter(d => d.partial).length;
   // A stack whose bins are not data (stackBinsAreData) has no yield, rather than
   // one read off the bin it stamps on every die.

@@ -15,7 +15,7 @@
 //
 // Pure, no DOM.
 
-import type { Die } from '../core/dies.js';
+import { isYieldEligibleDie, type Die } from '../core/dies.js';
 import { testValuesReader } from '../core/dieTable.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import { benjaminiHochberg, chiSquareUpperTail, fUpperTail, holm, sampleVariance, tTwoSided } from './math.js';
@@ -200,6 +200,7 @@ export function compareTestsByGroup(wafers: readonly CompareWafer[], testDefs: r
     const g = keys.indexOf(w.group);
     sum.fill(0); count.fill(0);
     for (const d of w.dies) {
+      if (!isYieldEligibleDie(d)) continue;
       read(d, buf);
       for (let k = 0; k < buf.length; k++) { const v = buf[k]; if (Number.isFinite(v)) { sum[k] += v; count[k]++; } }
     }

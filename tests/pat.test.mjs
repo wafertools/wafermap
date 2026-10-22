@@ -111,3 +111,12 @@ test('a panel of part of a wafer judges its dies by the whole wafer’s PAT limi
   for (const f of byQuadrant.facets) for (const [k, n] of Object.entries(count(f.plot))) total[k] += n;
   assert.deepEqual(total, count(whole), 'the quadrants’ verdicts add up to the wafer’s');
 });
+
+test('a die failing its bin with no value for any limited test still fails', () => {
+  const w = wafer('W1');
+  const dies = w.dies.map((d, k) => (k === 50 ? { ...d, hbin: 2, testValues: { 3: 50 } } : d));
+  const v = waferPatVerdicts(dies, DEFS, w.passBins);
+  assert.deepEqual(v[50], { verdict: 'fails', tests: [] });
+  const quiet = w.dies.map((d, k) => (k === 50 ? { ...d, testValues: { 3: 50 } } : d));
+  assert.deepEqual(waferPatVerdicts(quiet, DEFS, w.passBins)[50], { tests: [] }, 'a passing die with nothing assessable has no verdict');
+});

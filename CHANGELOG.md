@@ -24,6 +24,16 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A filtered wafer's gross yield and edge count leave out the dies the filter drops.** `computeYield` counts only the
+  edge-excluded dies that are kept, so a filtered-out edge die no longer enters the gross denominator.
+- **Group comparison reads the dies a yield judges.** `compareTestsByGroup` leaves out partial, edge-excluded and
+  filtered-out dies, as the Insights plots beside it do, so its means and p-values describe the same population.
+- **PAT: a die failing its bin is in "Fails (bin or limits)" even when none of its limited tests has a value.**
+- **The gallery's filtered Summary follows `setItems()` and `setLotStatsSummary()`.** With a filter on, the lot analysis
+  is rerun over the new items or the host's new analysis, so the panel and findings describe what is shown.
+
 ## [0.37.0] — 2026-10-20
 
 ### Added

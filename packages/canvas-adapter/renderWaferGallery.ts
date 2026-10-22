@@ -861,6 +861,21 @@ export function renderWaferGallery(
     }, 0);
   }
 
+  /**
+   * The items or the host's analysis changed under a filter that stays: the filtered lot analysis is rerun over what is
+   * there now, so the Summary panel and findings never describe the items or analysis they replaced. The cards are
+   * built from the new items already; a lot still arriving is analysed when it is in (`filterDirty`).
+   */
+  function reanalyseFiltered(): void {
+    if (!pageFilter) return;
+    if (pendingFactoryCount > 0) { if (filterIsOn()) filterDirty = true; return; }
+    filterVersion++;
+    filterNarrowing = filterIsOn() && originalItems.some((it, i) => it !== null && viewItem(it, i) !== it);
+    filteredLot = undefined;
+    filterAnalysisPending = filterNarrowing && !!currentLotStats;
+    analyseFiltered();
+  }
+
   /** The filter changed (or just loaded): derive every item's view again and rebuild the cards from it. */
   function applyPageFilter(): void {
     filterVersion++;
@@ -4602,6 +4617,7 @@ export function renderWaferGallery(
       } else {
         buildCards(throughFilter(newItems));
       }
+      reanalyseFiltered();
     },
 
     setOptions(partial: Partial<WaferViewOptions>): void {
@@ -4629,6 +4645,7 @@ export function renderWaferGallery(
       // The host's summary replaces the lot a run in progress would write.
       cancelTestValueRun();
       currentLotStats = summary;
+      reanalyseFiltered();
       // Lot analysis raises its own advisories (an option correction, say),
       // so a summary arriving late can introduce warnings the bar has not shown.
       refreshGalleryWarnings();

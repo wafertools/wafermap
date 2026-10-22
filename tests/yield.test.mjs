@@ -119,3 +119,14 @@ test('a combined yield pools passing over judged dies: a die with no bin weighs 
   const judged = yieldCounts(a.dies, [1]).total + yieldCounts(b.dies, [1]).total;
   assert.ok(Math.abs(row.value - (pass / judged) * 100) < 1e-9, `${row.value} vs ${(pass / judged) * 100}`);
 });
+
+test('computeYield — a filtered-out edge die weighs nothing in the gross denominator', async () => {
+  const { computeYield } = await import('../dist/packages/renderer/buildWaferMap.js');
+  const dies = [
+    { x: 0, y: 0, hbin: 1 }, { x: 1, y: 0, hbin: 2 },
+    { x: 2, y: 0, hbin: 1, edgeExcluded: true }, { x: 3, y: 0, hbin: 1, edgeExcluded: true, filteredOut: true },
+  ];
+  const y = computeYield(dies, [1], 'denominator-only');
+  assert.equal(y.edgeExcludedDies, 1);
+  assert.equal(y.yieldPercentGross, (1 / 3) * 100);
+});

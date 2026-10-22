@@ -128,7 +128,7 @@ function compute(dies: readonly Die[], testDefs: readonly TestDef[], passBins: r
       if (v < bounds[k].lsl || v > bounds[k].usl) outside.push(t.testNumber);
       else if (v < lim.lo || v > lim.hi) outlier.push(t.testNumber);
     });
-    if (!assessed) return { tests: [] };
+    if (!assessed) return binFails ? { verdict: 'fails', tests: [] } : { tests: [] };
     if (outside.length || binFails) return { verdict: 'fails', tests: outside };
     return outlier.length ? { verdict: 'outlier', tests: outlier } : { verdict: 'within', tests: [] };
   });
