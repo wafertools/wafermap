@@ -120,7 +120,14 @@
     "lot-analysis",
     "canvas",
     "visualization",
-    "typescript"
+    "data-visualization",
+    "wafermap",
+    "esm",
+    "javascript",
+    "typescript",
+    "react",
+    "svelte",
+    "vue"
   ],
   "devDependencies": {
     "esbuild": "^0.28.1",
