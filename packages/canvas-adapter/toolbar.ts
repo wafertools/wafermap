@@ -1393,11 +1393,15 @@ export function metadataModeEntry(field: MetadataFieldDef): ModeEntry {
  * get the same filter-as-you-type box instead of building it twice.
  *
  * `onFilter` receives the lowercased query on every keystroke; the caller
- * owns showing/hiding its own rows. Autofocuses on mount. Click/keydown are
+ * owns showing/hiding its own rows. Enter picks the only row left showing, when `visibleRows` is given. Autofocuses on mount. Click/keydown are
  * stopped from bubbling so typing (including Space/arrow keys) lands in the
  * input rather than triggering the host menu's own keyboard navigation.
  */
-export function makeMenuSearchBox(onFilter: (query: string) => void, placeholder = 'Filter…', ownerDocument: Document = document): HTMLInputElement {
+export function makeMenuSearchBox(
+  onFilter: (query: string) => void, placeholder = 'Filter…', ownerDocument: Document = document,
+  /** The rows still showing: when Enter is pressed with exactly one, it is picked. */
+  visibleRows?: () => HTMLElement[],
+): HTMLInputElement {
   const input = ownerDocument.createElement('input');
   input.type = 'text';
   input.placeholder = placeholder;
@@ -1422,7 +1426,12 @@ export function makeMenuSearchBox(onFilter: (query: string) => void, placeholder
   } as Partial<CSSStyleDeclaration>);
   input.addEventListener('click', e => e.stopPropagation());
   input.addEventListener('mousedown', e => e.stopPropagation());
-  input.addEventListener('keydown', e => e.stopPropagation());
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key !== 'Enter' || !visibleRows) return;
+    const rows = visibleRows();
+    if (rows.length === 1) { e.preventDefault(); rows[0].click(); }
+  });
   input.addEventListener('input', () => onFilter(input.value.trim().toLowerCase()));
   // Native outline suppressed above (it's clipped by the menu's own border-
   // radius/overflow) — replaced with a visible border-colour swap so keyboard
@@ -1569,7 +1578,7 @@ export function buildModeMenuEl(
             for (const row of testRows) {
               row.row.style.display = row.label.includes(query) ? '' : 'none';
             }
-          }, 'Filter tests…');
+          }, 'Filter tests…', undefined, () => testRows.filter(r => r.row.style.display !== 'none').map(r => r.row));
           // Sticky, not a separate non-scrolling wrapper — subMenu is itself
           // the scroll container (overflowY: auto above), so this keeps the
           // box visible while the rows beneath it scroll.

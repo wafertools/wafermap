@@ -612,15 +612,36 @@ export const CAPTURES = [
         await open(tab);
         for (const [t, id, m] of CARDS) if (t === tab) await shoot(card(m), id);
       }
-      // The PAT verdict maps: the card's Map the verdicts opens a window of maps coloured by verdict.
-      await open('overview');
-      await page.getByRole('button', { name: 'Map the verdicts' }).first().click();
-      const patWindow = page.locator('.wmap-overlay-box').last();
-      await patWindow.locator('.wmap-gallery-card canvas').first().waitFor();
+      // The PAT verdict map, from the PAT showcase lot (docs/data/showcase-pat-screen.*): the demo lot's PAT limits reach its test
+      // limits, so it has no outliers to show. The gallery is drawn over the page, in the PAT verdict mode, and the wafer with the
+      // most outliers (P3) is the one shot.
+      await page.evaluate(async () => {
+        const { buildWaferMap } = await import('wafermap');
+        const { renderWaferGallery } = await import('wafermap/render');
+        const [csv, meta] = await Promise.all([
+          fetch('../data/showcase-pat-screen.csv').then(r => r.text()),
+          fetch('../data/showcase-pat-screen.meta.json').then(r => r.json()),
+        ]);
+        const lines = csv.trim().split('\n');
+        const head = lines[0].split(',');
+        const byWafer = new Map();
+        for (const line of lines.slice(1)) {
+          const c = Object.fromEntries(line.split(',').map((v, i) => [head[i], v]));
+          if (!byWafer.has(c.WAFER_ID)) byWafer.set(c.WAFER_ID, []);
+          byWafer.get(c.WAFER_ID).push({ x: +c.X, y: +c.Y, sbin: +c.SBIN, hbin: +c.SBIN, testValues: { 1: +c.VTH_V, 2: +c.IDDQ_UA, 3: +c.IDSAT_MA, 4: +c.TPD_NS } });
+        }
+        const items = [...byWafer].map(([label, results]) => ({ ...buildWaferMap({ results, ...meta }), label }));
+        const host = document.createElement('div');
+        host.id = 'pat-shot';
+        host.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff;overflow:auto';
+        document.body.appendChild(host);
+        renderWaferGallery(host, items, { viewOptions: { plotMode: 'metadata', activeMetadataKey: 'wmapPat' }, insights: { enabled: false } });
+      });
+      const patCard = page.locator('#pat-shot .wmap-gallery-card').nth(2);
+      await patCard.locator('canvas').first().waitFor();
       await page.waitForTimeout(1800);
-      await shoot(patWindow.locator('.wmap-gallery-card').first(), 'pat-verdict-map');
-      await page.keyboard.press('Escape');
-      await page.waitForTimeout(500);
+      await shoot(patCard, 'pat-verdict-map');
+      await page.evaluate(() => document.getElementById('pat-shot')?.remove());
       // Group by Process Split: the comparison and the difference map appear on Distributions.
       await open('distributions');
       await page.locator('[data-wmap-select="group-by"]').click();

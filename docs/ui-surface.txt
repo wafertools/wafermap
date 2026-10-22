@@ -48,6 +48,7 @@ Menu — Plot mode:
     · Ioff (A)  [unchecked]
     · Hard Bin  [checked]
     · Soft Bin  [unchecked]
+    · PAT verdict  [unchecked]
 
 Menu — Colour scheme:
     · ✓Default  [checked]
@@ -136,6 +137,7 @@ Menu — Plot mode:
     · Continuity  [unchecked]
     · Hard Bin  [checked]
     · Soft Bin  [unchecked]
+    · PAT verdict  [unchecked]
     · Stacked Test Values  [unchecked]
     · Stacked Hard Bins  [unchecked]
     · Stacked Soft Bins  [unchecked]
@@ -212,8 +214,8 @@ Controls:
   · Data
   · My plots
   · None▾  [aria="Group by", opens menu]
-  · Expand   (×10)
-  · Chart actions  [opens menu]   (×10)
+  · Expand   (×11)
+  · Chart actions  [opens menu]   (×11)
   · Sort: yield  [radio, unchecked]
   · Sort: wafer  [radio, checked]
   · Hard bins  [radio, checked]
@@ -228,7 +230,7 @@ Controls:
       hint: Group Insights by Process Split, so every chart compares its groups   (×4)
   · Part average testing (PAT)
   · Map the verdicts
-      hint: Open a map of each wafer with its dies coloured by PAT verdict: within the limits, outlier, fails anyway
+      hint: Show the maps with their dies coloured by PAT verdict: within the limits, outlier, fails anyway
   · Data tab
 
 Menu — Group by:
@@ -655,6 +657,7 @@ Menu — Plot mode:
     · Test Value ▶  [checked, opens menu]
     · Hard Bin  [unchecked]
     · Soft Bin  [unchecked]
+    · PAT verdict  [unchecked]
     · Stacked Test Values  [unchecked]
     · Stacked Hard Bins  [unchecked]
     · Stacked Soft Bins  [unchecked]

@@ -33,6 +33,8 @@ under `### Breaking`.
 
 ### Changed
 
+- **Enter in a long list's filter box picks the only test left showing.** In the test pickers and the Plot mode menu's test list, typing
+  until one test remains and pressing Enter chooses it.
 - **Map the verdicts on the PAT card shows the maps in that mode** instead of opening them in a window, so the map's own yield,
   legend, selection and filter apply.
 

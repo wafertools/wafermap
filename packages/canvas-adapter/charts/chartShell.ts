@@ -1511,7 +1511,7 @@ export function makeListSelect(
       const searchBox = makeMenuSearchBox(query => {
         for (const r of rows) r.row.style.display = r.label.includes(query) ? '' : 'none';
         syncHeadings();
-      }, searchPlaceholder, ownerDocument);
+      }, searchPlaceholder, ownerDocument, visibleRows);
       // Contained: this z-index only has to beat its own siblings (the option
       // rows, which set none) INSIDE `menu`, and `menu` itself lives in
       // `menuLayerFor`'s shared elevated layer, so nothing outside this one
