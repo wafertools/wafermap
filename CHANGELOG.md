@@ -24,6 +24,8 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.37.1] — 2026-10-22
+
 ### Added
 
 - **PAT verdict as a plot mode.** The **Plot mode** menu of a map and of a gallery offers **PAT verdict** when a test has both
