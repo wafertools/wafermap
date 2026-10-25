@@ -24,6 +24,10 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Added
+
+- **A `funding` link.** `package.json` names the project's [Ko-fi page](https://ko-fi.com/wafertools), so `npm fund` lists it.
+
 ## [0.37.1] — 2026-10-22
 
 ### Added

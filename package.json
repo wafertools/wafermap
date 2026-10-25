@@ -13,6 +13,7 @@
     "type": "git",
     "url": "git+https://github.com/wafertools/wafermap.git"
   },
+  "funding": "https://ko-fi.com/wafertools",
   "bugs": {
     "url": "https://github.com/wafertools/wafermap/issues"
   },

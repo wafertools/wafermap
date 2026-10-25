@@ -122,9 +122,8 @@ example pages under `docs/examples/`.
 
 ## Author and licence
 
-Written by **Paul Robins**, after nearly four decades in semiconductor test — most
-of it building test data analysis tools: wafer map and chart viewers, and the
-platforms they were built on.
+Written by **Paul Robins**, who has spent over 30 years building test data analysis
+software: wafer map and chart viewers, and the platforms they were built on.
 
 That work leaned on free software throughout — zlib, Tcl/Tk, SQLite, GCC — and it
 was a good deal. wafermap is some of it going back the other way, prompted by
@@ -134,3 +133,9 @@ for wafer map analysis.
 [MIT](LICENSE): free to use, modify and redistribute, including in commercial and
 closed-source products. The only condition is that the copyright notice travels
 with it.
+
+## Support
+
+wafermap is free, open-source and MIT-licensed. If it saves you time, you can support
+its development on [Ko-fi](https://ko-fi.com/wafertools): tips help cover development
+hardware and running costs. Bug reports and sample files help just as much.
