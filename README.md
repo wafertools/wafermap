@@ -10,7 +10,7 @@
 
 <img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
 
-Browser-first wafer map visualization for semiconductor test data.
+Browser-first wafer map visualisation for semiconductor test data.
 
 **Zero runtime dependencies.** Pure ES modules with TypeScript types — works in React,
 Svelte, Vue, plain HTML, or a Web Worker. The DOM-free data-and-stats layer is ~81 kB
@@ -45,7 +45,7 @@ wafermap renders interactive wafer maps from semiconductor prober output. Hard b
 
 **[tsmap](https://github.com/wafertools/tsmap)** is a finished, free, MIT-licensed
 application built on this library. It opens STDF, ATDF, CSV, JSON and Parquet (plus
-`.gz` and `.zip`), runs on Linux, macOS and Windows, and also runs
+`.gz`, `.bz2` and `.zip`), runs on Linux, macOS and Windows, and also runs
 [in the browser](https://wafertools.github.io/tsmap/app/) with no install — files are
 parsed locally and never uploaded. Plot modes, findings, the Insights charts, lot
 galleries, splits and reports, without writing any code.
@@ -125,10 +125,9 @@ example pages under `docs/examples/`.
 Written by **Paul Robins**, who has spent over 30 years building test data analysis
 software: wafer map and chart viewers, and the platforms they were built on.
 
-That work leaned on free software throughout — zlib, Tcl/Tk, SQLite, GCC — and it
-was a good deal. wafermap is some of it going back the other way, prompted by
-finding out that engineers doing this job today still have no decent free option
-for wafer map analysis.
+A lot of that work leaned on free software, and it was a good deal. wafermap is some
+of it going back the other way, prompted by finding out that engineers doing this job
+today still have no decent free option for wafer test map analysis.
 
 [MIT](LICENSE): free to use, modify and redistribute, including in commercial and
 closed-source products. The only condition is that the copyright notice travels

@@ -24,7 +24,7 @@ renderWaferMap(document.getElementById('map'), result);
 
 ## Which docs are for you?
 
-**Just want to open a wafer map file?** You may not need to build anything. **[tsmap](https://github.com/wafertools/tsmap)** is a finished, free, MIT-licensed application built on this library — it opens STDF, ATDF, CSV, JSON and Parquet (plus `.gz` and `.zip`), runs on Linux, macOS and Windows, and also runs [in your browser](https://wafertools.github.io/tsmap/app/) with no install and no upload: files are parsed locally and never leave your machine.
+**Just want to open a wafer map file?** You may not need to build anything. **[tsmap](https://github.com/wafertools/tsmap)** is a finished, free, MIT-licensed application built on this library — it opens STDF, ATDF, CSV, JSON and Parquet (plus `.gz`, `.bz2` and `.zip`), runs on Linux, macOS and Windows, and also runs [in your browser](https://wafertools.github.io/tsmap/app/) with no install and no upload: files are parsed locally and never leave your machine.
 
 It gives you everything on this page's screenshots — plot modes, the findings panel, the Insights chart suite, lot galleries, splits, reports — without writing any code. Build on the library instead when you need wafer maps *inside your own application*, a data source tsmap doesn't read, or behaviour it doesn't offer. Otherwise start with tsmap; you can always integrate later, and its [user guide](user-guide.md) is the same one shipped in-app.
 
@@ -80,7 +80,7 @@ It gives you everything on this page's screenshots — plot modes, the findings 
 
 Written by **Paul Robins**, who has spent over 30 years building test data analysis software: wafer map and chart viewers, and the platforms they were built on.
 
-That work leaned on free software throughout — zlib, Tcl/Tk, SQLite, GCC — and it was a good deal. wafermap is some of it going back the other way, prompted by finding out that engineers doing this job today still have no decent free option for wafer map analysis.
+A lot of that work leaned on free software, and it was a good deal. wafermap is some of it going back the other way, prompted by finding out that engineers doing this job today still have no decent free option for wafer test map analysis.
 
 [MIT licensed](https://github.com/wafertools/wafermap/blob/main/LICENSE): free to use, modify and redistribute, including in commercial and closed-source products. The only condition is that the copyright notice travels with it.
 
