@@ -6,7 +6,7 @@
 // carries chart panels), while these are built at the moment of the gesture —
 // a snapshot, before the lazy import resolves and the selection can change.
 
-import type { Die } from '../core/dies.js';
+import { getDieKey, type Die } from '../core/dies.js';
 import type { Wafer } from '../core/wafer.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
 
@@ -39,6 +39,11 @@ export interface DrilldownSource {
   /** Set when the dies are not measured dies (a lot stack's per-position
    *  aggregates): every chart is then unavailable, with this as the reason. */
   notMeasuredReason?: string;
+  /**
+   * For a selection on one wafer: that wafer's other dies, so the selection can be charted against them. Absent for
+   * anything else (a whole wafer, several wafers, a bin). Like `items`, a snapshot.
+   */
+  rest?: DrilldownItem;
 }
 
 export const LOT_STACK_REASON = 'This map stacks a lot: its dies are per-position aggregates, not measured dies';
@@ -68,9 +73,15 @@ function make(dies: Die[], population: string, f: WaferFacts): DrilldownSource {
   };
 }
 
-/** Dies the user selected on one wafer's map. */
-export function selectionPopulation(selected: Die[], f: WaferFacts): DrilldownSource {
-  return make(selected, f.waferLabel ? `selected on ${f.waferLabel}` : 'selected', f);
+/** Dies the user selected on one wafer's map, with the wafer's other dies (`all` less the selection) as `rest`. */
+export function selectionPopulation(selected: Die[], f: WaferFacts, all?: readonly Die[]): DrilldownSource {
+  const source = make(selected, f.waferLabel ? `selected on ${f.waferLabel}` : 'selected', f);
+  if (!all || f.isLotStack) return source;
+  const chosen = new Set(selected.map(d => getDieKey(d)));
+  const others = all.filter(d => !chosen.has(getDieKey(d)));
+  if (others.length === 0) return source;
+  const item = source.items[0];
+  return { ...source, rest: { ...item, dies: others } };
 }
 
 /** Every die of one wafer. */

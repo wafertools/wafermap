@@ -227,7 +227,7 @@ circular-wafer aspect-ratio constraint.
 }
 ```
 
-When provided, reticle overlays are shown by default (`showReticle` defaults to `true`).
+Passing `reticleConfig` does not by itself draw the grid: `showReticle` defaults to `false`, and the gallery's **Overlays ▾ → Reticle grid** row is unchecked until it is set (or the user checks it).
 
 #### 4.1.5 `LotStackConfig`
 

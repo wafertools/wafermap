@@ -22,6 +22,9 @@ export type { WaferMapDisplayItem, WaferMapDisplayItemFactory, GalleryOptions, G
 
 export type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 
+// The tests a reader has pinned to the top of the test pickers: a host keeps them between sessions.
+export { getPinnedTests, setPinnedTests, onPinnedTestsChange } from './pinnedTests.js';
+
 // The general-purpose die-list table + CSV export — used internally for a
 // fully coordinate-less wafer's map replacement and a mixed wafer's "+N
 // unpositioned" footer, and exported here so a host can also build its own

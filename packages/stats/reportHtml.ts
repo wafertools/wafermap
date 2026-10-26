@@ -741,6 +741,10 @@ export function reportStyles(): string {
     body {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      /* The type is sized in screen px: 12px body is about 9pt on paper, under the ~10pt floor for printed reading
+         matter. Scaling the whole document keeps every size in proportion, so the page is sized for paper without
+         a second set of rules to keep in step with the screen's. */
+      zoom: 1.25;
     }
 
     .report {

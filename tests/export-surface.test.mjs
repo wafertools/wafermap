@@ -71,6 +71,8 @@ const SNAPSHOTS = {
     // sessions by wmap's own classification instead of a hand-kept list that
     // drifts (tsmap's kept four colour keys and missed the rest).
     'WAFER_PREFERENCE_KEYS',
+    // The tests a reader pinned to the top of the test pickers, which a host keeps between sessions.
+    'getPinnedTests', 'setPinnedTests', 'onPinnedTestsChange',
     // The toolbar's own icon set — exposed so a host rendering its own chrome
     // alongside wmap's can match wmap's iconography instead of copy-pasting
     // SVGs that silently drift on the next redesign.

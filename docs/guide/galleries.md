@@ -469,7 +469,7 @@ const result = buildWaferMap({
 });
 ```
 
-That is all the wiring there is. Test 900001 now appears in the test-value plot modes, the colorbar, tooltips, `analyzeWaferMap`, the Insights panels and the report, with its `limitHigh` driving spec marks and Cpk exactly as a measured limit would.
+That is all the wiring there is. Test 900001 now appears in the test-value plot modes, the colour bar, tooltips, `analyzeWaferMap`, the Insights panels and the report, with its `limitHigh` driving spec marks and Cpk exactly as a measured limit would.
 
 Three accessors read the die, and the distinction between the last two matters: `t[1020]` is the measured value, `testPass[1020]` is the verdict the *tester* recorded, and `specPass[1020]` is the verdict *the limits* imply. Those two genuinely disagree in the field — guard bands and dynamic limits routinely cause it — so they are separate accessors rather than one conflated "did it pass". `diePass()` gives the die's bin verdict under the map's `passBins`.
 

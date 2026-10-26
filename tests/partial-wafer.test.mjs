@@ -301,6 +301,7 @@ test('centre: one far outside the dies, with no diameter, is ignored and reporte
   assert.ok(w, `expected implausible-center, got ${r.warnings.map((x) => x.code)}`);
   assert.equal(w.severity, 'warning');
   assert.match(w.message, /\(128, 128\)/);
+  assert.ok(!/waferConfig/.test(w.message), 'no API term in the on-screen message');
   const plain = buildWaferMap({ results });
   assert.equal(r.wafer.diameter, plain.wafer.diameter, 'sized as if no centre had been given');
 });
@@ -321,4 +322,19 @@ test('centre: a handful of dies is too few to judge, so the centre is trusted', 
   const results = [{ x: 60, y: 0, hbin: 1 }, { x: 61, y: 0, hbin: 1 }, { x: 60, y: 1, hbin: 1 }];
   const r = buildWaferMap({ results, waferConfig: { center: { x: 0, y: 0 } } });
   assert.ok(!r.warnings.some((x) => x.code === 'implausible-center'));
+});
+
+test('reticle fields over supplied dies are sized in the dies\' own units', async () => {
+  const { createWafer } = await import('../dist/packages/core/wafer.js');
+  const { generateDies } = await import('../dist/packages/core/dies.js');
+  const { clipDiesToWafer } = await import('../dist/packages/core/transforms.js');
+  const base = createWafer({ diameter: 200 });
+  const dies = clipDiesToWafer(generateDies(base, { width: 10, height: 8 }), base, { width: 10, height: 8 }).filter((d) => !d.partial);
+  const r = buildWaferMap({
+    results: dies.map((d) => ({ x: d.x, y: d.y, hbin: 1 })),
+    dies, waferConfig: { diameter: 200 }, reticleConfig: { width: 3, height: 2 },
+  });
+  assert.ok(r.reticles.length > 0);
+  assert.equal(r.reticles[0].width, 30, 'three 10 mm dies wide');
+  assert.equal(r.reticles[0].height, 16, 'two 8 mm dies high');
 });

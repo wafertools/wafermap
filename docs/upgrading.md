@@ -6,6 +6,13 @@ release first. Each release's full list of changes is in the
 each removal, and whether it could come back, are in
 [API_REMOVALS.md](https://github.com/wafertools/wafermap/blob/main/API_REMOVALS.md).
 
+## 0.38.0
+
+### The Summary panel docks right or left
+
+`summaryPanel: { placement }` takes `'right'` (the default) or `'left'`. `'top'` and `'bottom'` are removed; a value other
+than `'left'` now docks the panel on the right. If you passed `'top'` or `'bottom'`, pass `'right'` or `'left'` instead.
+
 ## 0.36.0
 
 ### Test-value analysis runs by default when it fits a budget

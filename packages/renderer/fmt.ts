@@ -37,6 +37,20 @@ function resolveUnitPrefix(unit: string): { preScale: number; base: string } {
   return { preScale: 1, base: unit };
 }
 
+/**
+ * Whether a test's name already ends with its own unit as a separate token (`fmax_MHz`, `Vth (mV)`, `Idsat uA`). Such
+ * a name states its unit, so an axis title must not append a differently scaled one ("fmax_MHz (GHz)").
+ */
+export function nameStatesUnit(name: string | null | undefined, unit: string | undefined): boolean {
+  if (!name || !unit) return false;
+  let end = name.trimEnd();
+  // One closing bracket may follow the unit: "Vth (mV)", "leak [nA]".
+  if (end.endsWith(')') || end.endsWith(']')) end = end.slice(0, -1);
+  if (!end.endsWith(unit)) return false;
+  const before = end.length === unit.length ? '' : end[end.length - unit.length - 1];
+  return before === '' || /[\s_\-/([]/.test(before);
+}
+
 function siFormat(v: number, unit: string): string {
   const { preScale, base } = resolveUnitPrefix(unit);
   const baseValue = v * preScale;
@@ -210,6 +224,15 @@ export function fmtColorbarAxis(
 
   // A percentage axis is never prefixed: ticks are plain numbers and the label carries the sign.
   if (unit === '%') return build(1, name ? `${name} (%)` : '%', '%');
+
+  // The name already carries the unit it was measured in: keep that unit, unscaled, and let the name be the title.
+  if (unit && nameStatesUnit(name, unit)) {
+    // A prefixed unit (MHz, mV, nA) is already the readable one. A base unit (A, V, s) with very small or large values
+    // is not ("0.00" at every tick), so those take the exponent form the unitless branch uses: "Idsat_A (×10E-6)".
+    const readable = abs === 0 || (abs >= 0.1 && abs < 1e4);
+    if (resolveUnitPrefix(unit).preScale !== 1 || readable) return build(1, name!, unit);
+    return fmtColorbarAxis(vRef, name, undefined, fallbackFormat, step);
+  }
 
   if (unit) {
     // With unit: pick SI prefix from vRef (folded back to the bare base unit first, in case

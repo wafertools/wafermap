@@ -68,7 +68,7 @@ import type { WaferMetadata } from '../core/metadata.js';
 
 export interface SummaryPanelOptions {
   /** Which side of the content area to place the panel. Default 'right'. */
-  placement?: 'right' | 'left' | 'top' | 'bottom';
+  placement?: 'right' | 'left';
   /** Open the panel immediately on render without requiring the user to click the toolbar button. Default false. */
   defaultOpen?: boolean;
 }
@@ -2717,7 +2717,7 @@ export function* buildLotTestSectionSteps(
 // ── Panel container ───────────────────────────────────────────────────────────
 
 export function createSummaryPanelEl(
-  placement: 'right' | 'left' | 'top' | 'bottom',
+  placement: 'right' | 'left',
   /**
    * Inset from the edge this panel docks against — stated by the caller,
    * because only the caller knows what that edge IS.
@@ -2750,7 +2750,6 @@ export function createSummaryPanelEl(
    */
   onFindingMenu?: (findingId: string, row: HTMLElement, at: { x: number; y: number }) => void,
 ): HTMLDivElement {
-  const isVertical = placement === 'top' || placement === 'bottom';
   const panel = el('div', {
     background:  PANEL_BG,
     // Set the inherited text colour explicitly. Without it the panel's own
@@ -2767,18 +2766,8 @@ export function createSummaryPanelEl(
     border:      BORDER,
     borderRadius:RADIUS.container,
     padding: SPACE.xl,
-    // Both axes scroll for a 'top'/'bottom' panel. `overflowY: hidden` there
-    // silently CLIPPED: those placements take a fixed 180px band (below), which
-    // most wafers' content exceeds — Summary plus one collapsed section already
-    // approaches it — so the last visible row was cut mid-line with nothing
-    // saying more existed. Scrolling is the same answer 'right'/'left' already
-    // use via `maxHeight: 100%`.
-    //
-    // This fixes the silent loss only. Whether this content should be shown in
-    // a wide-short band AT ALL is a separate, open question (the stat tiles,
-    // per-test tables and findings list were designed for a narrow-tall panel).
     overflowY:   'auto',
-    overflowX:   isVertical ? 'auto'   : 'hidden',
+    overflowX:   'hidden',
     flexShrink:  '0',
     boxSizing:   'border-box',
     fontFamily:  FONT.family,
@@ -2791,7 +2780,7 @@ export function createSummaryPanelEl(
     fontSize:    FONT.sub,
     boxShadow:   SHADOW.panel,
   }, undefined, ownerDocument);
-  panel.dataset.wmapPlacement = placement;
+  panel.dataset.wmapPlacement = placement === 'left' ? 'left' : 'right';
 
   // Inset from the map area's edge, stated by the caller. This panel is
   // styled as a CARD —
@@ -2801,34 +2790,21 @@ export function createSummaryPanelEl(
   // read as clipped and the shadow has nowhere to fall. Applied only to the
   // edge it docks AGAINST; the opposite side is bounded by the map, not the
   // window, and spacing there is the layout's business.
-  //
-  // 'top' is deliberately absent. It used to rely on `reserveToolbarClearance`
-  // in renderWaferMap giving that placement its own `paddingTop`, because the
-  // toolbar floated over whatever was at the top of the map area. The toolbar
-  // is no longer a floating overlay — it lives in the chrome row above the map
-  // area, which already provides its own gap (`chromeInset`) before the map
-  // area starts. A 'top'-docked panel sits right at the top of that already-
-  // separated space, so it needs no margin of its own.
-  if (placement === 'right')  panel.style.marginRight  = edgeInset;
-  if (placement === 'left')   panel.style.marginLeft   = edgeInset;
-  if (placement === 'bottom') panel.style.marginBottom = edgeInset;
+  // Anything but 'left' (a JavaScript caller passing a value the type no longer allows) docks on the right.
+  if (placement === 'left') panel.style.marginLeft  = edgeInset;
+  else                      panel.style.marginRight = edgeInset;
 
-  if (!isVertical) {
-    // 300px, up from 260 (and 220 before that) — at 260 the findings narrative
-    // wrapped every two or three words and stat-tile labels broke
-    // mid-parenthetical; the 12px control/body tier (UI_STANDARDS.md type
-    // scale) then pushed the per-test table's last column past the edge.
-    panel.style.width    = '300px';
-    // Bound the panel by its container (the flex row), not the viewport. A
-    // viewport-relative cap (e.g. 100vh) overflows a container shorter than the
-    // viewport, stretching the row and clipping the wafer. With the wrapper
-    // pinned to the container height, `100%` keeps the panel inside it and lets
-    // overflowY:auto scroll the panel internally.
-    panel.style.maxHeight = '100%';
-  } else {
-    panel.style.height = '180px';
-    panel.style.width  = '100%';
-  }
+  // 300px, up from 260 (and 220 before that) — at 260 the findings narrative
+  // wrapped every two or three words and stat-tile labels broke
+  // mid-parenthetical; the 12px control/body tier (UI_STANDARDS.md type
+  // scale) then pushed the per-test table's last column past the edge.
+  panel.style.width    = '300px';
+  // Bound the panel by its container (the flex row), not the viewport. A
+  // viewport-relative cap (e.g. 100vh) overflows a container shorter than the
+  // viewport, stretching the row and clipping the wafer. With the wrapper
+  // pinned to the container height, `100%` keeps the panel inside it and lets
+  // overflowY:auto scroll the panel internally.
+  panel.style.maxHeight = '100%';
 
   if (onFindingMenu) {
     panel.addEventListener('contextmenu', (e: MouseEvent) => {
@@ -2845,12 +2821,11 @@ export function createSummaryPanelEl(
 export function wrapWithSummaryPanel(
   content: HTMLElement,
   panel: HTMLDivElement,
-  placement: 'right' | 'left' | 'top' | 'bottom',
+  placement: 'right' | 'left',
 ): HTMLDivElement {
-  const isVertical = placement === 'top' || placement === 'bottom';
   const wrapper = el('div', {
     display:       'flex',
-    flexDirection: isVertical ? 'column' : 'row',
+    flexDirection: 'row',
     gap: SPACE.md,
     width:         '100%',
     // Fill the container's height so the whole subtree is bounded by it. The
@@ -2864,7 +2839,7 @@ export function wrapWithSummaryPanel(
     boxSizing:     'border-box',
     // Stretch children to the row height (horizontal layout) so the canvas and
     // panel both track the container, not their own content.
-    alignItems:    isVertical ? 'flex-start' : 'stretch',
+    alignItems:    'stretch',
   });
 
   // Content takes all remaining space
@@ -2872,12 +2847,12 @@ export function wrapWithSummaryPanel(
   content.style.minWidth = '0';
   content.style.minHeight = '0';
 
-  if (placement === 'right' || placement === 'bottom') {
-    wrapper.appendChild(content);
+  if (placement === 'left') {
     wrapper.appendChild(panel);
+    wrapper.appendChild(content);
   } else {
-    wrapper.appendChild(panel);
     wrapper.appendChild(content);
+    wrapper.appendChild(panel);
   }
 
   return wrapper;
@@ -2929,10 +2904,10 @@ function shieldClicks(doc: Document, where: DOMRect): void {
 }
 
 /** The edge a panel docks against, read by {@link panelHeader} for its close glyph. */
-type PanelPlacement = 'right' | 'left' | 'top' | 'bottom';
+type PanelPlacement = 'right' | 'left';
 
 /** The close glyph points to the edge the panel folds into. */
-const CLOSE_GLYPH: Record<PanelPlacement, string> = { right: '▸', left: '◂', top: '×', bottom: '×' };
+const CLOSE_GLYPH: Record<PanelPlacement, string> = { right: '▸', left: '◂' };
 
 /**
  * The panel's title, with a close button at its end when the host can reopen it (its Summary button),

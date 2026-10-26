@@ -2025,7 +2025,7 @@ export function renderWaferGallery(
   const hasReticleInItems = items.some(it => typeof it !== 'function' && ((it as WaferMapDisplayItem).reticles?.length ?? 0) > 0);
 
   // Resolve the shared active test's def (the one all value cards show) — gates the
-  // pass/fail display entries, the "Colorbar range" button, and the log-scale button,
+  // pass/fail display entries, the "Colour bar range" button, and the log-scale button,
   // mirroring single-map.
   function activeTestDefShared(): { testNumber: number; td: import('../renderer/buildWaferMap.js').TestDef | undefined } {
     const testDefs = lotTestDefs();
@@ -2340,9 +2340,9 @@ export function renderWaferGallery(
   );
   syncLogScaleBtn();
 
-  // Colorbar range (spec limits ↔ data extents) — value mode only, when the active test has limits
+  // Colour bar range (spec limits ↔ data extents) — value mode only, when the active test has limits
   // and we are not colouring by spec pass/fail (where the bar is irrelevant). Mirrors single-map.
-  const btnColorbarRange = makeBtn('specRange', 'Colorbar range: test limits', () => {
+  const btnColorbarRange = makeBtn('specRange', 'Colour bar range: test limits', () => {
     const next = sharedOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
     updateShared({ colorbarRangeMode: next });
   });
@@ -2354,8 +2354,8 @@ export function renderWaferGallery(
     const isSpec = (sharedOpts.colorbarRangeMode ?? 'spec') === 'spec';
     setActive(btnColorbarRange, isSpec);
     btnColorbarRange.ariaLabel = isSpec
-      ? 'Colorbar range: test limits (click for data range)'
-      : 'Colorbar range: data range (click for test limits)';
+      ? 'Colour bar range: test limits (click for data range)'
+      : 'Colour bar range: data range (click for test limits)';
   }
   syncColorbarRangeBtn();
 

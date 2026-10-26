@@ -426,3 +426,33 @@ test("the map's right-click never reaches a surrounding handler", () => {
   assert.equal(reached, false, 'a gallery card would open its whole-wafer menu on a declined right-click');
   ctrl.destroy();
 });
+
+test('a selection offers its own charts against the rest of the wafer, naming both sides', () => {
+  const w = wafer();
+  const src = selectionPopulation(w.dies.slice(0, 12), facts, w.dies);
+  assert.equal(src.rest.dies.length, 12, 'the rest is the dies the selection leaves out');
+  assert.ok(!src.rest.dies.some(d => src.items[0].dies.some(s => s.x === d.x && s.y === d.y)), 'no die is on both sides');
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), src, {});
+  const heads = [...menus()[0].querySelectorAll('[role="presentation"], [role="separator"], [data-wmap-menu-section]')].map(e => e.textContent);
+  assert.ok(heads.some(t => /Selection vs the rest of the wafer/.test(t)), `a section for the comparison, got ${JSON.stringify(heads)}`);
+  const labels = rows().map(r => r.textContent);
+  assert.equal(labels.filter(l => l === 'Box plot').length, 1);
+  assert.equal(labels.filter(l => l === 'Value histogram').length, 2, 'the whole-selection histogram and the comparison one');
+  rows().find(r => r.textContent === 'Box plot').click();
+  const box = document.querySelector('.wmap-overlay-box');
+  assert.equal(box.querySelector('[data-wmap-population]').textContent, 'Population: 12 selected dies against the other 12 on W07');
+  assert.match(box.textContent, /24 dies · selection vs the rest of W07/, 'the footnote does not count the two groups as wafers');
+  assert.ok(!/2 wafers/.test(box.textContent));
+  closeModal();
+});
+
+test('a whole wafer, or a selection with nothing left over, offers no comparison', () => {
+  const w = wafer();
+  openDrilldownMenu({ x: 10, y: 10 }, anchor(), waferPopulation(w.dies, facts), {});
+  assert.ok(!rows().some(r => r.textContent === 'Box plot'));
+  menus().forEach(m => m.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  const everything = selectionPopulation(w.dies, facts, w.dies);
+  assert.equal(everything.rest, undefined);
+  const stacked = selectionPopulation(w.dies.slice(0, 3), { ...facts, isLotStack: true }, w.dies);
+  assert.equal(stacked.rest, undefined, 'a lot stack has no measured dies to compare');
+});

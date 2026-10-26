@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fmt, fmtColorbarAxis, fmtExact } from '../dist/packages/renderer/fmt.js';
+import { fmt, fmtColorbarAxis, fmtExact, nameStatesUnit } from '../dist/packages/renderer/fmt.js';
 
 test('fmt — non-finite values', () => {
   assert.equal(fmt(Infinity), 'Infinity');
@@ -157,4 +157,28 @@ test('fmtColorbarAxis — a percentage axis is unprefixed and says % once', () =
   assert.equal(small.axisLabel, 'Yield (%)');
   assert.equal(small.scaledUnit, '%');
   assert.equal(fmtColorbarAxis(88, null, '%').axisLabel, '%');
+});
+
+test('fmtColorbarAxis — a name that states its unit keeps it, unscaled, as the whole title', () => {
+  const a = fmtColorbarAxis(2100, 'fmax_MHz', 'MHz');
+  assert.equal(a.axisLabel, 'fmax_MHz');
+  assert.equal(a.tickFmt(2100), '2100');
+  assert.equal(a.scaledUnit, 'MHz');
+  assert.equal(fmtColorbarAxis(2100, 'Fmax', 'MHz').axisLabel, 'Fmax (GHz)', 'a name without the unit is still rescaled');
+  assert.equal(fmtColorbarAxis(0.5, 'Vth (V)', 'V').axisLabel, 'Vth (V)');
+});
+
+test('fmtColorbarAxis — a base unit in the name with small values keeps legible ticks', () => {
+  const a = fmtColorbarAxis(1.2e-6, 'Idsat_A', 'A');
+  assert.equal(a.axisLabel, 'Idsat_A (×10E-6)');
+  assert.equal(a.tickFmt(1.2e-6), '1.20');
+  assert.equal(fmtColorbarAxis(0.5, 'Vth_V', 'V').axisLabel, 'Vth_V', 'readable values need no exponent');
+});
+
+test('nameStatesUnit — the unit must be a separate trailing token', () => {
+  assert.ok(nameStatesUnit('fmax_MHz', 'MHz'));
+  assert.ok(nameStatesUnit('Vth (mV)', 'mV'));
+  assert.ok(!nameStatesUnit('Gain', 'V'), 'a letter inside a word is not a unit');
+  assert.ok(!nameStatesUnit('fmax_MHz', 'GHz'));
+  assert.ok(!nameStatesUnit('Vth', undefined));
 });

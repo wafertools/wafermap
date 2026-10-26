@@ -275,8 +275,14 @@ Menu — Chart actions:
 
 Menu — Test:
     · Idsat
+    · Pin Idsat (or press P on the row)
+        hint: Pin this test to the top of every test list
     · Vth
+    · Pin Vth (or press P on the row)
+        hint: Pin this test to the top of every test list
     · Ioff
+    · Pin Ioff (or press P on the row)
+        hint: Pin this test to the top of every test list
 
 Menu — Wafer:
     · All wafers
@@ -401,7 +407,7 @@ Controls:
   · Plot mode  [opens menu]
   · Colour scheme  [opens menu]
   · Toggle log scale
-  · Colorbar range: test limits (click for data range)
+  · Colour bar range: test limits (click for data range)
   · Overlays  [opens menu]
   · Legend style  [opens menu]
   · Orientation  [opens menu]
@@ -762,8 +768,8 @@ Controls:
   · ▶Findings (26)16 unusual, 10 notable
   · ●●●Unusual 16
   · ●●○Notable 10
-  · Spatial pattern: scratch (medium confidence) — a line 10 dies long and about 2 wide
-      hint: Spatial pattern: scratch (medium confidence) — a line 10 dies long and about 2 wide Click to show it on the map
+  · Spatial pattern: edge-local (medium confidence) — 35% of edge dies failing [reticle cell (0, 1)'s failures set aside]
+      hint: Spatial pattern: edge-local (medium confidence) — 35% of edge dies failing [reticle cell (0, 1)'s failures set aside] Click to show it on the map
   · Mean Idsat is 19.1% higher than the rest of the map
       hint: Rings 1–2 mean Idsat is 19.1% higher than the rest of the map Click to show it on the map
   · Mean Ioff is 60.1% lower than the rest of the map

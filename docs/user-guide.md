@@ -57,31 +57,31 @@ A no-data die is not a fail; it simply has no result recorded. Edge-excluded die
 not counted in yield calculations. Dies the filter drops are drawn faded and are counted nowhere: not in the legend, the
 yield, the Summary panel or the findings.
 
-### 1.4 Legend and colorbar
+### 1.4 Legend and colour bar
 
 **Bin modes** show a discrete colour legend: one swatch per bin, with bin number
 and name if the application has supplied bin names. Passing bins are listed first,
 then failing bins from the most dies to the fewest — the same order as the Summary
 panel and reports.
 
-**Value mode** shows a continuous colorbar: the colour scale runs from the minimum
-to maximum value, with units when available. The colorbar is informational only —
+**Value mode** shows a continuous colour bar: the colour scale runs from the minimum
+to maximum value, with units when available. The colour bar is informational only —
 clicking it has no effect. To switch to a pass/fail view, use the **Limit pass/fail**
 or **Test pass/fail** option in the Overlays menu (available when test limits are
 defined, or a recorded verdict exists, for the active test).
 
-**Limit pass/fail mode** replaces the colorbar with a small legend: Pass,
+**Limit pass/fail mode** replaces the colour bar with a small legend: Pass,
 Fail high, and Fail low swatches (only the categories that apply to the test's
 limits) with a die count beside each. This judges dies against the test's lower
 and upper test limits.
 
-**Test pass/fail mode** replaces the colorbar with a **Pass / Fail legend** and die
+**Test pass/fail mode** replaces the colour bar with a **Pass / Fail legend** and die
 counts, coloured by the tester's own **recorded** verdict for that test — not a
 limit judgement. A test with no measured value (a functional, go/no-go test)
 always displays this way; selecting it switches the map into Test pass/fail
 automatically, since there is nothing to plot on a gradient.
 
-Every map also shows a short **title** by the colorbar or legend naming what is
+Every map also shows a short **title** by the colour bar or legend naming what is
 displayed — the test name (and number, in limit pass/fail mode), the bin type, or the stacked
 wafer count.
 
@@ -140,13 +140,13 @@ Stacked modes are only available on lot-stack maps (multiple wafers combined int
 one display). The panel identifies how many wafers were stacked and which
 aggregation method is active.
 
-### Test Value mode — colorbar range and test limits
+### Test Value mode — colour bar range and test limits
 
 When test limits are defined for the active test, two additional display options
 become available:
 
-- **Colorbar range — Data / Limits**: switches the colorbar scale between the
-  actual data extent and the test limits. This affects only the colorbar's
+- **Colour bar range — Data / Limits**: switches the colour bar scale between the
+  actual data extent and the test limits. This affects only the colour bar's
   range, never how failing dies are shown. In **both** ranges every die is
   coloured by the gradient so you can read the value distribution, and dies
   outside the test limits are marked with a triangle — pointing **down (▽) for below the low limit**, **up (△)
@@ -160,7 +160,7 @@ become available:
   a pass colour and dies outside them are highlighted — **blue for below the
   low limit**, **red for above the high limit**. Both flags apply
   independently; a die can be flagged on either or both limits. A Pass/Fail legend
-  replaces the colorbar, listing each applicable category with its die count.
+  replaces the colour bar, listing each applicable category with its die count.
 
 Some tests have no measured value at all — a continuity check or any other
 go/no-go test, where the only result is a recorded pass or fail. Selecting one
@@ -223,7 +223,7 @@ shows die tooltips — a separate thing from the toolbar, which is always presen
 | <img src="images/icons/overlays.svg" width="20" height="20">  | Overlays           | Check-menu of optional display layers: axis labels, XY axis indicator, ring boundaries, quadrant lines, die coordinate labels, reticle grid (when geometry is configured), Limit pass/fail (Test Value mode with limits), Test pass/fail (Test Value mode, active test is functional or has recorded verdicts), and **Mark failing dies** (bin modes only). **Compact layout** and **Layout diagnostics** sit at the top of the menu (see [Compact layout](#compact-layout)). **Clear overlays** at the foot turns off everything in the menu at once, and is greyed when nothing is on — so the menu also answers "is anything active?" without you auditing every row. |
 | <img src="images/icons/palette.svg" width="20" height="20">   | Colour scheme      | Picks the colours for the map on screen. In Hard Bin and Soft Bin modes it lists **bin colours** (Default, Colour-blind safe); in every other mode — including the stacked modes, which show values — it lists **value colours**. The two are separate choices, so changing one never resets the other. Value gradients run dark at the low end and bright at the high end, so on a stacked map the healthy wafer sits back and a defect ring or scratch stands out; **Reverse gradient** flips that when the low end is the one you care about. When bin definitions carry their own colours, **Use colours from bin definitions** turns them on or off. (**Mark failing dies** is in Overlays, beside the pass/fail display it belongs with.) |
 | <img src="images/icons/logScale.svg" width="20" height="20">  | Log scale          | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping. Only active when all displayed values are positive. Hidden whenever a pass/fail display is active or the active test is functional.                                                                       |
-| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range     | Test Value mode with test limits only. Toggles the colorbar between the **limit range** (default — the colours mean the same thing on every wafer, so maps are comparable) and the **data range** (stretches the scale to the values actually present, which shows more contrast but is not comparable between wafers). |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colour bar range     | Test Value mode with test limits only. Toggles the colour bar between the **limit range** (default — the colours mean the same thing on every wafer, so maps are comparable) and the **data range** (stretches the scale to the values actually present, which shows more contrast but is not comparable between wafers). |
 | <img src="images/icons/legend.svg" width="20" height="20">    | Legend style       | Bin modes only. Controls where the bin legend is positioned relative to the map: Default (right), Compact, Left, Top, Bottom, or Floating.                                                                                                                                                             |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation        | Menu of display transforms: **Rotate 90° clockwise** (applies cumulatively), **Flip horizontal**, **Flip vertical**, and **Reset orientation**. The first rotate or flip also switches on the XY indicator (see Overlays), which stays on until you switch it off. These change only how the wafer is drawn — die coordinates in tooltips and labels are always the original values, whatever the orientation. Reset is worth knowing about: rotation and mirroring do not combine in the order you applied them, so undoing a few clicks by clicking again does not reliably get you back — Reset does, and is greyed when you are already there. |
 | <img src="images/icons/zoomMode.svg" width="20" height="20">  | Zoom mode          | Click and drag to draw a zoom region.                                                                                                                                                                                                                                                                  |
@@ -353,7 +353,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
 | <img src="images/icons/logScale.svg" width="20" height="20"> | Log scale     | Test Value and Stacked Test Values modes only. Applies a log₁₀ scale to the colour mapping for all cards. |
 | <img src="images/icons/legend.svg" width="20" height="20"> | Legend style  | **Legend on each map** adds a legend to every card as well as the shared one above the grid (off by default). While it is on, bin modes also let you choose where that legend sits on each card. |
-| <img src="images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Test Value mode with test limits only. Toggles all cards between the limit range and the data range. Leave it on the test limits when comparing wafers — the data range rescales per view. |
+| <img src="images/icons/specRange.svg" width="20" height="20"> | Colour bar range | Test Value mode with test limits only. Toggles all cards between the limit range and the data range. Leave it on the test limits when comparing wafers — the data range rescales per view. |
 | <img src="images/icons/warning.svg" width="20" height="20"> | Data warnings | Appears only when something is worth reporting about the wafers shown. Collected across every wafer and de-duplicated, so a problem affecting all of them is stated once rather than repeated per card. |
 | <img src="images/icons/help.svg" width="20" height="20"> | User guide    | Opens this guide. |
 
@@ -534,7 +534,11 @@ What you right-click decides the population:
 
 - **Selected dies** — select some dies, then right-click on the map. Right-
   clicking a die that is **not** selected selects that die alone first;
-  right-clicking a selected die, or empty space, keeps the selection.
+  right-clicking a selected die, or empty space, keeps the selection. On a single map the menu's first row, **Invert
+  selection**, selects the dies that were not selected and deselects those that were. Below the charts of the selection,
+  **Selection vs the rest of the wafer** offers a **Value histogram** (one colour for each side, overlaid) and a **Box plot**
+  of the selected dies against the wafer's other dies, each side labelled with its die count. Partial and edge-excluded dies are
+  left out of both, and with fewer than 10 dies on a side the window says to read the spread rather than small differences.
 - **Dies selected on several wafers of a gallery** — by clicking a finding, or by selecting on more than one card.
   Right-click a selected die on any of those cards and the menu opens on every selected die, with a first row,
   **Only this wafer**, that narrows it to the dies selected on the card you clicked (and **All selected** to go back).
@@ -896,7 +900,8 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   in the physical sequence, so there is no sort control to destroy it, and it needs at least two wafers; drag across it to pick a
   run of wafers. The box plot, histogram and trend are plots: each has the test picker and the axis settings (*Axis includes
   limits*, *Clip outliers*, and which limits to draw), and a change in one reaches the others. Clicking a capability box drives
-  them onto that same test.
+  them onto that same test. In a lot with hundreds of tests, click the ☆ at the end of a row in any test picker (or press **P** on
+  the focused row) to **pin** that test: pinned tests are listed first, under a "Pinned" heading, in every picker.
 
   With **Group by** on (a split, a lot), the cards that compare the groups come first, under **Comparing …**: the
   [Comparison by](https://wafertools.github.io/wafermap/charts/#comparison-by-group) table and the [difference map](https://wafertools.github.io/wafermap/charts/#difference-map) (pick the two groups and a test or *Yield*; it follows

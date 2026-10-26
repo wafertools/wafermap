@@ -5,6 +5,7 @@ import { computeCapability, computeTestFlagYield, computeRegionYield } from './s
 import { binPassSets } from '../renderer/binColors.js';
 import { diePassStatus, isYieldEligibleDie, getDieKey, isPositionedDie, positionKey } from '../core/dies.js';
 import type { PositionedDie } from '../core/dies.js';
+import type { Wafer } from '../core/wafer.js';
 import { dieHasValues, testsPresent, testValue } from '../core/dieTable.js';
 import { stackBinsAreData } from '../core/aggregates.js';
 import { getTestPassStatus, isParametricTest } from '../renderer/buildWaferMap.js';
@@ -24,7 +25,7 @@ import {
   type StatsRegion } from './regions.js';
 import { buildClusterFindings } from './clusterDetection.js';
 import {
-  classifyPattern, patternExplains, patternFailVerdict, PATTERN_LABELS,
+  classifyPattern, classifyFailingDies, patternExplains, patternFailVerdict, PATTERN_LABELS,
   type PatternClassification, type PatternLabel } from './patternClassification.js';
 import { requirePassBins } from '../core/passBins.js';
 import { requireRingCount } from '../core/ringCount.js';
@@ -1612,7 +1613,6 @@ function buildSpecLimitFindings(
 interface MergeContext {
   eligibleDies: EligibleDie[];
   softEligibleDies: EligibleDie[];
-  testDies: Die[];
   passBins: number[];
   ringCount: number;
   sectorCount: number;
@@ -1627,14 +1627,38 @@ interface MergeContext {
 
 /** The die pool the original builder used for a finding of this kind. */
 function poolOf(kind: RawFinding['variable']['kind'], ctx: MergeContext): readonly Die[] {
-  return kind === 'softBin' ? ctx.softEligibleDies
-    : kind === 'test' ? ctx.testDies
-    : ctx.eligibleDies;
+  return kind === 'softBin' ? ctx.softEligibleDies : ctx.eligibleDies;
 }
 
 /** A test's limit fail rate, as opposed to its mean: both are `variable.kind` 'test'. */
 function isLimitFail(f: RawFinding): boolean {
   return f.variable.measure === 'limitFailRate';
+}
+
+/**
+ * Whether a `scratch` is partly the repeated defect of a reticle cell. Fails at one cell of every field line up in
+ * columns and rows, and join the fails of another signature (an edge arc) into a line the classifier takes for a
+ * scratch. When a reticle cell has a finding of its own, the wafer is classified again with that cell's failing dies
+ * set aside; if the line is gone the wafer's pattern is what is left, named for what it was set aside from. A scratch
+ * that is still a scratch without them stays one. Wafers with no significant reticle-cell finding are untouched.
+ */
+function classifyAroundReticleCells(
+  pattern: PatternClassification,
+  findings: readonly StatsFinding[],
+  /** The wafer's failing dies; asked for only once a reticle-cell finding makes the second classification possible. */
+  failing: () => readonly PositionedDie[],
+  all: PositionedDie[],
+  wafer: Wafer,
+  ringCount: number,
+): PatternClassification | undefined {
+  if (pattern.pattern !== 'scratch') return undefined;
+  const cells = findings.filter(f => f.comparison.family === 'reticle-position' && f.severity !== 'info' && f.highlight.kind === 'region');
+  if (!cells.length) return undefined;
+  const cellKeys = new Set(cells.flatMap(f => f.highlight.kind === 'region' ? f.highlight.dieKeys ?? [] : []));
+  const rest = classifyFailingDies(failing().filter(d => !cellKeys.has(getDieKey(d))), all, wafer, ringCount);
+  if (!rest || rest.pattern === 'scratch') return undefined;
+  const left = cells[0].comparison.left;
+  return { ...rest, note: `${left.charAt(0).toLowerCase()}${left.slice(1)}'s failures set aside` };
 }
 
 /** Region keys this finding covers (e.g. `["ring:1","ring:2"]`); empty for non-region targets. */
@@ -2469,7 +2493,6 @@ function analyzeWaferMapUncollected(
   const mergedFindings = mergeAdjacentFindings(findings, {
     eligibleDies,
     softEligibleDies: softEligible,
-    testDies: eligibleDies,
     passBins: resolved.passBins,
     ringCount: resolved.ringCount,
     sectorCount: resolved.sectorCount,
@@ -2492,21 +2515,30 @@ function analyzeWaferMapUncollected(
       passBins:  resolved.passBins,
       ringCount: resolved.ringCount });
     spatialPattern = patternResult ?? undefined;
-    if (patternResult !== null && patternResult.pattern !== 'random' && patternResult.pattern !== 'none') {
-      const label = PATTERN_LABELS[patternResult.pattern];
+    // A column of one reticle cell repeated across the fields is linear without being a scratch: the cell's own
+    // finding says it, so the line is not raised as a second finding.
+    const reclassified = patternResult
+      ? classifyAroundReticleCells(patternResult, findings,
+          () => { const passes = new Set(resolved.passBins); return positionedEligibleDies.filter(d => patternFailVerdict(d, passes) === true); },
+          positionedEligibleDies, result.wafer, resolved.ringCount)
+      : undefined;
+    const patternFound = reclassified ?? patternResult;
+    if (reclassified) spatialPattern = reclassified;
+    if (patternFound != null && patternFound.pattern !== 'random' && patternFound.pattern !== 'none') {
+      const label = PATTERN_LABELS[patternFound.pattern];
       const severity: StatsSeverity =
-        patternResult.confidence === 'high'   ? 'unusual' :
-        patternResult.confidence === 'medium' ? 'notable' : 'info';
-      const f = patternResult.features;
+        patternFound.confidence === 'high'   ? 'unusual' :
+        patternFound.confidence === 'medium' ? 'notable' : 'info';
+      const f = patternFound.features;
       const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
       const detail =
-        patternResult.pattern === 'edge-ring' || patternResult.pattern === 'edge-local'
+        patternFound.pattern === 'edge-ring' || patternFound.pattern === 'edge-local'
           ? `${pct(f.edgeRdd)} of edge dies failing`
-          : patternResult.pattern === 'center'
+          : patternFound.pattern === 'center'
           ? `centroid at ${pct(f.centroidDistNorm)} of wafer radius from centre`
-          : patternResult.pattern === 'donut'
+          : patternFound.pattern === 'donut'
           ? `${pct(Math.max(f.radialFailRates[1], f.radialFailRates[2]))} of dies failing at mid-radius, ${pct(f.radialFailRates[0])} at the centre`
-          : patternResult.pattern === 'scratch'
+          : patternFound.pattern === 'scratch'
           ? `a line ${Math.round(f.lineLength)} dies long and about ${Math.max(1, Math.round(f.lineWidth * 2))} wide`
           : `${pct(f.globalRdd)} of dies failing`;
       const passSet = new Set(resolved.passBins);
@@ -2520,14 +2552,14 @@ function analyzeWaferMapUncollected(
         [getDieKey(d), ringOf(d.physX - center.x, d.physY - center.y, radius, resolved.ringCount)]));
       // A region row a cluster of its bin explains stays with the cluster: the spot is more specific than the pattern.
       const clusterClaimed = new Set(findings.flatMap(c => isOneBinCluster(c) ? c.relatedIds ?? [] : []));
-      const relatedIds = claimForPattern([patternResult.pattern], severity, findings.filter(f => !clusterClaimed.has(f.id)),
+      const relatedIds = claimForPattern([patternFound.pattern], severity, findings.filter(f => !clusterClaimed.has(f.id)),
         f => f.comparison.family === 'cluster'
           ? [...new Set(f.highlight.kind === 'dies' ? f.highlight.dieKeys.map(k => ringByKey.get(k) ?? 0) : [])]
           : regionKeysOf(f as RawFinding).map(k => parseRegionKey(k).ring).filter((r): r is number => r !== undefined),
         resolved.ringCount);
 
       findings.push({
-        id: `spatial-pattern:${patternResult.pattern}`,
+        id: `spatial-pattern:${patternFound.pattern}`,
         level: 'wafer',
         severity,
         variable: { kind: 'spatialPattern', label },
@@ -2537,7 +2569,7 @@ function analyzeWaferMapUncollected(
           method: 'geometry',
           sampleSizeLeft:  failingDies.length,
           sampleSizeRight: eligibleDies.length },
-        summary: `Spatial pattern: ${label.toLowerCase()} (${patternResult.confidence} confidence) — ${detail}${patternResult.note ? ` [${patternResult.note}]` : ''}`,
+        summary: `Spatial pattern: ${label.toLowerCase()} (${patternFound.confidence} confidence) — ${detail}${patternFound.note ? ` [${patternFound.note}]` : ''}`,
         highlight: { kind: 'dies', dieKeys: failingDies.map(d => getDieKey(d)) },
         relatedIds: relatedIds.length > 0 ? relatedIds : undefined });
     }

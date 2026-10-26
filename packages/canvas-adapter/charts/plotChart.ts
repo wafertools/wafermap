@@ -20,7 +20,7 @@ import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
   cardShell, appendGuideCites, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
-  renderEmptyState, isExpandedCard, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelSide, shouldIncludeLimitsByDefault,
+  renderEmptyState, isExpandedCard, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelPlacement, shouldIncludeLimitsByDefault,
   WAFER_MENU_HINT, type CardMenuRow, type LimitLine, type SaveImageHandler, type SeriesLegendItem, type WaferContextMenuHandler,
 } from './chartShell.js';
 import { guideCitesText } from '../../stats/guideSections.js';
@@ -417,12 +417,17 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     } else {
       const placed = inside.map(l => {
         const x = LEFT + scale.frac(l.value) * plotW;
-        const w = ctx.measureText(text(l)).width;
-        const side = limitLabelSide(x, w, LEFT, LEFT + plotW, l.end === 'lo');
-        return { l, x, side, start: side < 0 ? x - 3 - w : x + 3, end: side < 0 ? x - 3 : x + 3 + w };
+        const full = text(l);
+        const word = l.label.split(/\s+/)[0];
+        const value = fmt(l.value, axis.unit);
+        const variants = word && word !== l.label ? [full, `${word} ${value}`, word] : [full];
+        const otherXs = inside.filter(o => o !== l).map(o => LEFT + scale.frac(o.value) * plotW);
+        const { text: shown, side } = limitLabelPlacement(x, variants, t => ctx.measureText(t).width, LEFT, LEFT + plotW, l.end === 'lo', otherXs);
+        const w = ctx.measureText(shown).width;
+        return { l, x, side, shown, start: side < 0 ? x - 3 - w : x + 3, end: side < 0 ? x - 3 : x + 3 + w };
       });
       const rows = stackLabelRows(placed, 4);
-      placed.forEach(({ l, x, side, start, end }, k) => {
+      placed.forEach(({ l, x, side, shown, start, end }, k) => {
         ctx.globalAlpha = 0.7;
         strokeLimitLine(ctx, l, color, x, TOP, x, TOP + plotH);
         ctx.globalAlpha = 1;
@@ -430,12 +435,12 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'top';
         const top = TOP + 2 + rows[k] * rowH;
         const box = placeClearOf(limitLabelBoxes, { x0: start, x1: end, y0: top, y1: top + rowH }, rowH);
-        if (!labelsOnTop) { ctx.fillText(text(l), x + side * 3, box.y0); return; }
+        if (!labelsOnTop) { ctx.fillText(shown, x + side * 3, box.y0); return; }
         later.push(() => {
           ctx.save();
           ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
           ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'top';
-          fillTextOnHalo(ctx, text(l), x + side * 3, box.y0, labelsOnTop.halo);
+          fillTextOnHalo(ctx, shown, x + side * 3, box.y0, labelsOnTop.halo);
           ctx.restore();
         });
       });
@@ -446,7 +451,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   }
 
   function unitFormat(axis: ResolvedAxis, lo: number, hi: number, step?: number) {
-    return makeAxisFormat(Math.max(Math.abs(lo), Math.abs(hi)), axis.unit, step);
+    return makeAxisFormat(Math.max(Math.abs(lo), Math.abs(hi)), axis.unit, step, axis.label);
   }
 
   function axisTitle(axis: ResolvedAxis, unitLabel: string): string {
@@ -1833,7 +1838,8 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
               if (!Number.isFinite(t) || t < tLo || t > tHi) return;
               if (Math.min(bins - 1, Math.floor(((t - tLo) / (tHi - tLo)) * bins)) === b) inBin.push(hm.units[g][k]);
             });
-            points.push(...unitPoints(hm.unit, inBin, g));
+            // A loop, not `points.push(...)`: a bin on a large wafer holds one point per die, past the spread's argument limit.
+            for (const point of unitPoints(hm.unit, inBin, g)) points.push(point);
           });
           if (points.length > 0) {
             tooltip.style.display = 'none';

@@ -7,5 +7,5 @@
 import { selectionPopulation as selection, waferPopulation as wafer } from '../../dist/packages/canvas-adapter/chartPopulation.js';
 
 const stated = { passBins: [1], ringCount: 4 };
-export const selectionPopulation = (dies, facts) => selection(dies, { ...stated, ...facts });
+export const selectionPopulation = (dies, facts, all) => selection(dies, { ...stated, ...facts }, all);
 export const waferPopulation = (dies, facts) => wafer(dies, { ...stated, ...facts });

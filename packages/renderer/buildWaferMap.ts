@@ -1321,11 +1321,13 @@ const IMPLAUSIBLE_CENTER_MARKER = 'The supplied wafer centre';
 
 function implausibleCenterMessage(gridPoints: Array<{ x: number; y: number }>, center: { x: number; y: number }): string {
   const b = gridBounds(gridPoints);
-  return `${IMPLAUSIBLE_CENTER_MARKER} (${center.x}, ${center.y}) is far outside the probed dies ` +
-    `(X ${b.xMin}…${b.xMax}, Y ${b.yMin}…${b.yMax}), so it was ignored and the centre was inferred from the dies. ` +
-    `Used as given, it would draw a wafer many times the die extent with the dies in one corner. ` +
-    `If it is the real centre, supply waferConfig.diameter as well.`;
+  return `${IMPLAUSIBLE_CENTER_MARKER} (${center.x}, ${center.y}) is far outside the tested dies ` +
+    `(X ${b.xMin}…${b.xMax}, Y ${b.yMin}…${b.yMax}), so it was ignored and the centre was worked out from the dies. ` +
+    `Used as given, it would draw a wafer many times the size of the dies, with all of them in one corner.`;
 }
+
+/** Developer-facing advice for the same advisory; the on-screen message keeps API terms out. */
+const IMPLAUSIBLE_CENTER_HINT = 'If the supplied centre is correct, also supply waferConfig.diameter.';
 
 function resolveCenterAnchor(
   gridPoints: Array<{ x: number; y: number }>,
@@ -2237,7 +2239,8 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     // The build copies no die after this: finalise them before the result holds them.
     dies = dies.map(finaliseDie);
 
-    const reticles    = buildReticles(norm.reticleOpts, wafer, dies as PositionedDie[], 1, 1, 0, 0, 0, 0, wafer.orientation);
+    // Fields are drawn in the dies' own physical units, so the die pitch is the dies' width and height — not 1.
+    const reticles    = buildReticles(norm.reticleOpts, wafer, dies as PositionedDie[], dies[0]?.width ?? 1, dies[0]?.height ?? 1, 0, 0, 0, 0, wafer.orientation);
 
 
     const unpositionedDies: Die[] = unpositionedResults.map((pt, i) =>
@@ -2293,7 +2296,11 @@ export function buildWaferMap(input: DieResult[] | WaferMapInput): WaferMapResul
     && norm.waferOpts?.center !== undefined
     && implausibleCenter(gridPoints, norm.waferOpts.center);
   const center = centerRejected ? undefined : norm.waferOpts?.center;
-  if (centerRejected) advisories.push({ code: 'implausible-center', message: implausibleCenterMessage(gridPoints, norm.waferOpts!.center!) });
+  if (centerRejected) {
+    const message = implausibleCenterMessage(gridPoints, norm.waferOpts!.center!);
+    console.warn(`[wafermap] ${message} ${IMPLAUSIBLE_CENTER_HINT}`);
+    advisories.push({ code: 'implausible-center', message });
+  }
 
   // Physical offset placing the wafer centre at (0,0).  When waferConfig.center
   // is given that prober coordinate is anchored to (0,0); otherwise the observed

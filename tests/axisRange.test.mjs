@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  robustFence, shouldIncludeLimitsByDefault, resolveAxisRange, limitLabelSide,
+  robustFence, shouldIncludeLimitsByDefault, resolveAxisRange, limitLabelSide, limitLabelPlacement,
   limitLines, limitExtent, hasBothLimitKinds, stackLabelRows,
 } from '../dist/packages/canvas-adapter/charts/chartShell.js';
 
@@ -182,4 +182,24 @@ test('withAlpha — scales the opacity of every colour form a computed token hol
   assert.equal(withAlpha('rgb(10 20 30 / 50%)', 0.5), 'rgba(10, 20, 30, 0.25)');
   // Anything else is returned unchanged rather than guessed at.
   assert.equal(withAlpha('var(--x)', 0.4), 'var(--x)');
+});
+
+// ── limitLabelPlacement ──────────────────────────────────────────────────────
+
+test('limitLabelPlacement — a narrow plot shortens a label before flipping it across the in-spec region', () => {
+  const measure = (t) => t.length * 6;
+  const full = 'Lo limit 260 mV', short = 'Lo 260 mV', word = 'Lo';
+  // Lo line at x=70 with the left edge at 0: the full label (90px) does not fit on its outside, the short one (54px) does.
+  const a = limitLabelPlacement(70, [full, short, word], measure, 0, 232, true, [150]);
+  assert.deepEqual(a, { text: short, side: -1 });
+  // Room for the full text: it is used.
+  assert.deepEqual(limitLabelPlacement(200, [full, short, word], measure, 0, 400, true, [300]), { text: full, side: -1 });
+});
+
+test('limitLabelPlacement — a label never runs across another limit line', () => {
+  const measure = (t) => t.length * 6;
+  // Hi line at 100, Lo line at 130 (just to its right): Hi prefers the right, but 130 is inside "Hi limit 380 mV".
+  const hi = limitLabelPlacement(100, ['Hi limit 380 mV', 'Hi 380 mV', 'Hi'], measure, 0, 232, false, [130]);
+  assert.ok(hi.text.length * 6 + 100 + 3 <= 130 || hi.side === -1, 'clear of the Lo line');
+  assert.notEqual(hi.text, 'Hi limit 380 mV');
 });

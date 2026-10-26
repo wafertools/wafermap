@@ -52,6 +52,11 @@ export interface DrilldownContext {
    * `narrower` is the population it left, so the row swaps back. Set by a gallery when dies are selected on several
    * wafers and the right-click is on one of them.
    */
+  /**
+   * Swap the map's selection for the dies it does not hold, offered as a "Selection" row. Set by a single map when it has a
+   * selection; absent in a gallery, whose selection spans several wafers.
+   */
+  onInvertSelection?: () => void;
   narrower?: { label: string; /** The swap-back row's wording before the population; default "All selected". */ backLabel?: string; source: DrilldownSource; ctx?: DrilldownContext };
 }
 
@@ -66,6 +71,9 @@ interface Target {
 /** Below this many dies a Ppk is an estimate with a wide margin — the chart
  *  must say so rather than print two decimals as though they were settled. */
 const PPK_MIN_DIES = 30;
+
+/** Below this many dies on either side, a comparison of the selection with the rest rests on a handful of dies. */
+const COMPARE_MIN_DIES = 10;
 
 const allDies = (source: DrilldownSource): Die[] => source.items.flatMap(it => it.dies);
 
@@ -127,29 +135,36 @@ function distributionTargets(source: DrilldownSource, ctx: DrilldownContext, anc
     return testsWithValues(source, eligible, min).length > 0 ? null : what;
   };
 
+  /**
+   * A one-test plot (histogram or box) over `plotItems`, with a test picker, in its own window. The test it is on is
+   * followed as the reader changes it, so the plot made from it is the one on screen. `compare` draws the items as
+   * colours of one plot (a histogram overlay) rather than as one population.
+   */
+  const openValuePlot = (chart: 'histogram' | 'box', title: string, plotItems: DrilldownItem[], line: string, compare: boolean, populationLabel?: string): void => {
+    let test = source.activeTest ?? defs[0]?.testNumber;
+    const pickable = defs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
+    const picker = makeTestSelect(pickable, test ?? null, n => { test = n; panel.refresh(); }, { ownerDocument: doc });
+    const openPlot = compare ? null : plotOpener(source, ctx, anchor);
+    let closeWindow: (() => void) | undefined;
+    const fields = chart === 'box'
+      ? { x: { builtin: 'wafer' as const }, y: { slot: 'test' as const }, color: { none: true as const } }
+      : { y: { slot: 'test' as const }, color: compare ? { builtin: 'wafer' as const } : { none: true as const } };
+    const panel = renderPlotCard({
+      doc, items: toPlotItems(plotItems), ctx: { testDefs: defs, curation: ctx.attributes, ...(populationLabel ? { populationLabel } : {}) }, extras: [picker],
+      spec: { choices: [], build: () => ({ id: `drill-${chart}${compare ? '-compare' : ''}`, title, chart, fields, ...(compare && chart === 'box' ? { axes: { x: { label: 'Dies' } } } : {}) }) },
+      slots: () => ({ test }),
+      chart: { onSaveImage: ctx.onSaveImage, binColors: ctx.getBinColors?.() },
+      // The same values as a plot of its own, over the same dies, to change the axes, colour or limits, and to keep.
+      // The histogram's window closes first, so the editor is not stacked on a copy of what it shows.
+      editAsPlot: openPlot ? plot => { closeWindow?.(); openPlot(plot, true)(); } : undefined,
+    });
+    closeWindow = openCard(panel.card, `${title} — ${line}`, `Population: ${line}`, anchor, () => panel.destroy());
+  };
+
   const histogram: Target = {
     section: 'Distributions', label: 'Value histogram',
     unavailable: reasonFor(1, 'These dies have no parametric test values'),
-    open: () => {
-      // A plot (plotCard.ts) of one test's values over these dies, with a test picker. The test it is on is followed
-      // as the reader changes it, so the plot made from it is the one on screen.
-      let test = source.activeTest ?? defs[0]?.testNumber;
-      const pickable = defs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined);
-      const picker = makeTestSelect(pickable, test ?? null, n => { test = n; panel.refresh(); }, { ownerDocument: doc });
-      const plotItems = toPlotItems(items);
-      const openPlot = plotOpener(source, ctx, anchor);
-      let closeWindow: (() => void) | undefined;
-      const panel = renderPlotCard({
-        doc, items: plotItems, ctx: { testDefs: defs, curation: ctx.attributes }, extras: [picker],
-        spec: { choices: [], build: () => ({ id: 'drill-histogram', title: 'Value histogram', chart: 'histogram', fields: { y: { slot: 'test' }, color: { none: true } } }) },
-        slots: () => ({ test }),
-        chart: { onSaveImage: ctx.onSaveImage, binColors: ctx.getBinColors?.() },
-        // The same values as a plot of its own, over the same dies, to change the axes, colour or limits, and to keep.
-        // The histogram's window closes first, so the editor is not stacked on a copy of what it shows.
-        editAsPlot: openPlot ? plot => { closeWindow?.(); openPlot(plot, true)(); } : undefined,
-      });
-      closeWindow = openCard(panel.card, `Value histogram — ${phrase}`, `Population: ${phrase}`, anchor, () => panel.destroy());
-    },
+    open: () => openValuePlot('histogram', 'Value histogram', items, phrase, false),
   };
 
   const capability: Target = {
@@ -168,7 +183,33 @@ function distributionTargets(source: DrilldownSource, ctx: DrilldownContext, anc
     },
   };
 
-  return [histogram, capability];
+  return [histogram, capability, ...compareTargets()];
+
+  /**
+   * The selection against the rest of its wafer: two populations, which is where a box plot and a two-series histogram
+   * make sense in a drilldown. Offered only for a selection on one wafer; both sides are the dies the charts count (partial
+   * and edge-excluded dies left out), labelled so neither can be mistaken for the whole wafer.
+   */
+  function compareTargets(): Target[] {
+    const rest = source.rest;
+    if (!rest || source.items.length !== 1) return [];
+    const [picked] = items;
+    const left = rest.dies.filter(d => isYieldEligibleDie(d));
+    const reason = reasonFor(1, 'These dies have no parametric test values')
+      ?? (picked.dies.length === 0 ? 'None of the selected dies counts in a chart (partial or edge-excluded dies are left out)'
+        : left.length === 0 ? 'Every other die on the wafer is partial or edge-excluded' : null);
+    const pair: DrilldownItem[] = [
+      { ...picked, label: `Selected on ${picked.label} (${picked.dies.length})` },
+      { ...rest, dies: left, label: `Rest of ${picked.label} (${left.length})` },
+    ];
+    const line = `${picked.dies.length.toLocaleString()} selected dies against the other ${left.length.toLocaleString()} on ${picked.label}`;
+    const caution = Math.min(picked.dies.length, left.length) < COMPARE_MIN_DIES
+      ? ` · fewer than ${COMPARE_MIN_DIES} dies on one side, so read the spread rather than small differences` : '';
+    return [
+      { section: 'Selection vs the rest of the wafer', label: 'Value histogram', unavailable: reason, open: () => openValuePlot('histogram', 'Value histogram, selection vs rest', pair, line + caution, true, `selection vs the rest of ${picked.label}`) },
+      { section: 'Selection vs the rest of the wafer', label: 'Box plot', unavailable: reason, open: () => openValuePlot('box', 'Box plot, selection vs rest', pair, line + caution, true, `selection vs the rest of ${picked.label}`) },
+    ];
+  }
 }
 
 /**
@@ -317,6 +358,11 @@ export function openDrilldownMenu(
 ): () => void {
   const targets = targetsFor(source, ctx, anchor);
   const rows: CheckMenuRow[] = [];
+  if (ctx.onInvertSelection) {
+    const invert = ctx.onInvertSelection;
+    rows.push({ section: 'Selection' });
+    rows.push({ label: 'Invert selection', active: false, action: true, enabled: true, onClick: () => { close(); invert(); } });
+  }
   if (ctx.narrower) {
     const { label, source: other, ctx: otherCtx } = ctx.narrower;
     const back: DrilldownContext['narrower'] = {

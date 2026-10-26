@@ -48,3 +48,16 @@ test('the lot pattern lists the ring findings it explains under it', () => {
   assert.ok(nested.some(f => f.comparison.family === 'ring'), 'a ring finding is nested');
   assert.ok(nested.every(f => f.id !== pattern.id));
 });
+
+test('"seen on N/M wafers" counts only the wafers that have positioned dies', () => {
+  const positioned = loadWafers('edge-ring', 8);
+  const bare = [1, 2].map(i => buildWaferMap({
+    results: Array.from({ length: 40 }, (_, k) => ({ hbin: k % 5 === 0 ? 2 : 1, sbin: k % 5 === 0 ? 2 : 1 })),
+    waferConfig: { metadata: { lot: 'edge-ring', wafer: `bare${i}` } } }));
+  const alone = analyzeWaferLot(positioned).findings.find(f => f.id === 'lot-repeat:spatialPattern|lot');
+  const mixed = analyzeWaferLot([...positioned, ...bare]).findings.find(f => f.id === 'lot-repeat:spatialPattern|lot');
+  assert.ok(alone && mixed, 'a lot pattern in both');
+  assert.equal(mixed.stats.sampleSizeRight, alone.stats.sampleSizeRight, 'wafers without positions are not counted as lacking the pattern');
+  assert.match(mixed.summary, /wafers with positions, 2 without/);
+  assert.ok(!/without/.test(alone.summary));
+});

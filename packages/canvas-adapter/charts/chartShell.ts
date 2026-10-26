@@ -12,7 +12,8 @@ import { openGuideAt } from '../guideWindow.js';
 import type { GuideSection } from '../../stats/guideSections.js';
 import { minOf, maxOf } from '../../core/utils.js';
 import { robustFence } from '../../stats/math.js';
-import { fmt, fmtColorbarAxis } from '../../renderer/fmt.js';
+import { fmt, fmtColorbarAxis, nameStatesUnit } from '../../renderer/fmt.js';
+import { isTestPinned, toggleTestPinned } from '../pinnedTests.js';
 import { markedTestLabel, DERIVED_LANE_PAD } from '../../renderer/testLabel.js';
 
 export type { SaveImageHandler };
@@ -589,13 +590,17 @@ export function makeAxisFormat(
   vRef: number,
   unit: string | undefined,
   step?: number,
+  name?: string,
 ): { tick: (v: number) => string; tickWithUnit: (v: number) => string; unitLabel: string } {
   if (!unit && step === undefined) return { tick: formatValue, tickWithUnit: formatValue, unitLabel: '' };
-  const { tickFmt, axisLabel, scaledUnit } = fmtColorbarAxis(vRef, null, unit, 'engineering', step);
+  // A name that states its own unit keeps it unscaled and is the whole title, so no separate unit label is returned.
+  const statesUnit = nameStatesUnit(name, unit);
+  const { tickFmt, axisLabel, scaledUnit } = fmtColorbarAxis(vRef, statesUnit ? name : null, unit, 'engineering', step);
   return {
     tick: tickFmt,
     tickWithUnit: scaledUnit ? v => `${tickFmt(v)} ${scaledUnit}` : tickFmt,
-    unitLabel: axisLabel,
+    // A name that states its unit is the whole title; only an exponent note ("×10E-6", for very small or large values) follows it.
+    unitLabel: statesUnit ? (/\(([^()]*)\)$/.exec(axisLabel)?.[1] ?? '') : axisLabel,
   };
 }
 
@@ -1394,6 +1399,8 @@ export interface ListSelectOption {
   group?: string;
   /** Why this option cannot be chosen now. It stays in the list, dimmed, with the reason after it, and does nothing when picked. */
   disabled?: string;
+  /** A pin toggle at the end of the row: whether it is pinned, and the reader's pin or unpin. The list is rebuilt after it. */
+  pin?: { pinned: boolean; toggle: () => void };
 }
 
 /**
@@ -1408,7 +1415,7 @@ export interface ListSelectOption {
  * without re-entering their own change handler.
  */
 export function makeListSelect(
-  options: readonly ListSelectOption[],
+  optionsOrGetter: readonly ListSelectOption[] | (() => readonly ListSelectOption[]),
   selected: string,
   onChange: (value: string) => void,
   opts: {
@@ -1425,6 +1432,9 @@ export function makeListSelect(
     emptyText, searchPlaceholder = 'Filter…', hook,
   } = opts;
 
+  // A getter is read again each time the list opens, so a row's pin can reorder it without rebuilding the control.
+  const readOptions = (): readonly ListSelectOption[] => typeof optionsOrGetter === 'function' ? optionsOrGetter() : optionsOrGetter;
+  let options = readOptions();
   let current = selected;
   const labelFor = (v: string): string => options.find(o => o.value === v)?.label ?? '';
 
@@ -1481,6 +1491,7 @@ export function makeListSelect(
   const closeMenuAndRefocus = (): void => { closeMenu(); btn.focus(); };
 
   function openMenu(): void {
+    options = readOptions();
     const rect = btn.getBoundingClientRect();
     const win = ownerDocument.defaultView ?? window;
     const menuMinWidth = Math.max(rect.width, 220);
@@ -1540,7 +1551,9 @@ export function makeListSelect(
       lastGroup = o.group;
       const isSelected = o.value === current;
       const row = ownerDocument.createElement('div');
-      row.textContent = o.disabled ? `${o.label} — ${o.disabled}` : o.label;
+      const rowLabel = ownerDocument.createElement('span');
+      rowLabel.textContent = o.disabled ? `${o.label} — ${o.disabled}` : o.label;
+      row.appendChild(rowLabel);
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', isSelected ? 'true' : 'false');
       if (o.disabled) row.setAttribute('aria-disabled', 'true');
@@ -1550,7 +1563,42 @@ export function makeListSelect(
         color: o.disabled ? CLR.label : isSelected ? CLR.iconActive : CLR.text, fontWeight: isSelected ? '700' : '400',
         opacity: o.disabled ? '0.7' : '',
         background: isSelected ? CLR.menuActive : 'transparent', whiteSpace: 'nowrap',
+        ...(o.pin ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: SPACE.xl } : {}),
       } as Partial<CSSStyleDeclaration>);
+      if (o.pin) {
+        const pin = o.pin;
+        row.setAttribute('aria-keyshortcuts', 'P');
+        const pinBtn = ownerDocument.createElement('span');
+        // A drawn star, not a text glyph: the row's text stays the test's name, for the accessible name and for hosts
+        // that find a row by it. The pin is reached by mouse here and by P on the row.
+        const svgNs = 'http://www.w3.org/2000/svg';
+        const star = ownerDocument.createElementNS(svgNs, 'svg');
+        star.setAttribute('viewBox', '0 0 24 24');
+        star.setAttribute('width', '14');
+        star.setAttribute('height', '14');
+        star.setAttribute('aria-hidden', 'true');
+        const path = ownerDocument.createElementNS(svgNs, 'path');
+        path.setAttribute('d', 'M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.5 6 20.9l1.3-6.7-5-4.7 6.8-.8z');
+        path.setAttribute('fill', pin.pinned ? 'currentColor' : 'none');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('stroke-linejoin', 'round');
+        star.appendChild(path);
+        pinBtn.appendChild(star);
+        pinBtn.dataset.wmapPin = pin.pinned ? 'pinned' : 'unpinned';
+        pinBtn.setAttribute('role', 'button');
+        pinBtn.setAttribute('aria-label', `${pin.pinned ? 'Unpin' : 'Pin'} ${o.label} (or press P on the row)`);
+        Object.assign(pinBtn.style, {
+          cursor: 'pointer', color: pin.pinned ? CLR.iconActive : CLR.label, flex: '0 0 auto', padding: `0 ${SPACE.xs}`,
+          display: 'inline-flex', alignItems: 'center',
+        } as Partial<CSSStyleDeclaration>);
+        wireControlHover(pinBtn, 'bare');
+        wireTooltip(pinBtn, pin.pinned ? 'Unpin this test' : 'Pin this test to the top of every test list');
+        const toggle = (e: Event): void => { e.preventDefault(); e.stopPropagation(); closeMenu(); pin.toggle(); openMenu(); };
+        pinBtn.addEventListener('click', toggle);
+        row.addEventListener('keydown', e => { if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey) toggle(e); });
+        row.appendChild(pinBtn);
+      }
       // Hover only — NOT focus. Focus is the browser's ring; repainting the
       // background on focus too would make the two states indistinguishable
       // and re-invent the hand-drawn indicator the shared contract removes.
@@ -1653,8 +1701,22 @@ export function makeTestSelect(
 ): HTMLElement & { value: string } {
   const { maxWidth = '200px', emptyText = 'No parametric tests', ownerDocument = document } = opts;
 
+  const labels = testOptionLabels(testOptions);
+  // Pinned tests lead, under their own heading, whenever the list holds one; with none pinned it is the plain list.
+  const buildOptions = (): ListSelectOption[] => {
+    const all = testOptions.map((t, i) => ({ item: t, label: labels[i], pinned: isTestPinned(t.testNumber) }));
+    const anyPinned = all.some(o => o.pinned);
+    const toOption = (o: typeof all[number], group?: string): ListSelectOption => ({
+      value: String(o.item.testNumber), label: o.label, ...(group ? { group } : {}),
+      pin: { pinned: o.pinned, toggle: () => toggleTestPinned(o.item.testNumber) },
+    });
+    return anyPinned
+      ? [...all.filter(o => o.pinned).map(o => toOption(o, 'Pinned')), ...all.filter(o => !o.pinned).map(o => toOption(o, 'All tests'))]
+      : all.map(o => toOption(o));
+  };
+
   return makeListSelect(
-    testOptionLabels(testOptions).map((label, i) => ({ value: String(testOptions[i].testNumber), label })),
+    buildOptions,
     selected !== null ? String(selected) : '',
     v => onChange(Number(v)),
     { maxWidth, ownerDocument, ariaLabel: 'Test', emptyText, searchPlaceholder: 'Filter tests…' },
@@ -2375,6 +2437,37 @@ export function limitLabelSide(
     ? x - pad - textWidth >= plotLeft
     : x + pad + textWidth <= plotRight;
   return fits ? preferred : (-preferred as -1 | 1);
+}
+
+/**
+ * Text and side for a vertical limit line's label. The label stays on its semantic side (outside the in-spec region)
+ * and never runs across another limit's line: when the full text does not fit there it is shortened first
+ * ("Hi limit 380 mV" → "Hi 380 mV" → "Hi"), and only when no variant fits on that side does it flip, again
+ * preferring the longest variant that clears every line. `otherXs` are the other limit lines' x positions.
+ * If nothing clears them, the full text goes on the side `limitLabelSide` picks.
+ */
+export function limitLabelPlacement(
+  x: number,
+  variants: readonly string[],
+  measure: (text: string) => number,
+  plotLeft: number,
+  plotRight: number,
+  isLowLimit: boolean,
+  otherXs: readonly number[] = [],
+  pad = 3,
+): { text: string; side: -1 | 1 } {
+  const preferred: -1 | 1 = isLowLimit ? -1 : 1;
+  for (const side of [preferred, -preferred as -1 | 1]) {
+    for (const text of variants) {
+      const w = measure(text);
+      const start = side < 0 ? x - pad - w : x + pad;
+      const end = side < 0 ? x - pad : x + pad + w;
+      if (start < plotLeft || end > plotRight) continue;
+      if (otherXs.some(o => o > start && o < end)) continue;
+      return { text, side };
+    }
+  }
+  return { text: variants[0], side: limitLabelSide(x, measure(variants[0]), plotLeft, plotRight, isLowLimit, pad) };
 }
 
 export function drawOffAxisLimits(

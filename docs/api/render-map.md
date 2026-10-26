@@ -105,15 +105,15 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 | `plotMode` | `PlotMode` | `'hardBin'` | `'hardBin'` \| `'softBin'` \| `'value'` \| `'stackedValues'` \| `'stackedBins'` \| `'stackedSoftBins'` \| `'metadata'` |
 | `binColorScheme` | `string` | `'default'` | Bin palette for `hardBin`/`softBin`. Built-in: `'default'`, `'accessible'` (colour-blind safe). Custom palettes via `registerBinColorScheme()` (§10.6). Pass bins take the palette's pass (green) colours and fail bins its fail colours, each chosen by bin number so a bin is the same colour in every lot — see §10.6. |
 | `valueColorScheme` | `string` | `'default'` | Value gradient for `value` and the stacked modes (a stacked-bin map is a value map: each position's occurrence rate). Built-in: `'default'` (Viridis), `'cividis'` (colour-blind safe), `'greyscale'`, `'plasma'`, `'inferno'`, `'mako'`, `'traffic'`, `'jet'`. Every one but `'traffic'` and `'jet'` reads low = dark, high = light. Custom gradients via `registerValueColorScheme()`. Separate from `binColorScheme`, so switching plot mode never resets either. Neither applies in `'metadata'` mode (always the dedicated ordered palette + `MetadataFieldDef.values[].color` overrides — §4.1.12). |
-| `reverseValueScheme` | `boolean` | `false` | Flip the value gradient so high values take its low-end colour. The Colour scheme menu offers it as **Reverse gradient**. Use it for a parameter whose *low* end is the notable one, or for monochrome print where more ink should mean more. Applies to the dies, the colorbar and the mapless summary together — resolve any gradient of your own through `resolveValueColorFn(name, reversed)` so it cannot disagree with them. |
+| `reverseValueScheme` | `boolean` | `false` | Flip the value gradient so high values take its low-end colour. The Colour scheme menu offers it as **Reverse gradient**. Use it for a parameter whose *low* end is the notable one, or for monochrome print where more ink should mean more. Applies to the dies, the colour bar and the mapless summary together — resolve any gradient of your own through `resolveValueColorFn(name, reversed)` so it cannot disagree with them. |
 | `useDefinedBinColors` | `boolean` | `true` | Honour `BinDef.color` where a bin definition supplies one. The Palette menu offers it as **Use colours from bin definitions**, only when some definition carries a colour. |
 | `activeTest` | `number` | `0` | testNumber to display in `value` mode — must match a `testDef.testNumber`, not a positional index |
 | `activeMetadataKey` | `string` | — | `die.metadata` key to display in `'metadata'` mode — must match a `metadataFields[].key` (§4.1.12) |
-| `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colorbar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Limit pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
+| `passFailDisplay` | `'off' \| 'spec' \| 'test'` | `'off'` | Requested pass/fail display for `value` mode. `'spec'` colours dies by spec-limit judgement (green / blue fail-low / red fail-high; degrades to `'off'` when the active test has no limits). `'test'` colours dies by the tester's own verdict from `die.testPass` (green pass / red fail, undirected; degrades to `'off'` when no die has a verdict for the active test). The library resolves the effective display — a functional active test (`testType: 'F'`) always renders as `'test'` regardless of this option. Both solid displays replace the colour bar with a Pass/Fail legend carrying per-category die counts, and the map title's secondary line names which is shown (`Limit pass/fail` vs `Tester pass/fail` vs `Functional pass/fail`). Toggled via the Overlays toolbar menu, whose two entries appear only when valid for the active test. |
 | `highlightBin` | `number \| number[]` | — | Dim all bins except this one, or these. Clicking a bin/soft-bin legend swatch shows only it (or clears it when it is the only one shown); Ctrl/Cmd+click adds or removes it. A clicked finding about a bin sets it to that bin. |
 | `highlightMetadataValue` | `string \| string[]` | — | `'metadata'` mode's analogue of `highlightBin` — dim every die except this metadata value, or these. Legend clicks work as for `highlightBin`. |
 | `valueRange` | `[number, number] \| { test, range }` | auto | Explicit range for value colour normalization; overrides `colorbarRangeMode`. Tuple applies to the active test (caller owns the coupling). Object `{ test, range }` applies only when `test` matches the active test, else it is ignored and the view auto-scales — use this to safely fix a range computed for a specific test. |
-| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colorbar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored under `passFailDisplay: 'spec'` (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
+| `colorbarRangeMode` | `'spec' \| 'data'` | `'spec'` | Controls **only** the colour bar's numeric range when the active test has spec limits: `'spec'` spans `[limitLow, limitHigh]`; `'data'` spans the actual data min/max. In both ranges all dies are coloured by the gradient and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over their gradient fill — so the distribution stays readable while out-of-spec dies remain visibly flagged. The marker is drawn black or white per die for contrast against its own gradient fill, so it stays visible under any colour scheme. Ignored under `passFailDisplay: 'spec'` (pass/fail mode always uses spec limits and fills dies solid green/blue/red). |
 | `logScale` | `boolean` | from `TestDef` | Override log₁₀ scale for the active test; falls back to linear when vMin ≤ 0 |
 | `aggregationMethod` | `string` | `'mean'` | Aggregation method in `stackedValues` mode: `'mean'` \| `'median'` \| `'stddev'` \| `'min'` \| `'max'` \| `'count'` |
 | `rotation` | `0 \| 90 \| 180 \| 270` | `0` | Clockwise rotation in degrees |
@@ -134,7 +134,7 @@ ctrl.setOptions({ plotMode: 'softBin' });  // merge — only listed keys change
 #### Persisting user preferences
 
 `WaferViewOptions` is the intersection of two named sub-types:
-- **`WaferPreferences`** — how the reader likes to see maps in general, safe to carry from one lot to the next: bin and value colour schemes, the bin-definition colour toggle, overlays, axis labels, legend position, number format, failing-die hatching, colorbar range mode, and the Insights charts' axis settings. Their keys are exported as `WAFER_PREFERENCE_KEYS`.
+- **`WaferPreferences`** — how the reader likes to see maps in general, safe to carry from one lot to the next: bin and value colour schemes, the bin-definition colour toggle, overlays, axis labels, legend position, number format, failing-die hatching, colour bar range mode, and the Insights charts' axis settings. Their keys are exported as `WAFER_PREFERENCE_KEYS`.
 - **`WaferDisplayState`** — this view of this data: plot mode, active test and metadata key, value range, highlights, and the settings that depend on the data shown. Rotation and mirroring are relative to the data's own orientation, the compact layout suits a multi-project wafer, and log scale follows the test; carried to another lot, each would describe it wrongly.
 
 `onViewOptionsChange` receives a `category` hint (`'preference' | 'state' | 'mixed'`). To keep preferences between sessions, save the preference keys of every change, including a mixed one, and pass them back as `viewOptions`:
@@ -153,6 +153,18 @@ renderWaferMap(container, result, {
 
 Use `=== 'preference'` (not `!== 'state'`) so that `'mixed'` events — which may include transient fields like `plotMode` or `activeTest` — do not get written to storage.
 
+
+**Pinned tests.** Every test picker in the Insights tab and the charts opened from a map has a ☆ at the end of each row (or **P** on the focused row). Pinned tests are listed first, under a "Pinned" heading. The pinned set is shared by the whole page, because a pin says what the reader is looking at, not which chart. A host keeps it between sessions:
+
+```ts
+import { getPinnedTests, setPinnedTests, onPinnedTestsChange } from '@wafertools/wafermap/render';
+
+setPinnedTests(loadSavedNumbers());                      // adopt a saved set; does not call the listener
+onPinnedTestsChange(numbers => save(numbers));           // the reader's own pin or unpin, with the whole set
+getPinnedTests();                                        // the current set, in the order pinned
+```
+
+A pinned number the loaded data does not have is not listed.
 
 ### 5.2 Hover tooltip content by mode
 
@@ -177,10 +189,10 @@ Drawing options, forwarded to the canvas (the `ToCanvasOptions` type):
 {
   padding?:        number                      // CSS-px padding inside the canvas edge (default 16)
   background?:     string                      // canvas background colour (default '#f5f5f5')
-  showColorbar?:   boolean                     // colorbar (value modes) or bin legend (bin modes) (default true)
-  colorbarWidth?:  number                      // CSS-px width of the colorbar strip (default 16)
+  showColorbar?:   boolean                     // colour bar (value modes) or bin legend (bin modes) (default true)
+  colorbarWidth?:  number                      // CSS-px width of the colour bar strip (default 16)
   showAxes?:       boolean                     // axis tick marks and labels (default false)
-  showTitle?:      boolean                     // the map title by the colorbar/legend (default true)
+  showTitle?:      boolean                     // the map title by the colour bar/legend (default true)
   legendOffset?:   { x: number; y: number }    // floating legend offset in CSS px
   diePitchMm?:     { x: number; y: number }    // derived from the map when omitted
   metadataFields?: MetadataFieldDef[]          // labels and colours for the metadata legend
@@ -478,8 +490,8 @@ Every one of these matters: the six tokens that used to be left unset here — `
 
 ```ts
 {
-  placement?:   'right' | 'left' | 'top' | 'bottom'  // panel side; default 'right'
-  defaultOpen?: boolean                               // open on mount; default false
+  placement?:   'right' | 'left'  // panel side; default 'right'
+  defaultOpen?: boolean           // open on mount; default false
 }
 ```
 
@@ -839,8 +851,8 @@ Choose the right update method:
 | Reset | Return to fitted view (also: double-click canvas) |
 | Mode | Grouped dropdown: **Test Value** section (one entry per test — labelled by `testDef.name` when provided, otherwise `Test {N}` using the testNumber; cascade submenu when > 6 tests) · **Bins** section (Hard Bin, Soft Bin) · **Lot Aggregation** section (Stacked Test Values, Stacked Hard Bins, Stacked Soft Bins). Only modes for which data is actually present are shown. |
 | Palette | Menu: in Hard/Soft Bin mode, the registered bin colour schemes (plus **Use colours from bin definitions** when a `BinDef` carries a colour); in every other mode, the registered value gradients. Hidden in `'metadata'` mode. |
-| Log scale | Toggle log₁₀ scale for the colorbar and value normalization. Shown only in `value` / `stackedValues` modes, and hidden (not just dimmed) whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
-| Colorbar range | Toggle colorbar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. In both states all dies keep the gradient fill and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over that fill. |
+| Log scale | Toggle log₁₀ scale for the colour bar and value normalization. Shown only in `value` / `stackedValues` modes, and hidden (not just dimmed) whenever a solid pass/fail display is active or the active test is functional, since log scale has no effect on pass/fail colouring. Overrides the per-test `TestDef.logScale` default. Silently falls back to linear when vMin ≤ 0. |
+| Colour bar range | Toggle colour bar range between **spec** (`[limitLow, limitHigh]`) and **data** (actual min/max). Only shown in `value` mode when the active testDef has at least one limit defined. Active (highlighted) = spec range; inactive = data range. In both states all dies keep the gradient fill and out-of-spec dies are flagged with a triangle marker (▽ below `limitLow`, △ above `limitHigh`) over that fill. |
 | Rings | Toggle ring boundary overlay |
 | Quadrants | Toggle quadrant boundary overlay |
 | Labels | Toggle die index text labels |
@@ -856,7 +868,7 @@ Choose the right update method:
 
 **Expand** opens the map in an enlarged modal overlay; the map box is reparented — no view rebuild. A maximise button in the modal grows it to fill the window (`F`). Close with Esc, the × button, or the backdrop. Keyboard shortcut: `E`. It works in the **Insights** view too, where it expands the whole chart suite into a wide modal — those charts interact, and reading them side by side is the case the modal exists for; individual chart panels keep their own expand button for enlarging just one. Hidden inside gallery cards (which have their own non-modal expand, see §6) and inside an already-open modal or window.
 
-**While the Insights tab is open**, every control above except Insights and User guide is hidden — Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colorbar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, and Summary all apply only to the map view, which the chart suite has replaced; Summary's panel specifically would have nothing to highlight against with the map hidden behind Insights. Expand is likewise hidden while Insights is open, for the same reason. They reappear as soon as Insights is closed.
+**While the Insights tab is open**, every control above except Insights and User guide is hidden — Camera/Zoom/Pan/Box select, Mode/Palette/Log scale/Colour bar range/Rings/Quadrants/Labels/Reticle/XY indicator/Legend style/Rotate/Flip, and Summary all apply only to the map view, which the chart suite has replaced; Summary's panel specifically would have nothing to highlight against with the map hidden behind Insights. Expand is likewise hidden while Insights is open, for the same reason. They reappear as soon as Insights is closed.
 
 ### 5.7 Interactions
 

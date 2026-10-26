@@ -147,7 +147,7 @@ The integer key in `testValues` and `testDef.testNumber` must match exactly — 
 Continuous test measurements (leakage current, threshold voltage, etc.) go in
 `testValues` — a map keyed by a stable integer test identity.  `TestDef` is
 optional: without it the library uses `Test {N}` (the testNumber) everywhere a
-name would appear — mode dropdown, tooltip, colorbar axis, summary panel.  Add
+name would appear — mode dropdown, tooltip, colour bar axis, summary panel.  Add
 `TestDef` when you want human-readable names, units, and SI prefix formatting:
 
 ```ts
@@ -192,7 +192,7 @@ The formatter applies SI prefixes automatically — `0.03` with unit `'Ω'` disp
 With `testDefs` in place:
 - The toolbar Mode dropdown shows one entry per test by name ("Idsat", "Vth", …) — without `testDefs` it shows "Test 1050", "Test 1060", etc.
 - Hover tooltips show "Idsat: 1.23 mA" — without `testDefs` they show "Test 1050: 1.23 mA"
-- The colorbar axis label includes the name and unit — without `testDefs` it shows "Test 1050"
+- The colour bar axis label includes the name and unit — without `testDefs` it shows "Test 1050"
 - The summary panel Test Values section uses test names — without `testDefs` it uses "Test 1050", etc.
 
 `TestDef.logScale: true` enables log₁₀ scale for that test by default (silently falls back to linear when any die value ≤ 0). The user can also toggle log scale at any time via the toolbar Log scale button, which overrides the per-test default.
@@ -201,11 +201,11 @@ With `testDefs` in place:
 
 Add `limitLow` and/or `limitHigh` to a `TestDef` to specify the engineering specification window. Both are optional independently — one-sided limits are valid. Once limits are defined, two things happen automatically across all plot modes:
 
-**In `value` mode** — test limits affect both the colorbar and the die colours:
+**In `value` mode** — test limits affect both the colour bar and the die colours:
 
-The colorbar always shows "Lo limit" / "Hi limit" labels at the limit positions. Exactly how depends on the colorbar range mode (toggled via the bracket toolbar button):
+The colour bar always shows "Lo limit" / "Hi limit" labels at the limit positions. Exactly how depends on the colour bar range mode (toggled via the bracket toolbar button):
 
-`colorbarRangeMode` controls **only** the colorbar's numeric range — not how dies outside the limits are shown:
+`colorbarRangeMode` controls **only** the colour bar's numeric range — not how dies outside the limits are shown:
 
 - **`colorbarRangeMode: 'spec'` (default when limits are present)** — the bar spans `[limitLow, limitHigh]`. The limit values appear as "Lo limit" / "Hi limit" labels at the bar endpoints alongside the numeric values.
 - **`colorbarRangeMode: 'data'`** — the bar spans the actual data min/max. The limits are shown as marker lines on the bar wherever the limits fall within the data range.
@@ -218,7 +218,7 @@ In **both** ranges, all dies are coloured by the gradient so the value distribut
 - Fail high (above the high limit): red (`#e74c3c`)
 - No data: grey
 
-In this mode the colorbar is replaced by a **Pass/Fail legend** showing the categories that apply (Pass always; Fail high / Fail low only when the test defines that limit) with per-category die counts. The title reads `{test} · #{number}` above the legend and `Limit pass/fail` below it.
+In this mode the colour bar is replaced by a **Pass/Fail legend** showing the categories that apply (Pass always; Fail high / Fail low only when the test defines that limit) with per-category die counts. The title reads `{test} · #{number}` above the legend and `Limit pass/fail` below it.
 
 ```ts
 const testDefs = [
@@ -254,7 +254,7 @@ Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.sta
 **→ [Demo: Working with test values](../examples/test-values.html)**
 
 
-![Test value heatmap with colorbar](../images/guide-test-values-colorbar.png)
+![Test value heatmap with colour bar](../images/guide-test-values-colorbar.png)
 
 The same map with the view option 'Limit pass/fail' selected. Now the map shows the dies within the test limits in green and the dies out of limits in red, for the given test.
 

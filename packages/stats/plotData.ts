@@ -64,6 +64,11 @@ export interface PlotContext {
   /** The Insights tab's Group by key, which "follow Group by" resolves to. Absent outside the tab. */
   groupBy?: string;
   curation?: Record<string, FacetCuration>;
+  /**
+   * What the plot's items are, when they are not wafers: a selection and the rest of its wafer, say. The footnote then says
+   * "24 dies · selection vs the rest of W07" rather than counting the two groups as wafers.
+   */
+  populationLabel?: string;
   /** @internal The dies a rescaling is measured over: a panel's values are scaled as the whole plot's are. */
   scaleDies?: readonly Die[];
   /** @internal The panels divide a set of tests by test, so neither X nor the colour has to. */
@@ -255,6 +260,8 @@ export interface ResolvedPlot {
   setTests?: { tests: number[]; labels: string[] };
   /** The scope: every wafer and die handed in. */
   population: { wafers: number; dies: number };
+  /** From `PlotContext.populationLabel`: replaces the wafer count in the footnote. */
+  populationLabel?: string;
   /** Marks drawn. */
   plotted: number;
   /** Marks left out because a value was missing, by the field it was missing from. */
@@ -1355,6 +1362,11 @@ function resolveGoal(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContex
 
 /** Resolves `spec` over `items`. Never throws for a plot that cannot be drawn: it returns the reasons. */
 export function resolvePlot(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext = {}): ResolvedPlot {
+  const r = resolvePlotCore(spec, items, ctx);
+  return ctx.populationLabel && !ctx.inFacet ? { ...r, populationLabel: ctx.populationLabel } : r;
+}
+
+function resolvePlotCore(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotContext = {}): ResolvedPlot {
   const versionIssue = plotIssue(spec);
   if (versionIssue) return emptyResult(spec, items, [versionIssue], ctx);
   const fail = (...issues: string[]) => emptyResult(spec, items, issues, ctx);
@@ -2017,7 +2029,9 @@ function comparisonSentence(by: string, c: GroupComparison): string {
 /** The statement every plot carries about what it shows ("6 wafers · 3,966 dies · 12 dies without Ioff not plotted"). */
 export function plotFootnote(resolved: ResolvedPlot): string {
   const { wafers, dies } = resolved.population;
-  const parts = [`${wafers.toLocaleString('en-GB')} wafer${wafers === 1 ? '' : 's'} · ${dies.toLocaleString('en-GB')} dies`];
+  const parts = [resolved.populationLabel
+    ? `${dies.toLocaleString('en-GB')} dies · ${resolved.populationLabel}`
+    : `${wafers.toLocaleString('en-GB')} wafer${wafers === 1 ? '' : 's'} · ${dies.toLocaleString('en-GB')} dies`];
   if (resolved.leftOut) {
     const { partial, edge } = resolved.leftOut;
     const n = (k: number, what: string) => `${k.toLocaleString('en-GB')} ${what} di${k === 1 ? 'e' : 'es'}`;

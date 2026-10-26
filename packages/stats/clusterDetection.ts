@@ -6,6 +6,7 @@ import { ringOf } from '../core/classify.js';
 import { compassBucket, sectorCompassNames } from './regions.js';
 import { diePassStatus, getDieKey, gridKey } from '../core/dies.js';
 import { findConnectedComponents, LargestComponentSizer } from './connectedComponents.js';
+import { median } from '../core/utils.js';
 
 /** An edge arc's bearing, on the 16-point compass the sectors use. */
 function compassBearing(dx: number, dy: number): string {
@@ -200,10 +201,13 @@ export function buildClusterFindings(
   if (failing.length === 0) return [];
   if (pBg === 1 && minimumEffectSize > 0 && minimumRelativeEffect > 0) return [];
 
-  // Derive pitch from die dimensions (adapts to any die size).
-  const firstDie = dies[0];
-  const pitchX = firstDie ? firstDie.width  : 10;
-  const pitchY = firstDie ? firstDie.height : 10;
+  // Derive pitch from die dimensions (adapts to any die size). The median over an even sample of the dies, so a
+  // layout whose dies differ in size (sites at a finer pitch within a field) is not read from whichever die is first.
+  const stride = Math.max(1, Math.floor(dies.length / 1001));
+  const sampledWidths: number[] = [], sampledHeights: number[] = [];
+  for (let i = 0; i < dies.length; i += stride) { sampledWidths.push(dies[i].width); sampledHeights.push(dies[i].height); }
+  const pitchX = sampledWidths.length ? median(sampledWidths) : 10;
+  const pitchY = sampledHeights.length ? median(sampledHeights) : 10;
 
   // Neighbourhood radius for the statistical test: larger — captures all eligible
   // dies that could plausibly be associated with the cluster.

@@ -1466,7 +1466,7 @@ test('renderWaferMap handles empty scenes gracefully', () => {
   }
 });
 
-test('renderWaferGallery exposes Limit pass/fail and Colorbar range for value maps with limits', () => {
+test('renderWaferGallery exposes Limit pass/fail and Colour bar range for value maps with limits', () => {
   const { window, root, cleanup } = setupDom();
   try {
     const container = window.document.createElement('div');
@@ -1487,13 +1487,13 @@ test('renderWaferGallery exposes Limit pass/fail and Colorbar range for value ma
     const ctrl = renderWaferGallery(container, [{ ...base, label: 'A' }, { ...base, label: 'B' }]);
     const buttons = () => [...container.querySelectorAll('button')];
 
-    // Colorbar range button exists.
-    const rangeBtn = buttons().find((b) => (b.ariaLabel ?? '').startsWith('Colorbar range'));
-    assert.ok(rangeBtn, 'Colorbar range button should exist in the gallery toolbar');
+    // Colour bar range button exists.
+    const rangeBtn = buttons().find((b) => (b.ariaLabel ?? '').startsWith('Colour bar range'));
+    assert.ok(rangeBtn, 'Colour bar range button should exist in the gallery toolbar');
 
     // In a bin/default mode it is hidden; switching to the value test makes it visible.
     ctrl.setOptions({ plotMode: 'value', activeTest: 1010 });
-    assert.notEqual(rangeBtn.style.display, 'none', 'Colorbar range visible in value mode with limits');
+    assert.notEqual(rangeBtn.style.display, 'none', 'Colour bar range visible in value mode with limits');
 
     // Overlays menu offers an enabled "Limit pass/fail" row in value mode.
     const overlaysBtn = buttons().find((b) => b.ariaLabel === 'Overlays');
@@ -1507,11 +1507,11 @@ test('renderWaferGallery exposes Limit pass/fail and Colorbar range for value ma
 
     // Enabling spec mode hides the colorbar-range button (bar irrelevant in pass/fail).
     ctrl.setOptions({ passFailDisplay: 'spec' });
-    assert.equal(rangeBtn.style.display, 'none', 'Colorbar range hidden while colouring by spec');
+    assert.equal(rangeBtn.style.display, 'none', 'Colour bar range hidden while colouring by spec');
 
     // Leaving value mode clears spec colouring.
     ctrl.setOptions({ plotMode: 'hardBin', activeTest: undefined, passFailDisplay: 'off' });
-    assert.equal(rangeBtn.style.display, 'none', 'Colorbar range hidden outside value mode');
+    assert.equal(rangeBtn.style.display, 'none', 'Colour bar range hidden outside value mode');
 
     ctrl.destroy();
   } finally {

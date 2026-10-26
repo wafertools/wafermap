@@ -31,7 +31,7 @@
  *   ['hover']                               hover canvas centre, pin toolbar
  *   ['hover', '#my-map']
  *
- *   ['hoverEl', 'Colorbar range: test limits (click for data range)']   hover any element by aria-label or CSS selector, pin toolbar
+ *   ['hoverEl', 'Colour bar range: test limits (click for data range)']   hover any element by aria-label or CSS selector, pin toolbar
  *   ['hoverEl', 'Plot mode', '#my-map']    …with explicit container for toolbar pin
  *
  *   ['openPanel']                           open the summary/findings panel
@@ -287,8 +287,8 @@ export const CAPTURES = [
     page: '/examples/test-values.html',
     selector: '.demo-content',
     wait: 800,
-    setup: [['hoverEl', 'Colorbar range: test limits (click for data range)'],
-    ['showCursorOn', 'Colorbar range: test limits (click for data range)']],
+    setup: [['hoverEl', 'Colour bar range: test limits (click for data range)'],
+    ['showCursorOn', 'Colour bar range: test limits (click for data range)']],
   },
   // ── guide-test-values-spec-passfail.png — §6 Test values: spec pass/fail colouring ─
   {

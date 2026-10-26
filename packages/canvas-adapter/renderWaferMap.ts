@@ -2426,7 +2426,7 @@ export function renderWaferMapCard(
           const td = findTestDef(testDefs, resolvedTest);
           return td !== undefined && (td.limitLow !== undefined || td.limitHigh !== undefined);
         };
-        const btnColorbarRange = makeBtn('specRange', 'Colorbar range: test limits', () => {
+        const btnColorbarRange = makeBtn('specRange', 'Colour bar range: test limits', () => {
           const next = viewOpts.colorbarRangeMode === 'data' ? 'spec' : 'data';
           applyOpts({ colorbarRangeMode: next });
         });
@@ -2438,8 +2438,8 @@ export function renderWaferMapCard(
           const isSpec = (viewOpts.colorbarRangeMode ?? 'spec') === 'spec';
           setActive(btnColorbarRange, isSpec);
           btnColorbarRange.ariaLabel = isSpec
-            ? 'Colorbar range: test limits (click for data range)'
-            : 'Colorbar range: data range (click for test limits)';
+            ? 'Colour bar range: test limits (click for data range)'
+            : 'Colour bar range: data range (click for test limits)';
         };
         syncColorbarRangeBtnFn();
 
@@ -3396,7 +3396,7 @@ export function renderWaferMapCard(
       activeTest: viewOpts.plotMode === 'value' ? viewOpts.activeTest : undefined,
     };
     return selectedKeys.size > 0
-      ? selectionPopulation(selectionAsDies(), facts)
+      ? selectionPopulation(selectionAsDies(), facts, currentDies)
       : waferPopulation(currentDies, facts);
   }
 
@@ -3429,11 +3429,25 @@ export function renderWaferMapCard(
     });
   }
 
+  /** Select the dies that are not selected, and deselect those that are. */
+  function invertSelection(): void {
+    const next = new Set<string>();
+    for (const d of currentView.dies) {
+      const key = getDieKey(d);
+      if (!selectedKeys.has(key)) next.add(key);
+    }
+    selectedKeys = next;
+    releaseActiveFinding();
+    onSelect?.(selectionAsDies());
+    render();
+  }
+
   function openDrilldown(at: { x: number; y: number }, anchor: HTMLElement): void {
     if (!drilldownOffered()) return;
     const over = (options as CardRenderOptions).drilldownSourceOverride?.();
     const source = over?.source ?? drilldownSource();
     const ctx: DrilldownContext = { ...drilldownCtx, ...over?.ctx };
+    if (!over && selectedKeys.size > 0) ctx.onInvertSelection = invertSelection;
     // The override covers dies selected on several wafers; this wafer's own selection is one row away.
     if (over?.narrowable) {
       const own = drilldownSource();

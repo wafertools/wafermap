@@ -124,7 +124,7 @@ renderWaferMap(container, result, {
 ![Legend style dropdown open](../images/guide-display-legend-style-menu.png)
 
 
-The Legend style button is automatically disabled when the map is in `value` or stacked mode, since those modes use a continuous colorbar instead of a bin legend.
+The Legend style button is automatically disabled when the map is in `value` or stacked mode, since those modes use a continuous colour bar instead of a bin legend.
 
 For galleries, set it the same way; it applies to all cards:
 
@@ -153,7 +153,7 @@ bar above the gallery grid.  Which buttons appear depends on the context and the
 | <img src="../images/icons/mode.svg" width="20" height="20"> | Plot mode | Always | Opens mode menu: Test Value, Hard Bin, Soft Bin, and Stacked modes (only when map was built with `lotStack`) |
 | <img src="../images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Opens colour scheme picker |
 | <img src="../images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Toggles log₁₀ colour normalisation; disabled when min ≤ 0; hidden whenever a solid pass/fail display is active or the active test is functional (log scale has no effect on pass/fail colouring) |
-| <img src="../images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range between spec-limit range (`[limitLow, limitHigh]`) and data range (actual min/max). Out-of-spec dies are flagged with ▽/△ markers in both. |
+| <img src="../images/icons/specRange.svg" width="20" height="20"> | Colour bar range | Value mode, test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colour bar's numeric range between spec-limit range (`[limitLow, limitHigh]`) and data range (actual min/max). Out-of-spec dies are flagged with ▽/△ markers in both. |
 | <img src="../images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when reticles present), XY indicator, Limit pass/fail (value mode, test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) |
 | <img src="../images/icons/legend.svg" width="20" height="20"> | Legend style | Hard bin or soft bin mode only | Dropdown: legend position (default, compact, left, top, bottom, floating) |
 | <img src="../images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical |
@@ -185,7 +185,7 @@ The gallery control bar is always visible above the card grid.
 | <img src="../images/icons/palette.svg" width="20" height="20"> | Colour palette | Always | Colour scheme picker; applies to all cards |
 | <img src="../images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked Test Values mode only | Selects mean, median, std dev, min, max, or count; re-aggregates all cards immediately |
 | <img src="../images/icons/logScale.svg" width="20" height="20"> | Log scale | Value / stacked-values mode only | Applies to all cards |
-| <img src="../images/icons/specRange.svg" width="20" height="20"> | Colorbar range | Value mode, active test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colorbar's numeric range: spec-limit range ↔ data range. Out-of-spec dies are flagged with ▽/△ markers in both; applies to all cards |
+| <img src="../images/icons/specRange.svg" width="20" height="20"> | Colour bar range | Value mode, active test has `limitLow` or `limitHigh`, pass/fail display off | Toggles the colour bar's numeric range: spec-limit range ↔ data range. Out-of-spec dies are flagged with ▽/△ markers in both; applies to all cards |
 | <img src="../images/icons/overlays.svg" width="20" height="20"> | Overlays | Always | Dropdown: Ring boundaries, Quadrant lines, Die labels, Reticle grid (when any card has reticles), XY indicator, Limit pass/fail (value mode, active test has limits), Test pass/fail (value mode, active test is functional or has recorded verdicts) — applies to all cards |
 | <img src="../images/icons/legend.svg" width="20" height="20"> | Legend style | Always | Dropdown: **Legend on each map** toggle (off by default — the lot legend strip stands in for it), then the per-card legend position, available only while that toggle is on and in a bin or metadata mode |
 | <img src="../images/icons/orient.svg" width="20" height="20"> | Orientation | Always | Dropdown: Rotate 90° CW, Flip horizontal, Flip vertical — applies to all cards |
