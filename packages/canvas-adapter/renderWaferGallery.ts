@@ -3022,19 +3022,31 @@ export function renderWaferGallery(
   }
 
   /**
-   * Keys 1 to 5 set that many columns and 0 sets Auto, the same choices as the Columns control. Only while focus is in the gallery
-   * and not in a text box, a menu or a window, and not on the Insights tab, where columns do not apply. A key with Ctrl, Cmd, Alt
-   * or Shift is someone else's (Ctrl + 0 resets a map's zoom).
+   * Keys 1 to 5 set that many columns and 0 sets Auto, the same choices as the Columns control. Only while the pointer is over this
+   * gallery or focus is in it (no click needed first, and a second gallery on the page is left alone), and not in a text box, a menu
+   * or a window, and not on the Insights tab, where columns do not apply. A key with Ctrl, Cmd, Alt or Shift is someone else's
+   * (Ctrl + 0 resets a map's zoom).
    */
+  // `pointerenter` alone is not enough: a pointer already resting over the gallery when it is drawn (the usual case) never crosses
+  // its edge, so no event says it is there. Moving over it also counts, and so does the browser's own `:hover`, asked at the keypress.
+  let pointerOverGallery = false;
+  container.addEventListener('pointerenter', () => { pointerOverGallery = true; });
+  container.addEventListener('pointermove', () => { pointerOverGallery = true; });
+  container.addEventListener('pointerleave', () => { pointerOverGallery = false; });
+  const hoveringGallery = (): boolean => {
+    if (pointerOverGallery) return true;
+    try { return container.matches(':hover'); } catch { return false; }
+  };
   const onColumnsKey = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented || insightsOpen) return;
+    if (!hoveringGallery() && !container.contains(e.target as Node | null)) return;
     if (!/^[0-5]$/.test(e.key) || container.ownerDocument.querySelector('[role="dialog"]')) return;
     const target = e.target as { closest?: (selector: string) => Element | null } | null;
     if (typeof target?.closest === 'function' && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]')) return;
     e.preventDefault();
     setColumnsState(e.key === '0' ? undefined : Number(e.key));
   };
-  container.addEventListener('keydown', onColumnsKey);
+  container.ownerDocument.addEventListener('keydown', onColumnsKey);
 
   // In auto layout, tracks are capped at the current card cap rather than `1fr`:
   // a `1fr` track always takes an equal share of the full container width, so a
@@ -4706,7 +4718,7 @@ export function renderWaferGallery(
       cancelTestValueRun();
       buildGeneration++; // cancel any pending factory resolvers
       printWindow.removeEventListener('beforeprint', drawAllCards);
-      container.removeEventListener('keydown', onColumnsKey);
+      container.ownerDocument.removeEventListener('keydown', onColumnsKey);
       // Same reason as the queued resize frame below: a staged lot-panel render
       // would otherwise keep waking up and appending to a torn-down panel.
       lotPanelRun?.cancel();

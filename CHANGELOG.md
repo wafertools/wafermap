@@ -31,7 +31,7 @@ under `### Breaking`.
 ### Added
 
 - **`checkDerivedExpression(input, testDefs, otherDerived?)`.** Checks one derived test's expression without building a map, for a host's own editor: it returns `{ ok: true, produces, reads, warnings }` (a number or a verdict, every test read and how, and advice such as units combined by `+`) or `{ ok: false, message, position }`. It runs the same parser, namespace, kind rule and test-number rules as `buildWaferMap` (a whole STDF number, not a measured test's and not another derived test's), so the editor and the build agree. A cycle between derived tests is still reported by the build as `derived-test-invalid`.
-- **The number keys set the columns of cards.** In a gallery (with focus in it), on the Insights tab and over a plot of panels, **1** to **5** set that many columns
+- **The number keys set the columns of cards.** Over a gallery (or with focus in it, so no click is needed first), on the Insights tab and over a plot of panels, **1** to **5** set that many columns
   and **0** returns to Auto. The gallery's Columns control shows each choice's key, and the Insights tab has a **Columns** control of its
   own beside Group by and Show, which sets every chart grid in the tab. A plot of panels has a **Columns** control above its panels, and the
   keys set its columns while the pointer is over it; an expanded plot of panels scrolls when its panels are taller than the window. The keys do nothing in a text box, a menu or a window, or with Ctrl, Cmd, Alt or Shift

@@ -171,7 +171,7 @@ test('with more cards than columns, the columns fill the row; with every card in
 });
 
 // ── Column keys ───────────────────────────────────────────────────────────────
-// 1–5 set that many columns and 0 sets Auto, while focus is in the gallery and not in a text box, a menu or a window.
+// 1–5 set that many columns and 0 sets Auto, while the pointer is over the gallery or focus is in it, and not in a text box, a menu or a window.
 
 function press(el, key, init = {}) {
   const e = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
@@ -211,4 +211,57 @@ test('the column keys leave a key with a modifier, a digit above 5, and typing i
   assert.equal(gridTemplate(root), before, 'typing a 3 in a text box is typing');
   ctrl.destroy();
   assert.doesNotThrow(() => press(root, '3'), 'a destroyed gallery no longer answers');
+});
+
+test('the column keys work with the pointer over the gallery and no click first, and not when it is elsewhere', () => {
+  const doc = dom.window.document;
+  const root = doc.getElementById('root');
+  root.innerHTML = '';
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const before = gridTemplate(root);
+  press(doc.body, '3');                                   // pointer nowhere near it, focus elsewhere
+  assert.equal(gridTemplate(root), before, 'a key on the page body is not the gallery\'s when the pointer is elsewhere');
+  root.dispatchEvent(new dom.window.Event('pointerenter'));
+  press(doc.body, '3');                                   // nothing focused inside: the key goes to the body
+  assert.match(gridTemplate(root), /^repeat\(3, /, 'over the gallery, the keys work without a click');
+  root.dispatchEvent(new dom.window.Event('pointerleave'));
+  press(doc.body, '4');
+  assert.match(gridTemplate(root), /^repeat\(3, /, 'once the pointer leaves, they stop');
+  ctrl.destroy();
+});
+
+test('with two galleries on a page, only the one the pointer is over answers', () => {
+  const doc = dom.window.document;
+  const root = doc.getElementById('root');
+  root.innerHTML = '<div id="a"></div><div id="b"></div>';
+  const a = root.querySelector('#a'), b = root.querySelector('#b');
+  const ca = renderWaferGallery(a, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const cb = renderWaferGallery(b, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const beforeA = gridTemplate(a), beforeB = gridTemplate(b);
+  b.dispatchEvent(new dom.window.Event('pointerenter'));
+  press(doc.body, '2');
+  assert.equal(gridTemplate(a), beforeA, 'the gallery the pointer is not over is untouched');
+  assert.match(gridTemplate(b), /^repeat\(2, /);
+  b.dispatchEvent(new dom.window.Event('pointerleave'));
+  assert.notEqual(beforeB, gridTemplate(b));
+  ca.destroy(); cb.destroy();
+});
+
+test('a pointer already resting over the gallery counts once it moves, or when the browser says it is hovered', () => {
+  const doc = dom.window.document;
+  const root = doc.getElementById('root');
+  root.innerHTML = '';
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const before = gridTemplate(root);
+  // The pointer was there before the gallery was drawn, so no `pointerenter` ever fires: only movement, or `:hover`, can say so.
+  press(doc.body, '2');
+  assert.equal(gridTemplate(root), before);
+  root.dispatchEvent(new dom.window.Event('pointermove'));
+  press(doc.body, '2');
+  assert.match(gridTemplate(root), /^repeat\(2, /, 'moving over it is enough');
+  root.dispatchEvent(new dom.window.Event('pointerleave'));
+  root.matches = sel => sel === ':hover';              // the browser's own answer, with no event at all
+  press(doc.body, '4');
+  assert.match(gridTemplate(root), /^repeat\(4, /, ':hover alone is enough');
+  ctrl.destroy();
 });
