@@ -88,4 +88,4 @@ wafermap will stay free. If it saves you time, you can leave a tip on [Ko-fi](ht
 
 ## Community
 
-Questions, ideas, or want to show off a wafer map you built? Use [GitHub Discussions](https://github.com/wafertools/.github/discussions).
+Questions or ideas? Use [GitHub Discussions](https://github.com/wafertools/.github/discussions).
