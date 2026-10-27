@@ -38,7 +38,7 @@ under `### Breaking`.
 - **A selection charted against the rest of its wafer.** The right-click menu of a single map with a selection adds a **Selection vs the rest of the wafer** section: a **Value histogram** with one colour per side, and a **Box plot** of the two. The sides are named in the title, the legend and the footnote ("661 dies · selection vs the rest of W01") with their die counts, so neither can be mistaken for the whole wafer. A plot's footnote can now say what its items are when they are not wafers (`PlotContext.populationLabel`).
 - **Pinned tests.** Each row of the Insights test pickers (and of the test pickers in the charts opened from a map) has a ☆ (or **P** on the focused row) that pins the test. Pinned tests are listed first under a "Pinned" heading, in every picker at once. `getPinnedTests`, `setPinnedTests` and `onPinnedTestsChange` (from `@wafertools/wafermap/render`) let a host keep the set between sessions.
 - **Invert selection.** Right-clicking a single map that has a selection offers **Invert selection** as the first row of the menu: the selection becomes the dies it did not hold.
-- **A `funding` link.** `package.json` names the project's [Ko-fi page](https://ko-fi.com/wafertools), so `npm fund` lists it.
+- **A `funding` link.** `package.json` names the project's [support page](https://wafertools.github.io/support/), so `npm fund` lists it.
 
 ### Changed
 
