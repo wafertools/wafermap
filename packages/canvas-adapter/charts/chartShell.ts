@@ -2010,10 +2010,14 @@ export function makeLabeledSelect(
 // distributions, correlation) — same wrapper style built independently in
 // each section.
 
+/**
+ * A grid of chart cards. Its tracks are as many 420 px-or-wider columns as fit, unless an ancestor sets `--wmap-insights-cols` (a
+ * count) and `--wmap-insights-min` (`0px`), as the Insights tab does when the reader picks a number of columns.
+ */
 export function makeChartGridWrap(ownerDocument: Document = document): HTMLDivElement {
   const wrap = ownerDocument.createElement('div');
   wrap.dataset.wmapChartGrid = '1';
-  Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: SPACE.lg, flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
+  Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'repeat(var(--wmap-insights-cols, auto-fit), minmax(var(--wmap-insights-min, 420px), 1fr))', gap: SPACE.lg, flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
   return wrap;
 }
 

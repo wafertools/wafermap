@@ -183,12 +183,12 @@ Menu — Orientation:
         hint: Already in the original orientation
 
 Menu — Columns:
-    · Auto  [checked]
-    · 1 column  [unchecked]
-    · 2 columns  [unchecked]
-    · 3 columns  [unchecked]
-    · 4 columns  [unchecked]
-    · 5 columns  [unchecked]
+    · Auto (0)  [checked]
+    · 1 column (1)  [unchecked]
+    · 2 columns (2)  [unchecked]
+    · 3 columns (3)  [unchecked]
+    · 4 columns (4)  [unchecked]
+    · 5 columns (5)  [unchecked]
 
 Menu — Charts and tables for this wafer (or right-click):
     · Value histogram
@@ -214,6 +214,7 @@ Controls:
   · Data
   · My plots
   · None▾  [aria="Group by", opens menu]
+  · Auto (0)▾  [aria="Columns", opens menu]
   · Expand   (×11)
   · Chart actions  [opens menu]   (×11)
   · Sort: yield  [radio, unchecked]
@@ -237,6 +238,14 @@ Menu — Group by:
     · None
     · Process Split (2)
 
+Menu — Columns:
+    · Auto (0)
+    · 1 (1)
+    · 2 (2)
+    · 3 (3)
+    · 4 (4)
+    · 5 (5)
+
 Menu — Chart actions:
     · Save as PNG
     · Edit as plot
@@ -258,6 +267,7 @@ Controls:
   · Data
   · My plots
   · None▾  [aria="Group by", opens menu]
+  · Auto (0)▾  [aria="Columns", opens menu]
   · Expand   (×4)
   · Chart actions  [opens menu]   (×4)
   · Capability, Ppk and the goal plot
@@ -311,6 +321,7 @@ Controls:
   · Data
   · My plots
   · None▾  [aria="Group by", opens menu]
+  · Auto (0)▾  [aria="Columns", opens menu]
   · Expand   (×2)
   · Chart actions  [opens menu]   (×2)
   · Max tests:  [number]
@@ -340,6 +351,7 @@ Controls:
   · Data
   · My plots
   · None▾  [aria="Group by", opens menu]
+  · Auto (0)▾  [aria="Columns", opens menu]
   · Statistics  [checked]
       hint: One row per test: count, spread, limits and limit yield
   · Wafers  [unchecked]
@@ -379,6 +391,7 @@ Controls:
   · Data
   · My plots
   · None▾  [aria="Group by", opens menu]
+  · Auto (0)▾  [aria="Columns", opens menu]
   · + New plot
       hint: Start a chart of your own: choose its type, what goes on each axis and how it is coloured
   · + New sweep

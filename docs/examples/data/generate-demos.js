@@ -7,11 +7,30 @@
 //   lot, wafer, x, y, hbin, sbin, iddq, vref, fmax
 // so a single hardcoded mapping in showcase.html covers all scenarios.
 
-import { writeFileSync } from 'fs';
+import { writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
+
+// Options (all optional; the defaults write the four docs scenarios beside this file, unchanged):
+//   --out DIR                     write the files to DIR instead of beside this script
+//   --geometry NAME=DIAM:PITCH    give one scenario its own wafer: DIAM mm across, die pitch PITCH mm, or PITCHXxPITCHY mm for a
+//                                 rectangular die (e.g. cluster=300:8x6). Repeatable. A scenario's spatial pattern scales with the
+//                                 wafer (it is defined on a 20-die-radius reference wafer), so every story survives a change of size.
+function parseArgs(argv) {
+  const out = { dir: __dir, geometry: {} };
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--out') out.dir = resolve(argv[++i]);
+    else if (argv[i] === '--geometry') {
+      const m = /^([a-z-]+)=(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)(?:x(\d+(?:\.\d+)?))?$/.exec(argv[++i] ?? '');
+      if (!m) throw new Error('--geometry expects NAME=DIAMETER:PITCH or NAME=DIAMETER:PITCHXxPITCHY, e.g. cluster=300:8x6');
+      out.geometry[m[1]] = { diameterMm: +m[2], pitchX: +m[3], pitchY: +(m[4] ?? m[3]) };
+    } else throw new Error(`unknown argument ${argv[i]}`);
+  }
+  return out;
+}
+const ARGS = parseArgs(process.argv.slice(2));
 
 // ── Wafer geometry ─────────────────────────────────────────────────────────
 // A real 200 mm wafer at a 5 mm die pitch: radius 100 mm / 5 mm = 20 die units,
@@ -29,28 +48,32 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 // CSV, which showcase.html loads — see writeMeta.
 const WAFER_DIAMETER_MM = 200;
 const DIE_PITCH_MM      = 5;
-const WAFER_RADIUS      = (WAFER_DIAMETER_MM / 2) / DIE_PITCH_MM;  // 20 die units
-const EDGE_BAND         = 3.0;  // dies within this distance from edge get edge treatment
+const REFERENCE_RADIUS  = (WAFER_DIAMETER_MM / 2) / DIE_PITCH_MM;  // 20 die units: what every pattern below is defined on
+const EDGE_BAND         = 3.0;  // dies within this distance from edge get edge treatment (reference die units)
 
-// Half the die DIAGONAL, in die units. The clip below tests a die's CENTRE
-// against the radius, but the part of a die that leaves the wafer first is its
-// far corner — so clipping on the centre alone lets whole rows of dies overhang
-// the boundary. That is not a cosmetic detail: a probed die is by definition a
-// real prober position and therefore fully on the wafer, so an overhanging die
-// is a contradiction, and `buildWaferMap` correctly reports it as
-// `geometry-conflict` once the geometry is declared. It did so on all four
-// scenarios until this was fixed — invisible beforehand only because the
-// geometry was not declared at all and nothing could check it.
-const HALF_DIAGONAL = Math.hypot(0.5, 0.5);
+// Half the die DIAGONAL. The clip below tests a die's CENTRE against the radius, but the part of a die that leaves the wafer first
+// is its far corner — so clipping on the centre alone lets whole rows of dies overhang the boundary. That is not a cosmetic
+// detail: a probed die is by definition a real prober position and therefore fully on the wafer, so an overhanging die is a
+// contradiction, and `buildWaferMap` correctly reports it as `geometry-conflict` once the geometry is declared.
+//
+// A scenario's wafer: its diameter and die pitch (the default, or --geometry). Each die carries x and y (grid position), and xn,
+// yn, r (its position on the reference wafer, where the wafer radius is REFERENCE_RADIUS), which is what the patterns read, so a
+// pattern covers the same share of the wafer whatever the wafer's size.
+const DEFAULT_GEOMETRY = { diameterMm: WAFER_DIAMETER_MM, pitchX: DIE_PITCH_MM, pitchY: DIE_PITCH_MM };
 
-function waferDies() {
+function waferDies(geometry) {
+  const { diameterMm, pitchX, pitchY } = geometry;
+  const radiusMm = diameterMm / 2;
+  const halfDiagMm = Math.hypot(pitchX / 2, pitchY / 2);
+  const scale = REFERENCE_RADIUS / radiusMm;                  // mm → reference die units
   const dies = [];
-  const lim = Math.ceil(WAFER_RADIUS);
-  const clip = WAFER_RADIUS - HALF_DIAGONAL;
-  for (let x = -lim; x <= lim; x++) {
-    for (let y = -lim; y <= lim; y++) {
-      const r = Math.sqrt(x * x + y * y);
-      if (r <= clip) dies.push({ x, y, r });
+  const limX = Math.ceil(radiusMm / pitchX), limY = Math.ceil(radiusMm / pitchY);
+  for (let x = -limX; x <= limX; x++) {
+    for (let y = -limY; y <= limY; y++) {
+      const rMm = Math.hypot(x * pitchX, y * pitchY);
+      if (rMm <= radiusMm - halfDiagMm) {
+        dies.push({ x, y, xn: x * pitchX * scale, yn: y * pitchY * scale, r: rMm * scale });
+      }
     }
   }
   return dies;
@@ -128,9 +151,9 @@ function row(lot, wafer, x, y, die) {
 
 // ── Scenario 1: edge-ring ──────────────────────────────────────────────────
 // Clean centre, progressive yield loss near the edge. 8 wafers.
-function buildEdgeRing() {
+function buildEdgeRing(geometry) {
   const rng = seededRng(0xABCD1234);
-  const dies = waferDies();
+  const dies = waferDies(geometry);
   const rows = [];
 
   for (let w = 1; w <= 8; w++) {
@@ -138,7 +161,7 @@ function buildEdgeRing() {
     for (const { x, y, r } of dies) {
       // Edge stress: probability of a defect rises sharply over the outer dies,
       // and the surviving edge dies run slower and leakier.
-      const edgeFactor = Math.max(0, (r - (WAFER_RADIUS - EDGE_BAND)) / EDGE_BAND);
+      const edgeFactor = Math.max(0, (r - (REFERENCE_RADIUS - EDGE_BAND)) / EDGE_BAND);
       const failProb = edgeFactor * edgeFactor * 0.85 + rng() * 0.01;
 
       let die = {
@@ -157,9 +180,9 @@ function buildEdgeRing() {
 // Iddq rising with radius plus one hotspot per wafer, and a left-to-right Vref
 // gradient. The yield loss is the Iddq limit, so the bin map follows the
 // value map. 6 wafers.
-function buildParametric() {
+function buildParametric(geometry) {
   const rng = seededRng(0xDEADBEEF);
-  const dies = waferDies();
+  const dies = waferDies(geometry);
   const rows = [];
 
   for (let w = 1; w <= 6; w++) {
@@ -170,13 +193,12 @@ function buildParametric() {
     const hx = Math.round((rng() - 0.5) * 10);
     const hy = Math.round((rng() - 0.5) * 10);
 
-    for (const { x, y } of dies) {
+    for (const { x, y, xn, yn, r } of dies) {
       // Radial gradient (higher Iddq toward the edge)
-      const r = Math.sqrt(x * x + y * y);
       const gradient = r * 0.12;
 
       // Hotspot contribution (Gaussian bump)
-      const dx = x - hx, dy = y - hy;
+      const dx = xn - hx, dy = yn - hy;
       const hotspot = Math.exp(-(dx * dx + dy * dy) / 4) * 3.5;
 
       // Iddq: log-normally distributed
@@ -185,7 +207,7 @@ function buildParametric() {
         iddq: clamp(Math.exp(normal(rng, meanLog, 0.18)), 0.1, 80),
         // Vref: slight x-gradient (process non-uniformity) that reaches the
         // high limit at the right-hand edge
-        vref: clamp(normal(rng, 1.800 + x * 0.0035, 0.015), 1.6, 2.0),
+        vref: clamp(normal(rng, 1.800 + xn * 0.0035, 0.015), 1.6, 2.0),
         fmax: clamp(normal(rng, 2110, 20), 1950, 2250),
       };
       rows.push(row('PARAM-LOT-02', wid, x, y, die));
@@ -196,9 +218,9 @@ function buildParametric() {
 
 // ── Scenario 3: cluster ───────────────────────────────────────────────────
 // High baseline yield, but 2–3 particle clusters per wafer. 7 wafers.
-function buildCluster() {
+function buildCluster(geometry) {
   const rng = seededRng(0x13579BDF);
-  const dies = waferDies();
+  const dies = waferDies(geometry);
   const rows = [];
 
   for (let w = 1; w <= 7; w++) {
@@ -217,11 +239,11 @@ function buildCluster() {
       });
     }
 
-    for (const { x, y } of dies) {
+    for (const { x, y, xn, yn } of dies) {
       // Probability of a defect determined by proximity to any cluster
       let clusterP = 0;
       for (const { cx, cy, r2: cr2 } of clusters) {
-        const d2 = (x - cx) ** 2 + (y - cy) ** 2;
+        const d2 = (xn - cx) ** 2 + (yn - cy) ** 2;
         clusterP = Math.max(clusterP, Math.exp(-d2 / cr2) * 0.9);
       }
       const failProb = clusterP + rng() * 0.01;
@@ -240,9 +262,9 @@ function buildCluster() {
 
 // ── Scenario 4: high-yield ────────────────────────────────────────────────
 // Mature process, very high yield, tight distributions. 10 wafers.
-function buildHighYield() {
+function buildHighYield(geometry) {
   const rng = seededRng(0xF0F0F0F0);
-  const dies = waferDies();
+  const dies = waferDies(geometry);
   const rows = [];
 
   for (let w = 1; w <= 10; w++) {
@@ -272,12 +294,17 @@ function toCsv(rows) {
   return lines.join('\n') + '\n';
 }
 
-const scenarios = {
-  'edge-ring':  buildEdgeRing(),
-  'parametric': buildParametric(),
-  'cluster':    buildCluster(),
-  'high-yield': buildHighYield(),
+const BUILDERS = {
+  'edge-ring':  buildEdgeRing,
+  'parametric': buildParametric,
+  'cluster':    buildCluster,
+  'high-yield': buildHighYield,
 };
+for (const name of Object.keys(ARGS.geometry)) {
+  if (!(name in BUILDERS)) throw new Error(`--geometry names an unknown scenario "${name}" (${Object.keys(BUILDERS).join(', ')})`);
+}
+const geometryOf = name => ARGS.geometry[name] ?? DEFAULT_GEOMETRY;
+const scenarios = Object.fromEntries(Object.entries(BUILDERS).map(([name, build]) => [name, build(geometryOf(name))]));
 
 /**
  * Geometry and definitions that a flat die CSV cannot carry, written beside each
@@ -291,9 +318,9 @@ const scenarios = {
  * the tails, so a small realistic fraction of dies falls out of spec. A limit
  * nothing violates demonstrates nothing; one everything violates is no better.
  */
-const META = {
-  waferConfig: { diameter: WAFER_DIAMETER_MM, notch: { type: 'bottom' } },
-  dieConfig:   { width: DIE_PITCH_MM, height: DIE_PITCH_MM },
+const metaFor = geometry => ({
+  waferConfig: { diameter: geometry.diameterMm, notch: { type: 'bottom' } },
+  dieConfig:   { width: geometry.pitchX, height: geometry.pitchY },
   passBins: [1],
   hbinDefs: [
     { bin: 1, name: 'Pass' },
@@ -318,13 +345,14 @@ const META = {
     { testNumber: 1002, name: 'Vref', unit: 'V',   limitLow: LIMITS.vrefLow, limitHigh: LIMITS.vrefHigh },
     { testNumber: 1003, name: 'Fmax', unit: 'MHz', limitLow: LIMITS.fmaxLow },
   ],
-};
+});
 
+mkdirSync(ARGS.dir, { recursive: true });
 for (const [name, rows] of Object.entries(scenarios)) {
   const csv = toCsv(rows);
-  const path = join(__dir, `${name}.csv`);
+  const path = join(ARGS.dir, `${name}.csv`);
   writeFileSync(path, csv);
-  writeFileSync(join(__dir, `${name}.meta.json`), JSON.stringify(META, null, 2) + '\n');
+  writeFileSync(join(ARGS.dir, `${name}.meta.json`), JSON.stringify(metaFor(geometryOf(name)), null, 2) + '\n');
   const kb = (Buffer.byteLength(csv) / 1024).toFixed(1);
   console.log(`${name}.csv — ${rows.length.toLocaleString()} rows, ${kb} KB  (+ ${name}.meta.json)`);
 }

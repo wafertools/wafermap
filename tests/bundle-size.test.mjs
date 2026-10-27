@@ -97,6 +97,8 @@
 //   2026-10-18: render raised 449,000 -> 462,000 minified (measured 449,167; 435,551 at the last entry). The plot
 //   filter line on cards, What stands out's signals, charts, Chart links and split shifts (the synthesis rides in the
 //   Summary panel, which is first paint). Legitimate library growth.
+//   2026-10-27: render raised 462,000 -> 470,000 minified (measured 462,005; 449,167 at the last entry). The PAT verdict mode,
+//   the Enter key in a long list's filter box, the gallery's column keys and the 6 px card sizing. Legitimate library growth.
 //   Each line above states the THRESHOLD move; the inline comment on each entry
 //   states what was actually measured when it was set. Keep both — reading only
 //   one of them is how "raised from ~88 KB" ended up next to a 130_000 value.
@@ -119,7 +121,7 @@ const dist = resolve(root, 'dist');
 // Gzipped sizes in the history above are the earlier measure.
 const THRESHOLDS = {
   'wafermap (root)':            244_000,  // minified bytes — measured 236,568 (81.7 KB gzipped)
-  'wafermap/render (initial)':  462_000,  // minified bytes — measured 449,167 (151.8 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
+  'wafermap/render (initial)':  470_000,  // minified bytes — measured 462,005 (157.0 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
 };
 
 async function bundleSize(entryPoint, plugins = []) {

@@ -30,6 +30,10 @@ under `### Breaking`.
 
 ### Added
 
+- **The number keys set the columns of cards.** In a gallery (with focus in it) and on the Insights tab, **1** to **5** set that many columns
+  and **0** returns to Auto. The gallery's Columns control shows each choice's key, and the Insights tab has a **Columns** control of its
+  own beside Group by and Show, which sets every chart grid in the tab. The keys do nothing in a text box, a menu or a window, or with Ctrl,
+  Cmd, Alt or Shift held.
 - **A selection charted against the rest of its wafer.** The right-click menu of a single map with a selection adds a **Selection vs the rest of the wafer** section: a **Value histogram** with one colour per side, and a **Box plot** of the two. The sides are named in the title, the legend and the footnote ("661 dies · selection vs the rest of W01") with their die counts, so neither can be mistaken for the whole wafer. A plot's footnote can now say what its items are when they are not wafers (`PlotContext.populationLabel`).
 - **Pinned tests.** Each row of the Insights test pickers (and of the test pickers in the charts opened from a map) has a ☆ (or **P** on the focused row) that pins the test. Pinned tests are listed first under a "Pinned" heading, in every picker at once. `getPinnedTests`, `setPinnedTests` and `onPinnedTestsChange` (from `@wafertools/wafermap/render`) let a host keep the set between sessions.
 - **Invert selection.** Right-clicking a single map that has a selection offers **Invert selection** as the first row of the menu: the selection becomes the dies it did not hold.
@@ -37,6 +41,10 @@ under `### Breaking`.
 
 ### Changed
 
+- **A gallery card is sized for dies of 6 px.** Auto layout sizes cards so each die is at least 6 px across (it was 4 px), so on a dense wafer
+  (about 1,000 dies and up) a die is wide enough to aim a pointer at and the kerf between dies stays a clear single line. A card is wider than
+  before at the same density, and a window that cannot hold another column at that width keeps the columns it has: the cards then fill the row.
+  The compact layout keeps its own 4 px cell.
 - **The summary report prints at paper size.** Printing or saving a report as a PDF scales the whole document up by a quarter, so the 12 px body text is about 11 pt on paper instead of 9 pt. The on-screen report is unchanged.
 - **A reticle cell's repeated failures do not turn an edge arc into a scratch.** When a wafer's pattern reads as a scratch and a reticle cell has a finding of its own, the wafer is classified again with that cell's failing dies set aside. If the line goes, the pattern is what remains (an edge pattern, say) and its note names the cell. A scratch that is still a scratch without those dies stays one, and wafers with no reticle-cell finding are unchanged.
 - **Reticle fields over supplied dies take the dies' own size.** With `dies` passed to `buildWaferMap`, field boundaries are drawn at the dies' width and height, so a field of 3 × 2 dies over 10 × 8 mm dies is 30 × 16 mm.
@@ -46,7 +54,7 @@ under `### Breaking`.
 - **Limit labels on a narrow chart stay on their own side of the line.** A vertical limit's label is shortened ("Hi 380 mV", then "Hi") before it flips towards the other limit, and never runs across another limit's line.
 - **The Test Value range control is "Colour bar range".** The toolbar button, its tooltip and the guides use the same spelling as the rest of the interface. The `colorbarRangeMode` option keeps its name.
 - **The wafer-centre advisory is worded for the reader.** The "Wafer centre ignored" message says what was ignored and why; the advice to supply `waferConfig.diameter` is in the console warning.
-
+- **The build uses TypeScript 6.** The package is compiled and type-checked with TypeScript 6 and current development dependencies; the published API and behaviour are unchanged.
 - **Opening the dies of a histogram bin works for a bin of any size.** The point list is built with a loop rather than a spread, which has an argument limit near 125,000.
 
 ## [0.37.1] — 2026-10-22

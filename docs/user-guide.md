@@ -334,6 +334,7 @@ it as a file and send it to whoever supports this software.
 | **Ctrl / Cmd + `0`**     | Reset zoom to the fitted view                           |
 | **Arrow keys**           | Pan the map                                             |
 | **Space (hold) + drag**  | Temporarily pan without leaving the current tool        |
+| **1** to **5**, **0**    | In a gallery, or on the Insights tab: set that many columns; **0** is Auto (same as the Columns control) |
 
 ![Legend style dropdown open](images/guide-display-legend-style-menu.png)
 
@@ -347,7 +348,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays      | Toggles display layers for all cards simultaneously.                                                                                                                               |
 | <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Picks bin colours (bin modes) or value colours (other modes) for all cards, including **Reverse gradient**.                                                                                                         |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
-| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns. **Auto** fits as many cards as stay readable; a number divides the full width between that many columns.                                             |
+| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns, or press **1** to **5**, or **0** for Auto, with focus in the gallery. **Auto** fits as many cards as keep each die at least 6 px across, so a dense wafer gets a wider card and a window that cannot hold another column at that width keeps the columns it has; a number divides the full width between that many columns. |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Select on every wafer | A toggle. Off (the default), each card selects on its own. A badge counts the selected die positions; clicking the button while something is selected clears it. On, a box, a click or a clear on any card applies to every card at the same die positions, so a region is read lot-wide; right-click then opens charts and tables of those dies across all the wafers (see [Box select](#43-box-select)). |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
@@ -865,6 +866,10 @@ against once the map is replaced.
 
 The [Chart reference](https://wafertools.github.io/wafermap/charts/) describes every chart, plot and table: what it
 shows, how to read it, when to reach for it and where to find it. This section covers how the tab works.
+
+The **Columns** control beside **Group by** and **Show**, or the keys **1** to **5** (and **0** for Auto), sets how many columns of
+cards every section of the tab uses. **Auto** fits as many as the width holds at 420 px or more; a number divides the width that many ways,
+and the choice stays while you move between the tabs.
 
 Any chart mark that stands for one wafer — a bar in *Yield by wafer*, a box in
 *Test value distribution*, a point in *Wafer-to-wafer trend* — can be

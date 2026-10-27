@@ -179,7 +179,7 @@ export const CAPTURES = [
       await page.mouse.move(b.x + b.width * 0.48, b.y + b.height * 0.48, { steps: 8 });
       await page.mouse.up();
       await page.mouse.click(b.x + b.width * 0.40, b.y + b.height * 0.40, { button: 'right' });
-      await page.locator('[data-wmap-drilldown-menu] [role="menuitem"]', { hasText: 'Value histogram' }).click();
+      await page.locator('[data-wmap-drilldown-menu] [role="menuitem"]', { hasText: 'Value histogram' }).first().click();   // the Distributions row; the selection rows come later
       await page.waitForTimeout(1200);
       await page.locator('.wmap-overlay-box').first().screenshot({ path: outFile });
     },
@@ -635,7 +635,7 @@ export const CAPTURES = [
         host.id = 'pat-shot';
         host.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff;overflow:auto';
         document.body.appendChild(host);
-        renderWaferGallery(host, items, { viewOptions: { plotMode: 'metadata', activeMetadataKey: 'wmapPat' }, insights: { enabled: false } });
+        renderWaferGallery(host, items, { viewOptions: { plotMode: 'metadata', activeMetadataKey: 'wmapPat' }, insights: { enabled: false }, columns: 4 });
       });
       const patCard = page.locator('#pat-shot .wmap-gallery-card').nth(2);
       await patCard.locator('canvas').first().waitFor();

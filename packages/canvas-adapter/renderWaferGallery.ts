@@ -2411,12 +2411,12 @@ export function renderWaferGallery(
   const btnColumns = makeDropdown(
     'columns', 'Columns',
     () => [
-      { value: 'auto' as ColsValue, label: 'Auto' },
-      { value: '1'    as ColsValue, label: '1 column' },
-      { value: '2'    as ColsValue, label: '2 columns' },
-      { value: '3'    as ColsValue, label: '3 columns' },
-      { value: '4'    as ColsValue, label: '4 columns' },
-      { value: '5'    as ColsValue, label: '5 columns' },
+      { value: 'auto' as ColsValue, label: 'Auto (0)' },
+      { value: '1'    as ColsValue, label: '1 column (1)' },
+      { value: '2'    as ColsValue, label: '2 columns (2)' },
+      { value: '3'    as ColsValue, label: '3 columns (3)' },
+      { value: '4'    as ColsValue, label: '4 columns (4)' },
+      { value: '5'    as ColsValue, label: '5 columns (5)' },
     ],
     () => (currentColumns != null ? String(currentColumns) as ColsValue : 'auto'),
     (v) => setColumnsState(v === 'auto' ? undefined : Number(v)),
@@ -2826,13 +2826,14 @@ export function renderWaferGallery(
 
   // ── Grid container ─────────────────────────────────────────────────────────
 
-  const TARGET_DIE_PX = 4;   // minimum readable die pixel size at gallery scale
+  const TARGET_DIE_PX = 6;   // smallest die, in CSS px, a card is sized for: readable, and wide enough to aim a pointer at
+  const COMPACT_CELL_PX = 4; // smallest cell of the compact layout, which has far fewer cells than the wafer it replaces
   const MIN_CARD_PX   = 240; // absolute floor
   // Bounds for the card size cap. The cap is derived from die pitch rather than fixed, because a single
   // number can't serve both ends of the DPW range: 480px keeps an ordinary
   // wafer compact instead of monopolising a wide screen, but at high DPW it
   // silently starves the TARGET_DIE_PX readability target (a 3mm pitch / ~7.8k
-  // DPW wafer needs 524px for 4px dies; 2mm / ~17.7k needs 724px). So the cap
+  // DPW wafer needs 692px for 6px dies). So the cap
   // grows with density up to the ceiling, then dies shrink rather than the card
   // growing without bound — past this point the map is a density overview and
   // reading individual dies is the expand/zoom view's job.
@@ -2863,7 +2864,7 @@ export function renderWaferGallery(
     // The compact layout is far smaller than the wafer it replaces, so its cards need only the
     // width its own cells call for: every wafer shares the one grid, so one answer serves all.
     const compact = compactScreenCells();
-    if (compact) return Math.ceil(compact.across * TARGET_DIE_PX + chrome);
+    if (compact) return Math.ceil(compact.across * COMPACT_CELL_PX + chrome);
     let needed: number | null = null;
     for (const it of its) {
       if (it == null || !it.dies?.length) continue;
@@ -3019,6 +3020,21 @@ export function renderWaferGallery(
     applyCardSizeCap(); // switching between auto and fixed changes whether the cap applies
     applyGridTemplate();
   }
+
+  /**
+   * Keys 1 to 5 set that many columns and 0 sets Auto, the same choices as the Columns control. Only while focus is in the gallery
+   * and not in a text box, a menu or a window, and not on the Insights tab, where columns do not apply. A key with Ctrl, Cmd, Alt
+   * or Shift is someone else's (Ctrl + 0 resets a map's zoom).
+   */
+  const onColumnsKey = (e: KeyboardEvent): void => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented || insightsOpen) return;
+    if (!/^[0-5]$/.test(e.key)) return;
+    const target = e.target as { closest?: (selector: string) => Element | null } | null;
+    if (typeof target?.closest === 'function' && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]')) return;
+    e.preventDefault();
+    setColumnsState(e.key === '0' ? undefined : Number(e.key));
+  };
+  container.addEventListener('keydown', onColumnsKey);
 
   // In auto layout, tracks are capped at the current card cap rather than `1fr`:
   // a `1fr` track always takes an equal share of the full container width, so a
@@ -4690,6 +4706,7 @@ export function renderWaferGallery(
       cancelTestValueRun();
       buildGeneration++; // cancel any pending factory resolvers
       printWindow.removeEventListener('beforeprint', drawAllCards);
+      container.removeEventListener('keydown', onColumnsKey);
       // Same reason as the queued resize frame below: a staged lot-panel render
       // would otherwise keep waking up and appending to a torn-down panel.
       lotPanelRun?.cancel();

@@ -511,9 +511,12 @@ async function runSetup(page, steps) {
       case 'selectMode':
         await selectToolbarDropdownItem(page, 'Plot mode', args[0]);
         break;
-      case 'selectColumns':
-        await selectToolbarDropdownItem(page, 'Columns', args[0]);
+      case 'selectColumns': {
+        // Each row names its key: "3 columns (3)", "Auto (0)".
+        const n = /^(\d)/.exec(args[0])?.[1];
+        await selectToolbarDropdownItem(page, 'Columns', `${args[0]} (${n ?? 0})`);
         break;
+      }
 
       // Toggle a check-menu overlay item.
       // args: [itemLabel, btnAriaLabel?]  (btnAriaLabel defaults to 'Overlays')

@@ -463,6 +463,28 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const filterBand = pageFilter.createBand(() => facetItems(), { marginLeft: contentInset, marginRight: contentInset, marginBottom: SPACE.lg });
   const filterBandEl = filterBand.el;
 
+  // Columns of cards: Auto fits as many as the width holds; a count (1 to 5) fixes it for every grid in the tab. Carried as two CSS
+  // variables on the tab's own element, which every chart grid reads (chartShell.makeChartGridWrap), so a change needs no redraw.
+  let columnsPref: number | undefined;
+  let columnsSelect: (HTMLElement & { value: string }) | null = null;
+  const setColumns = (n: number | undefined): void => {
+    columnsPref = n;
+    if (n === undefined) { rootEl.style.removeProperty('--wmap-insights-cols'); rootEl.style.removeProperty('--wmap-insights-min'); }
+    else { rootEl.style.setProperty('--wmap-insights-cols', String(n)); rootEl.style.setProperty('--wmap-insights-min', '0px'); }
+    if (columnsSelect) columnsSelect.value = n === undefined ? 'auto' : String(n);
+  };
+  // Keys 1 to 5 set the columns and 0 sets Auto, as in a gallery. Heard on the document so it needs no focus inside the tab, only
+  // while this tab is on screen, and not in a text box, a menu or a window.
+  const onColumnsKey = (e: KeyboardEvent): void => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented) return;
+    if (!/^[0-5]$/.test(e.key) || !rootEl.isConnected || rootEl.style.display === 'none') return;
+    const target = e.target as { closest?: (selector: string) => Element | null } | null;
+    if (typeof target?.closest === 'function' && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]')) return;
+    e.preventDefault();
+    setColumns(e.key === '0' ? undefined : Number(e.key));
+  };
+  doc.addEventListener('keydown', onColumnsKey);
+
   rootEl.appendChild(metaStripEl);
   rootEl.appendChild(tabBar);
   rootEl.appendChild(filterBandEl);
@@ -1828,6 +1850,17 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       ).el);
     }
 
+    // Columns of cards, beside Group by and Show; the keys 1 to 5 and 0 do the same.
+    const columnsLabel = makeLabeledSelect(
+      'Columns:',
+      [{ value: 'auto', label: 'Auto (0)' }, ...[1, 2, 3, 4, 5].map(n => ({ value: String(n), label: `${n} (${n})` }))],
+      columnsPref === undefined ? 'auto' : String(columnsPref),
+      v => setColumns(v === 'auto' ? undefined : Number(v)),
+      { hook: 'insights-columns', maxWidth: '90px', ownerDocument: doc },
+    );
+    columnsSelect = columnsLabel.querySelector('button') as (HTMLElement & { value: string }) | null;
+    controlsRow.appendChild(columnsLabel);
+
     let helpBtn: HTMLButtonElement | null = null;
     if (deps.onOpenGuide) {
       const help = doc.createElement('button');
@@ -1959,6 +1992,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     el: rootEl,
     render,
     destroy: () => {
+      doc.removeEventListener('keydown', onColumnsKey);
       dropSectionCache();
       plotStore.flush();
       rootEl.remove();

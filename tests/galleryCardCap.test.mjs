@@ -4,7 +4,7 @@
 //
 // Cards are capped so an ordinary wafer does not monopolise a wide screen, but a
 // single fixed cap starves high-DPW wafers of the pixels their dies need, so the
-// cap widens with die density (targeting 4px dies) up to a ceiling.
+// cap widens with die density (targeting 6px dies) up to a ceiling.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -70,15 +70,15 @@ test('an ordinary wafer is capped at 480px rather than stretched to fill the con
 });
 
 test('the cap widens for a high-DPW wafer so its dies stay readable', () => {
-  // 3 mm pitch on 300 mm needs 300·(4/3) + 124 px of card chrome = 524 px for
-  // 4 px dies — above the 480 floor, below the 720 ceiling.
-  const { caps, ctrl } = mount([waferAtPitch(3, 'W01')]);
-  assert.deepEqual(caps, ['524px']);
+  // 4 mm pitch on 300 mm needs 300·(6/4) + 124 px of card chrome = 574 px for
+  // 6 px dies — above the 480 floor, below the 720 ceiling.
+  const { caps, ctrl } = mount([waferAtPitch(4, 'W01')]);
+  assert.deepEqual(caps, ['574px']);
   ctrl.destroy();
 });
 
 test('the cap stops widening at the 720px ceiling', () => {
-  // 1 mm pitch would need 1324 px; past the ceiling the dies shrink instead.
+  // 1 mm pitch would need 1924 px; past the ceiling the dies shrink instead.
   const { caps, ctrl } = mount([waferAtPitch(1, 'W01')]);
   assert.deepEqual(caps, ['720px']);
   ctrl.destroy();
@@ -155,8 +155,8 @@ function withGridWidth(root, px) {
 test('with more cards than columns, the columns fill the row; with every card in one row, the cap holds', () => {
   const root = dom.window.document.getElementById('root');
   root.innerHTML = '';
-  // 3 mm pitch: cards need 524 px, the cap is 524 px, so a gained width cannot add a column early.
-  const ctrl = renderWaferGallery(root, ['W01', 'W02', 'W03', 'W04'].map(w => waferAtPitch(3, w)));
+  // 4 mm pitch: cards need 574 px, the cap is 574 px, so a gained width cannot add a column early.
+  const ctrl = renderWaferGallery(root, ['W01', 'W02', 'W03', 'W04'].map(w => waferAtPitch(4, w)));
 
   withGridWidth(root, 1400);   // two columns of 694 px fit, three of 459 px do not
   ctrl.setColumns(undefined);  // re-runs the auto layout at the new width
@@ -165,7 +165,50 @@ test('with more cards than columns, the columns fill the row; with every card in
 
   withGridWidth(root, 2400);   // all four fit in one row: the cap keeps them from stretching
   ctrl.setColumns(undefined);
-  assert.match(gridTemplate(root), /^repeat\(4, minmax\(0(px)?, 524px\)\)$/);
-  assert.deepEqual(cardMaxWidths(root), ['524px', '524px', '524px', '524px']);
+  assert.match(gridTemplate(root), /^repeat\(4, minmax\(0(px)?, 574px\)\)$/);
+  assert.deepEqual(cardMaxWidths(root), ['574px', '574px', '574px', '574px']);
   ctrl.destroy();
+});
+
+// ── Column keys ───────────────────────────────────────────────────────────────
+// 1–5 set that many columns and 0 sets Auto, while focus is in the gallery and not in a text box, a menu or a window.
+
+function press(el, key, init = {}) {
+  const e = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+  el.dispatchEvent(e);
+  return e;
+}
+
+test('the number keys set the columns and 0 returns to auto', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const card = root.querySelector('.wmap-gallery-card');
+  press(card, '2');
+  assert.match(gridTemplate(root), /^repeat\(2, /);
+  assert.deepEqual(cardMaxWidths(root), ['none', 'none']);
+  press(card, '5');
+  assert.match(gridTemplate(root), /^repeat\(5, /);
+  press(card, '0');
+  assert.deepEqual(cardMaxWidths(root), ['480px', '480px']);
+  ctrl.destroy();
+});
+
+test('the column keys leave a key with a modifier, a digit above 5, and typing in a text box alone', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const card = root.querySelector('.wmap-gallery-card');
+  const before = gridTemplate(root);
+  press(card, '3', { ctrlKey: true });   // Ctrl + digit is not ours
+  press(card, '3', { shiftKey: true });
+  press(card, '6');
+  press(card, '7');
+  assert.equal(gridTemplate(root), before);
+  const input = dom.window.document.createElement('input');
+  card.appendChild(input);
+  press(input, '3');
+  assert.equal(gridTemplate(root), before, 'typing a 3 in a text box is typing');
+  ctrl.destroy();
+  assert.doesNotThrow(() => press(root, '3'), 'a destroyed gallery no longer answers');
 });
