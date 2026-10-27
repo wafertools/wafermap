@@ -29,3 +29,7 @@ export { DERIVED_MARK, DERIVED_KEY } from './testLabel.js';
 // A stored number in its fewest exact digits, for a host that shows test limits in
 // its own UI (tsmap's test selector) — the same text the library's own warnings use.
 export { fmtExact } from './fmt.js';
+// One derived test's expression checked without building a map, for a host's own editor (tsmap's derived-test
+// editor): the same parser, namespace and kind rule the build applies, so an editor and the build agree.
+export { checkDerivedExpression } from './derivedTests/check.js';
+export type { DerivedCheck, DerivedCheckInput } from './derivedTests/check.js';

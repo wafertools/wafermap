@@ -112,7 +112,7 @@ function warn(message: string): WaferWarning {
  * `"uA"` and `"µA"` for the same thing, so refusing to build would be worse than
  * saying so.
  */
-function unitMismatch(node: ExprNode, defs: Map<number, TestDef>): string[] {
+export function unitMismatch(node: ExprNode, defs: Map<number, TestDef>): string[] {
   const problems: string[] = [];
   const unitsOf = (n: ExprNode): Set<string> | undefined => {
     switch (n.k) {

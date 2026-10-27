@@ -19,6 +19,8 @@ const SNAPSHOTS = {
     'DERIVED_KEY', 'DERIVED_MARK',
     // Added in the next release so a host shows test limits in their stored digits (tsmap's test selector).
     'fmtExact',
+    // Added in the next release so a host's derived-test editor checks an expression as the build does (tsmap).
+    'checkDerivedExpression',
     'analyzeWaferLot', 'analyzeWaferLotAsync', 'analyzeWaferMap', 'attributeLabel', 'buildFacetTable', 'buildWaferMap',
     'diePassStatus', 'facetValueOf', 'FACET_NONE_VALUE', 'filterFindings',
     'getDieKey', 'getReticleCell', 'getReticleShot', 'getTestPassStatus', 'hasPosition', 'isYieldEligibleDie',
@@ -43,6 +45,7 @@ const SNAPSHOTS = {
     // Added in 0.30.3 — see the root entry above.
     'DERIVED_KEY', 'DERIVED_MARK',
     'fmtExact',
+    'checkDerivedExpression',
     'buildWaferMap', 'getDieKey', 'getTestPassStatus',
     'listBinColorSchemes', 'listValueColorSchemes', 'registerBinColorScheme', 'registerValueColorScheme',
     'resolveValueColorFn',

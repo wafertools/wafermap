@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fmt, fmtColorbarAxis, fmtExact, nameStatesUnit } from '../dist/packages/renderer/fmt.js';
+import { makeAxisFormat } from '../dist/packages/canvas-adapter/charts/chartShell.js';
 
 test('fmt — non-finite values', () => {
   assert.equal(fmt(Infinity), 'Infinity');
@@ -181,4 +182,16 @@ test('nameStatesUnit — the unit must be a separate trailing token', () => {
   assert.ok(!nameStatesUnit('Gain', 'V'), 'a letter inside a word is not a unit');
   assert.ok(!nameStatesUnit('fmax_MHz', 'GHz'));
   assert.ok(!nameStatesUnit('Vth', undefined));
+});
+
+test('makeAxisFormat — a name that ends in its own bracketed unit is not given that unit again', () => {
+  // The title is built as `${label} (${unitLabel})`; "Vth (mV)" already says mV, so nothing follows it.
+  assert.equal(makeAxisFormat(380, 'mV', undefined, 'Vth (mV)').unitLabel, '');
+  assert.equal(makeAxisFormat(380, 'mV', undefined, 'vth_n_mV').unitLabel, '');
+  assert.equal(makeAxisFormat(0.3, 'nA', undefined, 'Leak [nA]').unitLabel, '');
+  // Only the exponent note fmtColorbarAxis adds for a very small or large base-unit value follows a name.
+  assert.equal(makeAxisFormat(1e-6, 'A', undefined, 'Idsat_A').unitLabel, '×10E-6');
+  assert.equal(makeAxisFormat(1e-6, 'A', undefined, 'Idsat (A)').unitLabel, '×10E-6');
+  // A name that does not state its unit still gets the unit label.
+  assert.equal(makeAxisFormat(380, 'mV', undefined, 'Threshold').unitLabel, 'mV');
 });

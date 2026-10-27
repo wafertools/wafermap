@@ -30,6 +30,7 @@ under `### Breaking`.
 
 ### Added
 
+- **`checkDerivedExpression(input, testDefs, otherDerived?)`.** Checks one derived test's expression without building a map, for a host's own editor: it returns `{ ok: true, produces, reads, warnings }` (a number or a verdict, every test read and how, and advice such as units combined by `+`) or `{ ok: false, message, position }`. It runs the same parser, namespace, kind rule and test-number rules as `buildWaferMap` (a whole STDF number, not a measured test's and not another derived test's), so the editor and the build agree. A cycle between derived tests is still reported by the build as `derived-test-invalid`.
 - **The number keys set the columns of cards.** In a gallery (with focus in it), on the Insights tab and over a plot of panels, **1** to **5** set that many columns
   and **0** returns to Auto. The gallery's Columns control shows each choice's key, and the Insights tab has a **Columns** control of its
   own beside Group by and Show, which sets every chart grid in the tab. A plot of panels has a **Columns** control above its panels, and the
@@ -42,6 +43,7 @@ under `### Breaking`.
 
 ### Changed
 
+- **A demo lot cut at its own wafer size keeps its pattern.** `docs/examples/data/generate-demos.js --geometry` places each lot's patterns by where its outermost reachable die sits and scales the edge-ring failure rate so the expected share of failing dies is the default wafer's. A coarse wafer (300 mm with 10×8 mm dies) had lost about a third of the edge-ring lot's failures, so its pattern was no longer found. The default geometry is unchanged, byte for byte.
 - **A gallery card is sized for dies of 6 px.** Auto layout sizes cards so each die is at least 6 px across (it was 4 px), so on a dense wafer
   (about 1,000 dies and up) a die is wide enough to aim a pointer at and the kerf between dies stays a clear single line. A card is wider than
   before at the same density, and a window that cannot hold another column at that width keeps the columns it has: the cards then fill the row.

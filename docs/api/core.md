@@ -387,6 +387,16 @@ The admitted def joins `result.testDefs` carrying `derived: true` **and its `exp
 
 A host listing tests in its own UI marks them the same way with the exported `DERIVED_MARK` (`'†'`) and `DERIVED_KEY` (`'Derived, not measured'`) — never its own copy of the glyph or the words. It shows a test's limits with `fmtExact(v)`: a float32 value (STDF stores limits that way) in its shortest exact digits, `1.6` rather than `1.600000023841858`, any other number as it is — the same text the library's own messages use.
 
+A host that lets its user write an expression checks it as they type with `checkDerivedExpression({ expression, testNumber, testType?, constants? }, testDefs, otherDerived?)`. It never throws and runs the build's own parser, namespace and kind rule, so it accepts exactly what `buildWaferMap` would compute:
+
+```ts
+const r = checkDerivedExpression({ expression: 't[1002] / t[1001]', testNumber: 900001 }, testDefs);
+if (r.ok) r.reads;                 // [{ kind: 't', test: 1002 }, { kind: 't', test: 1001 }] — what it depends on
+else      r.message, r.position;   // "…", 0-based offset into the expression
+```
+
+`produces` is `'number'` or `'verdict'` (a verdict needs `testType: 'F'`), and `warnings` carries advice that does not stop the build, such as `V and mA are combined by "+"`. The build's identity rules apply too: the test number must be a whole number from 0 to 4294967295, and neither a measured test nor another derived test (`otherDerived` holds the *other* ones) may have it. A cycle between derived tests is the one thing it cannot see; the build reports it as `derived-test-invalid`.
+
 The structured form travels alongside: `TestDef.derived`/`expression` (§4.1.8), `StatsFinding.variable.derived`/`expression`, and `derived`/`expression` on `functionalYield` rows — so a host rendering its own view never has to parse the glyph back out.
 
 ```ts

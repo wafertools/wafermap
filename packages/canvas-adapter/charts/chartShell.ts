@@ -586,6 +586,12 @@ export function formatValue(v: number): string {
  * is the same label with the scaled unit appended, for an axis with no
  * separate unit label.
  */
+/** The bracketed note `axisLabel` carries after `name` ("Idsat_A (×10E-6)" → "×10E-6"), or '' when it is just the name. */
+function exponentNote(axisLabel: string, name: string): string {
+  const prefix = `${name} (`;
+  return axisLabel.startsWith(prefix) && axisLabel.endsWith(')') ? axisLabel.slice(prefix.length, -1) : '';
+}
+
 export function makeAxisFormat(
   vRef: number,
   unit: string | undefined,
@@ -600,7 +606,9 @@ export function makeAxisFormat(
     tick: tickFmt,
     tickWithUnit: scaledUnit ? v => `${tickFmt(v)} ${scaledUnit}` : tickFmt,
     // A name that states its unit is the whole title; only an exponent note ("×10E-6", for very small or large values) follows it.
-    unitLabel: statesUnit ? (/\(([^()]*)\)$/.exec(axisLabel)?.[1] ?? '') : axisLabel,
+    // That note is what fmtColorbarAxis added after the name, so it is read off the label past the name: a name that itself
+    // ends in a bracketed unit ("Vth (mV)") has nothing after it and must not be mistaken for the note.
+    unitLabel: statesUnit ? exponentNote(axisLabel, name!) : axisLabel,
   };
 }
 

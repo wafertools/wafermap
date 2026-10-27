@@ -57,15 +57,23 @@ const EDGE_BAND         = 3.0;  // dies within this distance from edge get edge 
 // contradiction, and `buildWaferMap` correctly reports it as `geometry-conflict` once the geometry is declared.
 //
 // A scenario's wafer: its diameter and die pitch (the default, or --geometry). Each die carries x and y (grid position), and xn,
-// yn, r (its position on the reference wafer, where the wafer radius is REFERENCE_RADIUS), which is what the patterns read, so a
-// pattern covers the same share of the wafer whatever the wafer's size.
+// yn, r (its position on the reference wafer, where the outermost reachable die is at REFERENCE_REACH), which is what the patterns
+// read, so a pattern covers the same share of the wafer's dies whatever the wafer's size.
 const DEFAULT_GEOMETRY = { diameterMm: WAFER_DIAMETER_MM, pitchX: DIE_PITCH_MM, pitchY: DIE_PITCH_MM };
+
+// How far out a die's centre can be: past this, the die's far corner leaves the wafer (see `waferDies`).
+const reachMm = ({ diameterMm, pitchX, pitchY }) => diameterMm / 2 - Math.hypot(pitchX / 2, pitchY / 2);
+// Where that outermost reachable die sits on the reference wafer for the default geometry. Every wafer is scaled so ITS outermost
+// reachable die lands here too: scaling by the wafer radius alone puts a coarse wafer's outermost dies well inside the reference
+// edge (a 10x8 mm die cannot be as close to the rim as a 5 mm one), which starved the edge pattern of the dies it is drawn on and
+// made the same lot fail far less. The default geometry scales exactly as before.
+const REFERENCE_REACH = REFERENCE_RADIUS * reachMm(DEFAULT_GEOMETRY) / (DEFAULT_GEOMETRY.diameterMm / 2);
 
 function waferDies(geometry) {
   const { diameterMm, pitchX, pitchY } = geometry;
   const radiusMm = diameterMm / 2;
   const halfDiagMm = Math.hypot(pitchX / 2, pitchY / 2);
-  const scale = REFERENCE_RADIUS / radiusMm;                  // mm → reference die units
+  const scale = REFERENCE_REACH / reachMm(geometry);          // mm → reference die units
   const dies = [];
   const limX = Math.ceil(radiusMm / pitchX), limY = Math.ceil(radiusMm / pitchY);
   for (let x = -limX; x <= limX; x++) {
@@ -151,9 +159,20 @@ function row(lot, wafer, x, y, die) {
 
 // ── Scenario 1: edge-ring ──────────────────────────────────────────────────
 // Clean centre, progressive yield loss near the edge. 8 wafers.
+// The edge defect's share of failing dies depends on how many dies the wafer has near the rim and how close they get to it, so a
+// coarse wafer fails far less than a fine one at the same pattern. This scales the edge term so the EXPECTED share of failing dies
+// equals the default wafer's: the lot reads as the same lot at any size. It is 1 for the default geometry.
+const edgeFactorOf = r => Math.max(0, (r - (REFERENCE_RADIUS - EDGE_BAND)) / EDGE_BAND);
+const meanEdgeTerm = geometry => {
+  const dies = waferDies(geometry);
+  return dies.reduce((sum, { r }) => sum + edgeFactorOf(r) ** 2 * 0.85, 0) / dies.length;
+};
+const edgeAmplitude = geometry => meanEdgeTerm(DEFAULT_GEOMETRY) / meanEdgeTerm(geometry);
+
 function buildEdgeRing(geometry) {
   const rng = seededRng(0xABCD1234);
   const dies = waferDies(geometry);
+  const amplitude = edgeAmplitude(geometry);
   const rows = [];
 
   for (let w = 1; w <= 8; w++) {
@@ -161,8 +180,8 @@ function buildEdgeRing(geometry) {
     for (const { x, y, r } of dies) {
       // Edge stress: probability of a defect rises sharply over the outer dies,
       // and the surviving edge dies run slower and leakier.
-      const edgeFactor = Math.max(0, (r - (REFERENCE_RADIUS - EDGE_BAND)) / EDGE_BAND);
-      const failProb = edgeFactor * edgeFactor * 0.85 + rng() * 0.01;
+      const edgeFactor = edgeFactorOf(r);
+      const failProb = Math.min(1, edgeFactor * edgeFactor * 0.85 * amplitude) + rng() * 0.01;
 
       let die = {
         iddq: clamp(normal(rng, 2.4 * (1 + edgeFactor * 0.5), 0.3), 0.5, 40),
