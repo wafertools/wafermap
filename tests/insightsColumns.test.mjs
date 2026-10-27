@@ -78,3 +78,63 @@ test('the Insights column keys leave modified keys, other digits and text boxes 
   press(document.body, '4');   // a destroyed tab no longer answers
   assert.equal(cols(grid), '');
 });
+
+// ── A plot of panels ──────────────────────────────────────────────────────────
+// Over a plot of panels the number keys set that plot's columns, and the Insights tab's keys stand down.
+
+const { resolvePlot } = await import('../dist/packages/stats/plotData.js');
+const { renderPlotChart } = await import('../dist/packages/canvas-adapter/charts/plotChart.js');
+
+test('over a plot of panels, the number keys set its columns, and not the tab\'s', async () => {
+  const DEFS = [{ testNumber: 1050, name: 'Vth', unit: 'V' }];
+  const w = (label, split) => {
+    const r = buildWaferMap({
+      results: Array.from({ length: 36 }, (_, k) => ({ x: k % 6, y: Math.floor(k / 6), hbin: 1, testValues: { 1050: 0.4 + k / 100 } })),
+      waferConfig: { diameter: 10, metadata: { split } }, dieConfig: { width: 1, height: 1 }, passBins: [1], testDefs: DEFS,
+    });
+    return { label, dies: r.dies, metadata: r.metadata, passBins: [1], ringCount: r.ringCount, wafer: r.wafer };
+  };
+  const resolved = resolvePlot({ id: 'p', chart: 'histogram', fields: { y: { test: 1050 }, color: { none: true }, facet: { meta: 'split' } } },
+    [w('W1', 'TT'), w('W2', 'FF'), w('W3', 'SS')], { testDefs: DEFS });
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const plot = renderPlotChart({ ownerDocument: document });
+  host.appendChild(plot.card);
+  plot.setPlot(resolved);
+  const grid = host.querySelector('[data-wmap-plot-panels]');
+  assert.match(grid.style.gridTemplateColumns, /auto-fill/);
+  assert.ok(host.querySelector('[data-wmap-select="panel-columns"]'), 'the Columns control is shown');
+  assert.equal(grid.parentElement.style.overflowY, 'auto', 'the card body scrolls, for panels taller than the window it is expanded into');
+
+  press(document.body, '3');   // the pointer is not over the plot
+  assert.match(grid.style.gridTemplateColumns, /auto-fill/);
+
+  plot.card.dispatchEvent(new dom.window.Event('pointerenter'));
+  assert.ok(document.querySelector('[data-wmap-panels-hover]'), 'the plot marks that the pointer is over it');
+  press(document.body, '2');
+  assert.equal(grid.style.gridTemplateColumns, 'repeat(2, minmax(0, 1fr))');
+  press(document.body, '0');
+  assert.match(grid.style.gridTemplateColumns, /auto-fill/);
+
+  plot.card.dispatchEvent(new dom.window.Event('pointerleave'));
+  press(document.body, '4');
+  assert.match(grid.style.gridTemplateColumns, /auto-fill/);
+  plot.destroy();
+  plot.card.dispatchEvent(new dom.window.Event('pointerenter'));
+  press(document.body, '4');
+  assert.match(grid.style.gridTemplateColumns, /auto-fill/, 'a destroyed plot no longer answers');
+  host.remove();
+});
+
+test('the Insights tab\'s keys stand down while the pointer is over a plot of panels', async () => {
+  const { ctrl, grid } = await openInsights();
+  const marker = document.createElement('div');
+  marker.dataset.wmapPanelsHover = '1';
+  document.body.appendChild(marker);
+  press(document.body, '3');
+  assert.equal(cols(grid), '');
+  marker.remove();
+  press(document.body, '3');
+  assert.equal(cols(grid), '3');
+  ctrl.destroy();
+});

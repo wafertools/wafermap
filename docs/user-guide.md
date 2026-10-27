@@ -334,7 +334,7 @@ it as a file and send it to whoever supports this software.
 | **Ctrl / Cmd + `0`**     | Reset zoom to the fitted view                           |
 | **Arrow keys**           | Pan the map                                             |
 | **Space (hold) + drag**  | Temporarily pan without leaving the current tool        |
-| **1** to **5**, **0**    | In a gallery, or on the Insights tab: set that many columns; **0** is Auto (same as the Columns control) |
+| **1** to **5**, **0**    | In a gallery or on the Insights tab: set that many columns of cards; over a plot of panels: that plot's columns. **0** is Auto (same as the Columns control) |
 
 ![Legend style dropdown open](images/guide-display-legend-style-menu.png)
 
@@ -1230,7 +1230,8 @@ In **Setup**, choose the **chart type**, then the field for each role:
   one test a panel. So "one scatter per split" or "a histogram per ring" is one plot. Rescaled values are measured over
   the whole population, so a panel is not re-centred on itself and panels compare. Each panel has its own expand button, and
   the plot's Save as PNG saves the whole grid. At most 24 panels; a field on the X axis or the colour cannot also make
-  the panels.
+  the panels. The **Columns** control above the panels, or the keys **1** to **5** (and **0** for Auto) while the pointer is
+  over the plot, sets how many panels sit side by side; Auto fits as many as the width holds at 260 px or more.
 - **Wafer-level comparison** (box and bar of one measured test): when the categories or the colour are a wafer field
   such as split or lot, the line under the plot adds the comparison of those groups with each wafer as one value, as
   the Distributions table does: the wafers in each group, Welch p and rank p.

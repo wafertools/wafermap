@@ -478,6 +478,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const onColumnsKey = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented) return;
     if (!/^[0-5]$/.test(e.key) || !rootEl.isConnected || rootEl.style.display === 'none') return;
+    // The pointer is over a plot of panels, or a window is open over the tab: the keys are not the tab's.
+    if (doc.querySelector('[data-wmap-panels-hover], [role="dialog"]')) return;
     const target = e.target as { closest?: (selector: string) => Element | null } | null;
     if (typeof target?.closest === 'function' && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]')) return;
     e.preventDefault();

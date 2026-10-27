@@ -20,7 +20,7 @@ import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
 import {
   cardShell, appendGuideCites, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
-  renderEmptyState, isExpandedCard, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelPlacement, shouldIncludeLimitsByDefault,
+  renderEmptyState, isExpandedCard, makeLabeledSelect, fillTextOnHalo, limitLines, limitExtent, stackLabelRows, placeClearOf, type LabelBox, strokeLimitLine, drawOffAxisLimits, limitLabelPlacement, shouldIncludeLimitsByDefault,
   WAFER_MENU_HINT, type CardMenuRow, type LimitLine, type SaveImageHandler, type SeriesLegendItem, type WaferContextMenuHandler,
 } from './chartShell.js';
 import { guideCitesText } from '../../stats/guideSections.js';
@@ -269,6 +269,13 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   /** Everything above the canvas (the statement of what it shows, notes, the colour key): the canvas starts below it. */
   let above: HTMLElement | undefined;
   let pointer: { destroy: () => void } | undefined;
+  /** A faceted plot's columns: undefined fits as many panels as the width holds; a count (1 to 5) divides the width that many ways. */
+  let panelColumns: number | undefined;
+  let stopPanelKeys: (() => void) | undefined;
+  /** Whether the pointer is over this card, so the number keys mean this plot's panels (see `panelKeys`). */
+  let pointerOver = false;
+  card.addEventListener('pointerenter', () => { pointerOver = true; if (card.dataset.wmapPlotPanelsOwner) card.dataset.wmapPanelsHover = '1'; });
+  card.addEventListener('pointerleave', () => { pointerOver = false; delete card.dataset.wmapPanelsHover; });
   let chips: SeriesLegendItem[] = [];
   const active = new Set<number>();          // legend filter: group indexes, empty = all
   const selected = new Set<PlotPoint>();
@@ -1618,6 +1625,9 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     active.clear(); selected.clear();
     for (const p of panels) p.destroy();
     panels = [];
+    stopPanelKeys?.(); stopPanelKeys = undefined;
+    body.style.overflowY = '';
+    delete card.dataset.wmapPlotPanelsOwner; delete card.dataset.wmapPanelsHover;
     setPngCanvas(() => card.querySelector<HTMLCanvasElement>('canvas'));
     const r = resolved;
     // A plot of panels is as tall as its grid: the card is not a flex item filled by one canvas (with no canvas to size
@@ -1712,8 +1722,37 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       const grid = doc.createElement('div');
       grid.dataset.wmapPlotPanels = '1';
       grid.style.isolation = 'isolate';   // a stacking context of its own: see the sticky legend above
-      Object.assign(grid.style, { display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${PANEL_MIN_PX}px, 1fr))`, gap: SPACE.md } as Partial<CSSStyleDeclaration>);
-      body.appendChild(grid);
+      Object.assign(grid.style, { display: 'grid', gap: SPACE.md } as Partial<CSSStyleDeclaration>);
+      const fitColumns = (): void => {
+        grid.style.gridTemplateColumns = panelColumns ? `repeat(${panelColumns}, minmax(0, 1fr))` : `repeat(auto-fill, minmax(${PANEL_MIN_PX}px, 1fr))`;
+      };
+      fitColumns();
+      // The columns control, and the keys 1 to 5 (0 is Auto) while the pointer is over this plot.
+      const columnsLabel = makeLabeledSelect(
+        'Columns:',
+        [{ value: 'auto', label: 'Auto (0)' }, ...[1, 2, 3, 4, 5].map(n => ({ value: String(n), label: `${n} (${n})` }))],
+        panelColumns ? String(panelColumns) : 'auto',
+        v => { panelColumns = v === 'auto' ? undefined : Number(v); fitColumns(); },
+        { hook: 'panel-columns', maxWidth: '90px', ownerDocument: doc },
+      );
+      Object.assign(columnsLabel.style, { justifyContent: 'flex-end', marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
+      const columnsTrigger = columnsLabel.querySelector('button') as (HTMLElement & { value: string }) | null;
+      body.append(columnsLabel, grid);
+      // As tall as its grid, which a column or two can make taller than the window the card is expanded into: the body scrolls.
+      body.style.overflowY = 'auto';
+      card.dataset.wmapPlotPanelsOwner = '1';
+      if (pointerOver) card.dataset.wmapPanelsHover = '1';
+      const onPanelKey = (e: KeyboardEvent): void => {
+        if (!pointerOver || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented || !/^[0-5]$/.test(e.key)) return;
+        const target = e.target as { closest?: (selector: string) => Element | null } | null;
+        if (typeof target?.closest === 'function' && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"]')) return;
+        e.preventDefault();
+        panelColumns = e.key === '0' ? undefined : Number(e.key);
+        fitColumns();
+        if (columnsTrigger) columnsTrigger.value = panelColumns ? String(panelColumns) : 'auto';
+      };
+      doc.addEventListener('keydown', onPanelKey);
+      stopPanelKeys = () => doc.removeEventListener('keydown', onPanelKey);
       for (const f of r.facets) {
         const p = renderPlotChart({ ...options, panel: { title: f.label } });
         grid.appendChild(p.card);
@@ -2002,6 +2041,6 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       chips.forEach((c, k) => c.setState({ selected: active.has(k), dimmed: active.size > 0 && !active.has(k) }));
       draw();
     },
-    destroy() { resizeHandle.disconnect(); pointer?.destroy(); for (const p of panels) p.destroy(); },
+    destroy() { stopPanelKeys?.(); resizeHandle.disconnect(); pointer?.destroy(); for (const p of panels) p.destroy(); },
   };
 }

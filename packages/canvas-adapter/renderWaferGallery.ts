@@ -3028,7 +3028,7 @@ export function renderWaferGallery(
    */
   const onColumnsKey = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented || insightsOpen) return;
-    if (!/^[0-5]$/.test(e.key)) return;
+    if (!/^[0-5]$/.test(e.key) || container.ownerDocument.querySelector('[role="dialog"]')) return;
     const target = e.target as { closest?: (selector: string) => Element | null } | null;
     if (typeof target?.closest === 'function' && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]')) return;
     e.preventDefault();
