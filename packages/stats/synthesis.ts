@@ -900,10 +900,35 @@ export function synthesisSource(summary: StatsSummary | LotStatsSummary): StatsS
 }
 
 /**
+ * Built syntheses by summary, then by the options that shape one. The summary panel, Insights and the report each ask for
+ * the same synthesis of the same summary, and building it costs about a second on a lot of 266,000 dies, so a later
+ * request for one already built is answered from here. Keyed on the summary object, so it goes with it, and on the
+ * options by their content (the pass bins and the attributes), so a change to either builds again.
+ */
+const synthesisCache = new WeakMap<StatsSummary | LotStatsSummary, Map<string, { findings: readonly StatsFinding[]; synthesis: Synthesis }>>();
+
+/**
  * The synthesis for a wafer or a lot: a headline, up to three loss items ranked by dies
- * lost, and a line saying what was compared.
+ * lost, and a line saying what was compared. The result is shared between callers, so it is frozen.
  */
 export function buildSynthesis(input: StatsSummary | LotStatsSummary, ctx: SynthesisContext = {}): Synthesis {
+  const key = `${ctx.passBins?.join(',') ?? '-'}|${ctx.attributes ? JSON.stringify(ctx.attributes) : '-'}`;
+  let byOptions = synthesisCache.get(input);
+  if (!byOptions) synthesisCache.set(input, byOptions = new Map());
+  const cached = byOptions.get(key);
+  // The findings are what a synthesis is built from, so an entry holds only while they are the same ones: a summary whose
+  // findings were added to, removed or replaced after the first build is built again.
+  const findings = input.findings;
+  if (cached && cached.findings.length === findings.length && cached.findings.every((f, i) => f === findings[i])) return cached.synthesis;
+  const built = computeSynthesis(input, ctx);
+  Object.freeze(built.items);
+  built.items.forEach(Object.freeze);
+  if (built.also) { Object.freeze(built.also.items); built.also.items.forEach(Object.freeze); Object.freeze(built.also); }
+  byOptions.set(key, { findings: [...findings], synthesis: Object.freeze(built) });
+  return built;
+}
+
+function computeSynthesis(input: StatsSummary | LotStatsSummary, ctx: SynthesisContext): Synthesis {
   const summary = synthesisSource(input);
   const findings = summary.findings;
   const waferCount = summary.level === 'lot' ? summary.stats.waferCount : undefined;

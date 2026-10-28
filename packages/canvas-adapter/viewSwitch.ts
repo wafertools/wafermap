@@ -32,7 +32,9 @@ export function createViewSwitch(
     // toolbar shows in each view. A host with no toolbar right-aligns it (`marginLeft: auto`).
     order: '1', flexShrink: '0', display: 'inline-flex', alignItems: 'stretch',
     background: CLR.menuBg, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.control,
-    boxShadow: SHADOW.panel, overflow: 'hidden',
+    // No `overflow: hidden`: it clipped the buttons' focus ring to a sliver on the outer edge. Each button
+    // carries its own outer corner radius instead, so the selected fill still follows the rounded border.
+    boxShadow: SHADOW.panel,
   } as Partial<CSSStyleDeclaration>);
 
   const make = (label: string, view: 'maps' | 'insights', tip: string): HTMLButtonElement => {
@@ -52,6 +54,8 @@ export function createViewSwitch(
   };
   const maps = make(mapsLabel, 'maps', scope === 'lot' ? 'The wafer maps' : 'The wafer map');
   const insights = make('Insights', 'insights', `Charts and statistics for this ${scope}`);
+  maps.style.borderRadius = `${RADIUS.control} 0 0 ${RADIUS.control}`;
+  insights.style.borderRadius = `0 ${RADIUS.control} ${RADIUS.control} 0`;
   el.append(maps, insights);
 
   const paint = (b: HTMLButtonElement, on: boolean): void => {

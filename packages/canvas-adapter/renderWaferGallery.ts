@@ -4280,6 +4280,13 @@ export function renderWaferGallery(
   });
   gridResizeObserver.observe(gridEl);
 
+  // Publishes the sticky header's height so a sticky band below it (the Insights tab bar) can stick under the header rather than
+  // behind it. The header's height changes as its toolbar wraps. Set synchronously too, since observers report after layout.
+  const publishStickyTop = (): void => { container.style.setProperty('--wmap-sticky-top', `${stickyHeaderEl.offsetHeight}px`); };
+  publishStickyTop();
+  const stickyHeaderObserver = new (container.ownerDocument.defaultView ?? window).ResizeObserver(publishStickyTop);
+  stickyHeaderObserver.observe(stickyHeaderEl);
+
   // Initial gallery summary panel render
   if (gallerySummaryPanelEl) renderGallerySummaryPanel();
 
@@ -4741,6 +4748,7 @@ export function renderWaferGallery(
       cardControllers = [];
       getOpenMenu()?.remove();
       gridResizeObserver.disconnect();
+      stickyHeaderObserver.disconnect();
       // Cancel any frame still queued by that observer, or it fires against a
       // torn-down gallery after destroy().
       if (gridResizeQueued) {

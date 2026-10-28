@@ -43,6 +43,9 @@ under `### Breaking`.
 
 ### Changed
 
+- **"What stands out" is built once for a lot.** The summary panel, Insights and the report share one result for the same lot and pass bins, so a plot-mode switch or opening Insights after the lot has loaded no longer rebuilds it (about a second saved on a 266,000-die lot, in Chrome). The result is read-only.
+- **The Maps | Insights switch shows its whole focus ring.** The ring round the focused tab is drawn in full, on every side, following the switch's rounded corners.
+- **The Insights tab bar stays in view.** The Overview / Distributions / Correlation tabs and their Group-by controls stick beneath the gallery header while the charts scroll, as the bin legend does in the maps view.
 - **A demo lot cut at its own wafer size keeps its pattern.** `docs/examples/data/generate-demos.js --geometry` places each lot's patterns by where its outermost reachable die sits and scales the edge-ring failure rate so the expected share of failing dies is the default wafer's. A coarse wafer (300 mm with 10×8 mm dies) had lost about a third of the edge-ring lot's failures, so its pattern was no longer found. The default geometry is unchanged, byte for byte.
 - **A gallery card is sized for dies of 6 px.** Auto layout sizes cards so each die is at least 6 px across (it was 4 px), so on a dense wafer
   (about 1,000 dies and up) a die is wide enough to aim a pointer at and the kerf between dies stays a clear single line. A card is wider than

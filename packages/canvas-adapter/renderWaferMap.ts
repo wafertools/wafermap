@@ -1478,6 +1478,9 @@ export function renderWaferMapCard(
       // above mapBox and overlaps nothing, exactly as the gallery's has always
       // been, so it needs the same reservation the gallery needed: none.
       paddingTop: '0' } as Partial<CSSStyleDeclaration>);
+      // This element is itself the scroller and the identity header sits outside it, so the tab bar sticks at its top edge. Pinned to 0 so a
+      // `--wmap-sticky-top` inherited from a gallery sharing the container cannot push the bar down.
+      insightsTab.el.style.setProperty('--wmap-sticky-top', '0px');
       // Hidden on arrival: the tab is only ever built because someone is
       // opening it, and setInsightsOpen reveals it once the load resolves.
       insightsTab.el.style.display = 'none';

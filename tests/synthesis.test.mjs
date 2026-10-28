@@ -676,3 +676,28 @@ test('a field\'s tests are led by the largest shift, though the weight is the sa
   assert.match(it.text, /^2 tests differ by Split\. Largest: T3 is higher on Split B than on Split A \(3 and 3 wafers\): a shift of 3\.0σ/);
   assert.deepEqual(it.target, { kind: 'test', testNumber: 3 });
 });
+
+test('a synthesis already built for a summary and options is returned again, not rebuilt', () => {
+  const l = fakeLot([{ name: 'Ring 4 (edge)', dies: 1000, drop: 0.3 }]);
+  const first = buildSynthesis(l, { passBins: [1] });
+  assert.equal(buildSynthesis(l, { passBins: [1] }), first, 'the same summary and pass bins give the one result');
+  assert.equal(buildSynthesis(l, { passBins: [1] }), first, 'and a fresh array of the same bins is the same options');
+});
+
+test('a different pass bin, attributes or summary builds its own synthesis', () => {
+  const l = fakeLot([{ name: 'Ring 4 (edge)', dies: 1000, drop: 0.3 }]);
+  const base = buildSynthesis(l, { passBins: [1] });
+  assert.notEqual(buildSynthesis(l, { passBins: [1, 2] }), base);
+  assert.notEqual(buildSynthesis(l, {}), base);
+  assert.notEqual(buildSynthesis(l, { passBins: [1], attributes: { split: { label: 'Corner' } } }), base);
+  assert.notEqual(buildSynthesis(fakeLot([{ name: 'Ring 4 (edge)', dies: 1000, drop: 0.3 }]), { passBins: [1] }), base);
+});
+
+test('a summary whose findings change is built again, and the shared result cannot be edited', () => {
+  const l = fakeLot([{ name: 'Ring 1 (core)', dies: 1000, drop: 0.3 }]);
+  const before = buildSynthesis(l, { passBins: [1] });
+  l.findings.shift();
+  assert.notEqual(buildSynthesis(l, { passBins: [1] }), before, 'removing a finding invalidates the entry');
+  assert.throws(() => { 'use strict'; before.items.push({}); }, TypeError, 'the items are frozen');
+  assert.throws(() => { 'use strict'; before.headline = 'x'; }, TypeError, 'the result is frozen');
+});

@@ -419,8 +419,20 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // respective views, so the space between band and content must be the same
     // or switching views visibly reflows the content by the difference (it was
     // 18px here against the legend's 10px).
-    marginBottom: SPACE.lg, marginLeft: contentInset, marginRight: contentInset } as Partial<CSSStyleDeclaration>);
+    margin: '0' } as Partial<CSSStyleDeclaration>);
   tabBar.setAttribute('role', 'tablist');
+
+  // Keeps the tab bar on screen while the charts scroll under it, as the gallery's legend stays with the maps. The gutters and the
+  // gap below are this wrapper's padding, not the bar's margin, so its own background covers the full width and hides the cards
+  // passing beneath. `top` follows the host's sticky header when it publishes `--wmap-sticky-top` (the gallery does), else 0.
+  // The z-index is deliberately low, and what contains the chart cards' own toolbars (explicit Z_BASE) is `isolation: isolate` on
+  // `bodyEl` below; the bar's dropdowns render on `document.body`, above it.
+  const tabStickyEl = doc.createElement('div');
+  Object.assign(tabStickyEl.style, {
+    position: 'sticky', top: 'var(--wmap-sticky-top, 0px)', zIndex: '1',
+    background: CLR.menuBg,
+    paddingLeft: contentInset, paddingRight: contentInset, paddingBottom: SPACE.lg } as Partial<CSSStyleDeclaration>);
+  tabStickyEl.appendChild(tabBar);
   // Registered once, not per-`render()` — `tabBar` itself persists across
   // sub-tab switches (only its children are torn down and rebuilt), so this
   // would otherwise accumulate a duplicate listener on every switch. Left/
@@ -456,6 +468,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // "tab bar belongs to the content below it" grouping that margin was for is
     // now carried by the band being a bounded surface rather than by spacing.
     marginTop: '0',
+    // Contains the chart cards' own z-indexed toolbars so they cannot rise above the sticky tab bar.
+    isolation: 'isolate',
     paddingLeft: contentInset, paddingRight: contentInset } as Partial<CSSStyleDeclaration>);
 
   // The page filter, between the tabs and what they show: present on every tab whenever a filter exists, on or off.
@@ -488,7 +502,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   doc.addEventListener('keydown', onColumnsKey);
 
   rootEl.appendChild(metaStripEl);
-  rootEl.appendChild(tabBar);
+  rootEl.appendChild(tabStickyEl);
   rootEl.appendChild(filterBandEl);
   rootEl.appendChild(bodyEl);
 

@@ -101,6 +101,33 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+// The PAT showcase lot drawn as a gallery over the page, in the PAT verdict mode, in a host `#pat-shot`; the wafer with the most
+// outliers is its third card. Shared by the chart thumbnail and the user guide's figure.
+async function mountPatGallery(page) {
+  await page.evaluate(async () => {
+    const { buildWaferMap } = await import('wafermap');
+    const { renderWaferGallery } = await import('wafermap/render');
+    const [csv, meta] = await Promise.all([
+      fetch('../data/showcase-pat-screen.csv').then(r => r.text()),
+      fetch('../data/showcase-pat-screen.meta.json').then(r => r.json()),
+    ]);
+    const lines = csv.trim().split('\n');
+    const head = lines[0].split(',');
+    const byWafer = new Map();
+    for (const line of lines.slice(1)) {
+      const c = Object.fromEntries(line.split(',').map((v, i) => [head[i], v]));
+      if (!byWafer.has(c.WAFER_ID)) byWafer.set(c.WAFER_ID, []);
+      byWafer.get(c.WAFER_ID).push({ x: +c.X, y: +c.Y, sbin: +c.SBIN, hbin: +c.SBIN, testValues: { 1: +c.VTH_V, 2: +c.IDDQ_UA, 3: +c.IDSAT_MA, 4: +c.TPD_NS } });
+    }
+    const items = [...byWafer].map(([label, results]) => ({ ...buildWaferMap({ results, ...meta }), label }));
+    const host = document.createElement('div');
+    host.id = 'pat-shot';
+    host.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff;overflow:auto';
+    document.body.appendChild(host);
+    renderWaferGallery(host, items, { viewOptions: { plotMode: 'metadata', activeMetadataKey: 'wmapPat' }, insights: { enabled: false }, columns: 4 });
+  });
+}
+
 export const CAPTURES = [
 
   // ── hero-test-values.png — homepage hero: Idsat heatmap with colorbar + toolbar ─
@@ -537,6 +564,22 @@ export const CAPTURES = [
     },
   },
 
+  // ── guide-pat-verdict-map.png — §10.12 Part average testing: one wafer of the PAT showcase lot in the PAT verdict mode ─
+  {
+    file: 'guide-pat-verdict-map',
+    group: 'maps',
+    page: '/examples/insights.html',
+    wait: 2500,
+    screenshotFn: async (page, outFile) => {
+      await mountPatGallery(page);
+      const card = page.locator('#pat-shot .wmap-gallery-card').nth(2);
+      await card.locator('canvas').first().waitFor();
+      await page.mouse.move(2, 2);
+      await page.waitForTimeout(1800);
+      await card.screenshot({ path: outFile });
+    },
+  },
+
   // ── The Chart gallery (examples/insights.html): one thumbnail of each chart and table, written to docs/examples/thumbs/ for
   //    the page's tiles. One definition makes them all, so they can be redone in one go. ──────────────────────────────────
   {
@@ -615,28 +658,7 @@ export const CAPTURES = [
       // The PAT verdict map, from the PAT showcase lot (docs/data/showcase-pat-screen.*): the demo lot's PAT limits reach its test
       // limits, so it has no outliers to show. The gallery is drawn over the page, in the PAT verdict mode, and the wafer with the
       // most outliers (P3) is the one shot.
-      await page.evaluate(async () => {
-        const { buildWaferMap } = await import('wafermap');
-        const { renderWaferGallery } = await import('wafermap/render');
-        const [csv, meta] = await Promise.all([
-          fetch('../data/showcase-pat-screen.csv').then(r => r.text()),
-          fetch('../data/showcase-pat-screen.meta.json').then(r => r.json()),
-        ]);
-        const lines = csv.trim().split('\n');
-        const head = lines[0].split(',');
-        const byWafer = new Map();
-        for (const line of lines.slice(1)) {
-          const c = Object.fromEntries(line.split(',').map((v, i) => [head[i], v]));
-          if (!byWafer.has(c.WAFER_ID)) byWafer.set(c.WAFER_ID, []);
-          byWafer.get(c.WAFER_ID).push({ x: +c.X, y: +c.Y, sbin: +c.SBIN, hbin: +c.SBIN, testValues: { 1: +c.VTH_V, 2: +c.IDDQ_UA, 3: +c.IDSAT_MA, 4: +c.TPD_NS } });
-        }
-        const items = [...byWafer].map(([label, results]) => ({ ...buildWaferMap({ results, ...meta }), label }));
-        const host = document.createElement('div');
-        host.id = 'pat-shot';
-        host.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff;overflow:auto';
-        document.body.appendChild(host);
-        renderWaferGallery(host, items, { viewOptions: { plotMode: 'metadata', activeMetadataKey: 'wmapPat' }, insights: { enabled: false }, columns: 4 });
-      });
+      await mountPatGallery(page);
       const patCard = page.locator('#pat-shot .wmap-gallery-card').nth(2);
       await patCard.locator('canvas').first().waitFor();
       await page.waitForTimeout(1800);

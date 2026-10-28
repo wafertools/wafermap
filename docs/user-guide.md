@@ -1632,6 +1632,10 @@ card counts them per wafer and names the tests the outliers are outside on; the 
 column and, where there are outliers, **PAT tests**; the plot builder takes **PAT** as a colour, category or panel
 field and draws a wafer's PAT limits as dotted lines.
 
+![A wafer coloured by PAT verdict: dies within the limits in blue, outliers in amber, dies that fail anyway in red](images/guide-pat-verdict-map.png)
+
+*A wafer in the **PAT verdict** plot mode: the outliers (amber) gather in the middle, which the bin and test limits alone do not show.*
+
 **What this is and is not.** The limits follow the robust-statistics method of AEC-Q001 Rev D (section 2.4: the median as
 the robust mean, (Q3 − Q1) ÷ 1.35 as the robust sigma; section 3.1.2: dynamic limits of ± 6 robust sigma from the lot's or
 wafer's own passing parts), here per wafer. That guideline applies PAT while parts are tested: parts that pass the
