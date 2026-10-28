@@ -1903,7 +1903,7 @@ export function makeLinkedGroupSelect(
   labelText: string,
   initial: string | null,
   onUserChange: (key: string | null) => void,
-  opts: { maxWidth?: string; ownerDocument?: Document } = {},
+  opts: { maxWidth?: string; ownerDocument?: Document; hint?: string } = {},
 ): LinkedGroupSelect {
   let active = initial;
   const toValue = (k: string | null) => k ?? ALL_GROUPS;
@@ -1996,9 +1996,10 @@ export function makeLabeledSelect(
   options: readonly { value: string; label: string }[],
   selected: string,
   onChange: (value: string) => void,
-  opts: { maxWidth?: string; hook?: string; ownerDocument?: Document } = {},
+  /** `hint` is the hover tooltip over the label and its trigger, for a control whose name alone does not say what it does. */
+  opts: { maxWidth?: string; hook?: string; ownerDocument?: Document; hint?: string } = {},
 ): HTMLLabelElement {
-  const { maxWidth = '160px', hook, ownerDocument = document } = opts;
+  const { maxWidth = '160px', hook, ownerDocument = document, hint } = opts;
   const label = ownerDocument.createElement('label');
   label.textContent = labelText;
   Object.assign(label.style, { color: CLR.label, fontSize: FONT.body, display: 'flex', alignItems: 'center', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
@@ -2010,6 +2011,7 @@ export function makeLabeledSelect(
     maxWidth, ownerDocument, hook, ariaLabel: labelText.replace(/:\s*$/, ''),
   });
   label.appendChild(select);
+  if (hint) wireTooltip(label, hint);
   return label;
 }
 

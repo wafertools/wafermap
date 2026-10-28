@@ -137,7 +137,7 @@ with it.
 ## Support
 
 wafermap is free, open-source and MIT-licensed, and will stay that way. If it saves you
-time, you can leave a tip on [Ko-fi](https://ko-fi.com/wafertools). If your company relies
-on it, please consider a monthly sponsorship:
+time, you can support it on [Ko-fi](https://ko-fi.com/wafertools). If your company relies
+on it, please consider sponsoring it monthly:
 [how to support wafertools](https://wafertools.github.io/support/). Bug reports and sample
 files help just as much.

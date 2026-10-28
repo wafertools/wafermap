@@ -158,13 +158,15 @@ test('the withheld note tells the reader how to get the tests back', () => {
   tab.destroy();
 });
 
-test('a group clicked in the value histogram’s legend narrows the section to it, and Back shows every group', () => {
+test('a group clicked in the value histogram’s legend filters that plot only; Show narrows the section, and Back widens it', () => {
   const tab = mount('distributions');
   pickFrom(tab, 'Group by', 'Lot');
   const card = () => tab.el.querySelector('[data-wmap-chart-title="Value histogram"]');
   const chip = [...card().querySelectorAll('button')].find(b => b.textContent.trim() === 'LOT-A');
   chip.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-  assert.ok(state(tab).hasA, 'the section is narrowed to LOT-A, so its own name for 1001 is back');
+  assert.equal(state(tab).withheld, 1, 'a legend click leaves the section on every group');
+  pickFrom(tab, 'Show', 'LOT-A');
+  assert.ok(state(tab).hasA, 'Show narrows the section to LOT-A, so its own name for 1001 is back');
   const back = [...card().querySelectorAll('button')].find(b => /Back/.test(b.textContent));
   assert.ok(back && back.style.display !== 'none', 'the histogram offers Back');
   back.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));

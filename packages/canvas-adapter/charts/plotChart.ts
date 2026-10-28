@@ -103,13 +103,6 @@ export interface PlotChartOptions {
   binColors?: BinColors;
   /** Right-click a mark that is one wafer (a wafer's bar or box, a point per wafer): that wafer's menu, as on the maps. */
   onWaferMenu?: WaferContextMenuHandler;
-  /**
-   * A legend click picks a group for the host to narrow to (an Insights section's group), in place of filtering this
-   * plot alone: called with the group clicked, or null when it is `legendPicked` already (show every group again).
-   */
-  onLegendPick?: (group: string | null) => void;
-  /** The group the host has narrowed to, shown selected in the legend. */
-  legendPicked?: string | null;
   /** Click a point: open its wafer, on `testNumber` (the plot's own measurement) when it has one. Omit where there is no wafer to open. */
   onOpenWafer?: (item: number, testNumber?: number) => void;
   /** What a click on a bar or box that is not one wafer (or on a line's point) does, in the reader's words. Default `chart
@@ -1287,6 +1280,15 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       if (n <= 300) for (const k of idx) { ctx.beginPath(); ctx.arc(LEFT + x.frac(vs[k]) * plotW, px(at(probabilityPosition(k, n))), 2.5, 0, Math.PI * 2); ctx.fill(); }
     }
     ctx.restore();
+    if (selected.size > 0) {
+      ctx.lineWidth = 1.5; ctx.strokeStyle = theme.text;
+      let n = 0;
+      for (const p of selected) {
+        if (active.size > 0 && !active.has(p.group)) continue;
+        if (++n > SAMPLE_LIMIT) break;
+        ctx.beginPath(); ctx.arc(LEFT + x.frac(p.x) * plotW, px(at(p.y)), 4, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
     const hot = hovered ? drawn.find(d => d.p === hovered) : undefined;
     if (hot) { ctx.beginPath(); ctx.arc(hot.cx, hot.cy, 5, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = theme.text; ctx.stroke(); }
   }
@@ -1304,7 +1306,8 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       // The rank is the fact; the share is where (rank − ½) / n puts it on the axis, not a count at or below.
       + escHtml(`rank ${rank.toLocaleString('en-GB')} of ${n.toLocaleString('en-GB')}, plotted at ${+(p.y * 100).toPrecision(3)}%`)
       + (r.groups.length > 1 ? `<br>${escHtml(groupLabel(p.group))}` : '')
-      + (options.onOpenWafer ? `<br><em>click to ${escHtml(options.openActionLabel ?? 'open this wafer')}</em>` : '');
+      + (options.onOpenWafer ? `<br><em>click to ${escHtml(options.openActionLabel ?? 'open this wafer')}</em>` : '')
+      + (options.onWaferMenu && !p.die ? WAFER_MENU_HINT : '');
   }
 
   // ── heatmap ──
@@ -1694,13 +1697,8 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       if (r.facets) Object.assign(legend.style, { position: 'sticky', top: '0', zIndex: '2', background: CLR.menuBg, paddingBottom: SPACE.sm, marginBottom: SPACE.md } as Partial<CSSStyleDeclaration>);
       r.groups.forEach((g, i) => {
         const chip = makeSeriesLegendItem(g || '(none)', colorOf(i), doc);
-        const picked = options.onLegendPick && options.legendPicked === g;
-        attachChartTip(chip.el, card, tooltip, options.onLegendPick
-          ? (picked ? `${g || '(none)'} — click to show every group again` : `${g || '(none)'} — click to show only this group in every chart here`)
-          : `${g || '(none)'} — click to filter`);
-        if (picked) active.add(i);
+        attachChartTip(chip.el, card, tooltip, `${g || '(none)'} — click to filter`);
         chip.el.addEventListener('click', () => {
-          if (options.onLegendPick) { options.onLegendPick(picked ? null : g); return; }
           if (active.has(i)) active.delete(i); else active.add(i);
           chips.forEach((c, k) => c.setState({ selected: active.has(k), dimmed: active.size > 0 && !active.has(k) }));
           if (panels.length) for (const p of panels) p.setActiveGroups(active); else draw();
@@ -1823,6 +1821,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         describe: describeProbabilityPoint,
         clickable: () => !!options.onOpenWafer,
         onOpen: p => options.onOpenWafer?.(p.item, plotTestNumber(r.spec)),
+        onContextMenu: waferMenu,
         onHover: p => { hovered = p; draw(); },
         select: options.onSelectPoints ? {
           // Every unit inside the box, not only the points drawn: a sampled curve still selects all the dies it stands for.
@@ -1842,9 +1841,14 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
             });
             return out;
           },
-          onPicked: (picked, at) => { if (picked.length > 0) options.onSelectPoints!(picked, at, canvas!); },
-          onClear: () => {},
-          hasSelection: () => false,
+          onPicked: (picked, at) => {
+            selected.clear();
+            for (const p of picked) selected.add(p);
+            draw();
+            if (picked.length > 0) options.onSelectPoints!(picked, at, canvas!);
+          },
+          onClear: () => { selected.clear(); draw(); },
+          hasSelection: () => selected.size > 0,
         } : undefined,
       });
     } else if (r.marks.type === 'histogram') {
