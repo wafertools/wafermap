@@ -193,7 +193,7 @@ The test numbers and wafer attributes in the examples (`1060`, `processSplit`) a
 
 **Why it is useful.** It answers "which wafers are different?" before any other question: the wafer that fell away, the pair that sit apart, the drift down the cassette. It is also where a split experiment first shows: with **Group by** on, one bar per group says whether the groups differ in yield at all.
 
-**How to read it.** Each bar is one wafer's yield, passing dies over judged dies. The pass bins are named in the card's title, so the yield says what it counts. The value is written at the end of the bar and the line is the median of the bars, so a bar far from the line is the wafer to open. Sort by yield to rank them or by wafer ID to see the cassette order. Click a bar to open that wafer's map; right-click it to chart that wafer alone. With Group by on, each bar is a group, pooled as passing dies over judged dies; click a group's bar to see its wafers and **Back** to return.
+**How to read it.** Each bar is one wafer's yield, passing dies over judged dies. The pass bins are named in the card's title, so the yield says what it counts. The value is written at the end of the bar and the line is the median of the bars, so a bar far from the line is the wafer to open. Sort by yield to rank them or by wafer ID to see the cassette order. Click a bar to open that wafer's map; right-click it to chart that wafer alone. With Group by on, each bar is a group, pooled as passing dies over judged dies; click a group's bar to see its wafers and **Back** to return, or choose **Group, then wafer** to see every group's wafers inside it at once.
 
 **Notes.**
 
@@ -225,7 +225,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Why it is useful.** Yield is the loss in one number; the pareto splits it by bin, so the failing bins that cost the most dies lead and the few that account for most of the loss are plain. It is the usual first answer to "what do we fix first?".
 
-**How to read it.** Bars run from the bin with the most dies to the one with the fewest, named from the bin definitions where the data carries them. The passing bin is usually the first and tallest; the failing bins follow. Shown alone, the line is the running share of all dies. A toggle switches between hard and soft bins. With **Group by** on there is a bar per group in each bin, as each group's share of its own dies so groups of different sizes compare, or as counts. Click a bar to chart or tabulate the dies in it.
+**How to read it.** Bars run from the bin with the most dies to the one with the fewest, named from the bin definitions where the data carries them. The passing bin is usually the first and tallest; the failing bins follow. Shown alone, the line is the running share of all dies. A toggle switches between hard and soft bins. With **Group by** on there is a bar per group in each bin, as each group's share of its own dies so groups of different sizes compare, or as counts; **Bin mix** turns it round, a bar per group split into its bins. Soft bins keep the fifteen largest, and a note says how many were left out. Click a bar to chart or tabulate the dies in it.
 
 **Notes.**
 
@@ -245,7 +245,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Why it is useful.** A die can fail for many reasons; this ranks the tests by how many dies each fails, so the test that costs the most is at the top. With **Group by** on, it also shows whether a test fails more in one split than another.
 
-**How to read it.** Tests run down the left, worst first, each with its pass rate at the end of its bar. Up to three ways of judging are offered, whichever the data supports: **Test limits** (the measured value against the test's limits), **Tester flag** (the pass or fail the tester itself recorded, which a parametric test carries whether or not its limits were exported) and **Functional** (tests that are only pass or fail). Click a test's bar to chart or tabulate the dies that fail it.
+**How to read it.** Tests run down the left, worst first, each with its pass rate at the end of its bar. With more than 25 tests the worst 25 are drawn (choose **All tests** for the rest), and with Group by on **Grid** shows the worst 25 as a grid of test by group, so a test that fails in one group stands out as a coloured cell. Up to three ways of judging are offered, whichever the data supports: **Test limits** (the measured value against the test's limits), **Tester flag** (the pass or fail the tester itself recorded, which a parametric test carries whether or not its limits were exported) and **Functional** (tests that are only pass or fail). Click a test's bar to chart or tabulate the dies that fail it.
 
 **Notes.**
 
@@ -276,7 +276,26 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Where to find it.** **Insights ▸ Overview**. As a plot, put **Ring** on the categories of a [bar chart](#bar-chart) of yield.
 
-**See also.** [Quadrant yield](#quadrant-yield), [Bin map](#bin-map).
+**See also.** [Ring yield by wafer](#ring-yield-by-wafer), [Quadrant yield](#quadrant-yield), [Bin map](#bin-map).
+
+### Ring yield by wafer
+
+![Ring yield by wafer: a grid of rings by wafers, each cell coloured by its yield](examples/thumbs/ring-yield-by-wafer.webp)
+
+*Yield of each ring on each wafer (or group), as a colour, to show whether a radial pattern is on every wafer or on one.*
+
+**Why it is useful.** The [ring yield](#ring-yield) diagram pools every wafer, so an edge loss on one wafer and a mild edge loss on all of them look alike. Laid out wafer by wafer, a dark cell in one column is a wafer problem and a dark row across every column is a process one.
+
+**How to read it.** Each row is a ring (Ring 1 the centre) and each column a wafer, or a group when **Group by** is on. A cell's colour is the yield of that ring on that wafer, pooled over its judged dies. Hover a cell for its figure and its dies.
+
+**Notes.**
+
+- **Judged dies only**, as in every yield here, each wafer judged by its own pass bins.
+- **Only for two wafers or more**; one wafer has the ring diagram alone.
+
+**Where to find it.** **Insights ▸ Overview**, beside the ring yield. To build your own, choose **+ New plot** on **My plots**, set **Chart type** to Heatmap, **Columns (X axis)** to Wafer, **Rows** to Ring and **Values (Y axis)** to Yield.
+
+**See also.** [Ring yield](#ring-yield), [Heatmap](#heatmap).
 
 ### Quadrant yield
 
@@ -296,7 +315,26 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Where to find it.** **Insights ▸ Overview**. As a plot, put **Quadrant** on the categories of a [bar chart](#bar-chart) of yield.
 
-**See also.** [Ring yield](#ring-yield), [Bin map](#bin-map).
+**See also.** [Quadrant yield by wafer](#quadrant-yield-by-wafer), [Ring yield](#ring-yield), [Bin map](#bin-map).
+
+### Quadrant yield by wafer
+
+![Quadrant yield by wafer: a grid of quarters by wafers, each cell coloured by its yield](examples/thumbs/quadrant-yield-by-wafer.webp)
+
+*Yield of each quarter of the wafer on each wafer (or group), as a colour, to show whether a one-sided pattern is on every wafer or on one.*
+
+**Why it is useful.** The [quadrant yield](#quadrant-yield) diagram pools every wafer, so a quarter that is low on all of them (a tilted probe card, a gradient in the process) looks like one that is very low on a single wafer. Laid out wafer by wafer, a dark row across every column is the first and a dark cell in one column the second.
+
+**How to read it.** Each row is a quarter (NE, NW, SE, SW) and each column a wafer, or a group when **Group by** is on. A cell's colour is the yield of that quarter on that wafer, pooled over its judged dies. Hover a cell for its figure and its dies.
+
+**Notes.**
+
+- **Judged dies only**, each wafer judged by its own pass bins.
+- **Only for two wafers or more**; one wafer has the quadrant diagram alone.
+
+**Where to find it.** **Insights ▸ Overview**, beside the quadrant yield. To build your own, choose **+ New plot** on **My plots**, set **Chart type** to Heatmap, **Columns (X axis)** to Wafer, **Rows** to Quadrant and **Values (Y axis)** to Yield.
+
+**See also.** [Quadrant yield](#quadrant-yield), [Ring yield by wafer](#ring-yield-by-wafer), [Heatmap](#heatmap).
 
 ### Reticle cell yield
 
@@ -330,7 +368,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Why it is useful.** It is the [box plot](#box-plot) for the test you are looking at, one box per wafer down the left (or one per group with Group by on), so a wafer that shifted, widened or grew a tail stands out beside the rest.
 
-**How to read it.** Read it as a box plot: the box holds the middle half of the dies, the line inside it is the median and the whiskers reach the lowest and highest values. Click a group's box to see its wafers and **Back** to return. Pick the test at the top. **Axis includes limits** widens the axis to the test's limits, **Clip outliers** narrows it to a robust range, and you choose which limits to draw. A change here reaches the histogram and the trend beside it.
+**How to read it.** Read it as a box plot: the box holds the middle half of the dies, the line inside it is the median and the whiskers reach the lowest and highest values. Click a group's box to see its wafers and **Back** to return, or choose **Group, then wafer** to draw every group's wafers inside it, coloured by group. Pick the test at the top. **Axis includes limits** widens the axis to the test's limits, **Clip outliers** narrows it to a robust range, and you choose which limits to draw. A change here reaches the histogram and the trend beside it.
 
 **Notes.**
 
@@ -349,7 +387,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Why it is useful.** A mean and a spread hide the shape. A histogram shows a second population, a long tail, a clamp at a rail or a distribution pushed against a limit, all of which change what to do about a test.
 
-**How to read it.** Bars count the dies in each range of values, and the test's limits are marked. Read the shape: one hump, two humps (two populations, often two splits), a tail on one side, a spike at one value. With **Group by** on there is one series per group. Choose all wafers or one at a time, and pick the test at the top.
+**How to read it.** Bars count the dies in each range of values, and the test's limits are marked. Read the shape: one hump, two humps (two populations, often two splits), a tail on one side, a spike at one value. With **Group by** on there is one series per group, each drawn as a share of its own dies so groups of different sizes compare (choose **Counts** for the number of dies), and a click on a group in the legend shows only that group in this plot. Choose all wafers or one at a time, and pick the test at the top.
 
 **Notes.**
 
@@ -487,7 +525,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Why it is useful.** A wafer map shows one measurement at a time. A scatter shows whether two move together (two tests driven by the same process step, a leakage that tracks a threshold), which tests can then share a cause or a fix.
 
-**How to read it.** A point is a die: its X test against its Y test, with the test limits drawn on the axes. The card prints **r**, the correlation coefficient of the points drawn, and **n**, how many there are, above the chart. A cloud tilting up to the right is a positive relationship, down to the right a negative one, a round cloud none. Click a point to open its wafer; drag a rectangle over the scatter to chart and tabulate the dies inside it. Pick the two tests at the top.
+**How to read it.** A point is a die: its X test against its Y test, with the test limits drawn on the axes. The card prints **r**, the correlation coefficient of the points drawn, and **n**, how many there are, above the chart. A cloud tilting up to the right is a positive relationship, down to the right a negative one, a round cloud none. Click a point to open its wafer; drag a rectangle over the scatter to chart and tabulate the dies inside it. With **Group by** on, a fitted line per group shows whether the relationship is the same in each. Pick the two tests at the top.
 
 **Notes.**
 
@@ -599,7 +637,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 **Notes.**
 
 - **The order is the data's.** There is deliberately no sort control, because sorting would destroy the drift; it needs at least two wafers.
-- **It has no control limits.** For those, and the points that break a rule, use the [control chart](#control-chart).
+- **The control chart is one click away.** Choose **Control chart** (from three wafers) for each wafer's mean against control limits, with the points that break a rule marked; see the [control chart](#control-chart).
 - **It is a plot.** **Edit as plot** opens it as one of your own.
 
 **Where to find it.** **Insights ▸ Distributions**.

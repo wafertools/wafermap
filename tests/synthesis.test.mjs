@@ -567,7 +567,7 @@ test('a jump inside an embedded report can be undone with Back or Alt+Left', asy
   dom.window.close();
 });
 
-test('a pass/fail test\'s item charts its pass rate, a measured test\'s its histogram', () => {
+test('a failing test\'s item charts its pass rate by wafer across a lot, however it is judged', () => {
   const l = regionWithTest({ inside: 0, outside: 600, lostShare: 1 });
   const lot = { ...l, stats: { ...l.stats, testSpecYield: [], functionalYield: [{ testNumber: 9, label: 'SCAN', failDies: 600, totalDies: l.stats.testSpecYield[0].totalDies }] } };
   const it = [...buildSynthesis(lot).items, ...(buildSynthesis(lot).also?.items ?? [])].find(i => i.target.kind === 'test');
@@ -577,15 +577,15 @@ test('a pass/fail test\'s item charts its pass rate, a measured test\'s its hist
   assert.equal(it.chart.valueLabels, true, 'each bar says its rate');
   assert.deepEqual(it.chart.axes.y.references, [{ stat: 'median' }], 'against the median of the bars');
   const measured = [...buildSynthesis(l).items, ...(buildSynthesis(l).also?.items ?? [])].find(i => i.target.kind === 'test');
-  assert.deepEqual([measured.chart.chart, measured.chart.fields.y], ['histogram', { test: 7 }]);
+  assert.deepEqual([measured.chart.chart, measured.chart.fields.x, measured.chart.fields.y], ['bar', { builtin: 'wafer' }, { passRate: 7 }], 'which wafers it fails on, which a limits histogram cannot say');
 });
 
-test('a region\'s loss charts yield by that kind of region, each bar with its value, against the median', () => {
+test('a region\'s loss across a lot charts its yield wafer by wafer, as a grid of region by wafer', () => {
   const l = regionWithTest({ inside: 0, outside: 600, lostShare: 1 });
   const region = buildSynthesis(l).items.find(i => i.kind === 'loss' && i.target.kind === 'finding' && i.chart.fields.y?.builtin === 'yield');
   assert.ok(region, 'a region item charted as yield');
-  assert.equal(region.chart.valueLabels, true);
-  assert.deepEqual(region.chart.axes.y.references, [{ stat: 'median' }]);
+  assert.equal(region.chart.chart, 'heatmap');
+  assert.deepEqual([region.chart.fields.x, region.chart.fields.rows], [{ builtin: 'wafer' }, { builtin: 'ring' }]);
 });
 
 // ── Group shifts: a wafer field whose groups differ in tests ──────────────────────
@@ -622,6 +622,7 @@ test('a split that moves a test is an item, each wafer one value, sized in withi
   assert.equal(it.measure, '1.5σ');
   assert.deepEqual(it.target, { kind: 'test', testNumber: 1 });
   assert.deepEqual(it.chart.fields.x, { meta: 'split' });
+  assert.equal(it.chart.level, 'wafer', 'the box draws each wafer once, as the comparison counts it');
   // 3,000 dies of 6,000, weighted by (1.5 / 2)².
   assert.ok(Math.abs(it.affected / 3000 - (1.5 / 2) ** 2) < 0.02, `about ${3000 * 0.5625} dies: ${it.affected}`);
   assert.ok(!all.some(i => i.testNumbers[0] === 2), 'Idd does not move between the splits');

@@ -30,6 +30,11 @@ under `### Breaking`.
 
 ### Added
 
+- **Ring yield by wafer and Quadrant yield by wafer.** Heatmaps on **Insights ▸ Overview**, beside the ring and quadrant diagrams: each region's yield on each wafer (or group), so a pattern on every wafer reads differently from one on a single wafer. Each is a plot, so **Edit as plot** opens it.
+- **Views on the Insights cards.** With **Group by** on, *Yield by group* offers **Group, then wafer** (each group's wafers inside it), *Test value distribution* offers the same nesting coloured by group, the bin pareto offers **Bin mix** (a bar per group split into its bins), and *Pass rate by test* offers a **Grid** of the worst 25 tests by group. *Wafer-to-wafer trend* offers a **Control chart** from three wafers. The pass-rate bars and the soft-bin pareto keep the worst 25 and the largest 15, and the card's note says how many were left out.
+- **A fitted line on the Insights test scatter** for each group when **Group by** is on.
+- **The Plot tab's examples.** The histogram is coloured and normalised by the split, the yield bar carries its values and the median, the tests with limits are drawn as one box each placed between their limits, a pass-rate grid shows which tests fail in which split, and the probability plot is coloured by the split.
+
 - **`checkDerivedExpression(input, testDefs, otherDerived?)`.** Checks one derived test's expression without building a map, for a host's own editor: it returns `{ ok: true, produces, reads, warnings }` (a number or a verdict, every test read and how, and advice such as units combined by `+`) or `{ ok: false, message, position }`. It runs the same parser, namespace, kind rule and test-number rules as `buildWaferMap` (a whole STDF number, not a measured test's and not another derived test's), so the editor and the build agree. A cycle between derived tests is still reported by the build as `derived-test-invalid`.
 - **The number keys set the columns of cards.** Over a gallery (or with focus in it, so no click is needed first), on the Insights tab and over a plot of panels, **1** to **5** set that many columns
   and **0** returns to Auto. The gallery's Columns control shows each choice's key, and the Insights tab has a **Columns** control of its
@@ -39,10 +44,18 @@ under `### Breaking`.
 - **A selection charted against the rest of its wafer.** The right-click menu of a single map with a selection adds a **Selection vs the rest of the wafer** section: a **Value histogram** with one colour per side, and a **Box plot** of the two. The sides are named in the title, the legend and the footnote ("661 dies · selection vs the rest of W01") with their die counts, so neither can be mistaken for the whole wafer. A plot's footnote can now say what its items are when they are not wafers (`PlotContext.populationLabel`).
 - **Pinned tests.** Each row of the Insights test pickers (and of the test pickers in the charts opened from a map) has a ☆ (or **P** on the focused row) that pins the test. Pinned tests are listed first under a "Pinned" heading, in every picker at once. `getPinnedTests`, `setPinnedTests` and `onPinnedTestsChange` (from `@wafertools/wafermap/render`) let a host keep the set between sessions.
 - **Invert selection.** Right-clicking a single map that has a selection offers **Invert selection** as the first row of the menu: the selection becomes the dies it did not hold.
+- **Hover hints on the Insights tabs and controls.** Each tab, and the Group by, Show and Columns controls, says what it does (Correlation: "How tests move together"), and a hovered tab's tint stays inside the tab bar's outline.
 - **A `funding` link.** `package.json` names the project's [support page](https://wafertools.github.io/support/), so `npm fund` lists it.
 
 ### Changed
 
+- **Value histogram over groups shows each group as a share of its own dies** (a **Counts** choice keeps the numbers), so groups of different sizes compare by shape.
+- **Group-shift charts in Worth a look draw each wafer once.** The box of a split's shift is drawn over wafer means, the figure the comparison counts, and a field that moves several tests draws them together, each rescaled. A test's mean off the median is drawn against the median of the plot.
+- **Worth a look charts of a lot's losses show where.** A region's loss is a region-by-wafer grid, a failing test is its pass rate by wafer, and an outlier wafer is its yield against control limits in wafer order.
+- **A plot of a set of tests at wafer level** draws one value per wafer for each test.
+- **The probability plot keeps its selection and has the wafer menu.** A box dragged over a probability plot stays marked until a click on empty space clears it, as on the scatter, and right-clicking a point that is one wafer opens that wafer's menu.
+- **A group's box on the Insights box plot drills only that card.** Clicking it shows that group's wafers in the box plot, with **Back**, as on Yield by group; **Show** is the one control that narrows the whole tab.
+- **A legend click filters only its own plot.** On the Insights value histogram, clicking a group in the legend shows just that group in that plot, as on every other plot; **Show** (and the box plot's drill-down) still narrow the whole tab.
 - **"What stands out" is built once for a lot.** The summary panel, Insights and the report share one result for the same lot and pass bins, so a plot-mode switch or opening Insights after the lot has loaded no longer rebuilds it (about a second saved on a 266,000-die lot, in Chrome). The result is read-only.
 - **The Maps | Insights switch shows its whole focus ring.** The ring round the focused tab is drawn in full, on every side, following the switch's rounded corners.
 - **The Insights tab bar stays in view.** The Overview / Distributions / Correlation tabs and their Group-by controls stick beneath the gallery header while the charts scroll, as the bin legend does in the maps view.

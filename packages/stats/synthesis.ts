@@ -399,7 +399,10 @@ function lossItem(
     // A fail bin's rise as each bin's share of the dies by that kind of region; a pass rate's fall as yield by it.
     chart: leadIsBin
       ? { chart: 'bar', fields: { x: regionField(lead), color: { builtin: lead.variable.kind === 'softBin' ? 'sbin' : 'hbin' } }, stack: 'percent' }
-      : rateBars(regionField(lead), { builtin: 'yield' }),
+      // Across a lot the region's yield wafer by wafer: whether the loss is on every wafer or on one.
+      : lead.level === 'lot'
+        ? { chart: 'heatmap', fields: { x: { builtin: 'wafer' }, rows: regionField(lead), y: { builtin: 'yield' } } }
+        : rateBars(regionField(lead), { builtin: 'yield' }),
   };
 }
 
@@ -450,7 +453,8 @@ function outlierItems(lot: LotStatsSummary): SynthesisItem[] {
       chips: [],
       findingIds: [f.id],
       testNumbers: [],
-      chart: rateBars({ builtin: 'wafer' }, { builtin: 'yield' }),
+      // The wafer's yield in the lot's order against the lot's own control limits: how far outside its spread it stands.
+      chart: { chart: 'control', fields: { x: { builtin: 'waferOrder' }, y: { builtin: 'yield' } } },
     });
   }
   return items;
@@ -534,7 +538,8 @@ function testLosses(summary: StatsSummary | LotStatsSummary, named: Set<number>)
         chips: [],
         findingIds: [],
         testNumbers: [testNumber],
-        chart: functional ? passRateChart(testNumber) : histogramOf(testNumber),
+        // Across a lot, where the test fails (which wafers) is the question its limits histogram cannot answer.
+        chart: functional || summary.level === 'lot' ? passRateChart(testNumber) : histogramOf(testNumber),
       },
     });
   };
@@ -684,7 +689,8 @@ function shiftItems(findings: readonly StatsFinding[], lossItems: SynthesisItem[
       reason: `${lead.summary}: a shift of ${sigma(d)} over ${plural(n, 'die')}`,
       brief: `${subjectOf(lead)}: ${lead.variable.label} ${lead.effect.direction}`,
       subject: subjectOf(lead), target: findingTarget(lead), findingIds: ranked.map(f => f.id), testNumbers: [testNumber],
-      chart: { chart: 'box', fields: { x: regionField(lead), y: testField(testNumber), color: { none: true } } },
+      // Each region's values against the median of every die plotted: the shift the item reports.
+      chart: { chart: 'box', fields: { x: regionField(lead), y: testField(testNumber), color: { none: true } }, axes: { y: { references: [{ stat: 'median' }] } } },
     }));
   }
   return out;
@@ -728,6 +734,8 @@ function capabilityItems(summary: StatsSummary | LotStatsSummary, failing: Reado
 
 /** A group's test shift is listed when its BH-adjusted p, over every field and test compared, is under this. */
 const GROUP_Q = 0.05;
+/** The most tests a group-shift chart draws together. */
+const MAX_SET_TESTS = 8;
 
 /**
  * A wafer field whose groups differ in tests (Vth higher on process split SS, on lot L2, on one test program): each
@@ -825,7 +833,11 @@ function groupShiftItems(lot: LotStatsSummary, attributes: Record<string, FacetC
       text, reason: n === 1 ? said : `${n} tests differ by ${field}. Largest: ${said}`,
       brief: n === 1 ? `${field} ${c.group}: ${c.label} ${c.higher ? 'higher' : 'lower'}` : `${field}: ${n} tests differ`,
       subject: field, target: { kind: 'test', testNumber: c.testNumber }, testNumbers: list.map(x => x.c.testNumber),
-      chart: { chart: 'box', fields: { x: { meta: key }, y: testField(c.testNumber), color: { meta: key } } },
+      // Each wafer one value, as the comparison counts them (the dies of a wafer are not independent). Several tests: the
+      // field's tests together, each rescaled to share an axis.
+      chart: n > 1
+        ? { chart: 'box', level: 'wafer', aggregate: 'mean', normalize: 'zscore', fields: { x: { builtin: 'test' }, y: { tests: list.slice(0, MAX_SET_TESTS).map(x => x.c.testNumber) }, color: { meta: key } } }
+        : { chart: 'box', level: 'wafer', aggregate: 'mean', fields: { x: { meta: key }, y: testField(c.testNumber), color: { meta: key } } },
     });
     // Each of its tests shown on its own map, largest shift first; the rest counted.
     if (n > 1) {
@@ -843,7 +855,7 @@ function passingFailItems(passingFails: readonly TestLoss[]): SynthesisItem[] {
     affected: t.passingDies, measure: '', severity: 'notable',
     text: `${t.label} ${t.plainVerb} on ${plural(t.passingDies, 'die')} binned as passing`,
     brief: `${t.label}: ${count(t.passingDies)} dies out of limits, binned passing`, subject: t.label,
-    target: t.item.target, testNumbers: [t.testNumber], chart: t.item.chart,
+    target: t.item.target, testNumbers: [t.testNumber], chart: histogramOf(t.testNumber),
   }));
 }
 

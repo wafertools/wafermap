@@ -645,12 +645,17 @@ test('examples follow the data: the worst ring filtered, the most-failing test r
   const ringBar = ex.find(p => p.where);
   assert.deepEqual(ringBar.where.conditions[0].field, { builtin: 'ring' });
   assert.deepEqual(ringBar.where.conditions[0].values, ['Ring 4'], 'the edge yields least here');
-  const rate = ex.find(p => p.fields?.y && 'passRate' in p.fields.y);
+  const rate = ex.find(p => p.chart === 'bar' && p.fields?.y && 'passRate' in p.fields.y && !('tests' in p.fields.y));
   assert.equal(rate.fields.y.passRate, 2, 'Leak, which fails most, not Vth, which comes first');
   const whatIf = ex.find(p => p.whatIf);
   assert.equal(whatIf.fields.y.test, 2);
   assert.ok(whatIf.whatIf.lo < 0 && whatIf.whatIf.hi > 2e-9, 'the limits widened by a tenth of the window');
   assert.ok(ex.some(p => p.chart === 'box' && p.fields.x?.test === 3), 'the lead test by the pass/fail test');
+  assert.ok(ex.some(p => p.chart === 'box' && p.normalize === 'limits' && p.fields.y.tests.length === 2), 'the tests with limits, each placed between them');
+  const grid = ex.find(p => p.chart === 'heatmap' && p.fields.y.passRate);
+  assert.deepEqual([grid.fields.y.tests, grid.fields.x], [[1, 2], { meta: 'split' }], 'which tests fail in which split');
+  assert.equal(ex.find(p => p.chart === 'histogram' && p.normalCurve).histNorm, 'percent', 'the split\'s arms as shares of their own dies');
+  assert.ok(ex.some(p => p.chart === 'line') && !ex.some(p => p.chart === 'control'), 'under five wafers the trend line carries the wafer order; from five, the control chart');
   assert.deepEqual(ex.find(p => p.axes?.y?.references).axes.y.references, [{ stat: 'median' }]);
   for (const p of ex.filter(p => p.chart !== 'sweep')) assert.deepEqual(resolvePlot(p, items, c).issues, [], p.chart);
 });
@@ -661,7 +666,7 @@ test('examples add a goal plot and a pass-rate bar only where the test definitio
   const c = { testDefs: L, passBins: [1] };
   const ex = examplePlots(fieldCatalogue(items, c), items.length, () => 'x', { items, ctx: c });
   assert.ok(ex.some(p => p.chart === 'goal'), 'a goal plot, coloured by the split');
-  const rate = ex.find(p => p.fields?.y && 'passRate' in p.fields.y);
+  const rate = ex.find(p => p.chart === 'bar' && p.fields?.y && 'passRate' in p.fields.y && !('tests' in p.fields.y));
   assert.ok(rate, 'a pass-rate bar');
   for (const p of ex.filter(p => p.chart === 'goal' || p === rate)) assert.deepEqual(resolvePlot(p, items, c).issues, [], p.chart);
   const none = examplePlots(fieldCatalogue(items, ctx), items.length, () => 'x', { items, ctx });

@@ -86,7 +86,7 @@ test('every plot the Chart gallery supplies is a catalogue chart, and each catal
 test('every chart and table on the Chart gallery has a thumbnail (node scripts/capture-screenshots.mjs --only chart-gallery)', async () => {
   const { existsSync } = await import('node:fs');
   const shown = CHART_CATALOGUE.filter(e => e.tab && e.tab !== 'drilldown' && e.id !== 'sweep');
-  assert.equal(shown.length, 33);
+  assert.equal(shown.length, 35);
   for (const e of shown) assert.ok(existsSync(new URL(`../docs/examples/thumbs/${e.id}.webp`, import.meta.url)), `thumbs/${e.id}.webp`);
 });
 

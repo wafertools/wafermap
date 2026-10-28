@@ -117,6 +117,7 @@ test('the file keeps the chart and its share axis; an unknown share axis is drop
 test('examples include a probability plot of the first test, and a click opens the wafer on it', () => {
   const ex = examplePlots(fieldCatalogue(lot(), ctx), 2, () => 'e');
   const p = ex.find(e => e.chart === 'probability');
-  assert.deepEqual(p.fields, { y: { test: 1050, name: 'Vth' } });
+  assert.deepEqual(p.fields.y, { test: 1050, name: 'Vth' });
+  assert.ok(!p.fields.color || 'meta' in p.fields.color, 'coloured by the split where the lot has one, as the plots beside it are');
   assert.equal(plotTestNumber(p), 1050);
 });

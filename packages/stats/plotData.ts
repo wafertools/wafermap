@@ -1555,7 +1555,8 @@ function resolvePlotCore(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotCo
     return fail(`${yCol.label} is a share of dies: draw it as a bar or a line, or with one mark per wafer (each wafer's pass rate)`);
   }
 
-  const nUnits = level === 'die' ? rows.dies.length : items.length;
+  // With a set of tests the population is read once per test, so a wafer-level unit is one wafer for one test.
+  const nUnits = level === 'die' ? rows.dies.length : source.length;
   const itemOf = (u: number) => (level === 'die' ? rows.item[u] : u);
   const unitInfo = (u: number): PlotUnit => ({ item: realItem(itemOf(u)), die: level === 'die' ? rows.dies[u] : undefined });
 
@@ -1565,7 +1566,7 @@ function resolvePlotCore(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotCo
     if (!c.num) throw new Error('numeric field expected');
     if (c.level === level) return c.num;
     if (c.level === 'wafer') { const out = new Float64Array(nUnits); for (let u = 0; u < nUnits; u++) out[u] = c.num[itemOf(u)]; return out; }
-    const per: number[][] = items.map(() => []);
+    const per: number[][] = source.map(() => []);
     for (let i = 0; i < c.num.length; i++) per[rows.item[i]].push(c.num[i]);
     return Float64Array.from(per, v => combine(v, aggHow));
   };
@@ -2371,19 +2372,31 @@ export function examplePlots(catalogue: readonly FieldOption[], waferCount: numb
   const bySplit: { color: PlotColor } = { color: split ?? { none: true } };
 
   if (tests.length >= 2) add({ chart: 'scatter', fields: { x: tests[0], y: tests[1], ...(split ? { color: split } : {}) }, fit: 'linear' });
-  if (tests.length >= 1) add({ chart: 'histogram', fields: { y: tests[0], ...byTint }, normalCurve: true });
+  // Each colour as a share of its own dies: a split's arms (or the rings) differ in size, and counts would draw that instead of the shapes.
+  if (tests.length >= 1) add({ chart: 'histogram', fields: { y: tests[0], ...byTint }, normalCurve: true, ...(tint ? { histNorm: 'percent' as const } : {}) });
   // Each wafer's spread of the lead test against the median of every die plotted.
   if (tests.length >= 1 && manyWafers) add({ chart: 'box', fields: { x: { builtin: 'wafer' }, y: tests[0], ...bySplit }, axes: { y: { references: [{ stat: 'median' }] } } });
-  if (manyWafers) add({ chart: 'bar', fields: { x: split ?? { builtin: 'wafer' }, y: { builtin: 'yield' }, color: split ?? { none: true } } });
+  // Each value at its bar's end and the median of the bars as a line, as the Overview's yield card draws it.
+  if (manyWafers) add({ chart: 'bar', fields: { x: split ?? { builtin: 'wafer' }, y: { builtin: 'yield' }, color: split ?? { none: true } }, valueLabels: true, axes: { y: { references: [{ stat: 'median' }] } } });
   // A filter: each wafer's yield on the ring that yields least, where a ring is worse than the rest (the edge, usually).
   const worstRing = manyWafers && has('ring') && data ? lowestYieldRing(data.items, data.ctx) : undefined;
   if (worstRing) add({ chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } }, where: { conditions: [{ field: { builtin: 'ring' }, values: [worstRing] }] } });
-  if (tests.length >= 1 && manyWafers) add({ chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean', spread: 'sd' });
+  // The spread of dies within each wafer in order; from five wafers the control chart below reads the same order, so only one of them is offered.
+  if (tests.length >= 1 && manyWafers && waferCount < 5) add({ chart: 'line', fields: { x: { builtin: 'waferOrder' }, y: tests[0], color: { none: true } }, aggregate: 'mean', spread: 'sd' });
   // The first test as cumulative curves, one per wafer (or per Group by), where a shifted or wider wafer stands out.
-  if (tests.length >= 1) add({ chart: 'probability', fields: { y: tests[0] } });
+  if (tests.length >= 1) add({ chart: 'probability', fields: { y: tests[0], ...bySplit } });
 
   // Several tests at once, each rescaled so they share an axis: a box per test, and a grid of tests by wafer.
-  if (set) add({ chart: 'box', fields: { x: { builtin: 'test' }, y: set, ...bySplit }, normalize: 'zscore' });
+  // The tests that have both limits, as one set: each rescaled so its limits sit at 0 and 1, the capability card's view.
+  const defs = data?.ctx?.testDefs ?? [];
+  const limited = tests.flatMap(f => { const d = 'test' in f ? defs.find(x => x.testNumber === f.test) : undefined; return d && isParametricTest(d) ? [{ f, d }] : []; });
+  const bounded = limited.filter(({ d }) => d.limitLow !== undefined && d.limitHigh !== undefined).slice(0, 8);
+  const limitSet: PlotTestSet | undefined = bounded.length >= 2 ? {
+    tests: bounded.map(({ f }) => (f as { test: number }).test),
+    names: Object.fromEntries(bounded.filter(({ d }) => d.name).map(({ f, d }) => [String((f as { test: number }).test), d.name!])),
+  } : undefined;
+  if (limitSet) add({ chart: 'box', fields: { x: { builtin: 'test' }, y: limitSet, ...bySplit }, normalize: 'limits' });
+  else if (set) add({ chart: 'box', fields: { x: { builtin: 'test' }, y: set, ...bySplit }, normalize: 'zscore' });
   if (set && manyWafers) add({ chart: 'heatmap', fields: { x: { builtin: 'wafer' }, y: set }, aggregate: 'mean', normalize: 'zscore' });
   // Split experiments: the groups compared with each wafer as one value, and wafers nested inside their split.
   if (tests.length >= 1 && split) add({ chart: 'box', fields: { x: split, y: tests[0], color: split } });
@@ -2405,9 +2418,15 @@ export function examplePlots(catalogue: readonly FieldOption[], waferCount: numb
   if (tests.length >= 1 && waferCount >= 5) add({ chart: 'control', fields: { x: { builtin: 'waferOrder' }, y: tests[0] } });
   // Which tests meet their limits: every test with both limits on a goal plot (a split moves its points), and the lead
   // test's pass rate by split. Only where the test definitions say which tests have limits.
-  const defs = data?.ctx?.testDefs ?? [];
-  const limited = tests.flatMap(f => { const d = 'test' in f ? defs.find(x => x.testNumber === f.test) : undefined; return d && isParametricTest(d) ? [{ f, d }] : []; });
   if (limited.some(({ d }) => d.limitLow !== undefined && d.limitHigh !== undefined)) add({ chart: 'goal', fields: dividing ? { color: dividing.field } : {} });
+  // Which tests fail in which split (or wafer): the pass rates of the tests that have limits, as a grid.
+  const rateTests = limited.filter(({ d }) => d.limitLow !== undefined || d.limitHigh !== undefined).slice(0, 8);
+  if (rateTests.length >= 2 && manyWafers) {
+    add({ chart: 'heatmap', fields: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: {
+      tests: rateTests.map(({ f }) => (f as { test: number }).test), passRate: true,
+      names: Object.fromEntries(rateTests.filter(({ d }) => d.name).map(({ f, d }) => [String((f as { test: number }).test), d.name!])),
+    } }, aggregate: 'mean' });
+  }
   // The test that fails its limits most, among the leading ones: its pass rate by split, and what wider limits would pass.
   const rated = worstPassRate(limited.filter(({ d }) => d.limitLow !== undefined || d.limitHigh !== undefined).slice(0, 8), data);
   if (rated && manyWafers) add({ chart: 'bar', fields: { x: dividing ? dividing.field : { builtin: 'wafer' }, y: { passRate: (rated.f as { test: number }).test, ...(rated.d.name ? { name: rated.d.name } : {}) }, color: { none: true } } });

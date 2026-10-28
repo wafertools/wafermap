@@ -115,12 +115,22 @@ export const CHART_CATALOGUE: readonly CatalogueEntry[] = [
   {
     id: 'ring-yield', kind: 'chart', title: 'Ring yield', card: 'ring-yield', tab: 'overview',
     about: 'Yield of each ring, from the wafer centre to its edge, to show a radial pattern.',
-    see: ['quadrant-yield', 'bin-map'],
+    see: ['ring-yield-by-wafer', 'quadrant-yield', 'bin-map'],
+  },
+  {
+    id: 'ring-yield-by-wafer', kind: 'chart', title: 'Ring yield by wafer', cards: ['card-ring-wafer'], tab: 'overview',
+    about: 'Yield of each ring on each wafer (or group), as a colour, to show whether a radial pattern is on every wafer or on one.',
+    guide: [GUIDE_SECTIONS.heatmap], see: ['ring-yield', 'heatmap'],
   },
   {
     id: 'quadrant-yield', kind: 'chart', title: 'Quadrant yield', card: 'quadrant-yield', tab: 'overview',
     about: 'Yield of each quarter of the wafer, to show a one-sided pattern.',
-    see: ['ring-yield', 'bin-map'],
+    see: ['quadrant-yield-by-wafer', 'ring-yield', 'bin-map'],
+  },
+  {
+    id: 'quadrant-yield-by-wafer', kind: 'chart', title: 'Quadrant yield by wafer', cards: ['card-quadrant-wafer'], tab: 'overview',
+    about: 'Yield of each quarter of the wafer on each wafer (or group), as a colour, to show whether a one-sided pattern is on every wafer or on one.',
+    guide: [GUIDE_SECTIONS.heatmap], see: ['quadrant-yield', 'ring-yield-by-wafer', 'heatmap'],
   },
   {
     id: 'reticle-cell-yield', kind: 'chart', title: 'Reticle cell yield', card: 'reticle-yield', tab: 'overview',

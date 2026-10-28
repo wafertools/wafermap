@@ -35,7 +35,7 @@ export interface PlotCardOptions {
    */
   drill?: (points: readonly PlotPoint[]) => CardTransform | null;
   /** What a click on a bar that drills does, in the reader's words ("see its wafers"). */
-  drillLabel?: string;
+  drillLabel?: string | (() => string | undefined);
   /** Lines the card adds under its statement, for what the plot itself cannot know (two judgements disagreeing). */
   notes?: (spec: CardSpec) => string[];
   /** Controls the host owns (a test picker shared across a section, its axis settings), put before the card's own. */
@@ -114,8 +114,10 @@ export function renderPlotCard(o: PlotCardOptions): PlotCardHandle {
   function refresh(): void {
     placeChoices();
     back.style.display = drilled || o.externalBack?.shown() ? '' : 'none';
-    chartOptions.selectActionLabel = o.drill && !drilled ? o.drillLabel : o.chart.selectActionLabel;
     const filled = fillCard(current(), slotValues());
+    // After the spec is built: a card's own choice (nested categories) may decide whether a click drills.
+    const drillLabel = typeof o.drillLabel === 'function' ? o.drillLabel() : o.drillLabel;
+    chartOptions.selectActionLabel = o.drill && !drilled && drillLabel ? drillLabel : o.chart.selectActionLabel;
     const spec = 'spec' in filled ? filled.spec : { ...current(), fields: {} };
     const r = resolvePlot(spec, o.items, o.ctx);
     const extra = o.notes?.(current()) ?? [];

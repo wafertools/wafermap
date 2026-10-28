@@ -608,8 +608,8 @@ export const CAPTURES = [
       // Catalogue id → where the chart is and how its card is titled (the first words of its heading).
       const CARDS = [
         ['overview', 'yield-by-wafer', /^Yield by wafer/], ['overview', 'bin-pareto', /^Hard bin pareto/],
-        ['overview', 'pass-rate-by-test', /^Parametric pass rate/], ['overview', 'ring-yield', /^Ring yield/],
-        ['overview', 'quadrant-yield', /^Quadrant yield/], ['overview', 'reticle-cell-yield', /^Reticle cell yield/],
+        ['overview', 'pass-rate-by-test', /^Parametric pass rate/], ['overview', 'ring-yield', /^Ring yield(?! by wafer)/], ['overview', 'ring-yield-by-wafer', /^Ring yield by wafer/],
+        ['overview', 'quadrant-yield', /^Quadrant yield(?! by)/], ['overview', 'quadrant-yield-by-wafer', /^Quadrant yield by/], ['overview', 'reticle-cell-yield', /^Reticle cell yield/],
         ['overview', 'what-divides-yield', /^What divides yield/], ['overview', 'part-average-testing-pat', /^Part average testing/],
         ['distributions', 'test-value-distribution', /^Test value distribution/], ['distributions', 'value-histogram', /^Value histogram/],
         ['distributions', 'wafer-to-wafer-trend', /^Wafer-to-wafer trend/], ['distributions', 'process-capability', /^Process capability/],
