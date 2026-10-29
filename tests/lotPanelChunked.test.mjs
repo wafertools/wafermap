@@ -305,3 +305,12 @@ test('wafer panel — a cancelled render stops writing', async () => {
   assert.equal(panel.textContent, after);
   assert.equal(run.done, false);
 });
+
+test('a Ppk in the statistics table takes the capability colour', () => {
+  const items = makeLot();
+  const dies = items.flatMap(it => it.dies);
+  const section = buildTestSection(dies, [TESTS[0]], undefined, undefined, undefined, undefined, items.map(it => ({ dies: it.dies })), undefined, 'full');
+  const head = [...section.querySelectorAll('thead th')].map(t => t.textContent);
+  const cell = section.querySelector('tbody tr').cells[head.indexOf('Ppk')];
+  assert.match(cell.style.background, /^rgba\(/, 'the Ppk cell is shaded');
+});

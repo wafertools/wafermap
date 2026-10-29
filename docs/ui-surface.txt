@@ -222,6 +222,12 @@ Controls:
   · Auto (0)▾  [aria="Columns", opens menu]
   · Expand   (×13)
   · Chart actions  [opens menu]   (×13)
+  · Show on map
+      hint: Leave Insights and show this on the map, as its row in What stands out does   (×3)
+  · Heatmaps and the difference map   (×3)
+  · What divides yield
+  · Group by
+      hint: Group Insights by Process Split, so every chart compares its groups   (×4)
   · Sort: yield  [radio, unchecked]
   · Sort: wafer  [radio, checked]
   · Hard bins  [radio, checked]
@@ -229,12 +235,6 @@ Controls:
   · Test limits  [radio, checked]
   · Tester flag  [radio, unchecked]
   · Functional  [radio, unchecked]
-  · Heatmaps and the difference map   (×3)
-  · Show on map
-      hint: Leave Insights and show this on the map, as its row in What stands out does   (×3)
-  · What divides yield
-  · Group by
-      hint: Group Insights by Process Split, so every chart compares its groups   (×4)
   · Part average testing (PAT)
   · Map the verdicts
       hint: Show the maps with their dies coloured by PAT verdict: within the limits, outlier, fails anyway
@@ -254,6 +254,8 @@ Menu — Columns:
 
 Menu — Chart actions:
     · Save as PNG
+    · Save data as CSV
+    · Copy data
     · Edit as plot
     · ✓About this chart  [unchecked]
 
@@ -279,22 +281,18 @@ Controls:
       hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
+  · Idsat▾  [aria="Test", opens menu]
   · Expand   (×4)
   · Chart actions  [opens menu]   (×4)
   · Capability, Ppk and the goal plot
-  · Idsat▾  [aria="Test", opens menu]   (×3)
   · Axis includes limits  [checkbox, checked]   (×2)
   · Clip outliers  [checkbox, unchecked]   (×3)
-  · Log scale  [checkbox, unchecked]
+  · Log scale  [checkbox, unchecked]   (×3)
   · All wafers▾  [aria="Wafer", opens menu]
   · Axis includes limits  [checkbox, unchecked]
   · Trend  [radio, checked]
   · Control chart  [radio, unchecked]
   · Bands on a line
-
-Menu — Chart actions:
-    · Save as PNG
-    · ✓About this chart  [unchecked]
 
 Menu — Test:
     · Idsat
@@ -306,6 +304,10 @@ Menu — Test:
     · Ioff
     · Pin Ioff (or press P on the row)
         hint: Pin this test to the top of every test list
+
+Menu — Chart actions:
+    · Save as PNG
+    · ✓About this chart  [unchecked]
 
 Menu — Wafer:
     · All wafers
@@ -348,6 +350,10 @@ Controls:
       hint: Save the correlation coefficients as a CSV file, one row per pair of tests
   · Idsat▾  [aria="Test", opens menu]
   · Vth▾  [aria="Test", opens menu]
+  · Axis includes limits  [checkbox, checked]
+  · Clip outliers  [checkbox, unchecked]
+  · Log X  [checkbox, unchecked]
+  · Log Y  [checkbox, unchecked]
   · Bin 1
   · Bin 2
   · Bin 3

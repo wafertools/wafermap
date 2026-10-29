@@ -26,6 +26,8 @@ export interface VirtualColumn<R> {
   sortKey?: (row: R) => number | string | undefined;
   /** Right-align (numbers). */
   numeric?: boolean;
+  /** A colour behind the cell (see cellShade.ts), or undefined for none. */
+  shade?: (row: R) => string | undefined;
 }
 
 export interface VirtualTableOptions<R> {
@@ -177,6 +179,8 @@ export function createVirtualTable<R>(opts: VirtualTableOptions<R>): VirtualTabl
         td.style.overflow = 'hidden';
         td.style.textOverflow = 'ellipsis';
         if (c.numeric) td.style.textAlign = 'right';
+        const shade = c.shade?.(row);
+        if (shade) td.style.background = shade;
         tr.appendChild(td);
       }
       if (opts.onRowClick) {

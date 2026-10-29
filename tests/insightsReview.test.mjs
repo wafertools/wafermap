@@ -489,6 +489,110 @@ test('shared axis toggles survive a re-render, as the selected test already does
   tab.destroy();
 });
 
+// ── Yield by site ──────────────────────────────────────────────────────────────────────────────────────────
+
+/** A lot whose dies were tested at the given sites in turn (none for a lot with no site numbers). */
+function lotWithSites(sites, count = 3) {
+  const mk = (i) => buildWaferMap({
+    results: Array.from({ length: 24 }, (_, k) => ({
+      x: k % 6, y: Math.floor(k / 6), hbin: k % 5 === 0 ? 2 : 1,
+      ...(sites.length ? { siteNum: sites[k % sites.length] } : {}),
+      testValues: { 1050: 10 + (k % 4) * 0.05 },
+    })),
+    waferConfig: { diameter: 80, metadata: { lot: 'LOT1', wafer: `W${i + 1}` } },
+    dieConfig: { width: 10, height: 10 }, passBins: [1], testDefs: TEST_DEFS,
+  });
+  const items = Array.from({ length: count }, (_, i) => ({ ...mk(i), label: `W${String(i + 1).padStart(2, '0')}` }));
+  const lot = analyzeWaferLot(items, { computePerTestStats: true });
+  items.forEach((it, i) => { it.statsSummary = lot.perWafer[i].summary; });
+  return { items, lot };
+}
+
+test('Yield by site is an Overview card only when the dies were tested at two sites or more', () => {
+  const cardOf = (tab) => tab.el.querySelector('[data-wmap-chart-title="Yield by site"]');
+  for (const [sites, expected] of [[[1, 2, 3, 4], true], [[1, 2], true], [[1], false], [[], false]]) {
+    const { items, lot } = lotWithSites(sites);
+    const tab = mountInsights(items, lot, 'overview');
+    assert.equal(!!cardOf(tab), expected, `sites ${JSON.stringify(sites)}`);
+    if (expected) assert.ok(cardOf(tab).querySelector('canvas'), 'drawn');
+    tab.destroy();
+  }
+});
+
+// ── The axis options are the same on every value-axis card ────────────────────────────────────────────────────
+
+const labelsOf = (card) => [...card.querySelectorAll('label')].map(l => l.textContent.trim());
+const checkbox = (card, text) => [...card.querySelectorAll('label')].find(l => l.textContent.includes(text))?.querySelector('input[type="checkbox"]');
+
+test('every value-axis card offers the same axis choices: clip outliers and a log scale on the box, histogram and trend', () => {
+  const { items, lot } = lotItems(3);
+  const tab = mountInsights(items, lot, 'distributions');
+  for (const title of ['Test value distribution', 'Value histogram', 'Wafer-to-wafer trend']) {
+    const labels = labelsOf(tab.el.querySelector(`[data-wmap-chart-title="${title}"]`));
+    assert.ok(labels.some(t => t.includes('Clip outliers')), `${title}: Clip outliers`);
+    assert.ok(labels.some(t => t.includes('Log scale')), `${title}: Log scale`);
+  }
+  tab.destroy();
+});
+
+test('the test scatter takes the shared axis choices over both its axes, and a log scale for each', () => {
+  const { items, lot } = lotItems(3);
+  const tab = mountInsights(items, lot, 'correlation');
+  const card = tab.el.querySelector('[data-wmap-chart-title="Test scatter"]');
+  const labels = labelsOf(card);
+  for (const t of ['Clip outliers', 'Log X', 'Log Y']) assert.ok(labels.some(x => x.includes(t)), t);
+  // A choice redraws the card without losing it.
+  for (const t of ['Log X', 'Log Y', 'Clip outliers']) {
+    const box = checkbox(card, t);
+    box.checked = true;
+    box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  }
+  assert.ok(tab.el.querySelector('[data-wmap-chart-title="Test scatter"] canvas'), 'the scatter is still drawn');
+  tab.destroy();
+});
+
+// ── One Test picker for the Distributions section ──────────────────────────────────────────────────────────
+
+/** A lot with two parametric tests, so a section has a test to choose between. */
+function lotItemsTwoTests(count) {
+  const mk = (i) => buildWaferMap({
+    results: Array.from({ length: 24 }, (_, k) => ({
+      x: k % 6, y: Math.floor(k / 6), hbin: 1,
+      testValues: { 1050: 10 + i * 0.15 + (k % 4) * 0.05, 1060: 3 + (k % 5) * 0.1 },
+    })),
+    waferConfig: { diameter: 80, metadata: { lot: 'LOT1', wafer: `W${String(i + 1).padStart(2, '0')}` } },
+    dieConfig: { width: 10, height: 10 }, passBins: [1],
+    testDefs: [...TEST_DEFS, { testNumber: 1060, name: 'Idsat', unit: 'A' }],
+  });
+  const items = Array.from({ length: count }, (_, i) => ({ ...mk(i), label: `W${String(i + 1).padStart(2, '0')}` }));
+  const lot = analyzeWaferLot(items, { computePerTestStats: true });
+  items.forEach((it, i) => { it.statsSummary = lot.perWafer[i].summary; });
+  return { items, lot };
+}
+
+test('the Distributions section has one Test picker, and a card shows its own only while it is expanded', async () => {
+  const { items, lot } = lotItemsTwoTests(3);
+  const tab = mountInsights(items, lot, 'distributions');
+  const row = tab.el.querySelector('[data-wmap-section-test]');
+  assert.ok(row, 'the section picker, in the Test by test row');
+  assert.match(row.textContent, /Test by test/);
+  assert.match(row.textContent, /vth_mV/, 'it names the test now in force');
+  const ownPicker = (title) => [...tab.el.querySelector(`[data-wmap-chart-title="${title}"]`).querySelectorAll('button')].find(b => /vth_mV|Idsat/.test(b.textContent) && /▾/.test(b.textContent));
+  for (const title of ['Test value distribution', 'Value histogram', 'Wafer-to-wafer trend']) {
+    assert.ok(ownPicker(title), `${title} has a picker of its own`);
+    assert.equal(ownPicker(title).style.display, 'none', `${title}: hidden until the card is expanded`);
+  }
+  // Expanded, a card shows its own again.
+  const box = tab.el.querySelector('[data-wmap-chart-title="Test value distribution"]');
+  box.dataset.wmapExpanded = '1';
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(ownPicker('Test value distribution').style.display, '', 'shown while expanded');
+  delete box.dataset.wmapExpanded;
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(ownPicker('Test value distribution').style.display, 'none', 'and hidden again after');
+  tab.destroy();
+});
+
 // ── Tab switching reuses an already-built view ────────────────────────────────
 
 test('insights — returning to a tab reuses its section instead of rebuilding it', () => {
@@ -673,7 +777,7 @@ test('Edit as plot on an Insights card opens it as a draft plot with its test fi
   let saved;
   const tab = mountInsightsWith(items, lot, { onPlotsChange: p => { saved = p; } });
   const card = boxplotCard(tab);
-  assert.deepEqual(cardMenuLabels(card), ['Save as PNG', 'Edit as plot', 'About this chart']);
+  assert.deepEqual(cardMenuLabels(card), ['Save as PNG', 'Save data as CSV', 'Copy data', 'Edit as plot', 'About this chart']);
   cardMenuAction(card, 'Edit as plot');
   const win = await waitFor(() => dom.window.document.querySelector('[data-wmap-plot-window]'), 'the plot editor');
   assert.match(win.textContent, /This is a draft/);
@@ -684,6 +788,26 @@ test('Edit as plot on an Insights card opens it as a draft plot with its test fi
   assert.equal(plot.fields.y.test, 1050, 'the section’s test, as the plot’s own field');
   assert.ok(!JSON.stringify(plot).includes('"slot"'), 'a plot of its own follows nothing');
   dom.window.document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
+});
+
+test('a plot card\'s menu saves and copies the data behind the chart', async () => {
+  const { items, lot } = lotItems(3);
+  const saved = [];
+  const tab = mountInsightsWith(items, lot, { onSaveText: (text, name, mime) => { saved.push({ text: String(text), name, mime }); } });
+  const card = boxplotCard(tab);
+  cardMenuAction(card, 'Save data as CSV');
+  await waitFor(() => saved.length, 'the CSV handed to the host');
+  assert.equal(saved[0].mime, 'text/csv');
+  assert.match(saved[0].name, /^Test-value-distribution.*\.csv$/);
+  const lines = saved[0].text.split('\n');
+  assert.match(lines[0], /^Wafer,N,Min,Q1,Median,Q3,Max$/, 'a box is its five-number summary per wafer');
+  assert.equal(lines.length, 4, 'a header and a row per wafer');
+  let copied = '';
+  Object.defineProperty(dom.window.navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => { copied = t; } } });
+  cardMenuAction(card, 'Copy data');
+  await waitFor(() => copied, 'the data on the clipboard');
+  assert.match(copied.split('\n')[0], /^Wafer\tN\tMin\tQ1\tMedian\tQ3\tMax$/, 'tab-separated, to paste into a spreadsheet');
+  tab.destroy();
 });
 
 test('About this chart shows one line under the card’s heading, and hides it again', () => {

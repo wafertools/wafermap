@@ -137,6 +137,11 @@ export const CHART_CATALOGUE: readonly CatalogueEntry[] = [
     about: 'Yield of each position in the reticle, pooled over every shot on every wafer. A cell low everywhere points at the mask rather than the wafer.',
     see: ['stacked-map', 'ring-yield'],
   },
+  {
+    id: 'yield-by-site', kind: 'chart', title: 'Yield by site', cards: ['card-site'], tab: 'overview',
+    about: 'Yield of each test site (probe position): passing dies as a share of judged dies, over every wafer. Shown when the dies come from two sites or more.',
+    see: ['yield-by-wafer', 'reticle-cell-yield'],
+  },
 
   // ── Built-in cards: test values ───────────────────────────────────────────────────────────────────────────────────
   {

@@ -25,6 +25,8 @@ export interface DifferenceResult {
   /** Positions with a difference, and the largest difference either way (for a colour range centred on zero). */
   compared: number;
   maxAbs: number;
+  /** The mean of the positions' values in group A, the level the differences are judged against. */
+  level: number;
 }
 
 /** A group's wafers as dies carrying the measured value at `testValues[0]`, positioned dies only. */
@@ -45,7 +47,7 @@ export function differenceMap(a: readonly DifferenceWafer[], b: readonly Differe
   const meanA = aggregateValues(asValues(a, m), 'mean', 0) as Die[];
   const diesB = aggregateValues(asValues(b, m), 'mean', 0) as Die[];
   const meanB = new Map(diesB.map(d => [positionKey(d), testValue(d, 0)]));
-  let compared = 0, maxAbs = 0;
+  let compared = 0, maxAbs = 0, levelSum = 0;
   const seen = new Set<number | string>();
   const dies: Die[] = meanA.map(d => {
     const k = positionKey(d);
@@ -54,10 +56,11 @@ export function differenceMap(a: readonly DifferenceWafer[], b: readonly Differe
     if (va === undefined || vb === undefined) return copyDie(d, { testValues: undefined });
     const diff = va - vb;
     compared++;
+    levelSum += Math.abs(va);
     maxAbs = Math.max(maxAbs, Math.abs(diff));
     return copyDie(d, { testValues: { 0: diff } });
   });
   // Positions only B has: on the map, as no data.
   for (const d of diesB) if (!seen.has(positionKey(d))) dies.push(copyDie(d, { testValues: undefined }));
-  return { dies, compared, maxAbs };
+  return { dies, compared, maxAbs, level: compared ? levelSum / compared : 0 };
 }

@@ -143,3 +143,11 @@ test('the colour settings: the keys, the gradient names with their lines, and tr
   const b = at('{ "colorReverse": | }', { force: true });
   assert.deepEqual(labels(b.c), ['true', 'false']);
 });
+
+test('a filter\'s text suggests a filter\'s keys, the lot\'s fields, and the values a field takes', () => {
+  const src = { ...source, conditionValues: f => (f.meta === 'processSplit' ? ['FF', 'SS'] : []) };
+  const filterAt = (marked) => { const caret = marked.indexOf('|'); const text = marked.replace('|', ''); return completionsAt(text, caret, src, { as: 'filter' }); };
+  assert.deepEqual(labels(filterAt('{ "|" }')).sort(), ['conditions', 'off']);
+  assert.ok(labels(filterAt('{ "conditions": [ { "field": { "meta": "|" } } ] }')).includes('processSplit'));
+  assert.deepEqual(labels(filterAt('{ "conditions": [ { "field": { "meta": "processSplit" }, "values": [ "|" ] } ] }')).sort(), ['FF', 'SS']);
+});

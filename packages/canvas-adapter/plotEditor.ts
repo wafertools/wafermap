@@ -21,7 +21,7 @@ import { inputStyle, makeListSelect, makeSegmented, makeToggle, type ListSelectO
 export { inputStyle };
 import { buildFilterEditor } from './filterEditor.js';
 import { attachJsonSuggestions } from './plotJsonSuggest.js';
-import { createTextHistory } from './plotJsonHistory.js';
+import { copyText, createTextHistory } from './plotJsonHistory.js';
 import { createSweepEditor } from './sweepEditor.js';
 import { listValueColorSchemes } from '../renderer/colorSchemes.js';
 import { PLOT_GRADIENTS } from './charts/divergingScale.js';
@@ -844,9 +844,8 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     });
     discard.addEventListener('click', () => { jsonNote = ''; setText(textOf(plot)); });
     copy.addEventListener('click', () => {
-      const nav = doc.defaultView?.navigator;
       const done = (ok: boolean): void => { status.style.color = ok ? CLR.label : CLR.errText; status.textContent = ok ? 'Copied' : 'The text could not be copied: select it and copy by hand'; };
-      if (nav?.clipboard?.writeText) nav.clipboard.writeText(area.value).then(() => done(true), () => done(false)); else done(false);
+      copyText(doc, area.value, done);
     });
     const buttons = doc.createElement('div');
     Object.assign(buttons.style, { display: 'flex', gap: SPACE.sm } as Partial<CSSStyleDeclaration>);

@@ -16,7 +16,10 @@ import { PAT_VERDICT_LABEL } from '../../stats/pat.js';
 import { fmt } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
 import { binOfLabel, plotFootnote, plotGuideSections, plotTestNumber, plotTitle, probabilityPosition, type PassFailCells, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
-import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint } from '../toolbar.js';
+import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint, type SaveTextHandler } from '../toolbar.js';
+import { exportCsv } from '../tableExport.js';
+import { tableToTsv } from '../../core/tableCsv.js';
+import { plotTable } from '../../stats/plotTable.js';
 import {
   cardShell, appendGuideCites, observeResize, makeTooltip, attachChartTip, chartFillHeight, applyCanvasFlow, prepareCanvas, positionChartTooltip,
   resolveChartCanvasColors, makeAxisFormat, horizontalTickSpacing, VERTICAL_TICK_SPACING_PX, makeSeriesLegendItem,
@@ -97,6 +100,8 @@ function probabilitySample(n: number): number[] {
 export interface PlotChartOptions {
   ownerDocument?: Document;
   onSaveImage?: SaveImageHandler;
+  /** Where the card's Save data as CSV goes (the host's save dialog); absent = the browser's download. */
+  onSaveText?: SaveTextHandler;
   /** The label of the wafer an item index names, for tooltips. */
   waferLabel: (item: number) => string;
   /** The maps' bin colours: a plot coloured by hard or soft bin draws each bin in its map colour. */
@@ -249,7 +254,7 @@ function logTicks(lo: number, hi: number, lengthPx: number, minSpacing: (step: n
 export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   const doc = options.ownerDocument ?? document;
   // A panel is saved as part of its grid, so it offers no PNG of its own.
-  const { card, heading, body, controlsRow, setPngDecor, setPngCanvas, setAbout, setMenuRows } = cardShell(options.panel?.title ?? 'Plot', options.onSaveImage, doc, { png: !options.panel });
+  const { card, heading, body, controlsRow, setPngDecor, setPngCanvas, setAbout, setMenuRows: setShellMenuRows } = cardShell(options.panel?.title ?? 'Plot', options.onSaveImage, doc, { png: !options.panel });
   if (options.panel) card.dataset.wmapPlotPanel = '1';
   /** A faceted plot's panels, each its own chart. */
   let panels: PlotChartHandle[] = [];
@@ -257,6 +262,17 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   const tooltip = makeTooltip(card);
 
   let resolved: ResolvedPlot | undefined;
+  let hostMenuRows: () => CardMenuRow[] = () => [];
+  /** Save data as CSV and Copy data: the numbers behind what is drawn (stats/plotTable.ts). */
+  const dataRows = (): CardMenuRow[] => {
+    const t = resolved && (resolved.marks || resolved.facets?.length) ? plotTable(resolved, options.waferLabel) : undefined;
+    if (!t) return [];
+    return [
+      { label: 'Save data as CSV', onClick: () => { void exportCsv(t.columns, t.rows, `${t.name}.csv`, options.onSaveText); } },
+      { label: 'Copy data', onClick: () => { void doc.defaultView?.navigator.clipboard?.writeText(tableToTsv(t.columns, t.rows)); } },
+    ];
+  };
+  setShellMenuRows(() => [...dataRows(), ...hostMenuRows()]);
   let canvas: HTMLCanvasElement | undefined;
   let legend: HTMLElement | undefined;
   /** Everything above the canvas (the statement of what it shows, notes, the colour key): the canvas starts below it. */
@@ -2040,7 +2056,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     card,
     actions: controlsRow,
     setPlot(next) { resolved = next; setAbout(plotAbout(next.spec)); rebuild(); },
-    setMenuRows,
+    setMenuRows(read) { hostMenuRows = read; },
     setActiveGroups(groups) {
       active.clear();
       for (const g of groups) active.add(g);

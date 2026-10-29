@@ -196,11 +196,16 @@ test('Wafers: a row per wafer with the lot yield figure, metadata and per-test m
   choose(tab, 'wafers');
   assert.equal(drawnRows(tab).length, 3);
   const heads = [...dataRoot(tab).querySelectorAll('th')].map(t => t.textContent);
-  for (const h of ['Wafer', 'Lot', 'Split', 'Dies', 'Yield %', 'vth (V) mean']) assert.ok(heads.includes(h), `${h} in ${heads}`);
+  for (const h of ['Wafer', 'Split', 'Dies', 'Yield %', 'vth (V) mean']) assert.ok(heads.includes(h), `${h} in ${heads}`);
+  // The numbers come first; what differs between wafers follows them; what is the same on every wafer is said once.
+  assert.ok(heads.indexOf('Yield %') < heads.indexOf('vth (V) mean') && heads.indexOf('vth (V) mean') < heads.indexOf('Split'), `numbers before attributes: ${heads}`);
+  assert.ok(!heads.includes('Lot'), 'the lot, the same on every wafer, is not repeated down a column');
+  assert.match(dataRoot(tab).querySelector('[data-wmap-wafers-same]').textContent, /^Same on every wafer: .*Lot LOT1/);
   click(dataRoot(tab).querySelector('[data-wmap-data-export]'));
   assert.equal(saved.n, 'wafers.csv');
   const lines = saved.c.split('\n');
   const header = lines[0].split(',');
+  assert.ok(header.includes('Lot'), 'the export keeps every attribute');
   assert.equal(lines.length, 4);
   const yieldCol = header.indexOf('Yield %');
   lines.slice(1).forEach((l, i) => {
@@ -208,6 +213,147 @@ test('Wafers: a row per wafer with the lot yield figure, metadata and per-test m
     assert.ok(Math.abs(Number(l.split(',')[yieldCol]) - lot.lotYieldSeries[i].yieldPercent) < 1e-9, 'the same yield every other panel reports');
   });
   assert.deepEqual(lines.slice(1).map(l => l.split(',')[header.indexOf('Split')]), ['TT', 'FF', 'TT']);
+});
+
+// ── Statistics compared across groups ───────────────────────────────────────
+
+test('Statistics: with Group by on, one table compares every test across the groups, with its own CSV', () => {
+  const { items, lot } = lotItems(4);
+  let saved;
+  const tab = mount(items, lot, 'data', { onSaveText: (c, n) => { saved = { c: String(c), n }; } });
+  dom.window.document.body.appendChild(tab.el);
+  tab.el.querySelector('[data-wmap-select="group-by"]').click();
+  [...dom.window.document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
+  choose(tab, 'statistics');
+  const box = dataRoot(tab).querySelector('[data-wmap-group-stats]');
+  assert.ok(box, 'a comparison above the group tables');
+  assert.match(box.textContent, /Compared across Split/);
+  const heads = [...box.querySelectorAll('th')].map(t => t.textContent);
+  assert.deepEqual(heads.slice(0, 4), ['Test', 'Split', 'N', 'Min']);
+  assert.ok(heads.includes('Ppk') && heads.includes('Limit yield %'));
+  const rows = [...box.querySelectorAll('tbody tr[aria-rowindex]')].map(r => [...r.children].map(c => c.textContent));
+  assert.equal(rows.length, 4, 'two tests in two groups');
+  // A test\'s groups sit side by side.
+  assert.equal(rows[0][0], rows[1][0]);
+  assert.deepEqual([rows[0][1], rows[1][1]].sort(), ['FF', 'TT']);
+  assert.notEqual(rows[0][0], rows[2][0]);
+  click(box.querySelector('[data-wmap-group-stats-csv]'));
+  assert.match(saved.n, /^statistics-by-split\.csv$/);
+  const lines = saved.c.split('\n');
+  assert.equal(lines[0], 'Test number,Test,Unit,Split,N,Min,Q1,Median,Mean,Q3,Max,Std dev,Ppk,Limit yield %');
+  assert.equal(lines.length, 5);
+  tab.destroy();
+});
+
+test('Statistics: without groups there is no comparison, only the one table as before', () => {
+  const { items, lot } = lotItems(4);
+  const tab = mount(items, lot, 'data');
+  choose(tab, 'statistics');
+  assert.equal(dataRoot(tab).querySelector('[data-wmap-group-stats]'), null);
+  tab.destroy();
+});
+
+// ── Shaded cells ─────────────────────────────────────────────────────────────
+
+const shadeOf = (cell) => cell.style.background || cell.style.backgroundColor || '';
+const cellsOf = (root, header) => {
+  const heads = [...root.querySelectorAll('th')].map(t => t.textContent);
+  const at = heads.indexOf(header);
+  return [...root.querySelectorAll('tbody tr[aria-rowindex]')].map(r => r.children[at]);
+};
+
+/** Three wafers, the third of which loses about half its dies to bin 2: a wafer well short of the lot. */
+function lotItemsOneShort() {
+  const mk = (i) => buildWaferMap({
+    results: Array.from({ length: 24 }, (_, k) => ({
+      x: k % 6, y: Math.floor(k / 6), hbin: (i === 2 ? k % 2 === 0 : k % 7 === 0) ? 2 : 1,
+      testValues: { 1050: 0.5 + (i * 24 + k) / 1000, 1060: 0.001 + k / 1e5 },
+    })),
+    waferConfig: { diameter: 80, metadata: { lot: 'LOT1', wafer: `W${i + 1}`, split: i % 2 ? 'FF' : 'TT' } },
+    dieConfig: { width: 10, height: 10 }, passBins: [1], testDefs: DEFS,
+  });
+  const items = Array.from({ length: 3 }, (_, i) => ({ ...mk(i), label: `W${i + 1}` }));
+  const lot = analyzeWaferLot(items, { computePerTestStats: true });
+  items.forEach((it, i) => { it.statsSummary = lot.perWafer[i].summary; });
+  return { items, lot };
+}
+
+test('Wafers: a wafer short of the lot\'s yield is tinted by the summary report\'s rule, and a lot with nothing wrong has no tint', () => {
+  const { items: even, lot: evenLot } = lotItems(3);
+  const level = mount(even, evenLot, 'data');
+  choose(level, 'wafers');
+  assert.ok(cellsOf(dataRoot(level), 'Yield %').every(c => shadeOf(c) === ''), 'equal yields: no tint at all');
+  level.destroy();
+  const { items, lot } = lotItemsOneShort();
+  const tab = mount(items, lot, 'data');
+  choose(tab, 'wafers');
+  const yields = cellsOf(dataRoot(tab), 'Yield %').map(shadeOf);
+  assert.equal(yields[2], 'rgba(190, 60, 60, 0.32)', 'the short wafer, four points or more below, strongest');
+  assert.equal(yields[0], '', 'a wafer above the lot is not tinted');
+  tab.destroy();
+});
+
+test('Wafers: each test mean is blue below the lot\'s average and warm above', () => {
+  const { items, lot } = lotItems(3);
+  const tab = mount(items, lot, 'data');
+  choose(tab, 'wafers');
+  const root = dataRoot(tab);
+  const means = cellsOf(root, 'vth (V) mean');
+  assert.match(shadeOf(means[0]), /^rgba\(0, 114, 178/, 'the lowest wafer is blue');
+  assert.match(shadeOf(means[2]), /^rgba\(213, 94, 0/, 'the highest is warm');
+  assert.equal(shadeOf(means[1]), '', 'the middle one, at the average, is not shaded');
+  tab.destroy();
+});
+
+test('Statistics compared across groups: the mean among the groups is shaded, and the share inside limits only when a group falls short', () => {
+  const { items, lot } = lotItems(4);
+  const tab = mount(items, lot, 'data');
+  dom.window.document.body.appendChild(tab.el);
+  tab.el.querySelector('[data-wmap-select="group-by"]').click();
+  [...dom.window.document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
+  choose(tab, 'statistics');
+  const box = dataRoot(tab).querySelector('[data-wmap-group-stats]');
+  const means = cellsOf(box, 'Mean');
+  // Two groups differ: one is blue and the other warm, for each test that differs.
+  const shaded = means.map(shadeOf).filter(Boolean);
+  assert.ok(shaded.length >= 2, `some means are shaded: ${means.map(shadeOf)}`);
+  assert.ok(shaded.some(x => /^rgba\(0, 114, 178/.test(x)) && shaded.some(x => /^rgba\(213, 94, 0/.test(x)), 'one group below, one above');
+  assert.ok(cellsOf(box, 'Limit yield %').every(c => shadeOf(c) === ''), 'groups with the same share inside limits are not tinted: nothing is wrong');
+  tab.destroy();
+});
+
+test('Comparison by group: each group\'s mean is shaded among the groups, blue below and warm above, with the numbers still printed', () => {
+  const { items, lot } = lotItems(4);
+  const tab = mount(items, lot, 'distributions');
+  dom.window.document.body.appendChild(tab.el);
+  tab.el.querySelector('[data-wmap-select="group-by"]').click();
+  [...dom.window.document.querySelectorAll('[role="option"]')].find(o => /^Split/.test(o.textContent)).click();
+  const row = tab.el.querySelector('[data-wmap-compare-test]').closest('tr');
+  const groupCells = [...row.children].slice(1, 3);
+  assert.ok(groupCells.every(c => /\d/.test(c.textContent)), 'the means are printed');
+  const shades = groupCells.map(shadeOf);
+  assert.ok(shades.every(Boolean), `both group means are shaded: ${shades}`);
+  assert.notEqual(shades[0], shades[1]);
+  assert.ok(shades.some(x => /^rgba\(0, 114, 178/.test(x)) && shades.some(x => /^rgba\(213, 94, 0/.test(x)), 'one below, one above');
+  tab.destroy();
+});
+
+test('Dies: a reading outside its test\'s limits is tinted warm', () => {
+  const { items: base, lot } = lotItems(1);
+  const set = (d, v) => ({ ...d, testValues: { ...d.testValues, 1050: v } });
+  // One reading above the high limit of 0.6 and one below the low limit of 0.4.
+  const items = [{ ...base[0], dies: base[0].dies.map((d, i) => (i === 2 ? set(d, 0.9) : i === 5 ? set(d, 0.1) : d)) }];
+  const tab = mount(items, lot, 'data');
+  choose(tab, 'dies');
+  const root = dataRoot(tab);
+  const heads = [...root.querySelectorAll('th')].map(t => t.textContent);
+  const col = heads.findIndex(h => /^vth/.test(h));
+  const shades = [...root.querySelectorAll('tbody tr[aria-rowindex]')].map(r => shadeOf(r.children[col]));
+  const def = DEFS[0];
+  const outside = items[0].dies.filter(d => { const v = d.testValues?.[1050]; return v !== undefined && ((def?.limitLow !== undefined && v < def.limitLow) || (def?.limitHigh !== undefined && v > def.limitHigh)); }).length;
+  assert.equal(outside, 2, 'two readings are outside the limits');
+  assert.equal(shades.filter(Boolean).length, 2, 'exactly the dies outside the limits are tinted');
+  tab.destroy();
 });
 
 // ── The virtual table ────────────────────────────────────────────────────────

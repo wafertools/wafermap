@@ -3,6 +3,7 @@
 // geometry and orientation, so a position on it is where it is on every other map; its colours run symmetrically about
 // zero, so no difference and a difference of the opposite sign never look alike.
 
+import { NEGLIGIBLE_SPREAD } from '../core/utils.js';
 import { differenceMap, type DifferenceMeasure } from '../stats/differenceMap.js';
 import { isParametricTest, type TestDef } from '../renderer/buildWaferMap.js';
 import type { Die } from '../core/dies.js';
@@ -67,9 +68,12 @@ export function renderDifferenceMapPanel(o: DifferenceMapPanelOptions): { card: 
     const what = measure === YIELD ? 'Yield' : testLabel(def, Number(measure));
     const unit = measure === YIELD ? '%' : def?.unit;
     const r = differenceMap(ga.items, gb.items, m);
+    // Differences under a hundredth of the level are noise: the colours then span that much, not the largest of them.
+    const reach = Math.max(r.maxAbs, r.level * NEGLIGIBLE_SPREAD);
+    const negligible = r.compared > 0 && r.maxAbs < r.level * NEGLIGIBLE_SPREAD;
     note.textContent = r.compared
       ? `${what}: ${a} (${ga.items.length} wafer${ga.items.length === 1 ? '' : 's'}) minus ${b} (${gb.items.length}), each the mean over its wafers at the position${measure === YIELD ? ' of the share passing' : ''}. `
-        + `${r.compared.toLocaleString('en-GB')} positions compared; the colours run from −${fmt(r.maxAbs, unit)} to +${fmt(r.maxAbs, unit)}, zero in the middle. Grey: a position one group has no value at.`
+        + `${r.compared.toLocaleString('en-GB')} positions compared; the colours run from −${fmt(reach, unit)} to +${fmt(reach, unit)}, zero in the middle${negligible ? ` (no difference is over 1% of the level, so the groups do not differ in a way worth reading)` : ''}. Grey: a position one group has no value at.`
       : `${a} and ${b} have no position with a value of ${what} in common.`;
     if (r.compared) note.append(guideCite(doc, GUIDE_SECTIONS.heatmap), '.');
     const base = ga.items[0]?.source;
@@ -80,7 +84,7 @@ export function renderDifferenceMapPanel(o: DifferenceMapPanelOptions): { card: 
       ...base, wafer, dies: r.dies, passBins: [...ga.items[0].passBins],
       testDefs: [{ testNumber: 0, name: `${what}: ${a} − ${b}`, unit }],
     };
-    const range: [number, number] = [-(r.maxAbs || 1), r.maxAbs || 1];
+    const range: [number, number] = [-(reach || 1), reach || 1];
     // A map inside Insights offers no Insights of its own.
     map = renderWaferMap(host, item, { viewOptions: { plotMode: 'value', activeTest: 0, valueRange: range }, showIdentity: false, insights: { enabled: false }, onSaveImage: o.onSaveImage });
   }

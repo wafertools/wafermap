@@ -20,7 +20,8 @@ import { applyConditions, fieldCatalogue, fieldExtent, fieldValues, type Conditi
 import { toPlotItems } from './plotItems.js';
 import { buildFilterEditor, buildFilterStrip } from './filterEditor.js';
 import { CLR, FONT, RADIUS, SPACE, openModal, saveTextFile, wireTooltip, type SaveTextHandler } from './toolbar.js';
-import { inputStyle } from './charts/chartShell.js';
+import { inputStyle, makeSegmented } from './charts/chartShell.js';
+import { buildFilterJsonPanel } from './filterJson.js';
 import { bandButton } from './filterButton.js';
 
 /** What the filter reads of a wafer. Insights' items and the gallery's cards both have this shape. */
@@ -254,9 +255,45 @@ export function createPageFilter(o: PageFilterOptions): PageFilterController {
       apply = bandButton(doc, 'Apply', 'wmapInsightsFilterApply', 'Filter the maps, the gallery and Insights by these conditions', () => { handle.close(); self.set(draft); });
       for (const b of [cancel, apply]) b.style.padding = `${SPACE.sm} ${SPACE.lg}`;
       row.append(cancel, apply);
-      body.append(intro, editor.el, preview, buildSavedSection({
+
+      // The same filter as text: pasted, edited with suggestions from this lot, and undone. Valid text is the draft as it is
+      // typed; text that cannot be read holds Apply, so what is applied is always what was read.
+      let mode: 'conditions' | 'json' = 'conditions';
+      let problem: string | undefined;
+      const catalogue = fieldCatalogue(pop.items, pop.ctx);
+      const jsonPanel = buildFilterJsonPanel({
+        doc, filter: draft,
+        source: () => ({
+          tests: pop.ctx.testDefs?.flatMap(d => (d.testNumber !== undefined ? [{ number: d.testNumber, name: d.name }] : [])),
+          metaKeys: catalogue.flatMap(f => ('meta' in f.field ? [{ key: f.field.meta, label: f.name }] : [])),
+          conditionValues: f => fieldValues(f, pop.items, pop.ctx),
+        }),
+        onChange: f => { draft = f; showPreview(); },
+        onProblem: p => { problem = p; if (apply) { apply.disabled = !!p; apply.style.opacity = p ? '0.5' : ''; } },
+      });
+      jsonPanel.el.style.display = 'none';
+      const setMode = (next: 'conditions' | 'json'): void => {
+        if (next === mode) return;
+        if (next === 'conditions') { if (problem) jsonPanel.discard(draft); editor.set(draft); } else jsonPanel.set(draft);
+        mode = next;
+        editor.el.style.display = next === 'conditions' ? '' : 'none';
+        jsonPanel.el.style.display = next === 'json' ? '' : 'none';
+        if (next === 'json') jsonPanel.focus();
+      };
+      const modeSwitch = makeSegmented([
+        ['conditions', 'Conditions', 'Add and change the conditions one at a time'],
+        ['json', 'JSON', 'The filter as text: paste one in, edit it, with suggestions from this lot'],
+      ], 'conditions', v => setMode(v === 'json' ? 'json' : 'conditions'), doc);
+      modeSwitch.dataset.wmapFilterMode = '1';
+
+      body.append(intro, modeSwitch, editor.el, jsonPanel.el, preview, buildSavedSection({
         doc, popItems: pop, getDraft: () => draft,
-        load: f => { draft = { conditions: JSON.parse(JSON.stringify(f.conditions)) as PlotFilter['conditions'] }; editor.set(draft); showPreview(); },
+        load: f => {
+          draft = { conditions: JSON.parse(JSON.stringify(f.conditions)) as PlotFilter['conditions'] };
+          editor.set(draft);
+          if (mode === 'json') jsonPanel.set(draft);
+          showPreview();
+        },
         saved: () => self.saved(), setSaved: l => self.setSaved(l), onSaveText: o.onSaveText, pickFile: o.pickFiltersFile,
         attributes: curation,
       }));

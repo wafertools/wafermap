@@ -419,6 +419,15 @@ not have (a test this lot lacks) filters nothing, and the line says so.
 The filter is view state, like **Group by**: it is not part of any plot or plots file, and a host application can remember
 it for the next lot.
 
+#### Filter as JSON
+
+The Filter window has a **Conditions | JSON** switch. JSON shows the same filter as text, which you can edit, paste into or
+copy out of. The text is read as you type: the preview follows it, and **Apply** is held, with the reason under the text,
+while it cannot be read. Suggestions list the filter's keys, the lot's own wafer fields and tests, and the values a field
+takes (**Suggest** or Ctrl/Cmd+Space opens them by hand), and Ctrl/Cmd+Z steps back through the text. Pasting a saved
+filters file with several filters offers each to choose from; anything the reader leaves out is named under the text.
+Switching back to **Conditions** drops text that could not be read.
+
 #### Saved filters
 
 Conditions you use again can be saved. In the Filter window, type a name and press **Save** to keep the conditions you
@@ -1029,14 +1038,24 @@ same "Group by" and "Show" scope as the charts.
 - **Statistics** — the **Test Values** table (count, min, quartiles, mean, σ,
   Ppk, limits and the limit yield for each test, with its N stated) and the
   **Functional Tests** pass-rate table. With "Group by" active there is one set
-  per group.
+  per group, below one table that compares every test across the groups (a
+  test's groups side by side, with its own CSV).
 - **Dies** — one row per die: wafer, X, Y, ring, quadrant (and reticle cell and shot when a reticle is set), site, bins, a column
   for each test, and the wafer's metadata. Only the rows in view are drawn, so a
   lot of hundreds of thousands of dies scrolls smoothly. Click a column heading
   to sort by it (again to reverse; a die with no value sorts last).
-- **Wafers** — one row per wafer: lot, split and any other metadata, the die
-  counts, the yield (the same figure as the yield chart), and the mean of each
-  test (the first 50).
+- **Wafers** — one row per wafer: the wafer, the field Group by divides it by, the die
+  counts, the yield (the same figure as the yield chart), the mean of each test (the first
+  50), then the other attributes that differ between wafers. Attributes the same on every
+  wafer (lot, part type, tester…) are named in a line above the table and kept in the export.
+
+**Shading.** Where a table compares values, a pale colour sits behind the number and the number is always
+printed: a group's or wafer's mean is blue below the average of its peers and warm above (the same two hues as the
+correlation matrix), a yield (or a share inside limits) is tinted red only when it falls a point or more short of its reference, as in the
+summary report: a wafer short of the lot's mean per-wafer yield, a group short of the best group's share inside limits, and
+nothing at all on a lot with nothing wrong. A Ppk is capable, marginal or poor, and in the Dies table a reading outside its
+test's limits is tinted warm. The **Comparison by**
+table in Distributions shades each group's mean among the groups the same way.
 
 In the Dies table, **click a row** to show that die on its map: the table steps
 aside (or Insights closes) and the die is ringed, on its own card in a gallery. The

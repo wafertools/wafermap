@@ -13,6 +13,7 @@
 // numbers, a Blob for a large table. What is exported is what is shown, in the
 // order shown, except that the Dies view can also write long format.
 
+import { maxOf } from '../core/utils.js';
 import type { Die } from '../core/dies.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { testValue } from '../core/dieTable.js';
@@ -29,6 +30,9 @@ import { createVirtualTable, type VirtualColumn } from './virtualTable.js';
 import { exportCsv } from './tableExport.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip, type SaveTextHandler } from './toolbar.js';
 import { buildTestSection, buildFunctionalTestSection } from './summaryPanel.js';
+import { pooledTestStatsSteps, type PooledTestStats } from '../stats/capability.js';
+import { runChunked, type ChunkedRun } from './chunked.js';
+import { capabilityShade, outOfLimitsShade, shadesAmong, shortfallShade } from './cellShade.js';
 import type { InsightsItem } from './insightsTab.js';
 import type { Wafer } from '../core/wafer.js';
 import { patTests, waferPatVerdicts, PAT_VERDICT_LABEL, type DiePat } from '../stats/pat.js';
@@ -227,6 +231,11 @@ function buildStatisticsView(deps: DataSectionDeps): ViewResult {
 
   const groups = deps.groups && deps.groups.length > 0 ? deps.groups : undefined;
   const blocks = groups ?? [{ key: '', items: deps.items }];
+  // With groups, every test's statistics for every group in one table, a test's groups side by side, above each group's own.
+  if (groups && groups.length > 1) {
+    const compared = buildGroupStatsTable(deps, groups);
+    if (compared) { wrap.appendChild(compared.el); destroyFns.push(compared.destroy); }
+  }
   for (const g of blocks) {
     if (groups) {
       const h = doc.createElement('div');
@@ -243,6 +252,124 @@ function buildStatisticsView(deps: DataSectionDeps): ViewResult {
     Object.assign(wrap.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
   }
   return { el: wrap, destroy: () => { for (const d of destroyFns) d(); } };
+}
+
+/** One test's statistics for one group, as a row of the comparison table. */
+interface GroupStatsRow {
+  def: TestDef;
+  group: string;
+  count: number; min: number; q1: number; median: number; mean: number; q3: number; max: number; stddev: number;
+  ppk: number | null;
+  /** The mean's shade among the same test's other groups. */
+  meanShade?: string;
+  /** The share inside limits, tinted when it falls short of the best group's. */
+  yieldShade?: string;
+  /** The share of dies inside the test's spec limits, in percent, when it has limits. */
+  limitYield: number | undefined;
+}
+
+/**
+ * Every parametric test's statistics for every group in one table: a row per test and group, a test's groups next to
+ * each other so they can be read across, with the Ppk and the share inside limits. Built in slices, as each group's own
+ * statistics card is, so a large lot does not hold the page while it works.
+ */
+function buildGroupStatsTable(deps: DataSectionDeps, groups: ReadonlyArray<{ key: string; items: DataItem[] }>): { el: HTMLElement; destroy: () => void } | null {
+  const { doc } = deps;
+  const defs = deps.testDefs.filter((d): d is TestDef & { testNumber: number } => d.testNumber !== undefined && isParametricTest(d));
+  if (defs.length === 0) return null;
+  const groupLabel = deps.groupLabelText ?? 'Group';
+
+  const wrap = doc.createElement('div');
+  wrap.dataset.wmapGroupStats = '1';
+  Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.sm, minWidth: '0' } as Partial<CSSStyleDeclaration>);
+  const head = doc.createElement('div');
+  Object.assign(head.style, { display: 'flex', alignItems: 'center', gap: SPACE.md, flexWrap: 'wrap' } as Partial<CSSStyleDeclaration>);
+  const title = doc.createElement('div');
+  title.textContent = `Compared across ${groupLabel}`;
+  Object.assign(title.style, { fontWeight: '700', color: CLR.text, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
+  head.appendChild(title);
+  const body = doc.createElement('div');
+  body.textContent = 'Computing test statistics…';
+  Object.assign(body.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
+  wrap.append(head, body);
+
+  const pooled = new Map<string, PooledTestStats>();
+  let pending = groups.length;
+  let table: { destroy: () => void } | undefined;
+  let destroyed = false;
+  const finish = (): void => {
+    if (destroyed) return;
+    const rows: GroupStatsRow[] = [];
+    for (const def of defs) {
+      for (const g of groups) {
+        const p = pooled.get(g.key);
+        const stat = p?.stats.get(def.testNumber);
+        if (!p || !stat) continue;
+        const tally = p.specTally.get(def.testNumber);
+        rows.push({
+          def, group: g.key, count: stat.count, min: stat.min, q1: stat.q1, median: stat.median, mean: stat.mean, q3: stat.q3, max: stat.max, stddev: stat.stddev,
+          ppk: p.capability.find(c => c.testNumber === def.testNumber)?.ppk ?? null,
+          limitYield: tally && tally.n > 0 ? 100 * (1 - tally.fail / tally.n) : undefined,
+        });
+      }
+    }
+    if (rows.length === 0) { wrap.remove(); return; }
+    // Each test's group means among each other: where one group sits away from the rest.
+    const byTest = new Map<number, GroupStatsRow[]>();
+    for (const r of rows) { const l = byTest.get(r.def.testNumber!); if (l) l.push(r); else byTest.set(r.def.testNumber!, [r]); }
+    for (const list of byTest.values()) {
+      const among = shadesAmong(list.map(r => r.mean), v => fmtValue(v, list[0].def.unit));
+      // The share inside limits is short when it falls a point or more below the best group's, by the report's rule.
+      const best = maxOf(list.map(r => r.limitYield ?? -Infinity));
+      list.forEach((r, i) => { r.meanShade = among[i]; r.yieldShade = r.limitYield === undefined || !Number.isFinite(best) ? undefined : shortfallShade(r.limitYield - best); });
+    }
+    const value = (pick: (r: GroupStatsRow) => number): Pick<VirtualColumn<GroupStatsRow>, 'get' | 'numeric' | 'sortKey'> => ({
+      get: r => fmtValue(pick(r), r.def.unit), numeric: true, sortKey: pick,
+    });
+    const plain = (pick: (r: GroupStatsRow) => number | undefined, text: (v: number) => string): Pick<VirtualColumn<GroupStatsRow>, 'get' | 'numeric' | 'sortKey'> => ({
+      get: r => { const v = pick(r); return v === undefined || !Number.isFinite(v) ? '' : text(v); }, numeric: true, sortKey: r => { const v = pick(r); return v === undefined || !Number.isFinite(v) ? undefined : v; },
+    });
+    const cols: VirtualColumn<GroupStatsRow>[] = [
+      { header: 'Test', get: r => `${testLabel(r.def, r.def.testNumber)}${r.def.unit ? ` (${r.def.unit})` : ''}` },
+      { header: groupLabel, get: r => r.group },
+      { header: 'N', ...plain(r => r.count, v => String(v)) },
+      { header: 'Min', ...value(r => r.min) },
+      { header: 'Q1', ...value(r => r.q1) },
+      { header: 'Median', ...value(r => r.median) },
+      { header: 'Mean', ...value(r => r.mean), shade: r => r.meanShade },
+      { header: 'Q3', ...value(r => r.q3) },
+      { header: 'Max', ...value(r => r.max) },
+      { header: 'Std dev', ...value(r => r.stddev) },
+      { header: 'Ppk', ...plain(r => r.ppk ?? undefined, v => v.toFixed(2)), shade: r => capabilityShade(r.ppk) },
+      { header: 'Limit yield %', ...plain(r => r.limitYield, v => v.toFixed(1)), shade: r => r.yieldShade },
+    ];
+    const vt = createVirtualTable<GroupStatsRow>({ columns: cols, rows, ariaLabel: `Statistics by ${groupLabel} (${rows.length})`, ownerDocument: doc });
+    vt.el.style.maxHeight = '50vh';
+    vt.el.style.minHeight = '120px';
+    table = vt;
+    const csvCols = (): CsvColumn<GroupStatsRow>[] => [
+      { header: 'Test number', get: r => r.def.testNumber ?? null },
+      { header: 'Test', get: r => testLabel(r.def, r.def.testNumber) },
+      { header: 'Unit', get: r => r.def.unit ?? '' },
+      { header: groupLabel, get: r => r.group },
+      { header: 'N', get: r => r.count }, { header: 'Min', get: r => r.min }, { header: 'Q1', get: r => r.q1 }, { header: 'Median', get: r => r.median },
+      { header: 'Mean', get: r => r.mean }, { header: 'Q3', get: r => r.q3 }, { header: 'Max', get: r => r.max }, { header: 'Std dev', get: r => r.stddev },
+      { header: 'Ppk', get: r => r.ppk }, { header: 'Limit yield %', get: r => r.limitYield ?? null },
+    ];
+    const csv = actionButton(doc, 'Statistics CSV');
+    csv.dataset.wmapGroupStatsCsv = '1';
+    csv.addEventListener('click', () => { void exportCsv(csvCols(), vt.orderedRows(), `statistics-by-${groupLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`, deps.onSaveText, { rowCount: rows.length }); });
+    head.appendChild(csv);
+    body.replaceWith(vt.el);
+  };
+
+  const runs: ChunkedRun[] = [];
+  for (const g of groups) {
+    runs.push(runChunked(pooledTestStatsSteps(g.items.map(it => ({ dies: it.dies })), defs), {
+      onDone: p => { pooled.set(g.key, p); if (--pending === 0) finish(); },
+    }));
+  }
+  return { el: wrap, destroy: () => { destroyed = true; for (const r of runs) r.cancel(); table?.destroy(); } };
 }
 
 // ── Dies ─────────────────────────────────────────────────────────────────────
@@ -308,7 +435,14 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
     get: c.get,
     numeric: c.test !== undefined && isParametricTest(c.test),
     ...(c.test !== undefined && isParametricTest(c.test)
-      ? { sortKey: (d: Die) => testValue(d, c.test!.testNumber) }
+      ? {
+        sortKey: (d: Die) => testValue(d, c.test!.testNumber),
+        // A reading outside the test's limits is tinted: the dies that fail it stand out down the column.
+        shade: (d: Die) => {
+          const t = c.test!, v = testValue(d, t.testNumber);
+          return v !== undefined && Number.isFinite(v) && ((t.limitLow !== undefined && v < t.limitLow) || (t.limitHigh !== undefined && v > t.limitHigh)) ? outOfLimitsShade() : undefined;
+        },
+      }
       : {}),
   }));
   const table = createVirtualTable<Die>({
@@ -367,7 +501,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
 // ── Wafers ───────────────────────────────────────────────────────────────────
 
 interface WaferRow { item: DataItem; yieldPercent: number | null }
-interface WaferColumn { header: string; cell: (r: WaferRow) => CsvCell; show?: (r: WaferRow) => string; numeric?: boolean }
+interface WaferColumn { header: string; cell: (r: WaferRow) => CsvCell; show?: (r: WaferRow) => string; numeric?: boolean; shade?: (r: WaferRow) => string | undefined }
 
 function buildWafersView(deps: DataSectionDeps): ViewResult {
   const { doc, items } = deps;
@@ -402,28 +536,53 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
     return n ? sum / n : undefined;
   };
 
-  const cols: WaferColumn[] = [
-    { header: 'Wafer', cell: r => r.item.label },
-    ...keys.map((k): WaferColumn => ({
-      header: attributeLabel(k, deps.attributes),
-      cell: r => metadataDisplayValue((r.item.wafer?.metadata as Record<string, unknown> | undefined)?.[k]) ?? '',
-    })),
+  // The numbers a reader came for come first: the wafer, the field Group by divides it by, then dies, yield and the test
+  // means; the other attributes follow, those that differ between wafers before those that are the same on every wafer.
+  // Attributes the same on every wafer (lot, part type, tester…) are named in a line above the table instead of repeating
+  // down a column; they stay in the export.
+  const metaOf = (r: WaferRow, k: string): string => metadataDisplayValue((r.item.wafer?.metadata as Record<string, unknown> | undefined)?.[k]) ?? '';
+  const metaCol = (k: string): WaferColumn => ({ header: attributeLabel(k, deps.attributes), cell: r => metaOf(r, k) });
+  const sameEverywhere = (k: string): boolean => rows.length > 1 && rows.every(r => metaOf(r, k) === metaOf(rows[0], k));
+  const constantKeys = keys.filter(sameEverywhere);
+  const varyingKeys = keys.filter(k => !constantKeys.includes(k));
+  const groupKey = deps.groupLabelText ? varyingKeys.find(k => attributeLabel(k, deps.attributes) === deps.groupLabelText) : undefined;
+  const waferYields = rows.map(r => r.yieldPercent).filter((v): v is number => v !== null && Number.isFinite(v));
+  const lotYield = waferYields.length ? waferYields.reduce((a, b) => a + b, 0) / waferYields.length : undefined;
+  const numberCols: WaferColumn[] = [
     { header: 'Dies', cell: r => r.item.dies.length, numeric: true },
     { header: 'Yield-eligible dies', cell: r => r.item.dies.filter(d => isYieldEligibleDie(d)).length, numeric: true },
     { header: 'Yield %', cell: r => r.yieldPercent === null ? '' : r.yieldPercent,
-      show: r => r.yieldPercent === null ? '' : r.yieldPercent.toFixed(1), numeric: true },
-    ...tests.map((td): WaferColumn => ({
-      header: `${testLabel(td, td.testNumber)}${td.unit ? ` (${td.unit})` : ''} mean`,
-      cell: r => meanOf(r, td),
-      show: r => { const m = meanOf(r, td); return m === undefined ? '' : fmtValue(m, td.unit); },
-      numeric: true,
-    })),
+      show: r => r.yieldPercent === null ? '' : r.yieldPercent.toFixed(1), numeric: true,
+      // A wafer short of the lot's figure (the mean per-wafer yield, as the panel and the reports state it) is tinted, as there.
+      shade: r => (r.yieldPercent === null || lotYield === undefined ? undefined : shortfallShade(r.yieldPercent - lotYield)) },
+    // A wafer's mean among the wafers' means: blue below the lot's average, warm above.
+    ...tests.map((td): WaferColumn => {
+      const shades = new Map<WaferRow, string | undefined>();
+      const among = shadesAmong(rows.map(r => meanOf(r, td) ?? NaN), v => fmtValue(v, td.unit));
+      rows.forEach((r, i) => shades.set(r, among[i]));
+      return {
+        header: `${testLabel(td, td.testNumber)}${td.unit ? ` (${td.unit})` : ''} mean`,
+        cell: r => meanOf(r, td),
+        show: r => { const m = meanOf(r, td); return m === undefined ? '' : fmtValue(m, td.unit); },
+        numeric: true,
+        shade: r => shades.get(r),
+      };
+    }),
   ];
+  const shown: WaferColumn[] = [
+    { header: 'Wafer', cell: r => r.item.label },
+    ...(groupKey ? [metaCol(groupKey)] : []),
+    ...numberCols,
+    ...varyingKeys.filter(k => k !== groupKey).map(metaCol),
+  ];
+  // The export keeps every attribute, the constant ones last.
+  const cols: WaferColumn[] = [...shown, ...constantKeys.map(metaCol)];
 
-  const vcols: VirtualColumn<WaferRow>[] = cols.map(c => ({
+  const vcols: VirtualColumn<WaferRow>[] = shown.map(c => ({
     header: c.header,
     get: r => c.show ? c.show(r) : String(c.cell(r) ?? ''),
     numeric: c.numeric,
+    ...(c.shade ? { shade: c.shade } : {}),
     ...(c.numeric ? { sortKey: (r: WaferRow) => { const v = c.cell(r); return typeof v === 'number' ? v : undefined; } } : {}),
   }));
   const table = createVirtualTable<WaferRow>({
@@ -436,8 +595,18 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
   const csvCols = (): CsvColumn<WaferRow>[] => cols.map(c => ({ header: c.header, get: c.cell }));
   const cutNote = deps.testDefs.length > tests.length
     ? ` Mean columns cover the first ${tests.length} of ${deps.testDefs.length} tests.` : '';
+  // What is the same on every wafer is said once, above the table.
+  let el: HTMLElement = table.el;
+  if (constantKeys.length) {
+    const same = doc.createElement('div');
+    same.dataset.wmapWafersSame = '1';
+    same.textContent = `Same on every wafer: ${constantKeys.map(k => `${attributeLabel(k, deps.attributes)} ${metaOf(rows[0], k)}`).join(' · ')}`;
+    Object.assign(same.style, { color: CLR.label, fontSize: FONT.body, lineHeight: '1.5', marginBottom: SPACE.sm } as Partial<CSSStyleDeclaration>);
+    el = doc.createElement('div');
+    el.append(same, table.el);
+  }
   return {
-    el: table.el,
+    el,
     destroy: () => table.destroy(),
     actions: {
       note: () => `${plural(rows.length, 'wafer')}.${cutNote}${deps.onOpenWafer ? ' Click a row to open that wafer.' : ''} Export follows the order shown.`,

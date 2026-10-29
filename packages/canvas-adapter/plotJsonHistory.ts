@@ -72,3 +72,9 @@ export function createTextHistory(area: HTMLTextAreaElement, now: () => number =
     get canRedo() { return at < states.length - 1; },
   };
 }
+
+/** Copy `text` to the clipboard and say which way it went; false when the host does not allow it. */
+export function copyText(doc: Document, text: string, done: (ok: boolean) => void): void {
+  const nav = doc.defaultView?.navigator;
+  if (nav?.clipboard?.writeText) nav.clipboard.writeText(text).then(() => done(true), () => done(false)); else done(false);
+}

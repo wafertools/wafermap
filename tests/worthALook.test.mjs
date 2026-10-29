@@ -52,6 +52,14 @@ test('the Overview draws the panel\'s top items as cards, in its order, each say
   }
 });
 
+test('Worth a look leads the Overview: it comes before the fixed cards, which follow as reference', () => {
+  const { tab } = mount();
+  const w = worth(tab);
+  const fixed = [...tab.el.querySelectorAll('[data-wmap-card-menu]')].find(b => !w.contains(b));
+  assert.ok(fixed, 'the fixed cards are there');
+  assert.ok(w.compareDocumentPosition(fixed) & window.Node.DOCUMENT_POSITION_FOLLOWING, 'Worth a look is first');
+});
+
 test('Show on map hands the item\'s target to the host, as its row would', () => {
   const { tab, shown } = mount();
   click(window, cards(tab)[0].querySelector('[data-wmap-worth-show-on-map]'));

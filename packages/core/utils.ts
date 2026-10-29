@@ -59,6 +59,13 @@ export function hasAnyKey<T extends object>(obj: T | null | undefined): obj is T
  * Returns 0 for an empty array, matching the callers that treat "no values" as no
  * extent rather than as ±Infinity.
  */
+/**
+ * A spread this small, as a share of the level it sits on, is noise to colour: a scale stretched over it would make a
+ * hundredth of a percent look as large as any other difference. Colour scales are widened to at least this share of the
+ * mean, and a set of means within it is left unshaded.
+ */
+export const NEGLIGIBLE_SPREAD = 0.01;
+
 export function minOf(values: readonly number[]): number {
   if (values.length === 0) return 0;
   let m = values[0];

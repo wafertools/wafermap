@@ -698,6 +698,15 @@ test('a heatmap of rescaled values has a colour key equally far either side of z
   assert.equal(plain.colorScale.hi, Math.max(...measured), 'to its highest');
 });
 
+test('a heatmap whose cells are within 1% of their mean has a key at least that wide, so noise is not drawn as a spread', () => {
+  const flat = [wafer('W1', { vth0: 1.8000, meta: { split: 'TT' } }), wafer('W2', { vth0: 1.8004, meta: { split: 'TT' } }), wafer('W3', { vth0: 1.8002, meta: { split: 'TT' } })];
+  const r = resolvePlot(spec('heatmap', { x: { meta: 'split' }, rows: { builtin: 'wafer' }, y: T(1050, 'Vth') }, { level: 'wafer', aggregate: 'mean' }), flat, ctx);
+  const cells = r.marks.values.flat().filter(Number.isFinite);
+  const mid = (Math.min(...cells) + Math.max(...cells)) / 2;
+  assert.ok(Math.abs(r.colorScale.hi - r.colorScale.lo - mid * 0.01) < 1e-9, 'a hundredth of the mean wide');
+  assert.ok(r.colorScale.lo < Math.min(...cells) && r.colorScale.hi > Math.max(...cells), 'with every cell inside it');
+});
+
 test('a heatmap of a yield or a pass rate is a rating (bad to good); a z-score is signed; a measured value is neither', () => {
   const rows = { x: { meta: 'split' }, rows: { builtin: 'wafer' } };
   const yieldMap = resolvePlot(spec('heatmap', { ...rows, y: { builtin: 'yield' } }, { level: 'wafer', aggregate: 'mean' }), lot(), ctx);

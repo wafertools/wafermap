@@ -360,6 +360,25 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 ## Values and distributions
 
+
+### Yield by site
+
+*Yield of each test site (probe position): passing dies as a share of judged dies, over every wafer. Shown when the dies come from two sites or more.*
+
+**Why it is useful.** A probe card tests several dies at once, and each position is a site. A bad contact, a worn probe or a site that was never calibrated costs yield on every wafer it touches, in a pattern the wafer map does not show, because the dies it tested are spread across the wafer. A site that is low on every wafer points at the probe card, not at the wafers.
+
+**How to read it.** One bar per site, its yield written at the end of the bar, with the median of the bars as a line when there are three sites or more. A site well below the others is the one to look at first. Click a bar for the dies it counts.
+
+**Notes.**
+
+- **Only with two sites or more.** A single-site test has nothing to compare, and the card is not drawn.
+- **Pooled over the wafers in view**, with the same judged dies and pass bins as the yield cards. Group by does not split it: the question is about the probe, not the wafer.
+- **A low site is a lead, not a cause.** Check that the site is low on several wafers, and that it does not simply test the edge, before blaming the card.
+
+**Where to find it.** The Overview tab, after the ring and quadrant cards, on a lot whose dies come from two test sites or more. **Edit as plot** opens it as a bar of yield by the Site field.
+
+**See also.** [Yield by wafer](#yield-by-wafer), [Reticle cell yield](#reticle-cell-yield).
+
 ### Test value distribution
 
 ![Test value distribution: a box for each wafer](examples/thumbs/test-value-distribution.webp)

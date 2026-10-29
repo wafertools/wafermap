@@ -6,6 +6,7 @@ import { rankCommonality, measureLabel, type CommonalityField, type CommonalityW
 import { formatP } from '../../stats/groupCompare.js';
 import type { FacetCuration } from '../../stats/facets.js';
 import { CLR, FONT, SPACE, controlStyle, wireControlHover, wireTooltip } from '../toolbar.js';
+import { shortfallShade } from '../cellShade.js';
 import { cardShell, firstRowsToggle, guideCite, renderEmptyState } from './chartShell.js';
 import { GUIDE_SECTIONS } from '../../stats/guideSections.js';
 import { cardAbout } from './cardAbout.js';
@@ -79,15 +80,24 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
   const tbody = doc.createElement('tbody');
   table.appendChild(tbody);
 
-  const td = (tr: HTMLElement, content: string | HTMLElement, opts: { align?: 'left' | 'right'; strong?: boolean; title?: string } = {}) => {
+  const td = (tr: HTMLElement, content: string | HTMLElement, opts: { align?: 'left' | 'right'; strong?: boolean; title?: string; shade?: string } = {}) => {
     const c = doc.createElement('td');
     if (typeof content === 'string') c.textContent = content; else c.appendChild(content);
     if (opts.title) wireTooltip(c, opts.title);
+    if (opts.shade) c.style.background = opts.shade;
     Object.assign(c.style, { padding: `${SPACE.xs} ${SPACE.sm}`, textAlign: opts.align ?? 'right', borderBottom: `1px solid ${CLR.menuBorder}`, whiteSpace: 'nowrap', fontWeight: opts.strong ? '700' : '400' } as Partial<CSSStyleDeclaration>);
     tr.appendChild(c);
   };
   const pct = (v: number) => `${v.toFixed(1)}%`;
   const n = (key: string, row: (typeof result.rows)[number]) => row.comparison.groups.find(g => g.key === key)?.n ?? 0;
+
+  /** A yield's worst group is tinted by the report's rule against the wafers' mean yield over all the groups; a bin's share is not a yield. */
+  const worstShade = (r: (typeof result.rows)[number]): string | undefined => {
+    if (r.measure.kind !== 'yield') return undefined;
+    const gs = r.comparison.groups.filter(g => Number.isFinite(g.mean) && g.n > 0);
+    const wafers = gs.reduce((a, g) => a + g.n, 0);
+    return wafers > 0 ? shortfallShade(r.worst.mean - gs.reduce((a, g) => a + g.mean * g.n, 0) / wafers) : undefined;
+  };
 
   function fill(all: boolean): void {
     tbody.replaceChildren();
@@ -95,7 +105,7 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
       const tr = doc.createElement('tr');
       td(tr, r.field.label, { align: 'left' });
       td(tr, measureLabel(r.measure), { align: 'left' });
-      td(tr, `${r.worst.key}: ${pct(r.worst.mean)} (${n(r.worst.key, r)} wafers)`, { align: 'left' });
+      td(tr, `${r.worst.key}: ${pct(r.worst.mean)} (${n(r.worst.key, r)} wafers)`, { align: 'left', shade: worstShade(r) });
       td(tr, `${r.best.key}: ${pct(r.best.mean)} (${n(r.best.key, r)} wafers)`, { align: 'left' });
       td(tr, `${r.spread.toFixed(1)} pts`);
       td(tr, formatP(r.comparison.welch?.p ?? NaN), { title: r.comparison.issue });

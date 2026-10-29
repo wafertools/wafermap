@@ -15,6 +15,7 @@ import { exportCsv } from '../tableExport.js';
 import { cardShell, guideCite, makeListSelect, renderEmptyState } from './chartShell.js';
 import { GUIDE_SECTIONS } from '../../stats/guideSections.js';
 import { cardAbout } from './cardAbout.js';
+import { shadesAmong } from '../cellShade.js';
 
 export interface GroupComparisonPanelOptions {
   title?: string;
@@ -125,12 +126,13 @@ export function renderGroupComparisonPanel(o: GroupComparisonPanelOptions): { ca
 
   const tbody = doc.createElement('tbody');
   const rowEls = new Map<number, HTMLTableRowElement>();
-  const td = (tr: HTMLElement, content: string | HTMLElement, opts: { title?: string; strong?: boolean; muted?: boolean; align?: 'left' | 'right' } = {}) => {
+  const td = (tr: HTMLElement, content: string | HTMLElement, opts: { title?: string; strong?: boolean; muted?: boolean; align?: 'left' | 'right'; shade?: string } = {}) => {
     const c = doc.createElement('td');
     if (typeof content === 'string') c.textContent = content; else c.appendChild(content);
     if (opts.title) wireTooltip(c, opts.title);
     Object.assign(c.style, { padding: `${SPACE.xs} ${SPACE.sm}`, textAlign: opts.align ?? 'right', borderBottom: `1px solid ${CLR.menuBorder}`, whiteSpace: 'nowrap',
       fontWeight: opts.strong ? '700' : '400', color: opts.muted ? CLR.label : CLR.text } as Partial<CSSStyleDeclaration>);
+    if (opts.shade) c.style.background = opts.shade;
     tr.appendChild(c);
   };
   for (const r of rows) {
@@ -146,14 +148,16 @@ export function renderGroupComparisonPanel(o: GroupComparisonPanelOptions): { ca
     wireControlHover(name, 'bare');
     name.addEventListener('click', () => { o.onSelectTest(r.test.testNumber); mark(r.test.testNumber); });
     td(tr, name, { align: 'left' });
-    for (const k of shownGroups) {
+    // Each group's mean among the groups' means, in blue below and warm above: the pattern across the row at a glance.
+    const shades = shadesAmong(shownGroups.map(k => { const g = c.groups.find(x => x.key === k); return g && g.n ? g.mean : NaN; }), v => fmt(v, unit));
+    for (const [gi, k] of shownGroups.entries()) {
       const g = c.groups.find(s => s.key === k);
       const contrast = c.contrasts?.find(x => x.key === k);
       const mean = g && g.n ? fmt(g.mean, unit) : '—';
       const text = contrast && Number.isFinite(contrast.delta)
         ? `${mean} (${contrast.delta >= 0 ? '+' : ''}${fmt(contrast.delta, unit)}, p ${formatP(contrast.pAdjusted)})`
         : mean;
-      td(tr, text, { title: g ? `${k}: ${g.n} wafer${g.n === 1 ? '' : 's'}${g.n >= 2 ? `, wafer-to-wafer SD ${fmt(g.sd, unit)}` : ''}` : undefined, muted: !g || g.n < 2, strong: !!contrast && contrast.pAdjusted < 0.05 });
+      td(tr, text, { shade: shades[gi], title: g ? `${k}: ${g.n} wafer${g.n === 1 ? '' : 's'}${g.n >= 2 ? `, wafer-to-wafer SD ${fmt(g.sd, unit)}` : ''}` : undefined, muted: !g || g.n < 2, strong: !!contrast && contrast.pAdjusted < 0.05 });
     }
     td(tr, formatP(c.welch?.p ?? NaN), { title: c.issue });
     td(tr, formatP(c.kruskal?.p ?? NaN));

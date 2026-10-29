@@ -142,6 +142,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
 
   const chartHooks = () => ({
     onSaveImage: d.onSaveImage,
+    onSaveText: d.onSaveText,
     binColors: d.getBinColors?.(),
     onWaferMenu: d.waferMenu ? (i: number, testNumber: number | undefined, e: MouseEvent) => d.waferMenu!(items[i].waferIndex ?? i, testNumber, e) : undefined,
     // The wafer opens on the plot's own test, so its map shows the values the plot is about and not the bins. A

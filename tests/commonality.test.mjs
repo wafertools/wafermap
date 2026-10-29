@@ -97,3 +97,19 @@ test('the card ranks the rows, offers Group by, and says which field Insights is
   assert.ok(labels.includes('About this table') && !labels.includes('About this chart'), 'a table is not called a chart');
   assert.equal(p.card.style.flex, '0 0 auto', 'as tall as its table, in a column of cards');
 });
+
+test('a yield row tints its worst group when it falls short of the wafers\' mean yield; a fail bin\'s row is not tinted', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!doctype html><body></body>');
+  globalThis.window = dom.window; globalThis.document = dom.window.document;
+  globalThis.HTMLElement = dom.window.HTMLElement; globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  const { renderCommonalityPanel } = await import('../dist/packages/canvas-adapter/charts/commonality.js');
+  const p = renderCommonalityPanel({ wafers: lotOf(), fields, groupedBy: undefined, onGroupBy: () => {}, ownerDocument: dom.window.document });
+  [...p.card.querySelectorAll('button')].find(b => /^Show all/.test(b.textContent)).dispatchEvent(new dom.window.MouseEvent('click'));
+  const rows = [...p.card.querySelectorAll('tbody tr')];
+  const probe = rows.find(r => /^Probe card/.test(r.textContent) && /Yield/.test(r.cells[1].textContent));
+  assert.match(probe.cells[2].style.background, /^rgba\(190, 60, 60/, 'probe card B: well short of the mean yield');
+  assert.equal(probe.cells[3].style.background, '', 'the best group is not tinted');
+  const bin = rows.find(r => /^Probe card/.test(r.textContent) && !/Yield/.test(r.cells[1].textContent));
+  assert.equal(bin.cells[2].style.background, '', 'a bin share is not a yield');
+});

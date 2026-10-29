@@ -26,6 +26,8 @@ export function attachJsonSuggestions(o: {
   doc: Document;
   area: HTMLTextAreaElement;
   source: () => CompletionSource;
+  /** The text is a filter, not a plot: its keys and values are a filter's. */
+  as?: 'filter';
 }): JsonSuggestHandle {
   const { doc, area } = o;
   const id = `wmap-json-suggest-${++serial}`;
@@ -109,7 +111,7 @@ export function attachJsonSuggestions(o: {
   /** `asked`: the reader asked for the list (Ctrl/Cmd+Space, the button); otherwise it is opening itself. */
   function update(force: boolean, asked = false): boolean {
     if (area.selectionStart !== area.selectionEnd) { close(); return false; }
-    const c = completionsAt(area.value, area.selectionStart, o.source(), { force });
+    const c = completionsAt(area.value, area.selectionStart, o.source(), { force, ...(o.as ? { as: o.as } : {}) });
     if (c) open(c, asked); else close();
     return !!c;
   }

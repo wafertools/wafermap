@@ -9,11 +9,13 @@
 // It only suggests: Apply and the status line are still what judge the text, and text that is half written, or not
 // JSON yet, simply gets no suggestions.
 
-import { PLOT_BIN_BY, PLOT_BUILTINS, PLOT_CHOICES, PLOT_JUDGES } from '../stats/plotSpec.js';
+import { PLOT_BIN_BY, PLOT_BUILTINS, PLOT_CHOICES, PLOT_JUDGES, type PlotField } from '../stats/plotSpec.js';
 
 export interface CompletionSource {
   /** The lot's tests, for the number of a `test` or `passRate` field. */
   tests?: ReadonlyArray<{ number: number; name?: string }>;
+  /** The values a condition on `field` can name in its `values` list: what the lot holds for that field. */
+  conditionValues?: (field: PlotField) => readonly string[];
   /** The lot's wafer fields, for a `meta` field: the key, and the name the field list shows for it. */
   metaKeys?: ReadonlyArray<{ key: string; label?: string }>;
   /** The gradients a plot's colours can take, by name and the name to show. */
@@ -40,6 +42,8 @@ export interface Completion {
 }
 
 interface Frame {
+  /** Where the container opens in the text. */
+  start: number;
   kind: 'object' | 'array';
   /** The key this container is the value of (`[]` inside a list); undefined for the root. */
   key?: string;
@@ -97,7 +101,7 @@ function locate(text: string, caret: number): Where | undefined {
     }
     if (c === '{' || c === '[') {
       const t = top();
-      frames.push({ kind: c === '{' ? 'object' : 'array', key: t ? (t.kind === 'array' ? '[]' : t.current) : undefined, expect: c === '{' ? 'key' : 'value', seen: new Set() });
+      frames.push({ start: i, kind: c === '{' ? 'object' : 'array', key: t ? (t.kind === 'array' ? '[]' : t.current) : undefined, expect: c === '{' ? 'key' : 'value', seen: new Set() });
       i++;
       continue;
     }
@@ -151,8 +155,15 @@ const isFieldPath = (path: string[]): boolean => {
 interface ValueSet { words: ReadonlyArray<{ word: string; detail?: string }>; kind: 'string' | 'number' | 'boolean' }
 
 /** The values `setting` may take in the object at `path`, or undefined when nothing can be suggested. */
-function valuesAt(path: string[], setting: string, src: CompletionSource, inList: boolean): ValueSet | undefined {
+function valuesAt(path: string[], setting: string, src: CompletionSource, inList: boolean, conditionText?: string): ValueSet | undefined {
   const words = (list: readonly string[], key = setting) => list.map(word => ({ word, detail: src.describe?.(key, word) }));
+  // The values a filter condition names: what the lot holds for the condition's own field.
+  if (inList && setting === 'values' && path.join('/') === 'where/conditions/[]' && src.conditionValues && conditionText) {
+    const meta = /"meta"\s*:\s*"([^"]+)"/.exec(conditionText), builtin = /"builtin"\s*:\s*"([^"]+)"/.exec(conditionText), test = /"test"\s*:\s*(\d+)/.exec(conditionText);
+    const field = (meta ? { meta: meta[1] } : builtin ? { builtin: builtin[1] } : test ? { test: Number(test[1]) } : undefined) as PlotField | undefined;
+    const vs = field ? src.conditionValues(field) : [];
+    return vs.length ? { kind: 'string', words: vs.map(word => ({ word })) } : undefined;
+  }
   if (path.length === 0 && setting in PLOT_CHOICES) {
     return { kind: 'string', words: words(PLOT_CHOICES[setting as keyof typeof PLOT_CHOICES]) };
   }
@@ -187,11 +198,12 @@ function filtered<T extends { label: string }>(items: T[], typed: string): T[] {
  * What could be written at `caret`, or undefined for nothing. `force` (Ctrl+Space) also answers where nothing has been
  * typed yet; otherwise a suggestion needs the reader to be inside a string, or to have started a number.
  */
-export function completionsAt(text: string, caret: number, source: CompletionSource = {}, o: { force?: boolean } = {}): Completion | undefined {
+export function completionsAt(text: string, caret: number, source: CompletionSource = {}, o: { force?: boolean; as?: 'filter' } = {}): Completion | undefined {
   const at = locate(text, caret);
   const frame = at?.frames[at.frames.length - 1];
   if (!at || !frame) return undefined;
-  const path = pathOf(at.frames);
+  // A filter is the document itself; as a plot's `where` it is one level down, and the same schema describes it.
+  const path = [...(o.as === 'filter' ? ['where'] : []), ...pathOf(at.frames)];
   const typed = at.string ? at.string.prefix : at.bare ? at.bare.prefix : '';
   if (!at.string && !at.bare && !o.force) return undefined;
 
@@ -222,7 +234,8 @@ export function completionsAt(text: string, caret: number, source: CompletionSou
   if (setting === undefined || (frame.kind === 'object' && frame.expect !== 'value')) return undefined;
   // A list's own container is the object path: `tests` sits in the field object, one level up from the `[]`.
   const owner = inList ? path.slice(0, -1) : path;
-  const set = valuesAt(owner, setting, source, inList);
+  const parent = at.frames[at.frames.length - 2];
+  const set = valuesAt(owner, setting, source, inList, inList && parent ? text.slice(parent.start, caret) : undefined);
   if (!set) return undefined;
   // A number or true/false cannot be written inside quotes; a number being typed is digits.
   if (at.string && set.kind !== 'string') return undefined;

@@ -59,6 +59,7 @@ test('a difference map: group A’s mean minus group B’s at each position, no 
   assert.ok(Math.abs(at(3, 2) - 0.15) < 1e-9, 'A’s mean 0.65 + x/100 minus B’s 0.5 + x/100');
   assert.equal(at(0, 0), undefined);
   assert.ok(Math.abs(r.maxAbs - 0.15) < 1e-9);
+  assert.ok(r.level > 0.6 && r.level < 1, 'the level the differences are judged against: A’s mean value');
 });
 
 test('a yield difference compares the share of each group’s wafers passing at a position', () => {

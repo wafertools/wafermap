@@ -21,7 +21,7 @@ import type { Wafer } from '../core/wafer.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { excludedBy, excludedValue, testValue, testsPresent } from '../core/dieTable.js';
 import { limitSetName } from '../renderer/valueFilter.js';
-import { compareNatural, minOf, maxOf } from '../core/utils.js';
+import { NEGLIGIBLE_SPREAD, compareNatural, minOf, maxOf } from '../core/utils.js';
 import { isParametricTest, getTestPassStatus, type TestDef } from '../renderer/buildWaferMap.js';
 import { attributeLabel, facetValueOf, buildFacetTable, FACET_NONE_VALUE } from './facets.js';
 import type { FacetCuration } from './facets.js';
@@ -1237,7 +1237,12 @@ function heatmapColorScale(label: string, unit: string | undefined, finite: read
   // A rating is on a fixed scale, 50% (bad) to 100% (good), as the yield fills elsewhere are: the same yield is always the
   // same colour, so a wafer at 93% does not look alarming because the lot's lowest is 93%.
   if (isRating(spec)) return { label, unit, lo: RATING_FLOOR, hi: 100, rating: true };
-  return { label, unit, lo: minOf(finite), hi: maxOf(finite), ...(finite.every(Number.isInteger) ? { integer: true as const } : {}) };
+  let lo = minOf(finite), hi = maxOf(finite);
+  // Cells within a hundredth of their mean of each other are noise: the key is at least that wide, so they are not drawn as
+  // far apart as the lowest and highest of any other set.
+  const mid = (lo + hi) / 2, least = Math.abs(mid) * NEGLIGIBLE_SPREAD;
+  if (mid !== 0 && hi - lo < least) { lo = mid - least / 2; hi = mid + least / 2; }
+  return { label, unit, lo, hi, ...(finite.every(Number.isInteger) ? { integer: true as const } : {}) };
 }
 
 /** The yield or pass rate (in percent) a rating's key starts at: at or below it a cell is the worst colour. */

@@ -61,6 +61,7 @@ import { exportCsv, type CsvColumn } from './tableExport.js';
 // implementation now lives in core/utils.ts (see its comment).
 export { csvField } from '../core/utils.js';
 import { type Chunked, drain, maxOf, minOf } from '../core/utils.js';
+import { capabilityShade } from './cellShade.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import type { WaferMetadata } from '../core/metadata.js';
 
@@ -1680,9 +1681,10 @@ export function* buildTestSectionSteps(
     const f = (n: number) => fmtValue(n, entry.unit, fallbackFormat);
 
     const row = document.createElement('tr');
-    const cell = (text: string, align: 'left' | 'right' = 'right') => {
+    const cell = (text: string, align: 'left' | 'right' = 'right', shade?: string) => {
       const td = el('td', {
         textAlign:   align,
+        ...(shade ? { background: shade } : {}),
         padding: `${SPACE.xs} ${SPACE.md}`,
         borderBottom: `1px solid ${CLR.menuBorder}`,
         // CLR.text, not VALUE_COLOR. `value` is the deliberately darker emphasis
@@ -1702,7 +1704,7 @@ export function* buildTestSectionSteps(
     if (columns === 'full') { cell(f(stats.q3)); cell(f(stats.max)); cell(f(stats.stddev)); }
     if (hasPpk) {
       const ppk = ppkByTest.get(entry.testNumber);
-      cell(ppk === undefined || ppk === null ? '—' : ppk.toFixed(2));
+      cell(ppk === undefined || ppk === null ? '—' : ppk.toFixed(2), 'right', capabilityShade(ppk));
     }
     if (columns === 'full' && hasAnyLimit) {
       cell(entry.limitLow  !== undefined ? f(entry.limitLow)  : '—');

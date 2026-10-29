@@ -53,7 +53,7 @@ import { renderDifferenceMapPanel } from './differenceMapPanel.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { SweepSpec } from '../stats/sweep.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
-import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, makeLinkedTestSelect, makeWaferSelect, makeTestSelect, makeLimitsSelect, makeLinkedAxisPrefs, makeToggle, limitLines, limitExtent, shouldIncludeLimitsByDefault, hasBothLimitKinds, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
+import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, makeLinkedTestSelect, makeWaferSelect, makeTestSelect, isExpandedCard, makeLinkedAxisPrefs, makeToggle, limitLines, limitExtent, shouldIncludeLimitsByDefault, hasBothLimitKinds, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
 import { maxOf, minOf } from '../core/utils.js';
 import { buildYieldData, buildYieldDataCombined } from '../stats/yield.js';
 import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
@@ -562,6 +562,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   // "Limits:" choice made in either must reach the other. A section registers
   // its panels when it is built, replacing any earlier ones.
   type AxisPrefsPanel = { setAxisPrefs: (p: AxisPrefs) => void };
+  /** A plot card whose chart saves its data through the host's text handler, like every other export here. */
+  const renderCardWithSave = (o: Parameters<typeof renderPlotCard>[0]): ReturnType<typeof renderPlotCard> =>
+    renderPlotCard({ ...o, chart: { onSaveText, ...o.chart } });
+  /** The axis choices every value-axis card shares, as the spec fields they set; `log` draws that axis on a log scale. */
+  const axisSpec = (role: 'x' | 'y', p: AxisPrefs, log: boolean): Pick<CardSpec, 'limits' | 'axes'> => ({
+    limits: p.limits ?? 'both',
+    axes: { [role]: { ...(p.includeLimits !== undefined ? { includeLimits: p.includeLimits } : {}), ...(p.clipOutliers ? { clip: true } : {}), ...(log ? { scale: 'log' as const } : {}) } },
+  });
   const axisPrefsPanels = new Map<string, ReadonlyArray<AxisPrefsPanel>>();
   /** Adopt `prefs` everywhere except `from`, which has already applied the
    *  change and rebuilt — re-entering its own rebuild would discard the
@@ -772,7 +780,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     let yieldPanel: ReturnType<typeof renderPlotCard> | null = null;
     let yieldNested = false;
     if (includeYieldPanel) {
-      yieldPanel = renderPlotCard({
+      yieldPanel = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: plotCtx,
         spec: {
           choices: [{ current: 'natural', options: drilledIn => [['value', 'Sort: yield'], ['natural', groups && !drilledIn ? `Sort: ${label}` : 'Sort: wafer'], ...(groups && !drilledIn ? [['nested', `${label}, then wafer`, `Each ${label} with its wafers inside it`] as [string, string, string]] : [])] }],
@@ -820,7 +828,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       ...(bin === 'sbin' ? { top: BIN_PARETO_TOP } : {}),
       ...(groups ? (share === 'share' ? { barNorm: 'percent' as const } : {}) : { cumulative: true }),
     });
-    const binPanel = renderPlotCard({
+    const binPanel = renderCardWithSave({
       doc, editAsPlot, items: plotItems, ctx: plotCtx,
       spec: groups ? { choices: [binChoice, shareChoice], build: ([bin, share]) => paretoOf(bin, share) } : { choices: [binChoice], build: ([bin]) => paretoOf(bin, undefined) },
       chart: {
@@ -997,7 +1005,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         };
       };
       const kindOf = (spec: CardSpec): TestPassKind => spec.id.slice('card-pass-rate-'.length) as TestPassKind;
-      const passRate = renderPlotCard({
+      const passRate = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
         spec: (() => {
           const manyTests = kinds.some(k => kindTests(k).length > PASS_RATE_TOP);
@@ -1060,7 +1068,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const regionByWafer = (id: string, region: 'ring' | 'quadrant', noun: string): void => {
       const grouped = !!groupsForPassRate;
       const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount })));
-      const card = renderPlotCard({
+      const card = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
         spec: { id, title: `${noun} yield by ${grouped ? groupLabelText ?? 'group' : 'wafer'}`, chart: 'heatmap', fields: { x: { slot: 'groupBy' }, rows: { builtin: region }, y: { builtin: 'yield' } } },
         chart: { onSaveImage },
@@ -1091,6 +1099,24 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         elements.push(cells.card);
         destroyFns.push(cells.destroy);
       }
+    }
+
+    // Yield by site: which of the parallel test sites (probe positions) tested each die. Only when the dies come from two
+    // sites or more; a site that is low on every wafer points at its probe card or contact, not at the wafers.
+    const sites = new Set<number>();
+    for (const it of items) for (const d of it.dies) if (d.siteNum !== undefined) sites.add(d.siteNum);
+    if (sites.size >= 2) {
+      const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount })));
+      const card = renderCardWithSave({
+        doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, curation: deps.attributes },
+        spec: {
+          id: 'card-site', title: 'Yield by site', chart: 'bar', fields: { x: { builtin: 'site' }, y: { builtin: 'yield' }, color: { none: true } }, valueLabels: true,
+          ...(sites.size >= 3 ? { axes: { y: { references: [{ stat: 'median' as const }] } } } : {}),
+        },
+        chart: { onSaveImage },
+      });
+      elements.push(card.card);
+      destroyFns.push(card.destroy);
     }
 
     return { elements, destroy: () => { for (const d of destroyFns) d(); } };
@@ -1300,7 +1326,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     if (items.length && !groups) outer.appendChild(renderOverviewTiles(items));
 
     const yieldBins = renderYieldBinsSection(items, groups, groupLabelText, !single);
-    outer.appendChild(yieldBins.card);
 
     // Ring/quadrant cards join the same grid `yieldBins.card` already is (see
     // renderYieldBinsSection — it returns a makeChartGridWrap() wrapper), so
@@ -1312,7 +1337,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const details = renderOverviewDetailsCards(items, testDefs, allTestDefs, groups, groupLabelText);
     for (const c of details.elements) yieldBins.card.appendChild(c);
 
-    // What stands out, as charts: below the fixed cards, so those stay where a reader expects them on every lot.
+    // What stands out leads, as charts, then the ranking of the fields that divide yield, and the fixed cards below as
+    // reference: the answer first, the standard pictures after. A lot with nothing to show has no Worth a look, so its
+    // Overview is the fixed cards as they always were.
     const worth = renderWorthALook(items, allTestDefs);
     if (worth) outer.appendChild(worth.el);
 
@@ -1325,6 +1352,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       });
       outer.appendChild(commonality.card);
     }
+
+    outer.appendChild(yieldBins.card);
 
     // What part-average testing sets apart: a lot with tests that have both limits gets the per-wafer table.
     const pat = renderPatCard({ items: items.map(it => ({ ...it, ringCount: getRingCount() })), testDefs: allTestDefs, ownerDocument: doc, showMap: deps.showPatMap });
@@ -1391,7 +1420,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         btn.addEventListener('click', () => deps.showOnMap!(item.target));
         extras.push(btn);
       }
-      const card = renderPlotCard({
+      const card = renderCardWithSave({
         doc, items: plotItems, ctx: { testDefs: allTestDefs, curation, groupBy: analysisGroupKey },
         spec: { id: `worth-${i}`, ...groupColouredChart(item.chart, !!analysisGroupKey) } as CardSpec,
         extras, editAsPlot, chart: { onSaveImage },
@@ -1539,10 +1568,10 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const narrowed = grouped && activeSectionGroup !== null;
     const plotCtx = { testDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes };
     /** The settings of a value axis as a plot states them. */
-    const axisSpec = (role: 'x' | 'y', p: AxisPrefs, log: boolean): Pick<CardSpec, 'limits' | 'axes'> => ({
-      limits: p.limits ?? 'both',
-      axes: { [role]: { ...(p.includeLimits !== undefined ? { includeLimits: p.includeLimits } : {}), ...(p.clipOutliers ? { clip: true } : {}), ...(log ? { scale: 'log' as const } : {}) } },
-    });
+    /** With two tests or more the section has one Test picker of its own; a card shows its own only while it is expanded. */
+    const hasSharedPicker = sectionTests.length > 1;
+    let sectionSel: ReturnType<typeof makeLinkedTestSelect> | undefined;
+    const observers: MutationObserver[] = [];
     function distributionCard(o: {
       valueRole: 'x' | 'y';
       build: (p: AxisPrefs, log: boolean, choices: readonly string[]) => CardSpec;
@@ -1566,7 +1595,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const extras: HTMLElement[] = [testSel.el, axisRow];
       if (o.logToggle) extras.push(makeToggle('Log scale', log, v => { log = v; handle?.refresh(); }, doc, 'Draw the value axis on a logarithmic scale'));
       extras.push(...(o.extras ?? []));
-      handle = renderPlotCard({
+      handle = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: plotCtx, ...o.card,
         spec: { choices: o.choices ?? [], build: values => o.build(prefs, log, values) },
         slots: () => ({ test: testSel.get() ?? undefined }),
@@ -1583,6 +1612,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         chart: o.chart,
       });
       const h = handle;
+      if (hasSharedPicker) {
+        const showOwn = (): void => { testSel.el.style.display = isExpandedCard(h.card) ? '' : 'none'; };
+        showOwn();
+        const MO = doc.defaultView?.MutationObserver;
+        if (MO) { const mo = new MO(showOwn); mo.observe(h.card, { attributes: true, attributeFilter: ['data-wmap-expanded'] }); observers.push(mo); }
+      }
       return {
         card: h.card,
         setTest: n => { if (testSel.set(n)) h.refresh(); },
@@ -1633,17 +1668,17 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     let histWafer: number | null = null;
     const histExtras = grouped ? [] : [makeWaferSelect(plotItems.map(it => ({ label: it.label })), null, i => { histWafer = i; histogram.refresh(); }, { ownerDocument: doc })];
     const histogram = distributionCard({
-      valueRole: 'x', extras: histExtras,
+      valueRole: 'x', logToggle: true, extras: histExtras,
       // Overlaid groups differ in size: each as a share of its own dies lets their shapes compare; counts are a click away.
       choices: grouped ? [{ current: 'percent', options: [['percent', `Share of ${groupLabelText ?? 'group'}`, 'Each group’s bars as a share of its own dies, so groups of different sizes compare'], ['count', 'Counts']] }] : [],
       // Narrowed to a group (from the box plot or Show): Back shows every group again, as on the box plot. A legend click only filters this plot, as on every other.
       card: activeSectionGroup !== null ? { externalBack: { shown: () => activeSectionGroup !== null, onBack: () => selectGroupEverywhere(null) } } : {},
-      build: (p, _log, [norm]) => ({
+      build: (p, log, [norm]) => ({
         id: 'card-histogram', title: 'Value histogram', chart: 'histogram',
         fields: { y: { slot: 'test' }, color: grouped ? { follow: 'groupBy' } : { none: true } },
         ...(grouped && norm !== 'count' ? { histNorm: 'percent' as const } : {}),
         ...(histWafer !== null ? { where: { conditions: [{ field: { builtin: 'wafer' }, values: [plotItems[histWafer].label] }] } } : {}),
-        ...axisSpec('x', p, false),
+        ...axisSpec('x', p, log),
       }),
       chart: {
         onSaveImage,
@@ -1671,18 +1706,18 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // and the mean of the wafers as the centre line. Deliberately never divided by group: the order is the signal.
     // A point is one wafer: click it to open that wafer.
     const trend = distributionCard({
-      valueRole: 'y',
+      valueRole: 'y', logToggle: true,
       // The same wafers in the same order, read two ways: the spread of dies within each wafer, or the wafer means against control limits.
       choices: items.length >= 3 ? [{ current: 'trend', options: [['trend', 'Trend', 'Each wafer’s mean with a band of one standard deviation'], ['control', 'Control chart', 'One value per wafer against control limits, with the points that break a Western Electric rule marked']] }] : [],
-      build: (p, _log, [view]) => view === 'control' ? ({
+      build: (p, log, [view]) => view === 'control' ? ({
         id: 'card-trend', title: 'Wafer-to-wafer control chart', chart: 'control', aggregate: 'mean',
         fields: { x: { builtin: 'waferOrder' }, y: { slot: 'test' }, color: { none: true } },
-        ...axisSpec('y', p, false),
+        ...axisSpec('y', p, log),
       }) : ({
         id: 'card-trend', title: 'Wafer-to-wafer trend', chart: 'line', aggregate: 'mean', spread: 'sd',
         fields: { x: { builtin: 'waferOrder' }, y: { slot: 'test' }, color: { none: true } },
-        ...axisSpec('y', p, false),
-        axes: { ...axisSpec('y', p, false).axes, y: { ...axisSpec('y', p, false).axes!.y, references: [{ stat: 'mean', label: populationStat(describeWaferPopulation(items.map(it => it.wafer.metadata)), 'mean') }] } },
+        ...axisSpec('y', p, log),
+        axes: { ...axisSpec('y', p, log).axes, y: { ...axisSpec('y', p, log).axes!.y, references: [{ stat: 'mean', label: populationStat(describeWaferPopulation(items.map(it => it.wafer.metadata)), 'mean') }] } },
       }),
       card: { ctx: { ...plotCtx, groupBy: undefined }, ...(items.length < 2 ? { unavailable: 'A trend needs at least two wafers' } : {}) },
       chart: {
@@ -1709,6 +1744,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // each panel's own guard makes a redundant call free.
     const selectTestEverywhere = (testNumber: number): void => {
       activeSectionTest = testNumber;
+      sectionSel?.set(testNumber);
       boxplot.setTest(testNumber);
       histogram.setTest(testNumber);
       trend.setTest(testNumber);
@@ -1762,6 +1798,22 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       wrap.append(rowHeading(`Comparing ${groupLabelText ?? 'groups'}`, 'comparing'));
       if (compare) wrap.append(compare.card);
       if (difference) wrap.append(difference.card);
+    }
+    // The test the cards below are about, chosen once for all of them (a card keeps its own picker for when it is expanded).
+    if (hasSharedPicker) {
+      sectionSel = makeLinkedTestSelect(sectionTests, activeSectionTest ?? sectionTests[0]?.testNumber ?? null, n => selectTestEverywhere(n), { ownerDocument: doc });
+      const row = doc.createElement('div');
+      row.dataset.wmapSectionTest = '1';
+      Object.assign(row.style, { gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: SPACE.lg, flexWrap: 'wrap', marginTop: SPACE.md } as Partial<CSSStyleDeclaration>);
+      const heading = rowHeading('Test by test', 'tests');
+      heading.style.margin = '0';
+      const label = doc.createElement('label');
+      Object.assign(label.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs, fontSize: FONT.body, color: CLR.label } as Partial<CSSStyleDeclaration>);
+      const text = doc.createElement('span'); text.textContent = 'Test';
+      label.append(text, sectionSel.el);
+      row.append(heading, label);
+      wrap.append(row);
+    } else if (compare || difference) {
       wrap.append(rowHeading('Test by test', 'tests'));
     }
     wrap.append(capability.card, boxplot.card, histogram.card, trend.card);
@@ -1769,6 +1821,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     return {
       card: wrap,
       destroy: () => {
+        for (const mo of observers) mo.disconnect();
         capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); compare?.destroy(); difference?.destroy();
       },
     };
@@ -1803,31 +1856,41 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       wrap.append(t, el);
       return wrap;
     };
-    const xSel = makeTestSelect(scTests, sx ?? null, n => { sx = n; syncLimits(); scatterCard.refresh(); }, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: doc });
-    const ySel = makeTestSelect(scTests, sy ?? null, n => { sy = n; syncLimits(); scatterCard.refresh(); }, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: doc });
-    // The "Limits:" choice, offered while either test has both test and spec limits; shared with the section's other cards.
-    const limitsSlot = doc.createElement('span');
+    const xSel = makeTestSelect(scTests, sx ?? null, n => { sx = n; scatterCard.refresh(); }, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: doc });
+    const ySel = makeTestSelect(scTests, sy ?? null, n => { sy = n; scatterCard.refresh(); }, { maxWidth: '180px', emptyText: 'No tests', ownerDocument: doc });
+    // The axis choices the section's other cards share (which limits, widen to limits, clip outliers), taken over both axes,
+    // and a log scale for each axis.
+    const axisRow = doc.createElement('span');
+    Object.assign(axisRow.style, { display: 'inline-flex', flexWrap: 'wrap', gap: SPACE.sm, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
+    let logX = false, logY = false;
     const scatter = {
-      setXY: (x: number, y: number) => { sx = x; sy = y; xSel.value = String(x); ySel.value = String(y); syncLimits(); scatterCard.refresh(); },
-      setAxisPrefs: (p: AxisPrefs) => { scPrefs = p; syncLimits(); scatterCard.refresh(); },
+      setXY: (x: number, y: number) => { sx = x; sy = y; xSel.value = String(x); ySel.value = String(y); scatterCard.refresh(); },
+      setAxisPrefs: (p: AxisPrefs) => { if (axisCtl.set(p)) { scPrefs = p; scatterCard.refresh(); } },
       destroy: () => scatterCard.destroy(),
     };
-    function syncLimits(): void {
-      const defs = [sx, sy].map(n => testDefs.find(d => d.testNumber === n));
-      limitsSlot.replaceChildren(...(defs.some(hasBothLimitKinds) ? [makeLimitsSelect(scPrefs.limits ?? 'both', v => {
-        scPrefs = { ...scPrefs, limits: v };
-        scatterCard.refresh();
-        broadcastAxisPrefs(scPrefs, scatter);
-      }, doc)] : []));
-    }
+    const axisCtl = makeLinkedAxisPrefs(axisRow, scPrefs, p => { scPrefs = p; scatterCard.refresh(); broadcastAxisPrefs(p, scatter); }, doc);
     const named = (n: number | undefined) => { const d = testDefs.find(t => t.testNumber === n); return d?.name ? { test: n ?? 0, name: d.name } : { test: n ?? 0 }; };
-    const scExtras: HTMLElement[] = [labelled('X:', xSel), labelled('Y:', ySel), limitsSlot];
+    const scExtras: HTMLElement[] = [labelled('X:', xSel), labelled('Y:', ySel), axisRow,
+      makeToggle('Log X', logX, v => { logX = v; scatterCard.refresh(); }, doc, 'Draw the X axis on a logarithmic scale'),
+      makeToggle('Log Y', logY, v => { logY = v; scatterCard.refresh(); }, doc, 'Draw the Y axis on a logarithmic scale')];
     if (!grouped && items.length > 1) scExtras.push(makeWaferSelect(plotItems.map(it => ({ label: it.label })), null, i => { scWafer = i; scatterCard.refresh(); }, { ownerDocument: doc }));
-    const scatterCard = renderPlotCard({
+    const scatterCard = renderCardWithSave({
       doc, editAsPlot, items: plotItems, ctx: { testDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
       extras: scExtras,
+      // The "Axis includes limits" switch shows what the axes do now, the automatic choice included.
+      onResolved: r => {
+        const defs = [sx, sy].map(n => testDefs.find(d => d.testNumber === n));
+        const auto = (['x', 'y'] as const).some((role, i) => {
+          const lines = limitLines(defs[i], scPrefs.limits);
+          const values = axisValues(r, role);
+          const { lo, hi } = limitExtent(lines);
+          return values.length > 0 && lines.length > 0 && shouldIncludeLimitsByDefault(minOf(values), maxOf(values), lo, hi);
+        });
+        axisCtl.sync(scPrefs.includeLimits ?? auto, defs.some(d => limitLines(d).length > 0), defs.some(hasBothLimitKinds));
+      },
       spec: { choices: [], build: () => ({
         id: 'card-scatter', title: 'Test scatter', chart: 'scatter', limits: scPrefs.limits ?? 'both',
+        axes: { ...axisSpec('x', scPrefs, logX).axes, ...axisSpec('y', scPrefs, logY).axes },
         fields: { x: named(sx), y: named(sy), color: grouped ? { follow: 'groupBy' } : { builtin: 'hbin' } },
         // A line per group shows whether the relationship is the same in each; ungrouped the colour is the bin, where a line per bin would not read.
         ...(grouped ? { fit: 'linear' as const } : {}),
@@ -1861,7 +1924,6 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         },
       },
     });
-    syncLimits();
     axisPrefsPanels.set('correlation', [scatter]);
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
