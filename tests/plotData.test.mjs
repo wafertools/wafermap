@@ -277,7 +277,7 @@ test('a test the dies do not have is an issue naming it', () => {
 test('a test number that names another test here is refused, not plotted', () => {
   const r = resolvePlot(spec('scatter', { x: T(1050, 'Leakage'), y: T(1060) }), lot(), ctx);
   assert.equal(r.marks, undefined);
-  assert.match(r.issues[0], /Test 1050 is "Leakage" in this plot and "Vth" here/);
+  assert.match(r.issues[0], /Test 1050 was "Leakage" when this plot was saved; in these dies it is "Vth"/);
   const same = resolvePlot(spec('scatter', { x: T(1050, ' vth '), y: T(1060), color: { none: true } }), lot(), ctx);
   assert.deepEqual(same.issues, []);
 });
@@ -671,4 +671,12 @@ test('examples add a goal plot and a pass-rate bar only where the test definitio
   for (const p of ex.filter(p => p.chart === 'goal' || p === rate)) assert.deepEqual(resolvePlot(p, items, c).issues, [], p.chart);
   const none = examplePlots(fieldCatalogue(items, ctx), items.length, () => 'x', { items, ctx });
   assert.equal(none.some(p => p.chart === 'goal'), false, 'no limits, no goal plot');
+});
+
+test('a mistyped chart, built-in field or wafer field is named, with what is valid and the likely intent', () => {
+  const issue = (plot) => resolvePlot(plot, lot(), ctx).issues[0];
+  assert.match(issue(spec('heatmaps', { x: { builtin: 'wafer' }, y: T(1050, 'Vth') })), /The chart "heatmaps" is not one this version draws \(.*heatmap.*\)\. Did you mean "heatmap"\?/);
+  assert.match(issue(spec('box', { x: { builtin: 'wfer' }, y: T(1050, 'Vth') })), /^X: "wfer" is not a built-in field of this version \(wafer, .*\)\. Did you mean "wafer"\?/);
+  assert.match(issue(spec('box', { x: { meta: 'Split' }, y: T(1050, 'Vth') })), /No wafer has a "Split" value\. Did you mean "split"\? Wafer fields in these dies: split, temperature\./);
+  assert.match(issue(spec('box', { x: { builtin: 'wafer' }, y: { weird: 1 } })), /^Y: \{"weird":1\} is not a field this version reads \(a newer version may have added it\)\. A field is written like \{ "test": 1050 \}/);
 });

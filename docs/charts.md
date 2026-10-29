@@ -722,7 +722,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 - **A sweep is a plot.** It is kept, duplicated, deleted, exported and imported like any other, and is offered in the right-click menu's **Plots** section.
 - **A sweep of tests this lot lacks is kept, and greyed**, with the reason.
 
-**Where to find it.** On **My plots**, **+ New sweep** starts one on the first tests of the lot and **Edit** opens the sweep editor beside a live copy. **→ [Demo: Parametric sweeps](examples/sweeps.html)**; the user guide's [Sweep cards](user-guide.md#sweep-cards) has the detail.
+**Where to find it.** On **My plots**, **+ New plot** with the **Sweep** chart type starts one on the first tests of the lot, and **Edit** opens it beside a live copy. **→ [Demo: Parametric sweeps](examples/sweeps.html)**; the user guide's [Sweep cards](user-guide.md#sweep-cards) has the detail.
 
 **See also.** [Line chart](#line-chart).
 

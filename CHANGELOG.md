@@ -22,6 +22,21 @@ under `### Breaking`.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **A sweep is a chart type of the plot editor.** **Sweep** sits with the other chart types: choosing it shows the series, title and axes form in Setup and the curve beside it, and choosing another type brings back the plot it was. The JSON tab and its suggestions edit a sweep like any plot. The Plot tab has one **+ New plot** (the separate **+ New sweep** button is gone), and **New sweep…** on a selection's menu opens the same window.
+- **Plots files written with the names `mark` and `encoding`** (before `chart` and `fields`) are read as those plots.
+- **Plot messages say what is wrong and what to do.** A chart or built-in field this version does not know names what it was given, lists what is valid and offers the nearest ("The chart "heatmaps" is not one this version draws (…). Did you mean "heatmap"?"); a field that is not a field says what one looks like; a wafer field no wafer has lists the lot's own and the nearest ("No wafer has a "Split" value. Did you mean "split"?"). A setting or field role this version does not use (`normalise`, `fields.colour`) is still kept, and the reader is now told it does nothing, with the nearest name. A test number written in quotes says to drop them. The JSON tab reports a syntax error with its line and column where the browser gives one, and says before Apply when a plot could not be drawn.
+- **A plot whose test no longer matches the lot's says which is which.** "Test 1050 was "Leakage" when this plot was saved; in these dies it is "Vth". Choose the test again to plot "Vth"" replaces the shorter wording, in the plot, pass-rate and test-set checks alike.
+
+### Added
+
+- **A JSON tab in the plot editor.** Beside Setup and Customise, it shows the plot as the JSON of a plots-file entry, which can be copied, edited or replaced by pasted text. **Apply** reads the text with the reader a plots file goes through, so a setting this version does not know is left out and named before it is applied, and text that is not a plot cannot be applied. Suggestions open as you type inside a key or a string, after a comma, brace, colon or bracket, and from the **Suggest** button or **Ctrl/Cmd+Space**: the plot's settings, a chart type, aggregate or other setting that takes a few words, a field's kind, a built-in field, the lot's wafer fields and its test numbers with their names, and accepting one is undone by Ctrl+Z; the words come from the table the reader checks a plot against, so a suggestion is never refused. **Discard edits** drops text not yet applied; changing a test's number leaves its old name out, since the name would no longer match; the window's own Reset and Cancel go back to the plot as it was when the window opened. **Ctrl/Cmd+Z** undoes the text first (typing, an accepted suggestion, a plot chosen from a pasted file, Discard edits) and then each Apply, and **Shift+Ctrl/Cmd+Z** (or **Ctrl/Cmd+Y**) redoes; the editor keeps this history itself, so it is the same in every browser. The text holds the plot without its id, and a plots file or a list of plots can be pasted, the tab listing the plots of a file that holds several to choose from.
+
+---
+
 ## [0.38.0] — 2026-10-28
 
 ### Breaking

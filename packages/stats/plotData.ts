@@ -7,7 +7,7 @@
 //
 // What it guarantees, from the project's display rules:
 //   - A test is looked up by number and CHECKED by name. A plot saved against another test program is reported
-//     ("test 3001 is Vth in this plot and Leak here"), never drawn against the wrong measurement.
+//     ("test 3001 was Vth when the plot was saved; in these dies it is Leak"), never drawn against the wrong measurement.
 //   - Nothing is dropped silently: marks left out for a missing value are counted, by the field that was missing.
 //   - A yield is never averaged as if it were a measurement: `yield` pools passing over judged dies across the
 //     wafers in a cell; `mean` of the yield field is the mean of per-wafer yields, and is labelled so.
@@ -27,7 +27,7 @@ import { attributeLabel, facetValueOf, buildFacetTable, FACET_NONE_VALUE } from 
 import type { FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
 import { sameTestName } from './sweep.js';
-import { sameField, plotIssue, plotConditions, isField, isTestSet, isBinned, isStatReference, isPassRateSet, xFieldsOf, PLOT_X_LEVELS, PLOT_FACET_LIMIT, PLOT_BINS_DEFAULT } from './plotSpec.js';
+import { nearest, sameField, plotIssue, plotConditions, isField, isTestSet, isBinned, isStatReference, isPassRateSet, xFieldsOf, PLOT_X_LEVELS, PLOT_FACET_LIMIT, PLOT_BINS_DEFAULT } from './plotSpec.js';
 import type { PlotSpec, PlotCondition, PlotField, PlotAxis, PlotValueReference, PlotAggregate, PlotBuiltin, PlotTestSet, PlotNormalize, PlotColor, PlotBinnedField, PlotJudge } from './plotSpec.js';
 import { fmtExact, fmt } from '../renderer/fmt.js';
 import { parseTestReference } from '../renderer/derivedTests/parser.js';
@@ -309,7 +309,9 @@ export function fieldLabel(field: PlotField, testDefs?: readonly TestDef[], cura
   }
   if ('builtin' in field) return BUILTIN_LABEL[field.builtin] ?? String(field.builtin);
   // A wafer attribute by the one rule for its name (the host's label, the defaults, the key spelled out).
-  return attributeLabel(field.meta, curation);
+  if ('meta' in field && typeof field.meta === 'string') return attributeLabel(field.meta, curation);
+  // A kind of field this version does not know (hand-written, or from a newer version): named in the plot's message, not here.
+  return 'Unknown field';
 }
 
 /**
@@ -550,7 +552,7 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
     const tn = field.passRate;
     const def = ctx.testDefs?.find(d => d.testNumber === tn);
     if (!def) return { ...base, level: 'die', kind: 'numeric', issue: `Needs test ${tn}${field.name ? ` (${field.name})` : ''}, which is not in these dies` };
-    if (field.name && def.name && !sameTestName(field.name, def.name)) return { ...base, level: 'die', kind: 'numeric', issue: `Test ${tn} is "${field.name}" in this plot and "${def.name}" here` };
+    if (field.name && def.name && !sameTestName(field.name, def.name)) return { ...base, level: 'die', kind: 'numeric', issue: testNameChanged(tn, field.name, def.name) };
     const kind = passKindOf(def, field.judge);
     if (kind === 'spec' && def.limitLow === undefined && def.limitHigh === undefined) return { ...base, level: 'die', kind: 'numeric', issue: `${def.name || `Test ${tn}`} has no test limits to judge a pass by` };
     const { num, weights, failSide } = judgeDies(nDie, i => dieTestVerdict(rows.dies[i], def, kind));
@@ -566,7 +568,7 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
         return col;
       }
     } else if (field.name && def.name && !sameTestName(field.name, def.name)) {
-      return { ...base, level: 'die', kind: 'numeric', unit: def.unit, issue: `Test ${field.test} is "${field.name}" in this plot and "${def.name}" here` };
+      return { ...base, level: 'die', kind: 'numeric', unit: def.unit, issue: testNameChanged(field.test, field.name, def.name) };
     }
     if (def !== undefined && !isParametricTest(def)) {
       // A functional (or derived pass/fail) test: the die's recorded verdict, as a category to colour, compare or split yield by.
@@ -588,7 +590,11 @@ function resolveField(field: PlotField, r: Resolver): FieldColumn {
   if ('meta' in field) {
     const cat: (string | undefined)[] = items.map(it => facetValueOf(it.metadata, field.meta, ctx.curation));
     if (cat.every(c => c === undefined)) {
-      return { ...base, level: 'wafer', kind: 'categorical', cat, issue: `No wafer has a "${label}" value` };
+      // Say what the lot does have: a key typed in another case, or from another lot, is the usual cause.
+      const keys = [...new Set(items.flatMap(it => Object.keys(it.metadata ?? {})))].sort();
+      const near = nearest(field.meta, keys);
+      const have = keys.length ? ` Wafer fields in these dies: ${keys.slice(0, 12).join(', ')}${keys.length > 12 ? `, and ${keys.length - 12} more` : ''}.` : ' These dies have no wafer fields.';
+      return { ...base, level: 'wafer', kind: 'categorical', cat, issue: `No wafer has a "${label}" value.${near ? ` Did you mean "${near}"?` : ''}${have}` };
     }
     const nums = cat.map(c => (c === undefined || !PLAIN_NUMBER.test(c.trim()) ? NaN : Number(c)));
     const numeric = cat.every((c, i) => c === undefined || Number.isFinite(nums[i]));
@@ -800,6 +806,15 @@ export function combinationIssue(
     };
   }
   return undefined;
+}
+
+/**
+ * A test is looked up by number and checked by the name the plot was saved with, so a plot made against another test
+ * program (or a number edited by hand, its old name left beside it) is never drawn against the wrong measurement. The
+ * words say which side each name is from and what to do.
+ */
+function testNameChanged(tn: number, saved: string, now: string): string {
+  return `Test ${tn} was "${saved}" when this plot was saved; in these dies it is "${now}". Choose the test again to plot "${now}"`;
 }
 
 // ── rescaling a test ──────────────────────────────────────────────────────────────────────────────────────
@@ -1405,7 +1420,7 @@ function resolvePlotCore(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotCo
     for (const tn of named) {
       const def = defs.find(d => d.testNumber === tn);
       const saved = setField.names?.[String(tn)];
-      if (def && saved && def.name && !sameTestName(saved, def.name)) return fail(`Test ${tn} is "${saved}" in this plot and "${def.name}" here`);
+      if (def && saved && def.name && !sameTestName(saved, def.name)) return fail(testNameChanged(tn, saved, def.name));
       if (setField.passRate) {
         // A pass rate needs the test's definition, and test limits when it is judged by them.
         if (!def) { absent.push(saved ? `${saved} (test ${tn})` : `test ${tn}`); continue; }

@@ -610,7 +610,7 @@ them as a file (`onSaveText` receives the export; `onPickPlotsFile` supplies the
 Things that hold for every plot:
 
 - **A test is found by its number and checked by its name.** A plot saved against another test program is
-  reported ("Test 1050 is "Leakage" in this plot and "Vth" here") instead of being drawn against the wrong
+  reported ("Test 1050 was "Leakage" when this plot was saved; in these dies it is "Vth"") instead of being drawn against the wrong
   measurement.
 - **The plot states its population and what it left out**: the wafers and dies, how values were combined, and the
   count of dies missing a value.
@@ -972,7 +972,7 @@ plots: [{
 
 `readPlotsFile` also reads a `tsmap-sweeps` file (`{ "format": "tsmap-sweeps", "sweeps": [...] }`), turning each sweep into a sweep plot under the same `id`, so sweep files written earlier import unchanged.
 
-**The sweep editor** has the title, one block per series, and the axis and measurements. A series is its name, its **tests, in sweep order** (typed as numbers and ranges, `1010, 1011, 1020..1030`), and where each test's X comes from: **Test order** (the position in the run, labelled by test number, no scale assumed), **Values** (one number per test) or **From test name** (a `{x}` pattern). One source at a time, because giving two is reported as an error. Text that is not a test number or a range is flagged where it is typed, naming the offending word, and is not applied, so the chart beside it is always a definition the reader meant. **+ Add series** and **Remove** manage the list; crossing and widths appear only with two or more series.
+**The sweep form** (the plot editor's Setup tab when the chart type is **Sweep**; its JSON tab edits the same sweep as text) has the title, one block per series, and the axis and measurements. A series is its name, its **tests, in sweep order** (typed as numbers and ranges, `1010, 1011, 1020..1030`), and where each test's X comes from: **Test order** (the position in the run, labelled by test number, no scale assumed), **Values** (one number per test) or **From test name** (a `{x}` pattern). One source at a time, because giving two is reported as an error. Text that is not a test number or a range is flagged where it is typed, naming the offending word, and is not applied, so the chart beside it is always a definition the reader meant. **+ Add series** and **Remove** manage the list; crossing and widths appear only with two or more series.
 
 **`insights.sweeps`** (deprecated) — the earlier way to supply sweeps. Each entry is added to the plot list as a sweep plot under its own `id` and the first use logs a notice; a plot saved under that `id` takes precedence, so a host that keeps both shows the sweep once and does not undo the reader's edits. Deleting one on the My plots tab calls `onRemoveSweeps` with its id, so the host stops supplying it and the next render does not bring it back. The `SweepSpec` shape below is unchanged.
 

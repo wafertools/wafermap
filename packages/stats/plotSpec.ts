@@ -146,6 +146,29 @@ export const PLOT_NORMALIZE = ['limits', 'zscore', 'robust'] as const;
 export type PlotNormalize = (typeof PLOT_NORMALIZE)[number];
 
 /**
+ * Every setting that takes one of a few words, and the words. The reader checks a plot against this table and the plot
+ * editor's JSON tab suggests from it, so the two cannot disagree about what is allowed.
+ */
+export const PLOT_CHOICES = {
+  chart: PLOT_CHARTS,
+  level: ['die', 'wafer'],
+  aggregate: PLOT_AGGREGATES,
+  limits: PLOT_LIMITS,
+  normalize: PLOT_NORMALIZE,
+  stack: ['stack', 'percent'],
+  sort: ['value', 'ascending'],
+  barNorm: ['count', 'percent'],
+  histNorm: ['count', 'percent'],
+  orientation: ['vertical', 'horizontal'],
+  spread: ['sd', 'ci95', 'iqr', 'minmax'],
+  fit: ['linear', 'orthogonal'],
+  probabilityAxis: ['normal', 'linear'],
+} as const satisfies Record<string, readonly string[]>;
+
+/** `a or b`, `a, b or c`: the words a message lists. */
+const orList = (words: readonly string[]): string => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}`);
+
+/**
  * One condition of a filter. A category field keeps the units whose value is one of `values`; a number keeps those
  * from `min` to `max` inclusive, either end open. `not` keeps everything else. A unit with no value for the field
  * (no bin, no reading) meets no condition, negated or not.
@@ -320,10 +343,50 @@ function dropBadJudge(out: Record<string, unknown>, where: string, warnings: str
   }
 }
 
+/** The option `given` was most likely meant to be (another case, or a slip of a letter or two), or undefined. */
+export function nearest(given: string, options: readonly string[]): string | undefined {
+  const g = given.toLowerCase();
+  const exact = options.find(o => o.toLowerCase() === g);
+  if (exact) return exact;
+  const distance = (a: string, b: string): number => {
+    let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      row = next;
+    }
+    return row[b.length];
+  };
+  let best: string | undefined, at = 3;
+  for (const o of options) { const d = distance(g, o.toLowerCase()); if (d < at) { best = o; at = d; } }
+  return best;
+}
+
+/** ` Did you mean "x"?` for a name close to one of `options`, else nothing. */
+const didYouMean = (given: unknown, options: readonly string[]): string => {
+  const n = typeof given === 'string' ? nearest(given, options) : undefined;
+  return n ? ` Did you mean "${n}"?` : '';
+};
+
+/**
+ * Every setting a plot has, as a map the compiler keeps whole: a key added to `PlotSpec` without a line here does not
+ * compile, so a setting is never reported to a reader as unknown while the editor writes it.
+ */
+const PLOT_KEYS: Record<keyof PlotSpec, true> = {
+  id: true, title: true, chart: true, fields: true, level: true, aggregate: true, axes: true, bins: true, limits: true,
+  probabilityAxis: true, stack: true, sort: true, top: true, barNorm: true, orientation: true, valueLabels: true,
+  cumulative: true, spread: true, fit: true, identity: true, histNorm: true, normalCurve: true, whatIf: true,
+  baseline: true, where: true, normalize: true, sweep: true,
+};
+const FIELD_ROLES: Record<keyof NonNullable<PlotSpec['fields']>, true> = { x: true, y: true, color: true, rows: true, facet: true };
+
+/** What a field looks like, for a message about one that is not. */
+const FIELD_SHAPES = '{ "test": 1050 }, { "builtin": "wafer" } or { "meta": "split" }';
+
 /** A field this build can read, or `null` with the reason it cannot. A kind it does not know is not an error. */
 function readField(raw: unknown, where: string, warnings: string[]): PlotField | undefined {
   if (raw === undefined) return undefined;
-  if (!isObject(raw)) { warnings.push(`${where}: not a field, left out`); return undefined; }
+  if (!isObject(raw)) { warnings.push(`${where}: not a field, left out. A field is written like ${FIELD_SHAPES}`); return undefined; }
   if ('binned' in raw) {
     const inner = readField(raw.binned, `${where}.binned`, warnings);
     if (!inner || isBinned(inner) || isTestSet(inner) || 'passRate' in inner) { if (inner) warnings.push(`${where}: only one test or value can be binned, left out`); return undefined; }
@@ -335,7 +398,7 @@ function readField(raw: unknown, where: string, warnings: string[]): PlotField |
     return out as unknown as PlotField;
   }
   if ('test' in raw) {
-    if (!Number.isInteger(raw.test)) { warnings.push(`${where}: test number ${JSON.stringify(raw.test)} is not an integer, left out`); return undefined; }
+    if (!Number.isInteger(raw.test)) { warnings.push(`${where}: test number ${JSON.stringify(raw.test)} is not an integer, left out${typeof raw.test === 'string' ? ' (write the number without quotes)' : ''}`); return undefined; }
     // Keys this build does not know are kept, so a round trip through it does not strip a newer build's settings.
     const out: Record<string, unknown> = { ...raw, test: raw.test as number };
     if (typeof raw.name === 'string' && raw.name !== '') out.name = raw.name; else delete out.name;
@@ -484,15 +547,33 @@ export function plotToSweep(plot: PlotSpec): SweepSpec | undefined {
   return { ...(plot.sweep ?? { series: [] }), id: plot.id, title: plot.title ?? 'Sweep' };
 }
 
+/** A plot from a file written before the names `chart` and `fields`, which spelled them `mark` and `encoding`, in the current names. */
+function withCurrentNames(raw: unknown): unknown {
+  if (!isObject(raw) || 'chart' in raw || typeof raw.mark !== 'string') return raw;
+  const { mark, encoding, ...rest } = raw;
+  return { ...rest, chart: mark, ...(!('fields' in rest) && encoding !== undefined ? { fields: encoding } : {}) };
+}
+
 /**
  * One plot from parsed JSON, or `null` when it cannot be a plot at all (no chart). Unknown keys survive; a
  * setting that is wrong is dropped with a warning and the rest of the plot is kept.
  */
-export function readPlot(raw: unknown, where: string, warnings: string[]): PlotSpec | null {
+export function readPlot(given: unknown, where: string, warnings: string[]): PlotSpec | null {
+  const raw = withCurrentNames(given);
   if (!isObject(raw)) { warnings.push(`${where}: not an object, skipped`); return null; }
   const chart = raw.chart;
   if (typeof chart !== 'string' || chart === '') { warnings.push(`${where}: no chart, skipped`); return null; }
   const out: Record<string, unknown> = { ...raw };
+
+  // A setting this version does not use is kept (a newer version may), but a reader who typed it is told it does nothing.
+  for (const k of Object.keys(raw)) {
+    if (!(k in PLOT_KEYS)) warnings.push(`${where}.${k}: not a setting this version uses, kept.${didYouMean(k, Object.keys(PLOT_KEYS))}`);
+  }
+  if (isObject(raw.fields)) {
+    for (const k of Object.keys(raw.fields)) {
+      if (!(k in FIELD_ROLES)) warnings.push(`${where}.fields.${k}: not a field role this version uses (x, y, color, rows, facet), kept.${didYouMean(k, Object.keys(FIELD_ROLES))}`);
+    }
+  }
 
   if (typeof raw.id !== 'string' || raw.id === '') { out.id = newPlotId(); warnings.push(`${where}: no id, given a new one`); }
 
@@ -531,9 +612,14 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
   // A sweep has no fields to name; any other chart always has the object, so a reader of the list can rely on it.
   if (chart === 'sweep' && Object.keys(fields).length === 0) delete out.fields; else out.fields = fields;
 
-  if ('level' in raw && raw.level !== 'die' && raw.level !== 'wafer') { warnings.push(`${where}.level: "${String(raw.level)}" is not die or wafer, left out`); delete out.level; }
-  if ('aggregate' in raw && !(PLOT_AGGREGATES as readonly unknown[]).includes(raw.aggregate)) {
-    warnings.push(`${where}.aggregate: "${String(raw.aggregate)}" is not known to this version, left out`); delete out.aggregate;
+  // The settings that take one of a few words, checked against the table the editor's suggestions read as well.
+  for (const k of Object.keys(PLOT_CHOICES) as Array<keyof typeof PLOT_CHOICES>) {
+    if (k === 'chart' || !(k in raw)) continue;
+    const choices: readonly string[] = PLOT_CHOICES[k];
+    if (!choices.includes(raw[k] as string)) {
+      warnings.push(`${where}.${k}: "${String(raw[k])}" is not ${orList(choices)}, left out.${didYouMean(raw[k], choices)}`);
+      delete out[k];
+    }
   }
   if ('where' in raw) {
     const w = raw.where;
@@ -541,30 +627,16 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
     if (!filter) { warnings.push(`${where}.where: needs at least one condition, left out`); delete out.where; }
     else out.where = filter;
   }
-  if ('stack' in raw && raw.stack !== 'stack' && raw.stack !== 'percent') { warnings.push(`${where}.stack: "${String(raw.stack)}" is not stack or percent, left out`); delete out.stack; }
-  if ('sort' in raw && raw.sort !== 'value' && raw.sort !== 'ascending') { warnings.push(`${where}.sort: "${String(raw.sort)}" is not known to this version, left out`); delete out.sort; }
   if ('top' in raw && !(Number.isInteger(raw.top) && (raw.top as number) >= 1)) { warnings.push(`${where}.top: not a whole number of at least 1, left out`); delete out.top; }
   if ('baseline' in raw && !(Number.isInteger(raw.baseline) && (raw.baseline as number) >= 3)) { warnings.push(`${where}.baseline: not a whole number of at least 3, left out`); delete out.baseline; }
-  if ('fit' in raw && raw.fit !== 'linear' && raw.fit !== 'orthogonal') { warnings.push(`${where}.fit: "${String(raw.fit)}" is not linear or orthogonal, left out`); delete out.fit; }
   for (const k of ['identity', 'normalCurve', 'valueLabels'] as const) if (k in raw && typeof raw[k] !== 'boolean') { warnings.push(`${where}.${k}: not true or false, left out`); delete out[k]; }
-  if ('orientation' in raw && raw.orientation !== 'vertical' && raw.orientation !== 'horizontal') { warnings.push(`${where}.orientation: "${String(raw.orientation)}" is not vertical or horizontal, left out`); delete out.orientation; }
-  if ('barNorm' in raw && raw.barNorm !== 'count' && raw.barNorm !== 'percent') { warnings.push(`${where}.barNorm: "${String(raw.barNorm)}" is not count or percent, left out`); delete out.barNorm; }
-  if ('histNorm' in raw && raw.histNorm !== 'count' && raw.histNorm !== 'percent') { warnings.push(`${where}.histNorm: "${String(raw.histNorm)}" is not count or percent, left out`); delete out.histNorm; }
   if ('whatIf' in raw) {
     const w = raw.whatIf;
     const lo = isObject(w) && isFiniteNumber(w.lo) ? w.lo : undefined, hi = isObject(w) && isFiniteNumber(w.hi) ? w.hi : undefined;
     if (lo === undefined && hi === undefined) { warnings.push(`${where}.whatIf: needs a low or a high limit, left out`); delete out.whatIf; }
     else out.whatIf = { ...(lo !== undefined ? { lo } : {}), ...(hi !== undefined ? { hi } : {}) };
   }
-  if ('spread' in raw && !['sd', 'ci95', 'iqr', 'minmax'].includes(raw.spread as string)) { warnings.push(`${where}.spread: "${String(raw.spread)}" is not known to this version, left out`); delete out.spread; }
   if ('cumulative' in raw && typeof raw.cumulative !== 'boolean') { warnings.push(`${where}.cumulative: not true or false, left out`); delete out.cumulative; }
-  if ('probabilityAxis' in raw && raw.probabilityAxis !== 'normal' && raw.probabilityAxis !== 'linear') {
-    warnings.push(`${where}.probabilityAxis: "${String(raw.probabilityAxis)}" is not normal or linear, left out`); delete out.probabilityAxis;
-  }
-  if ('normalize' in raw && !(PLOT_NORMALIZE as readonly unknown[]).includes(raw.normalize)) {
-    warnings.push(`${where}.normalize: "${String(raw.normalize)}" is not known to this version, left out`); delete out.normalize;
-  }
-  if ('limits' in raw && !(PLOT_LIMITS as readonly unknown[]).includes(raw.limits)) { warnings.push(`${where}.limits: "${String(raw.limits)}" is not both, test, spec or none, left out`); delete out.limits; }
   if ('bins' in raw && !(Number.isInteger(raw.bins) && (raw.bins as number) >= 1)) { warnings.push(`${where}.bins: not a whole number of at least 1, left out`); delete out.bins; }
   if (chart === 'sweep') out.sweep = readSweepPayload(raw.sweep, `${where}.sweep`, warnings);
 
@@ -585,7 +657,8 @@ export function readPlot(raw: unknown, where: string, warnings: string[]): PlotS
 /** Offset of a JSON syntax error as line and column, where the engine's message states a position. */
 export function syntaxErrorAt(text: string, message: string): string {
   const m = /position (\d+)/.exec(message);
-  if (!m) return message;
+  // Some engines already say the line and column.
+  if (!m || /line \d+/.test(message)) return message;
   const at = Math.min(Number(m[1]), text.length);
   const before = text.slice(0, at);
   const line = before.split('\n').length;
@@ -708,11 +781,22 @@ export function addIdentified<T extends { id: string }>(
  * (A test that is missing from the open lot is a data question, answered by the resolver, not a version one.)
  */
 export function plotIssue(plot: PlotSpec): string | undefined {
-  if (!(PLOT_CHARTS as readonly unknown[]).includes(plot.chart)) return 'Needs a newer version of this tool';
+  const newer = 'a plot from a newer version may use one this version does not';
+  if (!(PLOT_CHARTS as readonly unknown[]).includes(plot.chart)) {
+    return `The chart "${String(plot.chart)}" is not one this version draws (${PLOT_CHARTS.join(', ')}; ${newer}).${didYouMean(plot.chart, PLOT_CHARTS)}`;
+  }
   const given = plot.fields ?? {};
-  for (const f of [...xFieldsOf(given.x), given.y, given.color, given.facet, given.rows, ...(plot.where?.conditions.map(c => c.field) ?? [])]) {
+  const roles: Array<[string, unknown]> = [
+    ...xFieldsOf(given.x).map((f): [string, unknown] => ['X', f]), ['Y', given.y], ['Colour', given.color], ['Facet', given.facet], ['Rows', given.rows],
+    ...(plot.where?.conditions.map((c): [string, unknown] => ['A filter condition', c.field]) ?? []),
+  ];
+  for (const [role, f] of roles) {
     if (f === undefined || (isObject(f) && ('follow' in f || 'none' in f))) continue;
-    if (!isField(f)) return 'Needs a newer version of this tool';
+    if (isField(f)) continue;
+    if (isObject(f) && 'builtin' in f) {
+      return `${role}: "${String(f.builtin)}" is not a built-in field of this version (${PLOT_BUILTINS.join(', ')}; ${newer}).${didYouMean(f.builtin, PLOT_BUILTINS)}`;
+    }
+    return `${role}: ${JSON.stringify(f)} is not a field this version reads (a newer version may have added it). A field is written like ${FIELD_SHAPES}`;
   }
   return undefined;
 }

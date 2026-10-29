@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readPlotsFile, writePlotsFile, addPlots, newPlotId, plotIssue, sameField, PLOTS_FORMAT, PLOTS_VERSION,
+  readPlot, readPlotsFile, writePlotsFile, addPlots, newPlotId, plotIssue, sameField, PLOTS_FORMAT, PLOTS_VERSION,
 } from '../dist/packages/stats/plotSpec.js';
 
 const scatter = (over = {}) => ({
@@ -196,4 +196,34 @@ test('a field keeps the settings this build does not know, so a round trip throu
   assert.deepEqual(plots[0].fields.color, { meta: 'split', palette: 'warm' });
   const again = readPlotsFile(writePlotsFile(plots)).plots;
   assert.deepEqual(again, plots, 'written and read again, unchanged');
+});
+
+test('a setting or field role this version does not use is kept, and the reader is told it does nothing', () => {
+  const w = [];
+  const p = readPlot({ id: 'a', chart: 'box', normalise: 'zscore', fields: { x: { builtin: 'wafer' }, y: { test: 1 }, colour: { meta: 'split' } } }, 'plot', w);
+  assert.equal(p.normalise, 'zscore', 'kept, so a newer version\'s setting survives a round trip');
+  assert.deepEqual(w, [
+    'plot.normalise: not a setting this version uses, kept. Did you mean "normalize"?',
+    'plot.fields.colour: not a field role this version uses (x, y, color, rows, facet), kept. Did you mean "color"?',
+  ]);
+  const clean = [];
+  readPlot({ id: 'a', chart: 'box', normalize: 'zscore', fields: { x: { builtin: 'wafer' }, y: { test: 1 } } }, 'plot', clean);
+  assert.deepEqual(clean, [], 'a plot of known settings has no warnings');
+});
+
+test('a field that is not an object says what a field looks like, and a quoted test number says to drop the quotes', () => {
+  const w = [];
+  readPlot({ id: 'a', chart: 'box', fields: { x: 'wafer', y: { test: '1050' } } }, 'plot', w);
+  assert.match(w[0], /^plot\.fields\.x: not a field, left out\. A field is written like \{ "test": 1050 \}/);
+  assert.match(w[1], /\(write the number without quotes\)$/);
+});
+
+test('a plot written with the earlier names mark and encoding is read as chart and fields, without a warning', () => {
+  const r = readPlotsFile(file([
+    { id: 'old', mark: 'box', encoding: { y: { test: 1060, name: 'Vth' }, x: { builtin: 'wafer' }, color: { meta: 'split' } }, aggregate: 'median' },
+  ]));
+  assert.deepEqual(r.warnings, []);
+  assert.equal(r.plots[0].chart, 'box');
+  assert.deepEqual(r.plots[0].fields.y, { test: 1060, name: 'Vth' });
+  assert.equal('mark' in r.plots[0] || 'encoding' in r.plots[0], false);
 });

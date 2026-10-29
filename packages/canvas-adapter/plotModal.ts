@@ -14,7 +14,6 @@ import { plotToSweep, type PlotSpec } from '../stats/plotSpec.js';
 import { renderPlotChart, type PlotChartOptions } from './charts/plotChart.js';
 import { renderSweepPanel, type SweepPanelOptions } from './charts/sweep.js';
 import { createPlotEditor } from './plotEditor.js';
-import { createSweepEditor } from './sweepEditor.js';
 import type { PlotStore } from './plotStore.js';
 import { CLR, FONT, SPACE, controlStyle, openReparentedModal, wireControlHover } from './toolbar.js';
 
@@ -68,25 +67,38 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
     Object.assign(pop.style, { color: CLR.label, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
     left.appendChild(pop);
   }
-  // A sweep is drawn by the sweep panel and edited by the sweep editor; every other plot by the plot chart and editor.
-  // Both pairs are driven the same way below, so the rest of the window does not care which it has.
-  const isSweep = current.chart === 'sweep';
-  let chart: { card: HTMLElement; setPlot(spec: PlotSpec): void; destroy(): void };
-  if (isSweep) {
-    const panel = renderSweepPanel({
-      spec: plotToSweep(current)!, dies: o.items.flatMap(it => it.dies), testDefs: o.ctx.testDefs ? [...o.ctx.testDefs] : undefined, population: o.rawPopulation ?? o.population,
-      onSaveImage: o.chart.onSaveImage, onSelectPoint: o.onSelectLevel, ownerDocument: doc,
-    });
-    chart = { card: panel.card, setPlot: spec => panel.setSpec(plotToSweep(spec)!), destroy: () => panel.destroy() };
-  } else {
+  // A sweep is drawn by the sweep panel, every other plot by the plot chart. The one editor beside them edits either, and
+  // changing the chart type to or from Sweep swaps the panel (`syncChart`), so the rest of the window does not care.
+  type ChartPanel = { card: HTMLElement; setPlot(spec: PlotSpec): void; destroy(): void };
+  const makeChart = (sweep: boolean): ChartPanel => {
+    if (sweep) {
+      const panel = renderSweepPanel({
+        spec: plotToSweep(current)!, dies: o.items.flatMap(it => it.dies), testDefs: o.ctx.testDefs ? [...o.ctx.testDefs] : undefined, population: o.rawPopulation ?? o.population,
+        onSaveImage: o.chart.onSaveImage, onSelectPoint: o.onSelectLevel, ownerDocument: doc,
+      });
+      return { card: panel.card, setPlot: spec => panel.setSpec(plotToSweep(spec)!), destroy: () => panel.destroy() };
+    }
     const c = renderPlotChart({ ...o.chart, ownerDocument: doc, waferLabel: i => o.items[i]?.label ?? '' });
-    chart = { card: c.card, setPlot: spec => c.setPlot(resolve(spec)), destroy: () => c.destroy() };
-  }
+    return { card: c.card, setPlot: spec => c.setPlot(resolve(spec)), destroy: () => c.destroy() };
+  };
+  let showingSweep = current.chart === 'sweep';
+  let chart = makeChart(showingSweep);
   // The card takes the column's width, whatever its panel does in a grid (the sweep panel sits at the start of its cell
   // there). Left to size itself it would keep the width of its canvas, which an expanded view leaves at the modal's size,
   // and so cover the settings once restored.
   chart.card.style.alignSelf = 'stretch';
   left.appendChild(chart.card);
+  /** The panel that draws `current`: swapped when the chart type changes to or from Sweep. */
+  function syncChart(): void {
+    const sweep = current.chart === 'sweep';
+    if (sweep === showingSweep) return;
+    const old = chart;
+    chart = makeChart(sweep);
+    showingSweep = sweep;
+    chart.card.style.alignSelf = 'stretch';
+    old.card.replaceWith(chart.card);
+    old.destroy();
+  }
 
   const right = doc.createElement('div');
   // The settings can be taller than the window (a sweep with several series), so they scroll on their own: the chart
@@ -101,18 +113,20 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
     if (saved) store.upsert(next);
     redraw();
   };
-  const editor: { el: HTMLElement; setPlot(p: PlotSpec): void; refreshAuto(): void } = isSweep
-    ? { ...createSweepEditor({ doc, plot: current, testDefs: o.ctx.testDefs, onChange: onEdit }), refreshAuto: () => {} }
-    : createPlotEditor({
-      doc, plot: current, catalogue,
-      followLabel: () => o.groupLabel ?? (o.items.length > 1 ? 'a colour per wafer' : undefined),
-      autoText: () => { const r = resolve(current); return { title: r.autoTitle, x: r.x?.label, y: r.y?.label }; },
-      onChange: onEdit,
-      valuesOf: f => fieldValues(f, o.items, o.ctx),
-      extentOf: f => fieldExtent(f, o.items, o.ctx),
-      testDefs: o.ctx.testDefs,
-      attributes: o.ctx.curation,
-    });
+  const editor = createPlotEditor({
+    doc, plot: current, catalogue,
+    followLabel: () => o.groupLabel ?? (o.items.length > 1 ? 'a colour per wafer' : undefined),
+    autoText: () => {
+      if (current.chart === 'sweep') return { title: 'Sweep' };
+      const r = resolve(current);
+      return { title: r.autoTitle, x: r.x?.label, y: r.y?.label };
+    },
+    onChange: onEdit,
+    valuesOf: f => fieldValues(f, o.items, o.ctx),
+    extentOf: f => fieldExtent(f, o.items, o.ctx),
+    testDefs: o.ctx.testDefs,
+    attributes: o.ctx.curation,
+  });
   right.appendChild(editor.el);
 
   // Stays in view while the settings scroll: Reset and Cancel are what a reader reaches for after a slip.
@@ -164,13 +178,14 @@ export function openPlotEditor(o: PlotEditorWindowOptions): void {
 
   function syncFooter(): void {
     note.textContent = saved
-      ? `Changes are saved to “${isSweep ? (current.title ?? 'Sweep') : plotTitle(resolve(current))}”.`
+      ? `Changes are saved to “${current.chart === 'sweep' ? (current.title ?? 'Sweep') : plotTitle(resolve(current))}”.`
       : 'This is a draft: it is not kept until you add it to your plots.';
     addBtn.style.display = saved ? 'none' : '';
     resetBtn.disabled = !changed();
     resetBtn.style.opacity = resetBtn.disabled ? '0.5' : '1';
   }
   function redraw(): void {
+    syncChart();
     chart.setPlot(current);
     editor.refreshAuto();
     syncFooter();

@@ -610,7 +610,7 @@ test('every button on the Plot tab has a hover hint', async () => {
   await waitFor(() => chartTitleAttrs(plotTab).includes('Vth sweep card'), 'the sweep card');
   const buttons = [...plotTab.el.querySelectorAll("button")].filter(b => Object.keys(b.dataset).some(k => k.startsWith('wmapPlot')));
   const hooks = buttons.map(b => Object.keys(b.dataset).find(k => k.startsWith('wmapPlot')));
-  for (const hook of ['wmapPlotNew', 'wmapPlotNewSweep', 'wmapPlotExamples', 'wmapPlotImport', 'wmapPlotExport', 'wmapPlotDeleteAll', 'wmapPlotEdit', 'wmapPlotDuplicate', 'wmapPlotDelete']) {
+  for (const hook of ['wmapPlotNew', 'wmapPlotExamples', 'wmapPlotImport', 'wmapPlotExport', 'wmapPlotDeleteAll', 'wmapPlotEdit', 'wmapPlotDuplicate', 'wmapPlotDelete']) {
     assert.ok(hooks.includes(hook), `the tab has a ${hook} button`);
   }
   for (const b of buttons) assert.ok((b.dataset.wmapTip ?? '').length > 10, `${b.textContent.trim()} has a hint`);

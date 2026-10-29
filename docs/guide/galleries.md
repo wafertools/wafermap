@@ -320,7 +320,7 @@ Clicking a leaf row in the yield bar or the box plot — or a point on the trend
 ### Saved plots: the My plots tab, kept by the host
 
 The **My plots** tab is a chart builder: **+ New plot** opens a scatter, histogram, box, bar or line over any parametric test, a die's position,
-ring, quadrant, bin, site, reticle cell or shot, a pass/fail test (under **Verdicts**), or a wafer or lot attribute, and **+ New sweep** draws a
+ring, quadrant, bin, site, reticle cell or shot, a pass/fail test (under **Verdicts**), or a wafer or lot attribute, and the **Sweep** chart type draws a
 response curve. The library stores nothing itself. A plot is a recipe with no lot in it (`PlotSpec`), so you keep the list wherever you keep settings
 and hand it back on the next render:
 

@@ -164,7 +164,7 @@ test('subscribers hear every change and can stop listening', () => {
 
 // ── the editor ───────────────────────────────────────────────────────────────
 
-function editor(plot) {
+function editor(plot, extra = {}) {
   const { items } = lotItems();
   const plotItems = items.map((it, i) => ({ label: it.label, dies: it.dies, waferIndex: i, wafer: it.wafer, metadata: it.wafer.metadata }));
   const catalogue = fieldCatalogue(plotItems, { testDefs: DEFS });
@@ -172,7 +172,7 @@ function editor(plot) {
   const e = createPlotEditor({
     doc: document, plot, catalogue, followLabel: () => 'Split',
     autoText: () => ({ title: 'Idsat vs Vth', x: 'Vth', y: 'Idsat' }),
-    onChange: next => emitted.push(next),
+    onChange: next => emitted.push(next), ...extra,
   });
   document.getElementById('root').replaceChildren(e.el);
   return { e, emitted };
@@ -194,7 +194,7 @@ const chooseMark = (e, mark) => {
 test('every chart type is offered, and a histogram keeps the fields it does not use', () => {
   const { e, emitted } = editor(SCATTER);
   const marks = [...e.el.querySelectorAll('[role="radiogroup"]')][0];
-  assert.deepEqual([...marks.querySelectorAll('input')].map(r => r.value), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'control', 'heatmap', 'goal']);
+  assert.deepEqual([...marks.querySelectorAll('input')].map(r => r.value), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'control', 'heatmap', 'goal', 'sweep']);
   chooseMark(e, 'histogram');
   const last = emitted.at(-1);
   assert.equal(last.chart, 'histogram');
@@ -651,7 +651,7 @@ test('"New sweep…" opens a sweep draft on the first tests of the selection, ke
   openDrilldownMenu({ x: 1, y: 1 }, anchor(), src, { plots: store });
   click(menuRows().find(r => r.textContent === 'New sweep…'));
   const win = await until(() => document.querySelector('[data-wmap-plot-window]'), 'the draft window');
-  assert.ok(win.querySelector('[data-wmap-sweep-editor]'), 'the sweep editor, not the plot editor');
+  assert.ok(win.querySelector('[data-wmap-sweep-editor]'), 'the sweep form, in the plot editor');
   assert.match(win.textContent, /This is a draft/);
   assert.equal(store.get().length, 0, 'not saved yet');
   click(win.querySelector('[data-wmap-plot-add]'));
@@ -890,17 +890,35 @@ test('there is no Sweeps tab: the My plots tab holds them, and the old default v
   assert.equal(cards(tab).length, 1);
 });
 
-test('New sweep adds one on the lot\'s tests and opens the sweep editor', async () => {
-  const { tab, store, changes } = mountPlot();
+test('a sweep is a chart type of the one editor: New plot, then Sweep, swaps the chart for the curve and shows the series form', async () => {
+  const { tab, store } = mountPlot();
   const s = await section(tab);
-  click(button(s, 'wmap-plot-new-sweep'));
+  assert.ok(!button(s, 'wmap-plot-new-sweep'), 'there is no separate button');
+  click(button(s, 'wmap-plot-new'));
+  const win = await until(() => document.querySelector('[data-wmap-plot-window]'), 'the plot window');
+  assert.ok(!win.querySelector('[data-wmap-sweep-editor]'));
+  chooseMark({ el: win }, 'sweep');
   assert.equal(store.get().length, 1);
   assert.equal(store.get()[0].chart, 'sweep');
-  assert.deepEqual(store.get()[0].sweep.series[0].tests, [1050, 1060]);
-  assert.ok(document.querySelector('[data-wmap-sweep-editor]'), 'the sweep editor, not the plot editor');
-  assert.ok(!document.querySelector('[data-wmap-plot-editor]'));
-  await tick(10);
-  assert.equal(changes.at(-1)[0].chart, 'sweep', 'the host is told, as for any plot');
+  assert.deepEqual(store.get()[0].sweep.series[0].tests, [1050, 1060], 'on the lot\'s first tests');
+  assert.equal('fields' in store.get()[0], false, 'a sweep has no fields');
+  assert.ok(win.querySelector('[data-wmap-sweep-editor]'), 'the series form, inside the one plot editor');
+  assert.ok(win.querySelector('[data-wmap-plot-editor]'));
+  assert.deepEqual([...win.querySelectorAll('[role="tab"]')].map(t => t.textContent), ['Setup', 'JSON'], 'its title and axes are in the form, so no Customise');
+  await until(() => tab.el.querySelector('[data-wmap-sweep-plot]'), 'a sweep card on the tab');
+
+  // The JSON tab edits a sweep like any plot.
+  click(tabButton(win, 'JSON'));
+  assert.equal(JSON.parse(win.querySelector('[data-wmap-plot-json]').value).chart, 'sweep');
+
+  // And back: the plot it was is restored, and the card is a plot's again.
+  click(tabButton(win, 'Setup'));
+  chooseMark({ el: win }, 'scatter');
+  assert.equal(store.get()[0].chart, 'scatter');
+  assert.ok(store.get()[0].fields.x && store.get()[0].fields.y, 'the fields it had');
+  assert.equal('sweep' in store.get()[0], false);
+  assert.ok(!win.querySelector('[data-wmap-sweep-editor]'));
+  await until(() => !tab.el.querySelector('[data-wmap-sweep-plot]') && tab.el.querySelector('[data-wmap-plot-id]'), 'a plot card on the tab');
   document.querySelector('.wmap-overlay-box button[aria-label^="Close"]')?.click();
 });
 
@@ -1168,6 +1186,316 @@ test('a set of tests is values per die, so its colour list offers a per-die fiel
   assert.ok(ring, 'Ring is in the list');
   assert.notEqual(ring.getAttribute('aria-disabled'), 'true', ring.textContent);
   document.body.click();
+});
+
+test('the JSON tab shows the plot, applies an edit through the plots-file reader and keeps the id', () => {
+  const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050, name: 'Vth' }, color: { none: true } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  assert.deepEqual(JSON.parse(area.value), { chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050, name: 'Vth' }, color: { none: true } } });
+  const apply = () => e.el.querySelector('[data-wmap-plot-json-apply]');
+  assert.equal(apply().disabled, false);
+  const edited = JSON.parse(area.value);
+  edited.id = 'other'; edited.chart = 'heatmap'; edited.normalize = 'zscore'; edited.aggregate = 'nonsense';
+  area.value = JSON.stringify(edited);
+  area.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.match(e.el.querySelector('[role="status"]').textContent, /aggregate: "nonsense" is not mean, median/, 'a setting that would be dropped is named before Apply, with the words that are allowed');
+  click(apply());
+  const next = emitted.at(-1);
+  assert.equal(next.id, 'j', 'the id is not editable');
+  assert.equal(next.chart, 'heatmap');
+  assert.equal(next.normalize, 'zscore');
+  assert.equal('aggregate' in next, false, 'the unknown aggregate is left out, as on import');
+  assert.equal(JSON.parse(e.el.querySelector('[data-wmap-plot-json]').value).chart, 'heatmap', 'the text is rebuilt from the applied plot');
+});
+
+test('the JSON tab says where a syntax error is, and warns before Apply of a plot that could not be drawn', () => {
+  const { e } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  const status = () => e.el.querySelector('[role="status"]').textContent;
+  const type = (text) => { area.value = text; area.dispatchEvent(new dom.window.Event('input', { bubbles: true })); };
+  type('{\n  "chart": "box",\n  "fields": { "y": { "test": 1050, } }\n}');
+  assert.match(status(), /^Not valid JSON/);
+  type(JSON.stringify({ chart: 'heatmaps', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } }));
+  assert.match(status(), /It could not be drawn: The chart "heatmaps" is not one this version draws.*Did you mean "heatmap"\?/s);
+  assert.equal(e.el.querySelector('[data-wmap-plot-json-apply]').disabled, false, 'still applicable: a newer version may draw it');
+  type(JSON.stringify({ fields: {} }));
+  assert.match(status(), /^plot: no chart$/, 'no "skipped" wording in an editor');
+});
+
+test('the JSON tab accepts a whole plots file and uses its first plot, under the plot\'s own id', () => {
+  const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  area.value = JSON.stringify({ format: 'wafermap-plots', version: 1, plots: [{
+    id: 'corner-grid', title: 'Corner shift by test', chart: 'heatmap', level: 'wafer', aggregate: 'mean', normalize: 'zscore',
+    fields: { x: { meta: 'Split' }, y: { tests: [1, 2, 3] } },
+  }] });
+  area.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(e.el.querySelector('[data-wmap-plot-json-apply]').disabled, false, e.el.querySelector('[role="status"]').textContent);
+  click(e.el.querySelector('[data-wmap-plot-json-apply]'));
+  const next = emitted.at(-1);
+  assert.equal(next.id, 'j');
+  assert.equal(next.chart, 'heatmap');
+  assert.deepEqual(next.fields.y, { tests: [1, 2, 3] });
+  assert.equal('id' in JSON.parse(e.el.querySelector('[data-wmap-plot-json]').value), false, 'the id is not in the text');
+});
+
+test('Ctrl+Z in the JSON tab undoes the typed text first, then an Apply; Ctrl+Shift+Z redoes', () => {
+  const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = () => e.el.querySelector('[data-wmap-plot-json]');
+  const press = (opts) => { const ev = new dom.window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true, ...opts }); area().dispatchEvent(ev); return ev; };
+  area().value = JSON.stringify({ ...JSON.parse(area().value), chart: 'histogram' });
+  area().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const typed = area().value;
+  assert.equal(press().defaultPrevented, true, 'the editor undoes the typing itself');
+  assert.notEqual(area().value, typed);
+  assert.equal(JSON.parse(area().value).chart, 'box', 'back to the text as it was');
+  press({ shiftKey: true });
+  assert.equal(area().value, typed, 'and forward again');
+  click(e.el.querySelector('[data-wmap-plot-json-apply]'));
+  assert.equal(emitted.at(-1).chart, 'histogram');
+  assert.equal(press().defaultPrevented, true);
+  assert.equal(emitted.at(-1).chart, 'box', 'undone');
+  assert.equal(emitted.at(-1).id, 'j');
+  press({ shiftKey: true });
+  assert.equal(emitted.at(-1).chart, 'histogram', 'redone');
+  press(); press();
+  assert.equal(emitted.at(-1).chart, 'box', 'nothing earlier to undo: the plot is left as it was');
+});
+
+test('Ctrl+Z undoes an accepted suggestion, a chosen plot and Discard edits, whatever the browser keeps in its own undo stack', () => {
+  const { e } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = () => e.el.querySelector('[data-wmap-plot-json]');
+  const type = (marked) => { const caret = marked.indexOf('|'); area().value = marked.replace('|', ''); area().setSelectionRange(caret, caret); area().dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'h' })); };
+  const key = (k, extra = {}) => { const ev = new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }); area().dispatchEvent(ev); return ev; };
+  const undo = () => key('z', { ctrlKey: true });
+
+  // An accepted suggestion.
+  type('{ "chart": "h|" }');
+  const typed = area().value;
+  key('Enter');
+  assert.equal(area().value, '{ "chart": "histogram" }');
+  assert.equal(undo().defaultPrevented, true);
+  assert.equal(area().value, typed, 'the suggestion is taken back');
+  assert.equal(e.el.querySelector('[role="listbox"]').style.display, 'none', 'and the list does not reopen over it');
+
+  // A plot chosen from a pasted file.
+  const pasted = JSON.stringify({ format: 'wafermap-plots', version: 1, plots: [{ id: 'a', chart: 'bar', fields: { x: { builtin: 'wafer' } } }, { id: 'b', chart: 'box', fields: { x: { builtin: 'wafer' } }, title: 'Second' }] });
+  area().value = pasted; area().dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: pasted }));
+  click(e.el.querySelector('[data-wmap-plot-json-choice="1"]'));
+  assert.equal(JSON.parse(area().value).title, 'Second');
+  undo();
+  assert.equal(area().value, pasted, 'back to the pasted file');
+  assert.equal(e.el.querySelectorAll('[data-wmap-plot-json-choice]').length, 2, 'with its choices');
+
+  // Discard edits.
+  const discarded = '{ "chart": "line", "note": "typed" }';
+  area().value = discarded; area().dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertFromPaste', data: discarded }));
+  click(e.el.querySelector('[data-wmap-plot-json-discard]'));
+  assert.equal(JSON.parse(area().value).chart, 'box', 'the plot as it stands');
+  undo();
+  assert.equal(area().value, discarded, 'the discarded text is back');
+});
+
+test('the JSON tab leaves out a test\'s old name when its number was edited, so the plot is not refused as another test\'s', () => {
+  const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050, name: 'Vth' } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  const edited = JSON.parse(area.value);
+  edited.fields.y.test = 1060;
+  area.value = JSON.stringify(edited);
+  area.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.match(e.el.querySelector('[role="status"]').textContent, /fields\.y\.name: the test number changed/);
+  click(e.el.querySelector('[data-wmap-plot-json-apply]'));
+  assert.deepEqual(emitted.at(-1).fields.y, { test: 1060 });
+  // Changing the name too is a deliberate edit and is kept.
+  const again = JSON.parse(e.el.querySelector('[data-wmap-plot-json]').value);
+  again.fields.y = { test: 1050, name: 'Leak' };
+  e.el.querySelector('[data-wmap-plot-json]').value = JSON.stringify(again);
+  e.el.querySelector('[data-wmap-plot-json]').dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  click(e.el.querySelector('[data-wmap-plot-json-apply]'));
+  assert.deepEqual(emitted.at(-1).fields.y, { test: 1050, name: 'Leak' });
+});
+
+test('pasting a plots file of several plots, here written with the earlier names, offers each to choose from', () => {
+  const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = () => e.el.querySelector('[data-wmap-plot-json]');
+  const enc = { y: { test: 1060, name: 'Vth' }, x: { builtin: 'wafer' }, color: { meta: 'processSplit' } };
+  area().value = JSON.stringify({ format: 'wafermap-plots', version: 1, plots: [
+    { id: 'a', mark: 'bar', encoding: enc, level: 'wafer', aggregate: 'median' },
+    { id: 'b', mark: 'box', encoding: enc, title: 'Vth by Wafer (copy)' },
+    { id: 'c', mark: 'histogram', encoding: { y: enc.y } },
+  ] });
+  area().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const status = e.el.querySelector('[role="status"]').textContent;
+  assert.match(status, /^This is a plots file with 3 plots, and this editor holds one plot\. Choose the one to use:/);
+  assert.doesNotMatch(status, /no chart/, 'the earlier names are read, not reported');
+  const choices = [...e.el.querySelectorAll('[data-wmap-plot-json-choice]')];
+  assert.deepEqual(choices.map(b => b.textContent), ['1. Bar plot', '2. Vth by Wafer (copy)', '3. Histogram plot']);
+  assert.equal(e.el.querySelector('[data-wmap-plot-json-apply]').disabled, true, 'nothing to apply until one is chosen');
+  click(choices[1]);
+  assert.equal(JSON.parse(area().value).chart, 'box', 'the chosen plot is in the text, ready to apply');
+  click(e.el.querySelector('[data-wmap-plot-json-apply]'));
+  assert.equal(emitted.at(-1).chart, 'box');
+  assert.equal(emitted.at(-1).id, 'j', 'under this plot\'s own id');
+  assert.equal(emitted.at(-1).title, 'Vth by Wafer (copy)');
+});
+
+test('the JSON tab suggests as you type: a list under the text, chosen with the keys, accepted into the text', () => {
+  const { e } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  const list = () => e.el.querySelector('[role="listbox"]');
+  const options = () => [...e.el.querySelectorAll('[role="option"]')].map(o => o.dataset.wmapPlotJsonSuggestion);
+  const type = (marked) => {
+    const caret = marked.indexOf('|');
+    area.value = marked.replace('|', '');
+    area.setSelectionRange(caret, caret);
+    area.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  };
+  const key = (k, extra = {}) => { const ev = new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }); area.dispatchEvent(ev); return ev; };
+
+  assert.equal(list().style.display, 'none');
+  type('{ "chart": "h|" }');
+  assert.equal(list().style.display, 'block');
+  assert.equal(options()[0], 'histogram');
+  assert.equal(area.getAttribute('aria-expanded'), 'true');
+  assert.equal(area.getAttribute('aria-controls'), list().id);
+  assert.equal(area.getAttribute('aria-activedescendant'), e.el.querySelector('[role="option"]').id);
+  assert.equal(e.el.querySelector('[role="option"]').getAttribute('aria-selected'), 'true');
+  assert.match(e.el.querySelector('[role="option"]').parentElement.textContent, /histogram/);
+
+  key('ArrowDown');
+  assert.equal(area.getAttribute('aria-activedescendant'), e.el.querySelectorAll('[role="option"]')[1].id);
+  key('ArrowUp');
+  assert.equal(key('Enter').defaultPrevented, true);
+  assert.equal(area.value, '{ "chart": "histogram" }');
+  assert.equal(list().style.display, 'none');
+  assert.equal(area.getAttribute('aria-expanded'), 'false');
+
+  // Escape closes the list and nothing else: it is stopped before the window around the editor can see it.
+  type('{ "chart": "h|" }');
+  let reached = false;
+  doc_listener: { const f = () => { reached = true; }; document.addEventListener('keydown', f); key('Escape'); document.removeEventListener('keydown', f); }
+  assert.equal(list().style.display, 'none');
+  assert.equal(reached, false, 'the window does not see the Escape that closed the list');
+  assert.equal(key('Escape').defaultPrevented, false, 'with no list open, Escape is left to the window');
+});
+
+test('the list opens by itself after a comma or brace, and Enter stays a new line there until the reader engages it', () => {
+  const { e } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  const list = () => e.el.querySelector('[role="listbox"]');
+  const options = () => [...e.el.querySelectorAll('[role="option"]')].map(o => o.dataset.wmapPlotJsonSuggestion);
+  const type = (marked) => { const caret = marked.indexOf('|'); area.value = marked.replace('|', ''); area.setSelectionRange(caret, caret); area.dispatchEvent(new dom.window.Event('input', { bubbles: true })); };
+  const key = (k) => { const ev = new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }); area.dispatchEvent(ev); return ev; };
+
+  type('{ "chart": "box",|');
+  assert.equal(list().style.display, 'block', 'opened without being asked for');
+  assert.ok(options().includes('aggregate') && !options().includes('chart'), 'the keys not yet written');
+  const enter = key('Enter');
+  assert.equal(enter.defaultPrevented, false, 'Enter is left to insert its new line');
+  assert.equal(list().style.display, 'none');
+  assert.equal(area.value, '{ "chart": "box",');
+
+  type('{ "chart": "box",|');
+  key('ArrowDown');
+  const chosen = list().querySelector('[aria-selected="true"]').dataset.wmapPlotJsonSuggestion;
+  assert.equal(key('Enter').defaultPrevented, true, 'after the arrow keys Enter chooses');
+  assert.ok(area.value.includes(`"${chosen}"`), area.value);
+
+  type('{ "chart": "box",|');
+  assert.equal(key('Tab').defaultPrevented, true, 'Tab always chooses');
+  assert.notEqual(area.value, '{ "chart": "box",');
+
+  type('{|');
+  assert.ok(options().includes('chart'), 'after an opening brace');
+  type('{ "level":|');
+  assert.deepEqual(options(), ['die', 'wafer'], 'after a colon: the values');
+});
+
+test('the Suggest button opens the list at the cursor, and says when there is nothing to suggest', () => {
+  const { e } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  const btn = e.el.querySelector('[data-wmap-plot-json-suggest]');
+  assert.equal(btn.textContent, 'Suggest');
+  assert.equal(area.getAttribute('aria-keyshortcuts'), 'Control+Space Meta+Space');
+  area.value = '{ "chart": "box", "level": }';
+  area.setSelectionRange(area.value.length - 2, area.value.length - 2);
+  click(btn);
+  assert.deepEqual([...e.el.querySelectorAll('[role="option"]')].map(o => o.dataset.wmapPlotJsonSuggestion), ['die', 'wafer']);
+  assert.equal(e.el.querySelector('[role="listbox"]').style.display, 'block');
+  // Asked for, so Enter chooses.
+  area.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  assert.match(area.value, /"level": "die"/);
+  area.value = 'not json';
+  area.setSelectionRange(4, 4);
+  click(btn);
+  assert.equal(e.el.querySelector('[role="status"]').textContent, 'Nothing to suggest at the cursor');
+});
+
+test('the JSON tab offers the lot\'s own tests and wafer fields, and Ctrl+Space opens the list where nothing is typed', () => {
+  const { e } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } }, { testDefs: DEFS });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  const options = () => [...e.el.querySelectorAll('[role="option"]')].map(o => o.dataset.wmapPlotJsonSuggestion);
+  const at = (marked) => { const caret = marked.indexOf('|'); area.value = marked.replace('|', ''); area.setSelectionRange(caret, caret); };
+  at('{ "fields": { "x": { "meta": "|" } } }');
+  area.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.ok(options().includes('split'), options().join());
+  at('{ "fields": { "y": { "test": | } } }');
+  assert.deepEqual(options(), options(), 'nothing new is asked for yet');
+  area.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ' ', ctrlKey: true, bubbles: true, cancelable: true }));
+  assert.ok(options().includes('1050') && options().includes('1060'), options().join());
+  const row = [...e.el.querySelectorAll('[role="option"]')].find(o => o.dataset.wmapPlotJsonSuggestion === '1050');
+  assert.match(row.textContent, /1050.*Vth/);
+  row.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+  assert.equal(area.value, '{ "fields": { "y": { "test": 1050 } } }');
+});
+
+test('the JSON tab refuses text that is not a plot and leaves the plot as it was', () => {
+  const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = e.el.querySelector('[data-wmap-plot-json]');
+  for (const text of ['{ "chart": "box", ', '{ "fields": {} }', '[1]']) {
+    area.value = text;
+    area.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    const apply = e.el.querySelector('[data-wmap-plot-json-apply]');
+    assert.equal(apply.disabled, true, text);
+    click(apply);
+    assert.match(e.el.querySelector('[role="status"]').textContent, /\S/, 'it says what is wrong');
+  }
+  assert.equal(emitted.length, 0, 'nothing was applied');
+});
+
+test('the JSON tab can discard unapplied text, and says so in words the window\'s own Reset and Cancel do not use', () => {
+  const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  click(tabButton(e.el, 'JSON'));
+  const area = () => e.el.querySelector('[data-wmap-plot-json]');
+  const original = area().value;
+  area().value = '{ lost';
+  area().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  click(e.el.querySelector('[data-wmap-plot-json-discard]'));
+  assert.equal(area().value, original);
+  assert.equal(emitted.length, 0);
+  const labels = [...e.el.querySelectorAll('button')].map(b => b.textContent);
+  assert.ok(!labels.includes('Cancel') && !labels.includes('Reset'), labels.join());
+});
+
+test('the editor tabs are reached by the arrow keys, JSON included', () => {
+  const { e } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
+  const key = (name) => tabButton(e.el, name).dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  key('Setup'); key('Customise');
+  assert.equal(tabButton(e.el, 'JSON').getAttribute('aria-selected'), 'true');
+  key('JSON');
+  assert.equal(tabButton(e.el, 'Setup').getAttribute('aria-selected'), 'true', 'the last tab wraps to the first');
 });
 
 /** Whether a field is the lot field named Wafer, which the second level may hold. */

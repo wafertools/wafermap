@@ -146,7 +146,7 @@ test('ranges expand to the declared tests between their ends', () => {
 
 test('a set made against other tests is reported, not drawn against the wrong measurement', () => {
   const r = resolvePlot(spec('box', { y: { tests: [1050], names: { 1050: 'Leak' } } }), lot(), ctx);
-  assert.match(r.issues.join(), /Test 1050 is "Leak" in this plot and "Vth" here/);
+  assert.match(r.issues.join(), /Test 1050 was "Leak" when this plot was saved; in these dies it is "Vth"/);
   assert.deepEqual(withTestSetNames({ tests: ['1050..1055'] }, DEFS), { tests: ['1050..1055'], names: { 1050: 'Vth', 1055: 'Vth2' } });
 });
 
@@ -192,7 +192,7 @@ test('a plot of a set reads and writes back, and a bad setting is dropped with a
   ] }));
   assert.equal(bad.plots[0].normalize, undefined);
   assert.equal(bad.plots[0].fields.y, undefined);
-  assert.match(bad.warnings.join('\n'), /normalize: "sideways" is not known/);
+  assert.match(bad.warnings.join('\n'), /normalize: "sideways" is not limits, zscore or robust/);
   assert.match(bad.warnings.join('\n'), /fields\.y: its tests must be test numbers or ranges/);
 });
 

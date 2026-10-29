@@ -156,7 +156,7 @@ test('a saved sweep opens in its editor, named for the population, so it can be 
   const win = document.querySelector('[data-wmap-plot-window]');
   const box = document.querySelector('.wmap-overlay-box');
   try {
-    assert.ok(win.querySelector('[data-wmap-sweep-editor]'), 'the sweep editor, beside the chart');
+    assert.ok(win.querySelector('[data-wmap-sweep-editor]'), 'the sweep form, beside the chart');
     assert.match(box.textContent, /Sweep — 4 dies selected on W07/);
     assert.match(win.textContent, /median across 4 dies selected on W07/);
     assert.doesNotMatch(win.textContent, /4 dies 4 dies/, 'the count is stated once');

@@ -1260,6 +1260,11 @@ When fields do not go together, the list says so before you choose: a field that
 drawn is dimmed in the **X**, **Y** and **Colour** lists with the reason after it, and does nothing when picked. A plot
 that cannot be drawn says in words what is wrong and what to use instead.
 
+The **JSON** tab shows the plot as text, in the format of a saved plots file, for when a plot is easier to copy, share or
+paste in than to rebuild with the controls. Edit the text and choose **Apply**; the plot changes only then, and the tab says
+beforehand if a setting would be left out or the text is not a plot. Suggestions appear as you type inside a key or a string and after a comma, brace, colon or bracket, or on demand from the **Suggest** button or **Ctrl/Cmd+Space**: the plot's settings, the words a setting can take, your lot's test numbers and wafer fields. Use **Up** and **Down**, then **Tab** or **Enter** to accept, or **Esc** to close the list. A list that opened by itself leaves **Enter** as a new line until you type a letter or use the arrow keys; **Tab** always accepts. **Discard edits** drops text not yet applied;
+**Ctrl/Cmd+Z** (and **Shift+Ctrl/Cmd+Z**) step back and forward through the text you have typed, accepted or discarded and then through what you have applied, and the window's **Reset** and **Cancel** go back to the plot as it was when the window opened. **Copy** puts the text on the clipboard. The id is not part of the text, and a plots file can be pasted too, and when it holds several plots the tab lists them to choose one.
+
 In **Customise**, the **title** and each **axis title** are written for you until
 you type your own (the box shows what it would say, and clearing it brings that
 back). If you type a title and later change the fields, the plot says when the title
@@ -1387,7 +1392,7 @@ naming the word, and is not applied, so the curve beside it never shows
 something you did not mean. **+ Add series** adds a curve and **Remove** drops
 one; the crossing and widths appear once there are two.
 
-**A sweep remembers what its tests were called.** The editor and **+ New sweep** record each test's name
+**A sweep remembers what its tests were called.** The editor records each test's name
 alongside its number. Open the sweep on a lot where a number now carries a different name (a test program that
 reuses numbers for other measurements) and that test is not drawn: the card names it, and the crossing and widths
 are not measured, rather than presenting another quantity as the original curve. Renaming a test in the selector

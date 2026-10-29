@@ -209,14 +209,19 @@ Controls:
   · Filter…
       hint: Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab
   · Overview
+      hint: Yield, bins and what stands out
   · Distributions
+      hint: How each test’s values spread
   · Correlation
+      hint: How tests move together
   · Data
+      hint: The same scope as tables, with CSV exports
   · My plots
+      hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
-  · Expand   (×11)
-  · Chart actions  [opens menu]   (×11)
+  · Expand   (×13)
+  · Chart actions  [opens menu]   (×13)
   · Sort: yield  [radio, unchecked]
   · Sort: wafer  [radio, checked]
   · Hard bins  [radio, checked]
@@ -224,6 +229,7 @@ Controls:
   · Test limits  [radio, checked]
   · Tester flag  [radio, unchecked]
   · Functional  [radio, unchecked]
+  · Heatmaps and the difference map   (×3)
   · Show on map
       hint: Leave Insights and show this on the map, as its row in What stands out does   (×3)
   · What divides yield
@@ -262,10 +268,15 @@ Controls:
   · Filter…
       hint: Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab
   · Overview
+      hint: Yield, bins and what stands out
   · Distributions
+      hint: How each test’s values spread
   · Correlation
+      hint: How tests move together
   · Data
+      hint: The same scope as tables, with CSV exports
   · My plots
+      hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
   · Expand   (×4)
@@ -277,6 +288,8 @@ Controls:
   · Log scale  [checkbox, unchecked]
   · All wafers▾  [aria="Wafer", opens menu]
   · Axis includes limits  [checkbox, unchecked]
+  · Trend  [radio, checked]
+  · Control chart  [radio, unchecked]
   · Bands on a line
 
 Menu — Chart actions:
@@ -316,10 +329,15 @@ Controls:
   · Filter…
       hint: Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab
   · Overview
+      hint: Yield, bins and what stands out
   · Distributions
+      hint: How each test’s values spread
   · Correlation
+      hint: How tests move together
   · Data
+      hint: The same scope as tables, with CSV exports
   · My plots
+      hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
   · Expand   (×2)
@@ -346,10 +364,15 @@ Controls:
   · Filter…
       hint: Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab
   · Overview
+      hint: Yield, bins and what stands out
   · Distributions
+      hint: How each test’s values spread
   · Correlation
+      hint: How tests move together
   · Data
+      hint: The same scope as tables, with CSV exports
   · My plots
+      hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
   · Statistics  [checked]
@@ -386,16 +409,19 @@ Controls:
   · Filter…
       hint: Show only the wafers and dies that meet conditions you set, on the maps, the gallery and every Insights tab
   · Overview
+      hint: Yield, bins and what stands out
   · Distributions
+      hint: How each test’s values spread
   · Correlation
+      hint: How tests move together
   · Data
+      hint: The same scope as tables, with CSV exports
   · My plots
+      hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
   · + New plot
-      hint: Start a chart of your own: choose its type, what goes on each axis and how it is coloured
-  · + New sweep
-      hint: Read an ordered run of tests as a response curve, and measure where two curves cross
+      hint: Start a chart of your own: choose its type (a sweep reads runs of tests as response curves), what goes on each axis and how it is coloured
   · Add examples
       hint: Draw one example of each chart type this lot can show, to edit or delete
   · Import plots…

@@ -12,7 +12,7 @@ import type { Die } from '../core/dies.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
 import type { BinColors } from '../renderer/binColors.js';
 import type { WaferContextMenuHandler } from './charts/chartShell.js';
-import { defaultPlot, defaultSweep, describeTitleDrift, examplePlots, fieldCatalogue, resolvePlot, titleDrift, type PlotContext, type PlotPoint } from '../stats/plotData.js';
+import { defaultPlot, describeTitleDrift, examplePlots, fieldCatalogue, resolvePlot, titleDrift, type PlotContext, type PlotPoint } from '../stats/plotData.js';
 import { addPlots, newPlotId, readPlotsFile, writePlotsFile, type PlotFilter, type PlotSpec } from '../stats/plotSpec.js';
 import { buildFilterStrip } from './filterEditor.js';
 import { isYieldEligibleDie } from '../core/dies.js';
@@ -87,8 +87,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
   };
   const deleteAllBtn = button('Delete all plots…', 'wmapPlotDeleteAll', 'Remove every plot and sweep. You are asked first, and Undo brings them back for ten seconds', () => { void deleteAll(); });
   bar.append(
-    button('+ New plot', 'wmapPlotNew', 'Start a chart of your own: choose its type, what goes on each axis and how it is coloured', () => newPlot()),
-    button('+ New sweep', 'wmapPlotNewSweep', 'Read an ordered run of tests as a response curve, and measure where two curves cross', () => newSweep()),
+    button('+ New plot', 'wmapPlotNew', 'Start a chart of your own: choose its type (a sweep reads runs of tests as response curves), what goes on each axis and how it is coloured', () => newPlot()),
     button('Add examples', 'wmapPlotExamples', 'Draw one example of each chart type this lot can show, to edit or delete', () => addExamples()),
     button('Import plots…', 'wmapPlotImport', 'Add the plots from a file written by Export plots…', () => { void importPlots(); }),
     button('Export plots…', 'wmapPlotExport', 'Save all your plots to a file, to share or to keep a copy', () => exportPlots()),
@@ -138,7 +137,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
   root.append(empty, grid);
 
   /** What the list keeps for a card: a plot's chart, or a sweep's curve panel. Both are cards with a row of buttons. */
-  interface Entry { card: HTMLElement; actions: HTMLElement; json: string; driftNote?: HTMLElement; update: (plot: PlotSpec) => void; destroy: () => void }
+  interface Entry { sweep: boolean; card: HTMLElement; actions: HTMLElement; json: string; driftNote?: HTMLElement; update: (plot: PlotSpec) => void; destroy: () => void }
   const entries = new Map<string, Entry>();
 
   const chartHooks = () => ({
@@ -166,11 +165,6 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
 
   function edit(plot: PlotSpec, draft = false): void {
     openPlotEditor({ doc, anchor: root, store, plot, draft, items, ctx, groupLabel: d.groupLabel, chart: chartHooks(), onSelectLevel: selectLevel });
-  }
-  function newSweep(): void {
-    const plot = defaultSweep(d.testDefs, newPlotId());
-    store.upsert(plot);
-    edit(plot);
   }
 
   /** A level of a sweep's curve: the dies measured there, as a menu of what to open on them. */
@@ -228,7 +222,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     filterLine.style.flexBasis = '100%';
     chart.actions.append(filterLine, driftNote);
     const entry: Entry = {
-      card: chart.card, actions: chart.actions, json: '', driftNote, destroy: () => chart.destroy(),
+      sweep: false, card: chart.card, actions: chart.actions, json: '', driftNote, destroy: () => chart.destroy(),
       update: p => {
         const r = resolve(p);
         chart.setPlot(r);
@@ -258,7 +252,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     markNoPrint(panel.actions);
     addActions(panel.actions, plot);
     const entry: Entry = {
-      card: panel.card, actions: panel.actions, json: '', destroy: () => panel.destroy(),
+      sweep: true, card: panel.card, actions: panel.actions, json: '', destroy: () => panel.destroy(),
       update: p => {
         const spec = plotToSweep(p)!;
         panel.setSpec(spec);
@@ -311,7 +305,10 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
       e.destroy(); e.card.remove(); entries.delete(id);
     }
     plots.forEach((p, i) => {
-      const e = entries.get(p.id) ?? makeEntry(p);
+      let e = entries.get(p.id);
+      // A plot whose chart type changed to or from Sweep is drawn by the other kind of card.
+      if (e && e.sweep !== (p.chart === 'sweep')) { e.destroy(); e.card.remove(); entries.delete(p.id); e = undefined; }
+      e ??= makeEntry(p);
       const json = JSON.stringify(p);
       if (e.json !== json) {
         e.json = json;

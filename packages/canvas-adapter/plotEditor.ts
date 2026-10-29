@@ -10,8 +10,8 @@
 // name or test number, so there is no choice that can only fail. Titles are automatic until typed in; clearing the
 // box brings the automatic one back.
 
-import { combinationIssue, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, withTestSetNames, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
-import { isBinned, isField, isPassRateSet, isTestSet, sameField, xFieldsOf, PLOT_BINS_DEFAULT, PLOT_BINS_MAX, PLOT_BINS_MIN, PLOT_X_LEVELS, type PlotAxis, type PlotBinnedField, type PlotField, type PlotLimits, type PlotNormalize, type PlotSpec, type PlotTestSet } from '../stats/plotSpec.js';
+import { combinationIssue, defaultSweep, describeTitleDrift, fieldKey, fieldsForRole, titleDrift, withTestSetNames, type FieldFacts, type FieldOption, type PlotRole } from '../stats/plotData.js';
+import { isBinned, isField, isPassRateSet, isTestSet, PLOTS_FORMAT, PLOTS_VERSION, plotIssue, readPlot, readPlotsFile, syntaxErrorAt, sameField, xFieldsOf, PLOT_BINS_DEFAULT, PLOT_BINS_MAX, PLOT_BINS_MIN, PLOT_X_LEVELS, type PlotAxis, type PlotBinnedField, type PlotField, type PlotLimits, type PlotNormalize, type PlotSpec, type PlotTestSet } from '../stats/plotSpec.js';
 import { formatTestList, parseTestList } from '../stats/sweepText.js';
 import { formatReferences, parseReferences } from '../stats/plotReferences.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
@@ -20,6 +20,10 @@ import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip }
 import { inputStyle, makeListSelect, makeSegmented, makeToggle, type ListSelectOption } from './charts/chartShell.js';
 export { inputStyle };
 import { buildFilterEditor } from './filterEditor.js';
+import { attachJsonSuggestions } from './plotJsonSuggest.js';
+import { createTextHistory } from './plotJsonHistory.js';
+import { createSweepEditor } from './sweepEditor.js';
+import type { CompletionSource } from './plotJsonComplete.js';
 
 export interface PlotEditorOptions {
   doc: Document;
@@ -62,6 +66,7 @@ const CHART_OPTIONS: Array<[string, string, string]> = [
   ['control', 'Control', 'One value per wafer in order, against limits from its own wafer-to-wafer variation, with the points that break a Western Electric rule marked'],
   ['heatmap', 'Heatmap', 'One cell per row and column, coloured by the value combined there: tests by wafer, bins by wafer, rings by split'],
   ['goal', 'Goal', 'Every test with both limits as a point: how far its mean is off centre, and how wide it is, against lines of equal Ppk'],
+  ['sweep', 'Sweep', 'Ordered runs of tests read as response curves, with where two curves cross and how far apart they are'],
 ];
 const AUTO = '\0auto';
 const COUNT = '\0count';
@@ -98,9 +103,25 @@ export function fieldRow(doc: Document, label: string, control: HTMLElement, hin
 export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   const { doc } = o;
   /** A plot of any field-based chart always has `fields` here (a sweep, which may lack them, is not edited by this editor). */
-  const withFields = (p: PlotSpec): PlotSpec => (p.fields ? p : { ...p, fields: {} });
+  const withFields = (p: PlotSpec): PlotSpec => (p.fields || p.chart === 'sweep' ? p : { ...p, fields: {} });
   let plot = withFields(o.plot);
-  let tab: 'setup' | 'customise' = 'setup';
+  type EditorTab = 'setup' | 'customise' | 'json';
+  const TABS: ReadonlyArray<readonly [EditorTab, string, string]> = [
+    ['setup', 'Setup', 'Which fields to plot and how they are combined'],
+    ['customise', 'Customise', 'Titles, axis limits, scale and direction'],
+    ['json', 'JSON', 'The plot as text: copy it, paste one in, or edit it directly'],
+  ];
+  /** A sweep's title and axes are in its Setup form, so it has no Customise tab. */
+  const tabsFor = (): typeof TABS => (plot.chart === 'sweep' ? TABS.filter(t => t[0] !== 'customise') : TABS);
+  let tab: EditorTab = 'setup';
+  /** What a plot keeps while it is a sweep, and what a sweep keeps while it is another chart: the way back is not lost. */
+  let plotStash: Partial<PlotSpec> | undefined;
+  let sweepStash: PlotSpec['sweep'] | undefined;
+  /** What the JSON tab said about its last Apply, kept across the rebuild that follows it. */
+  let jsonNote = '';
+  /** The plots the JSON tab has applied or reset away from, for Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Y). */
+  let jsonUndo: PlotSpec[] = [];
+  let jsonRedo: PlotSpec[] = [];
   const root = doc.createElement('div');
   root.dataset.wmapPlotEditor = '1';
   Object.assign(root.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg, minWidth: '0' } as Partial<CSSStyleDeclaration>);
@@ -379,7 +400,24 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
   /** Fields chosen for the reader when a type needed one, as against fields the reader picked: only the latter are worth keeping. */
   const supplied: Partial<Record<'x' | 'y', PlotField>> = {};
 
+  const chartRow = (): HTMLElement => row('Chart type', makeSegmented(CHART_OPTIONS, plot.chart, v => changeChart(v as PlotSpec['chart']), doc, true));
+
   function changeChart(next: PlotSpec['chart']): void {
+    const wasSweep = plot.chart === 'sweep';
+    if (next === 'sweep') {
+      if (wasSweep) return;
+      const { id, title, chart: _chart, ...rest } = plot;
+      plotStash = rest;
+      emit({ id, ...(title ? { title } : {}), chart: 'sweep', sweep: sweepStash ?? defaultSweep(o.testDefs ?? [], id).sweep });
+      build();
+      return;
+    }
+    if (wasSweep) {
+      // Back to a chart of fields: what the plot had before it was a sweep, or empty fields the choices below fill in.
+      const { id, title, sweep } = plot;
+      sweepStash = sweep;
+      emit({ id, ...(title ? { title } : {}), ...(plotStash ?? {}), chart: next, fields: plotStash?.fields ?? {} });
+    }
     edit(d => {
       d.chart = next;
       for (const role of ['x', 'y'] as const) {
@@ -579,7 +617,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     return wrap;
   }
 
-  const tabButton = (key: 'setup' | 'customise'): HTMLElement | null => root.querySelector(`[role="tab"][data-tab="${key}"]`);
+  const tabButton = (key: EditorTab): HTMLElement | null => root.querySelector(`[role="tab"][data-tab="${key}"]`);
   let titleBoxEl: HTMLInputElement | undefined;
   let driftEl: HTMLElement | undefined;
   const axisBoxes = new Map<string, HTMLInputElement>();
@@ -603,13 +641,207 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     driftEl.append(t, use);
   }
 
+  /**
+   * The plot as JSON, applied on a button rather than as it is typed (half-typed text is invalid most of the time).
+   * The text goes through `readPlot`, the reader a plots file goes through, so a setting that is wrong is dropped and
+   * named here as it is on import. The plot's id is not editable: it is what the saved plot is known by.
+   */
+  function jsonPanel(): HTMLElement {
+    const wrap = doc.createElement('div');
+    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.sm } as Partial<CSSStyleDeclaration>);
+    const area = doc.createElement('textarea');
+    area.dataset.wmapPlotJson = '1';
+    /** The plot as text, without its id: that is not editable, so it is not offered as if it were. */
+    const textOf = (p: PlotSpec): string => { const { id: _id, ...rest } = p; return JSON.stringify(rest, null, 2); };
+    area.value = textOf(plot);
+    area.spellcheck = false;
+    area.rows = 18;
+    area.setAttribute('aria-label', 'Plot as JSON');
+    Object.assign(area.style, {
+      ...inputStyle(), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: FONT.sub,
+      width: '100%', boxSizing: 'border-box', resize: 'vertical', whiteSpace: 'pre', overflow: 'auto',
+    } as Partial<CSSStyleDeclaration>);
+    /** What the suggestions know of the lot: its tests and wafer fields, and a line for each word a setting can take. */
+    const suggestSource = (): CompletionSource => ({
+      tests: o.testDefs?.map(d => ({ number: d.testNumber, name: d.name })),
+      metaKeys: o.catalogue.flatMap(f => ('meta' in f.field ? [{ key: f.field.meta, label: f.name }] : [])),
+      describe: (setting, value) => {
+        if (setting === 'chart') return CHART_OPTIONS.find(c => c[0] === value)?.[2];
+        if (setting === 'aggregate') return AGGREGATE_LABEL[value];
+        if (setting === 'normalize') return NORMALIZE_OPTIONS.find(n => n[0] === value)?.[2];
+        if (setting === 'builtin') return o.catalogue.find(f => 'builtin' in f.field && f.field.builtin === value)?.name;
+        if (setting === 'level') return value === 'die' ? 'One mark per die' : 'One mark per wafer';
+        return undefined;
+      },
+    });
+    const suggest = attachJsonSuggestions({ doc, area, source: suggestSource });
+    /** Every change to the text, typed or not, can be undone: the editor keeps the history, not the browser. */
+    const history = createTextHistory(area);
+    /**
+     * Put `text` in the box as an edit the browser can undo: setting the value would wipe its undo history, so Ctrl+Z
+     * after choosing a plot from a pasted file, or after Discard edits, would find nothing to go back to.
+     */
+    const setText = (text: string): void => {
+      area.focus();
+      area.select();
+      if (!doc.execCommand?.('insertText', false, text)) { area.value = text; area.dispatchEvent(new Event('input', { bubbles: true })); }
+      area.setSelectionRange(0, 0);
+    };
+    const textAndSuggestions = doc.createElement('div');
+    textAndSuggestions.append(area, suggest.el);
+    const choicesEl = doc.createElement('div');
+    Object.assign(choicesEl.style, { display: 'flex', flexDirection: 'column', gap: SPACE.xs, alignItems: 'flex-start' } as Partial<CSSStyleDeclaration>);
+    const status = doc.createElement('div');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    Object.assign(status.style, { fontSize: FONT.sub, minHeight: '1.4em', whiteSpace: 'pre-wrap' } as Partial<CSSStyleDeclaration>);
+    const button = (label: string, tip: string): HTMLButtonElement => {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      wireTooltip(b, tip);
+      Object.assign(b.style, controlStyle('outlined'));
+      wireControlHover(b);
+      return b;
+    };
+    const apply = button('Apply', 'Use this text as the plot');
+    apply.dataset.wmapPlotJsonApply = '1';
+    const copy = button('Copy', 'Copy the text to the clipboard');
+    // Not "Cancel" or "Reset": the window's own buttons under the settings use those words for the whole plot.
+    const suggestBtn = button('Suggest', 'Show what can be written at the cursor (also Ctrl/Cmd+Space)');
+    suggestBtn.dataset.wmapPlotJsonSuggest = '1';
+    suggestBtn.addEventListener('click', () => {
+      if (!suggest.show()) { status.style.color = CLR.label; status.textContent = 'Nothing to suggest at the cursor'; }
+    });
+    const discard = button('Discard edits', 'Put the text back as the plot stands, dropping what is not applied');
+    discard.dataset.wmapPlotJsonDiscard = '1';
+
+    /** The plot the text describes, or what is wrong with it. */
+    const read = (): { plot?: PlotSpec; problem?: string; dropped: string[]; issue?: string; choices?: PlotSpec[] } => {
+      let raw: unknown;
+      try { raw = JSON.parse(area.value); } catch (e) { return { problem: `Not valid JSON: ${syntaxErrorAt(area.value, e instanceof Error ? e.message : String(e))}`, dropped: [] }; }
+      const dropped: string[] = [];
+      let next: PlotSpec | null;
+      // A plots file (or a list of plots) is read by the one reader a plots file goes through, so each plot in it is named
+      // when it cannot be read. A file of several plots offers the choice: the editor holds one plot.
+      const isFile = Array.isArray(raw) || (typeof raw === 'object' && raw !== null && !('chart' in raw) && ('plots' in raw || 'sweeps' in raw || 'format' in raw));
+      if (isFile) {
+        const file = readPlotsFile(Array.isArray(raw) ? JSON.stringify({ format: PLOTS_FORMAT, version: PLOTS_VERSION, plots: raw }) : area.value);
+        if (file.error) return { problem: [file.error, ...file.warnings].join('\n'), dropped: [] };
+        if (file.plots.length > 1) return { choices: file.plots, dropped: file.warnings };
+        dropped.push(...file.warnings);
+        next = file.plots[0] ?? null;
+        if (!next) return { problem: dropped.join('\n') || 'The file holds no plots', dropped: [] };
+      } else {
+        next = readPlot(raw, 'plot', dropped);
+        if (!next) return { problem: dropped.map(w => w.replace(/, skipped$/, '')).join('\n') || 'Not a plot', dropped: [] };
+      }
+      // A test's number edited with its old name left beside it would be refused as another test's name: the name is left out.
+      const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+      const unnamed = (before: unknown, after: unknown, where: string): unknown => {
+        if (!isObj(before) || !isObj(after) || !('name' in after) || after.name !== before.name) return after;
+        for (const k of ['test', 'passRate']) {
+          if (k in before && k in after && before[k] !== after[k]) {
+            dropped.push(`${where}.name: the test number changed, so its old name "${String(after.name)}" is left out`);
+            const { name: _name, ...rest } = after;
+            return rest;
+          }
+        }
+        return after;
+      };
+      const fields: Record<string, unknown> = { ...(next.fields ?? {}) };
+      const was = (plot.fields ?? {}) as Record<string, unknown>;
+      for (const role of ['x', 'y', 'color', 'rows', 'facet']) {
+        const after = fields[role], before = was[role];
+        if (Array.isArray(after)) fields[role] = after.map((f, i) => unnamed(Array.isArray(before) ? before[i] : undefined, f, `fields.${role} ${i + 1}`));
+        else if (after !== undefined) fields[role] = unnamed(before, after, `fields.${role}`);
+      }
+      next.fields = fields as PlotSpec['fields'];
+      const result = withFields({ ...next, id: plot.id });
+      return { plot: result, dropped: dropped.filter(w => !/no id, given a new one/.test(w)), issue: plotIssue(result) };
+    };
+    const show = (): void => {
+      const r = read();
+      apply.disabled = !r.plot;
+      apply.style.opacity = r.plot ? '' : '0.5';
+      choicesEl.replaceChildren();
+      if (r.choices) {
+        status.style.color = CLR.label;
+        status.textContent = [`This is a plots file with ${r.choices.length} plots, and this editor holds one plot. Choose the one to use:`, ...r.dropped].join('\n');
+        r.choices.forEach((c, i) => {
+          const b = button(`${i + 1}. ${c.title || `${c.chart[0].toUpperCase()}${c.chart.slice(1)} plot`}`, 'Use this plot from the file');
+          b.dataset.wmapPlotJsonChoice = String(i);
+          b.addEventListener('click', () => setText(textOf(c)));
+          choicesEl.appendChild(b);
+        });
+        return;
+      }
+      if (!r.plot) { status.style.color = CLR.errText; status.textContent = r.problem ?? ''; return; }
+      const same = JSON.stringify(r.plot) === JSON.stringify(plot);
+      const notes = [...(r.dropped.length ? [`Applying would leave out or ignore:\n${r.dropped.join('\n')}`] : []), ...(r.issue ? [`It could not be drawn: ${r.issue}`] : [])];
+      status.style.color = notes.length ? CLR.errText : CLR.label;
+      status.textContent = notes.length ? notes.join('\n') : same ? (jsonNote || 'The plot as it stands') : 'Edited: Apply to use it';
+    };
+    area.addEventListener('input', () => { jsonNote = ''; show(); });
+    /** Make `next` the plot, remembering the one it replaces so Ctrl/Cmd+Z can bring it back. */
+    const commit = (next: PlotSpec, note: string): void => {
+      jsonUndo.push(JSON.parse(JSON.stringify(plot)) as PlotSpec);
+      jsonRedo = [];
+      move(next, note);
+    };
+    const move = (next: PlotSpec, note: string): void => {
+      jsonNote = note;
+      emit(next);
+      build();
+      root.querySelector<HTMLTextAreaElement>('[data-wmap-plot-json]')?.focus();
+    };
+    apply.addEventListener('click', () => {
+      const r = read();
+      if (!r.plot) return;
+      commit(r.plot, r.dropped.length ? `Applied. Left out:\n${r.dropped.join('\n')}` : 'Applied');
+    });
+    // The key steps back through the text first (typing, an accepted suggestion, a chosen plot); with nothing left to undo
+    // there, and the text as the plot stands, it steps back through the plots that were applied.
+    area.addEventListener('keydown', e => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const undo = k === 'z' && !e.shiftKey, redo = (k === 'z' && e.shiftKey) || k === 'y';
+      if (!undo && !redo) return;
+      if (undo ? history.canUndo : history.canRedo) { e.preventDefault(); if (undo) history.undo(); else history.redo(); return; }
+      if (area.value !== textOf(plot)) return;
+      const from = undo ? jsonUndo : jsonRedo;
+      if (!from.length) return;
+      e.preventDefault();
+      (undo ? jsonRedo : jsonUndo).push(JSON.parse(JSON.stringify(plot)) as PlotSpec);
+      move({ ...from.pop()!, id: plot.id }, undo ? 'Undone' : 'Redone');
+    });
+    discard.addEventListener('click', () => { jsonNote = ''; setText(textOf(plot)); });
+    copy.addEventListener('click', () => {
+      const nav = doc.defaultView?.navigator;
+      const done = (ok: boolean): void => { status.style.color = ok ? CLR.label : CLR.errText; status.textContent = ok ? 'Copied' : 'The text could not be copied: select it and copy by hand'; };
+      if (nav?.clipboard?.writeText) nav.clipboard.writeText(area.value).then(() => done(true), () => done(false)); else done(false);
+    });
+    const buttons = doc.createElement('div');
+    Object.assign(buttons.style, { display: 'flex', gap: SPACE.sm } as Partial<CSSStyleDeclaration>);
+    buttons.append(apply, discard, suggestBtn, copy);
+    wrap.append(
+      row('Plot as JSON', textAndSuggestions, 'Suggestions open as you type, after a comma or brace, or with the Suggest button or Ctrl/Cmd+Space. The format of a saved plots file, for one plot; a plots file can be pasted too, and offers a choice when it holds several plots. Ctrl/Cmd+Z undoes an Apply. The id is not part of the text.'),
+      buttons, status, choicesEl,
+    );
+    show();
+    return wrap;
+  }
+
   function build(): void {
     root.replaceChildren();
+    if (plot.chart === 'sweep' && tab === 'customise') tab = 'setup';
+    if (tab !== 'json') { jsonUndo = []; jsonRedo = []; }
     axisBoxes.clear();
     const tabs = doc.createElement('div');
     tabs.setAttribute('role', 'tablist');
     Object.assign(tabs.style, { display: 'flex', gap: SPACE.sm, borderBottom: `1px solid ${CLR.menuBorder}` } as Partial<CSSStyleDeclaration>);
-    for (const [key, label, hint] of [['setup', 'Setup', 'Which fields to plot and how they are combined'], ['customise', 'Customise', 'Titles, axis limits, scale and direction']] as const) {
+    const tabList = tabsFor();
+    for (const [key, label, hint] of tabList) {
       const b = doc.createElement('button');
       b.type = 'button';
       b.textContent = label;
@@ -629,7 +861,8 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       b.addEventListener('keydown', e => {
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
         e.preventDefault();
-        tab = key === 'setup' ? 'customise' : 'setup';
+        const at = tabList.findIndex(t => t[0] === key);
+        tab = tabList[(at + (e.key === 'ArrowRight' ? 1 : tabList.length - 1)) % tabList.length][0];
         build();
         tabButton(tab)?.focus();
       });
@@ -641,8 +874,13 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     panel.setAttribute('role', 'tabpanel');
     Object.assign(panel.style, { display: 'flex', flexDirection: 'column', gap: SPACE.lg } as Partial<CSSStyleDeclaration>);
 
-    if (tab === 'setup') {
-      panel.appendChild(row('Chart type', makeSegmented(CHART_OPTIONS, plot.chart, v => changeChart(v as PlotSpec['chart']), doc, true)));
+    if (tab === 'json') {
+      panel.appendChild(jsonPanel());
+    } else if (tab === 'setup' && plot.chart === 'sweep') {
+      panel.appendChild(chartRow());
+      panel.appendChild(createSweepEditor({ doc, plot, testDefs: o.testDefs, onChange: next => emit(next) }).el);
+    } else if (tab === 'setup') {
+      panel.appendChild(chartRow());
       const noun = plot.level === 'wafer' ? 'wafers' : 'dies';
       switch (plot.chart) {
         case 'scatter':
