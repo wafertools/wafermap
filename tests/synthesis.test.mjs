@@ -6,7 +6,7 @@ import test from 'node:test';
 import { overBudgetResults } from './fixtures/overBudget.mjs';
 import assert from 'node:assert/strict';
 import { buildWaferMap, analyzeWaferMap, analyzeWaferLot } from '../dist/index.js';
-import { buildSynthesis, synthesisText, synthesisRowShare } from '../dist/packages/stats/synthesis.js';
+import { buildSynthesis, groupColouredChart, synthesisText, synthesisRowShare } from '../dist/packages/stats/synthesis.js';
 import { renderLotReportHtml, renderWaferReportHtml } from '../dist/packages/stats/renderSummaryReport.js';
 import { findingAnchor } from '../dist/packages/stats/reportHtml.js';
 
@@ -567,6 +567,22 @@ test('a jump inside an embedded report can be undone with Back or Alt+Left', asy
   dom.window.close();
 });
 
+test('a bar of wafers takes the group colours, with the wafers under their group, only when Group by is on', () => {
+  const bars = { chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { passRate: 7 }, color: { none: true } }, valueLabels: true };
+  const grouped = groupColouredChart(bars, true);
+  assert.deepEqual(grouped.fields.x, [{ slot: 'groupBy' }, { builtin: 'wafer' }], 'wafers on a second level, under their group');
+  assert.deepEqual(grouped.fields.color, { follow: 'groupBy' }, 'coloured by the group');
+  assert.equal(grouped.valueLabels, true, 'the rest of the chart is as specified');
+  assert.equal(groupColouredChart(bars, false), bars, 'no grouping: as specified');
+  // Only a bar of wafers with no colour of its own.
+  const histogram = { chart: 'histogram', fields: { y: { test: 1 }, color: { none: true } } };
+  assert.equal(groupColouredChart(histogram, true), histogram);
+  const byRing = { chart: 'bar', fields: { x: { builtin: 'ring' }, y: { passRate: 7 }, color: { none: true } } };
+  assert.equal(groupColouredChart(byRing, true), byRing);
+  const coloured = { chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { passRate: 7 }, color: { builtin: 'hbin' } } };
+  assert.equal(groupColouredChart(coloured, true), coloured, 'a colour the item chose is kept');
+});
+
 test('a failing test\'s item charts its pass rate by wafer across a lot, however it is judged', () => {
   const l = regionWithTest({ inside: 0, outside: 600, lostShare: 1 });
   const lot = { ...l, stats: { ...l.stats, testSpecYield: [], functionalYield: [{ testNumber: 9, label: 'SCAN', failDies: 600, totalDies: l.stats.testSpecYield[0].totalDies }] } };
@@ -658,6 +674,14 @@ test('a field that moves many tests is one item: its largest shift leads, the ne
   assert.deepEqual([...it.testNumbers].sort((a, b) => a - b), [1, 3, 4, 5, 6, 7, 8], 'every test that moved, Idd not among them');
   assert.match(it.text, /^7 tests differ by Split\. Largest: Vth is higher on Split B than on Split A \(3 and 3 wafers\): a shift of 1\.5σ, each wafer one value \(q [^)]+\); next: T3 higher on B \(1\.4σ\), T4 higher on B \(1\.3σ\), and 4 more$/);
   assert.equal(it.brief, 'Split: 7 tests differ');
+  // Several tests differ: a grid of the field's values by those tests, rescaled to share one colour key.
+  assert.equal(it.chart.chart, 'heatmap');
+  assert.equal(it.chart.normalize, 'zscore');
+  assert.equal(it.chart.level, 'wafer');
+  assert.equal(it.chart.aggregate, 'mean');
+  assert.equal(typeof it.chart.fields.x.meta, 'string', 'the field is the columns');
+  assert.deepEqual([...it.chart.fields.y.tests].sort((x, y) => x - y), [1, 3, 4, 5, 6, 7, 8], 'the tests that moved are the rows');
+  assert.equal('color' in it.chart.fields, false, 'the colour is the cell, not a series');
   assert.match(it.reason, /^7 tests differ by Split\. Largest: Vth is higher/);
   assert.ok(it.text.startsWith(it.reason), 'the card\'s reason is the start of the panel\'s sentence');
   assert.deepEqual(it.target, { kind: 'test', testNumber: 1 });

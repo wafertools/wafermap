@@ -16,6 +16,8 @@ export interface CompletionSource {
   tests?: ReadonlyArray<{ number: number; name?: string }>;
   /** The lot's wafer fields, for a `meta` field: the key, and the name the field list shows for it. */
   metaKeys?: ReadonlyArray<{ key: string; label?: string }>;
+  /** The gradients a plot's colours can take, by name and the name to show. */
+  gradients?: ReadonlyArray<{ name: string; label?: string }>;
   /** One line about a word a setting can take (a chart, an aggregate), shown beside it. */
   describe?: (setting: string, value: string) => string | undefined;
 }
@@ -59,10 +61,11 @@ const AXIS_KEYS = ['label', 'scale', 'min', 'max', 'reverse', 'includeLimits', '
 const ROOT_KEYS = [
   'chart', 'title', 'fields', 'level', 'aggregate', 'normalize', 'axes', 'where', 'limits', 'bins', 'stack', 'sort', 'top', 'barNorm', 'histNorm',
   'orientation', 'valueLabels', 'cumulative', 'spread', 'fit', 'identity', 'normalCurve', 'whatIf', 'baseline', 'probabilityAxis', 'sweep',
+  'colorGradient', 'colorReverse',
 ];
 const SWEEP_KEYS = ['series', 'xLabel', 'xUnit', 'yLabel', 'xScale', 'crossing', 'separationAt'];
 const SERIES_KEYS = ['label', 'tests', 'xValues', 'xFromName', 'testNames'];
-const BOOLEANS = new Set(['valueLabels', 'cumulative', 'identity', 'normalCurve', 'not', 'off', 'reverse', 'includeLimits', 'clip', 'crossing']);
+const BOOLEANS = new Set(['valueLabels', 'cumulative', 'identity', 'normalCurve', 'not', 'off', 'reverse', 'includeLimits', 'clip', 'crossing', 'colorReverse']);
 const WORD = /[A-Za-z0-9_.+-]/;
 
 /** Where the text before the caret leaves it. */
@@ -152,6 +155,9 @@ function valuesAt(path: string[], setting: string, src: CompletionSource, inList
   const words = (list: readonly string[], key = setting) => list.map(word => ({ word, detail: src.describe?.(key, word) }));
   if (path.length === 0 && setting in PLOT_CHOICES) {
     return { kind: 'string', words: words(PLOT_CHOICES[setting as keyof typeof PLOT_CHOICES]) };
+  }
+  if (path.length === 0 && setting === 'colorGradient') {
+    return src.gradients?.length ? { kind: 'string', words: src.gradients.map(c => ({ word: c.name, detail: c.label && c.label !== c.name ? c.label : undefined })) } : undefined;
   }
   if (isFieldPath(path)) {
     if (setting === 'builtin') return { kind: 'string', words: PLOT_BUILTINS.map(word => ({ word, detail: src.describe?.('builtin', word) })) };

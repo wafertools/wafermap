@@ -282,6 +282,14 @@ export interface PlotSpec {
   where?: PlotFilter;
   /** Rescale the measured values on Y, each test on its own. Absent = the values as measured. */
   normalize?: PlotNormalize;
+  /**
+   * The gradient of a continuous colour (a heatmap's cells, a scatter coloured by a value): a name from the plot's own
+   * gradients (`diverging`, `rating`) or a map's value gradient (`default`, `cividis`, `plasma`, `traffic`…). Absent = `diverging` for a value rescaled around zero,
+   * else the map's default.
+   */
+  colorGradient?: string;
+  /** Flip that gradient, so the high end takes the colour the low end had. */
+  colorReverse?: boolean;
   /** The definition of a `sweep` chart: ordered runs of tests read as curves. Such a plot has no `fields`. */
   sweep?: SweepPayload;
 }
@@ -376,7 +384,7 @@ const PLOT_KEYS: Record<keyof PlotSpec, true> = {
   id: true, title: true, chart: true, fields: true, level: true, aggregate: true, axes: true, bins: true, limits: true,
   probabilityAxis: true, stack: true, sort: true, top: true, barNorm: true, orientation: true, valueLabels: true,
   cumulative: true, spread: true, fit: true, identity: true, histNorm: true, normalCurve: true, whatIf: true,
-  baseline: true, where: true, normalize: true, sweep: true,
+  baseline: true, where: true, normalize: true, sweep: true, colorGradient: true, colorReverse: true,
 };
 const FIELD_ROLES: Record<keyof NonNullable<PlotSpec['fields']>, true> = { x: true, y: true, color: true, rows: true, facet: true };
 
@@ -627,9 +635,10 @@ export function readPlot(given: unknown, where: string, warnings: string[]): Plo
     if (!filter) { warnings.push(`${where}.where: needs at least one condition, left out`); delete out.where; }
     else out.where = filter;
   }
+  if ('colorGradient' in raw && !(typeof raw.colorGradient === 'string' && raw.colorGradient.trim() !== '')) { warnings.push(`${where}.colorGradient: not the name of a gradient, left out`); delete out.colorGradient; }
   if ('top' in raw && !(Number.isInteger(raw.top) && (raw.top as number) >= 1)) { warnings.push(`${where}.top: not a whole number of at least 1, left out`); delete out.top; }
   if ('baseline' in raw && !(Number.isInteger(raw.baseline) && (raw.baseline as number) >= 3)) { warnings.push(`${where}.baseline: not a whole number of at least 3, left out`); delete out.baseline; }
-  for (const k of ['identity', 'normalCurve', 'valueLabels'] as const) if (k in raw && typeof raw[k] !== 'boolean') { warnings.push(`${where}.${k}: not true or false, left out`); delete out[k]; }
+  for (const k of ['identity', 'normalCurve', 'valueLabels', 'colorReverse'] as const) if (k in raw && typeof raw[k] !== 'boolean') { warnings.push(`${where}.${k}: not true or false, left out`); delete out[k]; }
   if ('whatIf' in raw) {
     const w = raw.whatIf;
     const lo = isObject(w) && isFiniteNumber(w.lo) ? w.lo : undefined, hi = isObject(w) && isFiniteNumber(w.hi) ? w.hi : undefined;

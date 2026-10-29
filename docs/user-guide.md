@@ -702,7 +702,7 @@ Sections, top to bottom:
   one value, the way Insights compares groups, adjusted over every field and test compared, and its size
   is the shift in the test's within-wafer standard deviations, the scale a region's shift is measured on.
   A field is one item however many tests it moves ("34 tests differ by Split. Largest: …; next: …"), with the tests
-  that moved most as its chips, so a corner lot does not fill the list with one split. Both are ranked on one scale, the share of the dies an item
+  that moved most as its chips, so a corner lot does not fill the list with one split. Its chart is a grid of the field's values by those tests, in z-scores (and a card that shows a bar per wafer draws the wafers under their group, in the group's colour, when Group by is on): blue where a group sits below the lot's average on a test, red where it sits above, so a process corner reads as a pattern of cells. Both are ranked on one scale, the share of the dies an item
   affects: a loss by the dies it cost; a shift by its dies, counted in full from two standard deviations
   and by the square of its size below that (a one-sigma shift counts a quarter of its dies); a trend by
   how far it moved; a group's shift by the dies of the wafers that moved, weighted as a shift is; a Ppk under 1.0 by
@@ -989,8 +989,8 @@ box drives the box plot and histogram onto that test.*
 
 ![Gallery Insights — Correlation sub-tab](images/guide-insights-correlation.png)
 
-*Correlation sub-tab: test-to-test Pearson correlation matrix (blue =
-positive, orange = negative; intensity = strength) and a die-level scatter
+*Correlation sub-tab: test-to-test Pearson correlation matrix (orange =
+positive, blue = negative; intensity = strength) and a die-level scatter
 plot coloured by hard bin. Clicking a matrix cell drives the scatter plot
 onto that pair.*
 
@@ -1264,6 +1264,8 @@ The **JSON** tab shows the plot as text, in the format of a saved plots file, fo
 paste in than to rebuild with the controls. Edit the text and choose **Apply**; the plot changes only then, and the tab says
 beforehand if a setting would be left out or the text is not a plot. Suggestions appear as you type inside a key or a string and after a comma, brace, colon or bracket, or on demand from the **Suggest** button or **Ctrl/Cmd+Space**: the plot's settings, the words a setting can take, your lot's test numbers and wafer fields. Use **Up** and **Down**, then **Tab** or **Enter** to accept, or **Esc** to close the list. A list that opened by itself leaves **Enter** as a new line until you type a letter or use the arrow keys; **Tab** always accepts. **Discard edits** drops text not yet applied;
 **Ctrl/Cmd+Z** (and **Shift+Ctrl/Cmd+Z**) step back and forward through the text you have typed, accepted or discarded and then through what you have applied, and the window's **Reset** and **Cancel** go back to the plot as it was when the window opened. **Copy** puts the text on the clipboard. The id is not part of the text, and a plots file can be pasted too, and when it holds several plots the tab lists them to choose one.
+
+A heatmap, or a scatter coloured by a number, also has **Colours** in Customise: blue to orange around zero (the automatic choice for values rescaled to a z-score), orange-red to blue for a yield or pass rate (bad to good), or any of the map's gradients (Viridis, Cividis, Plasma, Traffic and the rest), with **Reverse colours** to flip the direction. Blue to orange, orange-red to blue and Cividis stay distinguishable for the common kinds of colour blindness; Traffic and Jet do not, so they are offered by choice and never the automatic one. A gradient is stretched over the plot's own lowest and highest values, so it says "relative to this plot", not "above a target".
 
 In **Customise**, the **title** and each **axis title** are written for you until
 you type your own (the box shows what it would say, and clearing it brings that

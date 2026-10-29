@@ -27,7 +27,7 @@ import { guideCitesText } from '../../stats/guideSections.js';
 import { categorical } from './palette.js';
 import { NO_DATA_FILL } from '../../renderer/colorMap.js';
 import type { BinColors } from '../../renderer/binColors.js';
-import { resolveValueColorFn } from '../../renderer/colorSchemes.js';
+import { darkTextOnColor, plotGradient } from './divergingScale.js';
 import { wirePointInteractions, type DrawnPoint } from './pointInteractions.js';
 import { plotAbout } from './cardAbout.js';
 
@@ -652,7 +652,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const all = resolved.marks.points;
     const visible = active.size === 0 ? all : all.filter(p => active.has(p.group));
     const scale = resolved.colorScale;
-    const gradient = resolveValueColorFn();
+    const gradient = plotGradient(resolved.spec.colorGradient, resolved.spec.colorReverse, scale?.diverging, scale?.rating);
     const xLines = linesOf(resolved.x), yLines = linesOf(resolved.y);
     const x = makeScale(withLimits(spanOf(all.map(p => p.x), resolved.x), xLines, resolved.x), resolved.x);
     const y = makeScale(withLimits(spanOf(all.map(p => p.y), resolved.y), yLines, resolved.y), resolved.y);
@@ -1340,19 +1340,21 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const cw = plotW / m.cols.length, ch = plotH / m.rows.length;
     heat = { left, cw, ch, rows: m.rows.length, cols: m.cols.length };
     const scale = resolved.colorScale;
-    const gradient = resolveValueColorFn();
+    const gradient = plotGradient(resolved.spec.colorGradient, resolved.spec.colorReverse, scale?.diverging, scale?.rating);
     const span = scale ? scale.hi - scale.lo || 1 : 1;
     ctx.font = `${fontPx(-1)}px system-ui, sans-serif`;
     for (let r = 0; r < m.rows.length; r++) {
       for (let c = 0; c < m.cols.length; c++) {
         const v = m.values[r][c];
         const x0 = left + c * cw, y0 = TOP + r * ch;
-        ctx.fillStyle = Number.isFinite(v) && scale ? gradient((v - scale.lo) / span) : theme.track;
+        const fill = Number.isFinite(v) && scale ? gradient((v - scale.lo) / span) : theme.track;
+        ctx.fillStyle = fill;
         ctx.fillRect(x0 + 0.5, y0 + 0.5, Math.max(1, cw - 1), Math.max(1, ch - 1));
-        // The value itself, where the cell has room for it.
+        // The value itself, where the cell has room for it: dark text on a light cell, white on a dark one.
         if (Number.isFinite(v) && cw >= 40 && ch >= 16) {
-          ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          fillTextOnHalo(ctx, cellText(v, resolved.y?.unit, scale?.integer), x0 + cw / 2, y0 + ch / 2, 'rgba(0,0,0,0.55)');
+          const dark = darkTextOnColor(fill);
+          ctx.fillStyle = dark ? '#1a1a1a' : '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          fillTextOnHalo(ctx, cellText(v, resolved.y?.unit, scale?.integer), x0 + cw / 2, y0 + ch / 2, dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)');
         }
       }
     }
@@ -1604,7 +1606,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     strip.width = 200; strip.height = 10;
     Object.assign(strip.style, { width: '200px', height: '10px', borderRadius: RADIUS.control, flex: '0 0 auto' } as Partial<CSSStyleDeclaration>);
     const g = strip.getContext('2d');
-    const gradient = resolveValueColorFn();
+    const gradient = plotGradient(resolved?.spec.colorGradient, resolved?.spec.colorReverse, scale.diverging, scale.rating);
     if (g) for (let i = 0; i < 200; i++) { g.fillStyle = gradient(i / 199); g.fillRect(i, 0, 1, 10); }
     // A heatmap's key reads as its cells do; a scatter's gradient keeps its unit's own scaling.
     const text = (v: number) => (resolved?.marks?.type === 'heatmap' ? cellText(v, scale.unit, scale.integer) : fmt(v, scale.unit));
@@ -2024,7 +2026,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
   setPngDecor(() => {
     const r = resolved;
     if (!r || !r.marks) return undefined;
-    const gradient = resolveValueColorFn();
+    const gradient = plotGradient(r.spec.colorGradient, r.spec.colorReverse, r.colorScale?.diverging, r.colorScale?.rating);
     return {
       caption: [plotFootnote(r), ...(r.fitNotes ?? []), ...r.notes, ...guideCitesText(plotGuideSections(r))],
       legend: r.groups.length > 1 && !r.colorRepeatsX ? r.groups.map((g, i) => ({ label: g || '(none)', color: colorOf(i) })) : undefined,

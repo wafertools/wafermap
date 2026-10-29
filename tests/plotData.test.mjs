@@ -680,3 +680,38 @@ test('a mistyped chart, built-in field or wafer field is named, with what is val
   assert.match(issue(spec('box', { x: { meta: 'Split' }, y: T(1050, 'Vth') })), /No wafer has a "Split" value\. Did you mean "split"\? Wafer fields in these dies: split, temperature\./);
   assert.match(issue(spec('box', { x: { builtin: 'wafer' }, y: { weird: 1 } })), /^Y: \{"weird":1\} is not a field this version reads \(a newer version may have added it\)\. A field is written like \{ "test": 1050 \}/);
 });
+
+test('a heatmap of rescaled values has a colour key equally far either side of zero; other heatmaps run low to high', () => {
+  const z = resolvePlot(spec('heatmap', { x: { meta: 'split' }, y: { tests: [1050, 1060] } }, { level: 'wafer', aggregate: 'mean', normalize: 'zscore' }), lot(), ctx);
+  assert.deepEqual(z.issues, []);
+  assert.equal(z.colorScale.diverging, true);
+  assert.equal(z.colorScale.lo, -z.colorScale.hi, 'zero is the middle of the key');
+  const cells = z.marks.values.flat().filter(Number.isFinite);
+  assert.ok(z.colorScale.hi >= Math.max(...cells.map(Math.abs)) - 1e-12, 'and the key covers every cell');
+  const robust = resolvePlot(spec('heatmap', { x: { meta: 'split' }, y: { tests: [1050, 1060] } }, { level: 'wafer', aggregate: 'mean', normalize: 'robust' }), lot(), ctx);
+  assert.equal(robust.colorScale.diverging, true);
+  const plain = resolvePlot(spec('heatmap', { x: { meta: 'split' }, rows: { builtin: 'wafer' }, y: T(1050, 'Vth') }, { level: 'wafer', aggregate: 'mean' }), lot(), ctx);
+  assert.deepEqual(plain.issues, []);
+  assert.equal(plain.colorScale.diverging, undefined);
+  const measured = plain.marks.values.flat().filter(Number.isFinite);
+  assert.equal(plain.colorScale.lo, Math.min(...measured), 'a value as measured runs from its lowest cell');
+  assert.equal(plain.colorScale.hi, Math.max(...measured), 'to its highest');
+});
+
+test('a heatmap of a yield or a pass rate is a rating (bad to good); a z-score is signed; a measured value is neither', () => {
+  const rows = { x: { meta: 'split' }, rows: { builtin: 'wafer' } };
+  const yieldMap = resolvePlot(spec('heatmap', { ...rows, y: { builtin: 'yield' } }, { level: 'wafer', aggregate: 'mean' }), lot(), ctx);
+  assert.deepEqual(yieldMap.issues, []);
+  assert.equal(yieldMap.colorScale.rating, true);
+  assert.deepEqual([yieldMap.colorScale.lo, yieldMap.colorScale.hi], [50, 100], 'on a fixed scale, so the same yield is always the same colour');
+  const limited = { ...ctx, testDefs: [{ testNumber: 1050, name: 'Vth', unit: 'V', limitLow: 0.3, limitHigh: 0.6 }, DEFS[1]] };
+  const pass = resolvePlot(spec('heatmap', { ...rows, y: { passRate: 1050 } }, { level: 'wafer', aggregate: 'mean' }), lot(), limited);
+  assert.deepEqual(pass.issues, []);
+  assert.equal(pass.colorScale.rating, true);
+  const z = resolvePlot(spec('heatmap', { x: { meta: 'split' }, y: { tests: [1050, 1060] } }, { level: 'wafer', aggregate: 'mean', normalize: 'zscore' }), lot(), ctx);
+  assert.equal(z.colorScale.rating, undefined);
+  assert.equal(z.colorScale.diverging, true);
+  const measured = resolvePlot(spec('heatmap', { ...rows, y: T(1050, 'Vth') }, { level: 'wafer', aggregate: 'mean' }), lot(), ctx);
+  assert.equal(measured.colorScale.rating, undefined);
+  assert.equal(measured.colorScale.diverging, undefined);
+});

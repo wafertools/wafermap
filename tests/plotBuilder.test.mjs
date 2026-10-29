@@ -1460,6 +1460,33 @@ test('the JSON tab offers the lot\'s own tests and wafer fields, and Ctrl+Space 
   assert.equal(area.value, '{ "fields": { "y": { "test": 1050 } } }');
 });
 
+test('Customise offers the colours of a heatmap or a scatter coloured by a number, and writes the setting and its direction', () => {
+  const heat = editor({ id: 'h', chart: 'heatmap', fields: { x: { builtin: 'wafer' }, rows: { builtin: 'test' }, y: { tests: [1050, 1060] } }, normalize: 'zscore' });
+  click(tabButton(heat.e.el, 'Customise'));
+  const sel = heat.e.el.querySelector('[data-wmap-select="plot-colours"]');
+  assert.ok(sel, 'a heatmap has Colours');
+  click(sel);
+  const rows = [...document.querySelectorAll('[role="option"]')];
+  const labelsOf = rows.map(r => r.textContent);
+  assert.ok(labelsOf.some(l => l.startsWith('Automatic')) && labelsOf.some(l => l.includes('Blue to orange')) && labelsOf.some(l => l.includes('Rating')) && labelsOf.some(l => l.includes('Cividis')) && labelsOf.some(l => l.includes('Traffic')) && labelsOf.some(l => l.includes('Plasma')), labelsOf.join('|'));
+  click(rows.find(r => r.textContent.includes('Cividis')));
+  assert.equal(heat.emitted.at(-1).colorGradient, 'cividis', 'a map gradient, by its name');
+  const rev = [...heat.e.el.querySelectorAll('input[type="checkbox"], [role="switch"]')].find(x => (x.closest('label')?.textContent ?? x.getAttribute('aria-label') ?? '').includes('Reverse colours'));
+  assert.ok(rev, 'and a Reverse switch');
+  click(rev);
+  assert.equal(heat.emitted.at(-1).colorReverse, true);
+  click(rev);
+  assert.equal('colorReverse' in heat.emitted.at(-1), false, 'off is written as nothing');
+  // Automatic removes the setting.
+  click(heat.e.el.querySelector('[data-wmap-select="plot-colours"]'));
+  click([...document.querySelectorAll('[role="option"]')].find(r => r.textContent.startsWith('Automatic')));
+  assert.equal('colorGradient' in heat.emitted.at(-1), false);
+
+  const box = editor({ id: 'b', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 }, color: { none: true } } });
+  click(tabButton(box.e.el, 'Customise'));
+  assert.equal(box.e.el.querySelector('[data-wmap-select="plot-colours"]'), null, 'a box has no gradient to choose');
+});
+
 test('the JSON tab refuses text that is not a plot and leaves the plot as it was', () => {
   const { e, emitted } = editor({ id: 'j', chart: 'box', fields: { x: { builtin: 'wafer' }, y: { test: 1050 } } });
   click(tabButton(e.el, 'JSON'));

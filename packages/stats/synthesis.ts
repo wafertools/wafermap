@@ -833,10 +833,10 @@ function groupShiftItems(lot: LotStatsSummary, attributes: Record<string, FacetC
       text, reason: n === 1 ? said : `${n} tests differ by ${field}. Largest: ${said}`,
       brief: n === 1 ? `${field} ${c.group}: ${c.label} ${c.higher ? 'higher' : 'lower'}` : `${field}: ${n} tests differ`,
       subject: field, target: { kind: 'test', testNumber: c.testNumber }, testNumbers: list.map(x => x.c.testNumber),
-      // Each wafer one value, as the comparison counts them (the dies of a wafer are not independent). Several tests: the
-      // field's tests together, each rescaled to share an axis.
+      // Each wafer one value, as the comparison counts them (the dies of a wafer are not independent). Several tests: a grid
+      // of the field's values by the field's tests, each test rescaled so they share one colour key, below average to above.
       chart: n > 1
-        ? { chart: 'box', level: 'wafer', aggregate: 'mean', normalize: 'zscore', fields: { x: { builtin: 'test' }, y: { tests: list.slice(0, MAX_SET_TESTS).map(x => x.c.testNumber) }, color: { meta: key } } }
+        ? { chart: 'heatmap', level: 'wafer', aggregate: 'mean', normalize: 'zscore', fields: { x: { meta: key }, y: { tests: list.slice(0, MAX_SET_TESTS).map(x => x.c.testNumber) } } }
         : { chart: 'box', level: 'wafer', aggregate: 'mean', fields: { x: { meta: key }, y: testField(c.testNumber), color: { meta: key } } },
     });
     // Each of its tests shown on its own map, largest shift first; the rest counted.
@@ -847,6 +847,17 @@ function groupShiftItems(lot: LotStatsSummary, attributes: Record<string, FacetC
     return item;
   });
   return { items, compared };
+}
+
+/**
+ * A bar of wafers drawn with Group by on takes the group's colours, and the wafers sit under their group on a second level
+ * of the X axis: a pattern that belongs to a group (both low wafers are SS) shows as a colour, and the legend switches
+ * groups on and off. With no grouping, or any other chart, it is returned as specified.
+ */
+export function groupColouredChart(chart: Omit<PlotSpec, 'id'>, grouped: boolean): Omit<PlotSpec, 'id'> {
+  const x = chart.fields?.x, color = chart.fields?.color;
+  if (!grouped || chart.chart !== 'bar' || !x || Array.isArray(x) || !('builtin' in x) || x.builtin !== 'wafer' || !color || !('none' in color)) return chart;
+  return { ...chart, fields: { ...chart.fields, x: [{ slot: 'groupBy' }, { builtin: 'wafer' }] as unknown as PlotField[], color: { follow: 'groupBy' } } };
 }
 
 /** Dies outside a test's limits but binned as passing: the limits and the test program disagree about them. */

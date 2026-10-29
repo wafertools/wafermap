@@ -7,6 +7,7 @@ import { completionsAt } from '../dist/packages/canvas-adapter/plotJsonComplete.
 import { PLOT_CHARTS, PLOT_BUILTINS } from '../dist/packages/stats/plotSpec.js';
 
 const source = {
+  gradients: [{ name: 'diverging', label: 'Blue to orange, around zero' }, { name: 'rating', label: 'Rating: orange-red to blue' }, { name: 'default' }],
   tests: [{ number: 1050, name: 'Vth' }, { number: 1060, name: 'Idsat' }],
   metaKeys: [{ key: 'processSplit', label: 'Process Split' }, { key: 'lot' }],
   describe: (setting, value) => (setting === 'chart' && value === 'box' ? 'Quartiles' : undefined),
@@ -130,5 +131,15 @@ test('a sweep\'s own keys and values: its settings, a series\' keys, the scale a
   assert.deepEqual(labels(at('{ "sweep": { "series": [ { "|" } ] } }').c), ['label', 'tests', 'xValues', 'xFromName', 'testNames']);
   assert.deepEqual(labels(at('{ "sweep": { "xScale": "|" } }').c), ['linear', 'log']);
   const b = at('{ "sweep": { "crossing": | } }', { force: true });
+  assert.deepEqual(labels(b.c), ['true', 'false']);
+});
+
+test('the colour settings: the keys, the gradient names with their lines, and true or false for the reverse', () => {
+  assert.ok(labels(at('{ "chart": "heatmap", "|" }').c).includes('colorGradient'));
+  assert.ok(labels(at('{ "chart": "heatmap", "|" }').c).includes('colorReverse'));
+  const c = at('{ "colorGradient": "|" }').c;
+  assert.deepEqual(labels(c), ['diverging', 'rating', 'default']);
+  assert.equal(c.items[1].detail, 'Rating: orange-red to blue');
+  const b = at('{ "colorReverse": | }', { force: true });
   assert.deepEqual(labels(b.c), ['true', 'false']);
 });

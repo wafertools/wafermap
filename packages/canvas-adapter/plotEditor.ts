@@ -23,6 +23,8 @@ import { buildFilterEditor } from './filterEditor.js';
 import { attachJsonSuggestions } from './plotJsonSuggest.js';
 import { createTextHistory } from './plotJsonHistory.js';
 import { createSweepEditor } from './sweepEditor.js';
+import { listValueColorSchemes } from '../renderer/colorSchemes.js';
+import { PLOT_GRADIENTS } from './charts/divergingScale.js';
 import type { CompletionSource } from './plotJsonComplete.js';
 
 export interface PlotEditorOptions {
@@ -445,6 +447,30 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     build();
   }
 
+  /** A heatmap's cells, or a scatter coloured by a number: the plots whose colour is a gradient, so there is one to choose. */
+  function hasContinuousColour(): boolean {
+    if (plot.chart === 'heatmap') return true;
+    const c = plot.fields?.color;
+    return plot.chart === 'scatter' && !!c && isField(c) && factsOf(c)?.kind === 'numeric';
+  }
+
+  /** The gradient of that colour and which way it runs. */
+  function coloursBlock(): HTMLElement {
+    const wrap = doc.createElement('div');
+    Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: SPACE.md } as Partial<CSSStyleDeclaration>);
+    const options: ListSelectOption[] = [
+      { value: AUTO, label: 'Automatic' },
+      ...PLOT_GRADIENTS.map(g => ({ value: g.name, label: g.label })),
+      ...listValueColorSchemes().filter(g => !PLOT_GRADIENTS.some(p => p.name === g.name)).map(g => ({ value: g.name, label: g.label })),
+    ];
+    const sel = makeListSelect(options, plot.colorGradient ?? AUTO, key => edit(d => { if (key === AUTO) delete d.colorGradient; else d.colorGradient = key; }),
+      { maxWidth: '100%', ownerDocument: doc, ariaLabel: 'Colours', hook: 'plot-colours' });
+    sel.style.width = '100%';
+    wrap.appendChild(row('Colours', sel, 'Automatic is blue to orange around zero for values rescaled around zero, orange-red to blue for a yield or pass rate, and the map’s gradient for any other. Cividis is the map gradient that is safe for colour-blind readers.'));
+    wrap.appendChild(makeToggle('Reverse colours', !!plot.colorReverse, v => edit(d => { if (v) d.colorReverse = true; else delete d.colorReverse; }), doc));
+    return wrap;
+  }
+
   function aggregateSelect(): HTMLElement {
     const yIsYield = !!plot.fields!.y && 'builtin' in plot.fields!.y && plot.fields!.y.builtin === 'yield';
     const options: ListSelectOption[] = [{ value: AUTO, label: 'Automatic' }, ...(['mean', 'median', 'min', 'max', 'sum', 'count'] as const).map(k => ({ value: k, label: AGGREGATE_LABEL[k] }))];
@@ -664,6 +690,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
     /** What the suggestions know of the lot: its tests and wafer fields, and a line for each word a setting can take. */
     const suggestSource = (): CompletionSource => ({
       tests: o.testDefs?.map(d => ({ number: d.testNumber, name: d.name })),
+      gradients: [...PLOT_GRADIENTS, ...listValueColorSchemes().filter(g => !PLOT_GRADIENTS.some(p => p.name === g.name))],
       metaKeys: o.catalogue.flatMap(f => ('meta' in f.field ? [{ key: f.field.meta, label: f.name }] : [])),
       describe: (setting, value) => {
         if (setting === 'chart') return CHART_OPTIONS.find(c => c[0] === value)?.[2];
@@ -1025,6 +1052,7 @@ export function createPlotEditor(o: PlotEditorOptions): PlotEditorHandle {
       panel.appendChild(row('Title', titleBoxEl));
       panel.appendChild(driftEl);
       syncDrift();
+      if (hasContinuousColour()) panel.appendChild(coloursBlock());
       const auto = o.autoText();
       const categorical = plot.chart === 'box' || plot.chart === 'bar';
       const probability = plot.chart === 'probability';

@@ -227,3 +227,17 @@ test('a plot written with the earlier names mark and encoding is read as chart a
   assert.deepEqual(r.plots[0].fields.y, { test: 1060, name: 'Vth' });
   assert.equal('mark' in r.plots[0] || 'encoding' in r.plots[0], false);
 });
+
+test('colorGradient and colorReverse are read, and a bad value is left out with a reason', () => {
+  const w = [];
+  const ok = readPlot({ id: 'a', chart: 'heatmap', colorGradient: 'traffic', colorReverse: true, fields: { x: { builtin: 'wafer' }, rows: { builtin: 'test' }, y: { tests: [1, 2] } } }, 'plot', w);
+  assert.deepEqual(w, []);
+  assert.equal(ok.colorGradient, 'traffic');
+  assert.equal(ok.colorReverse, true);
+  const bad = [];
+  const p = readPlot({ id: 'a', chart: 'scatter', colorGradient: 5, colorReverse: 'yes', fields: { x: { test: 1 }, y: { test: 2 } } }, 'plot', bad);
+  assert.equal('colorGradient' in p, false);
+  assert.equal('colorReverse' in p, false);
+  assert.match(bad.join('\n'), /plot\.colorGradient: not the name of a gradient/);
+  assert.match(bad.join('\n'), /plot\.colorReverse: not true or false/);
+});

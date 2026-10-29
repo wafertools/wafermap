@@ -88,6 +88,14 @@ export function capabilityColor(ppk: number | null): string {
   return ppk >= 1.33 ? '#009E73' : ppk >= 1.0 ? '#E69F00' : '#D55E00';
 }
 
-/** Correlation sign hues (blue = positive, vermillion = negative); |r| sets intensity via background blend. */
-export const CORRELATION_POSITIVE = '#0072B2';
-export const CORRELATION_NEGATIVE = '#D55E00';
+/**
+ * The two ends of every signed scale (a correlation, a z-score, a difference): warm is positive or above average, blue is
+ * negative or below, so one colour never means "high" on one chart and "low" on the next. Okabe-Ito blue and vermillion,
+ * which stay far apart under every common colour-vision deficiency.
+ */
+export const SIGNED_LOW = '#0072B2';
+export const SIGNED_HIGH = '#D55E00';
+
+/** Correlation sign hues (vermillion = positive, blue = negative); |r| sets intensity via background blend. */
+export const CORRELATION_POSITIVE = SIGNED_HIGH;
+export const CORRELATION_NEGATIVE = SIGNED_LOW;

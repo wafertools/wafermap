@@ -417,9 +417,9 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
           if (isDiag) {
             ctx.fillStyle = theme.bgHover;
           } else {
-            // Sign carried by hue (blue = positive, vermillion = negative —
-            // palette.ts), magnitude by intensity. The old |r| ramp threw the
-            // sign away entirely: r = −0.9 and r = +0.9 drew identically.
+            // Sign carried by hue (vermillion = positive, blue = negative, as every
+            // signed scale: palette.ts), magnitude by intensity, so r = −0.9 and
+            // r = +0.9 draw differently.
             cellFill = blendTowardBg(r >= 0 ? CORRELATION_POSITIVE : CORRELATION_NEGATIVE, bgRgb, Math.abs(r));
             ctx.fillStyle = cellFill;
           }

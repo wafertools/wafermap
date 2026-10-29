@@ -65,7 +65,7 @@ import { isYieldEligibleDie } from '../core/dies.js';
 import { renderPlotCard, type CardChoice } from './plotCard.js';
 import { orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
 import type { CardSpec } from '../stats/cardSpec.js';
-import { buildSynthesis, synthesisKey, type SynthesisTarget } from '../stats/synthesis.js';
+import { buildSynthesis, groupColouredChart, synthesisKey, type SynthesisTarget } from '../stats/synthesis.js';
 import { commonPassBins } from '../core/passBins.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
@@ -764,7 +764,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const yieldSpec = (sort: boolean, bars: number, nested = false): CardSpec => ({
       id: 'card-yield', title: groups ? `Yield by ${label} (pass: ${passBinsLabel})` : `Yield by wafer (pass: ${passBinsLabel})`, chart: 'bar',
       // Nested, each group's wafers sit inside it: the spread between groups and within them in one view (no sort: the order is the nesting).
-      fields: { x: nested ? [{ slot: 'groupBy' }, { builtin: 'wafer' }] : { slot: 'groupBy' }, y: { builtin: 'yield' }, color: { none: true } },
+      fields: { x: nested ? [{ slot: 'groupBy' }, { builtin: 'wafer' }] : { slot: 'groupBy' }, y: { builtin: 'yield' }, color: groups ? { follow: 'groupBy' } : { none: true } },
       ...(nested ? {} : { valueLabels: true }), ...(sort && !nested ? { sort: 'value' as const } : {}),
       ...(bars >= 3 ? { axes: { y: { references: [{ stat: 'median' as const }] } } } : {}),
     });
@@ -1392,8 +1392,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         extras.push(btn);
       }
       const card = renderPlotCard({
-        doc, items: plotItems, ctx: { testDefs: allTestDefs, curation },
-        spec: { id: `worth-${i}`, ...item.chart } as CardSpec,
+        doc, items: plotItems, ctx: { testDefs: allTestDefs, curation, groupBy: analysisGroupKey },
+        spec: { id: `worth-${i}`, ...groupColouredChart(item.chart, !!analysisGroupKey) } as CardSpec,
         extras, editAsPlot, chart: { onSaveImage },
       });
       card.card.dataset.wmapWorthKey = synthesisKey(item);

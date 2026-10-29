@@ -222,7 +222,15 @@ export interface ResolvedPlot {
   /** Colour groups in legend order; `['']` when there is no colour (or the colour is continuous, see `colorScale`). */
   groups: string[];
   /** Set when a scatter is coloured by a continuous field: the range its colourbar covers. */
-  colorScale?: { label: string; unit?: string; lo: number; hi: number; /** Every value is a whole number (a count): shown without decimals. */ integer?: true };
+  colorScale?: {
+    label: string; unit?: string; lo: number; hi: number;
+    /** Every value is a whole number (a count): shown without decimals. */
+    integer?: true;
+    /** The values are rescaled around zero (a z-score): `lo` and `hi` are equally far from it, and the key runs below average to above. */
+    diverging?: true;
+    /** The values are a rating (a yield, a pass rate): the key runs from bad to good, not from low to high. */
+    rating?: true;
+  };
   colorLabel?: string;
   /** Set when the colour is a hard or soft bin: each group takes that bin's colour on the maps (`BinColors`). */
   colorBins?: 'hard' | 'soft';
@@ -1216,6 +1224,33 @@ function resolveFacets(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotCont
   return { ...titled(whole), notes: [...whole.notes, ...notes], facets, facetLabel: label, ...(usesPat ? { usesPat: true as const } : {}) };
 }
 
+/**
+ * The colour key of a heatmap. A count or a measured value runs from its lowest cell to its highest; a value rescaled
+ * around zero (a z-score, robust or not) runs equally far either side of zero, so zero is always the middle of the key
+ * and a cell above average reads differently from one below it.
+ */
+function heatmapColorScale(label: string, unit: string | undefined, finite: readonly number[], spec: PlotSpec): NonNullable<ResolvedPlot['colorScale']> {
+  if (spec.normalize === 'zscore' || spec.normalize === 'robust') {
+    const far = Math.max(Math.abs(minOf(finite)), Math.abs(maxOf(finite)));
+    if (far > 0) return { label, unit, lo: -far, hi: far, diverging: true };
+  }
+  // A rating is on a fixed scale, 50% (bad) to 100% (good), as the yield fills elsewhere are: the same yield is always the
+  // same colour, so a wafer at 93% does not look alarming because the lot's lowest is 93%.
+  if (isRating(spec)) return { label, unit, lo: RATING_FLOOR, hi: 100, rating: true };
+  return { label, unit, lo: minOf(finite), hi: maxOf(finite), ...(finite.every(Number.isInteger) ? { integer: true as const } : {}) };
+}
+
+/** The yield or pass rate (in percent) a rating's key starts at: at or below it a cell is the worst colour. */
+const RATING_FLOOR = 50;
+
+/** Whether the value of a plot's cells is a rating: a yield or a pass rate, where high is good. */
+function isRating(spec: PlotSpec): boolean {
+  const y = spec.fields?.y;
+  if (spec.aggregate === 'yield') return true;
+  if (!y) return false;
+  return ('builtin' in y && y.builtin === 'yield') || 'passRate' in y;
+}
+
 // ── heatmap ──────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -1258,7 +1293,7 @@ function resolveHeatmap(spec: PlotSpec, items: readonly PlotItem[], ctx: PlotCon
     autoTitle: `${r.y?.label ?? 'Dies'} by ${rowLabel} and ${colLabel}`,
     x: { label: spec.axes?.x?.label ?? colLabel, scale: 'linear' },
     y: { label: spec.axes?.y?.label ?? rowLabel, scale: 'linear' },
-    colorScale: finite.length ? { label: r.y?.label ?? 'Count', unit: r.y?.unit, lo: minOf(finite), hi: maxOf(finite), ...(finite.every(Number.isInteger) ? { integer: true as const } : {}) } : undefined,
+    colorScale: finite.length ? heatmapColorScale(r.y?.label ?? 'Count', r.y?.unit, finite, spec) : undefined,
     groups: [''],
   };
 }
