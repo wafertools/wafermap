@@ -106,7 +106,7 @@ test('fmtColorbarAxis — zero vRef no unit', () => {
 
 test('fmtColorbarAxis — no unit SI mode large value produces ×10E label', () => {
   const { axisLabel } = fmtColorbarAxis(1e9, 'Cap', undefined, 'si');
-  assert.match(axisLabel, /Cap.*×10E/);
+  assert.match(axisLabel, /Cap.*×10/);
 });
 
 test('fmtColorbarAxis — no unit SI mode scale=1 gives bare name', () => {
@@ -118,14 +118,14 @@ test('fmtColorbarAxis — no unit SI mode scale=1 gives bare name', () => {
 
 test('fmtColorbarAxis — engineering E6 label and scaled ticks', () => {
   const { tickFmt, axisLabel } = fmtColorbarAxis(1e6, 'Cgg', undefined, 'engineering');
-  assert.match(axisLabel, /×10E6/);
+  assert.match(axisLabel, /×10⁶/);
   assert.equal(tickFmt(1e6), '1.00');
   assert.equal(tickFmt(2e6), '2.00');
 });
 
 test('fmtColorbarAxis — engineering E-15 label for tiny values', () => {
   const { axisLabel } = fmtColorbarAxis(1e-15, 'Cgg', undefined, 'engineering');
-  assert.match(axisLabel, /×10E-15/);
+  assert.match(axisLabel, /×10⁻¹⁵/);
 });
 
 test('fmtColorbarAxis — engineering no exponent suffix for normal range', () => {
@@ -171,7 +171,7 @@ test('fmtColorbarAxis — a name that states its unit keeps it, unscaled, as the
 
 test('fmtColorbarAxis — a base unit in the name with small values keeps legible ticks', () => {
   const a = fmtColorbarAxis(1.2e-6, 'Idsat_A', 'A');
-  assert.equal(a.axisLabel, 'Idsat_A (×10E-6)');
+  assert.equal(a.axisLabel, 'Idsat_A (×10⁻⁶)');
   assert.equal(a.tickFmt(1.2e-6), '1.20');
   assert.equal(fmtColorbarAxis(0.5, 'Vth_V', 'V').axisLabel, 'Vth_V', 'readable values need no exponent');
 });
@@ -190,8 +190,8 @@ test('makeAxisFormat — a name that ends in its own bracketed unit is not given
   assert.equal(makeAxisFormat(380, 'mV', undefined, 'vth_n_mV').unitLabel, '');
   assert.equal(makeAxisFormat(0.3, 'nA', undefined, 'Leak [nA]').unitLabel, '');
   // Only the exponent note fmtColorbarAxis adds for a very small or large base-unit value follows a name.
-  assert.equal(makeAxisFormat(1e-6, 'A', undefined, 'Idsat_A').unitLabel, '×10E-6');
-  assert.equal(makeAxisFormat(1e-6, 'A', undefined, 'Idsat (A)').unitLabel, '×10E-6');
+  assert.equal(makeAxisFormat(1e-6, 'A', undefined, 'Idsat_A').unitLabel, '×10⁻⁶');
+  assert.equal(makeAxisFormat(1e-6, 'A', undefined, 'Idsat (A)').unitLabel, '×10⁻⁶');
   // A name that does not state its unit still gets the unit label.
   assert.equal(makeAxisFormat(380, 'mV', undefined, 'Threshold').unitLabel, 'mV');
 });

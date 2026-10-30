@@ -53,7 +53,7 @@ import { renderDifferenceMapPanel } from './differenceMapPanel.js';
 import type { RenderableWaferMap } from './renderWaferMap.js';
 import type { SweepSpec } from '../stats/sweep.js';
 import { renderCorrelationPanel } from './charts/correlation.js';
-import { cardFrameStyle, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, makeLinkedTestSelect, makeWaferSelect, makeTestSelect, isExpandedCard, makeLinkedAxisPrefs, makeToggle, limitLines, limitExtent, shouldIncludeLimitsByDefault, hasBothLimitKinds, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
+import { cardFrameStyle, pairCards, makeChartGridWrap, makeLabeledSelect, makeLinkedGroupSelect, makeLinkedTestSelect, makeWaferSelect, makeTestSelect, isExpandedCard, makeLinkedAxisPrefs, makeToggle, limitLines, limitExtent, shouldIncludeLimitsByDefault, hasBothLimitKinds, type AxisPrefs, type WaferContextMenuHandler } from './charts/chartShell.js';
 import { maxOf, minOf } from '../core/utils.js';
 import { buildYieldData, buildYieldDataCombined } from '../stats/yield.js';
 import { buildLotTestSectionSteps, buildLotFunctionalSection, buildMetadataStripBox } from './summaryPanel.js';
@@ -61,6 +61,7 @@ import { runChunked } from './chunked.js';
 import { buildRegionYieldData, buildRingRegions, buildQuadrantRegions, buildReticlePositionRegions, diesInRegion, type RegionYieldDatum } from '../stats/regions.js';
 import { renderDataSection, type DataView } from './dataTab.js';
 import { sourceFromDies, toPlotItems } from './plotItems.js';
+import { rankTestsByWaferSpread } from '../stats/testsByWafer.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { renderPlotCard, type CardChoice } from './plotCard.js';
 import { orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
@@ -68,6 +69,9 @@ import type { CardSpec } from '../stats/cardSpec.js';
 import { buildSynthesis, groupColouredChart, synthesisKey, type SynthesisTarget } from '../stats/synthesis.js';
 import { commonPassBins } from '../core/passBins.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
+
+/** How many tests the Distributions grid draws: the ones whose wafers differ most. */
+const TESTS_BY_WAFER = 12;
 
 export type InsightsView = 'overview' | 'distributions' | 'correlation' | 'sweeps' | 'data' | 'plot';
 
@@ -486,18 +490,43 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const filterBand = pageFilter.createBand(() => facetItems(), { marginLeft: contentInset, marginRight: contentInset, marginBottom: SPACE.lg });
   const filterBandEl = filterBand.el;
 
-  // Columns of cards: Auto fits as many as the width holds; a count (1 to 5) fixes it for every grid in the tab. Carried as two CSS
-  // variables on the tab's own element, which every chart grid reads (chartShell.makeChartGridWrap), so a change needs no redraw.
+  // Columns of cards: Auto fits as many as the width holds; a count (1 to 5) is the most columns a grid uses, for every tab. A tab
+  // uses the smaller of that and the cards in its fullest grid, so a tab of two cards is two columns, not two cards in four slots,
+  // and the same count means the same card width in each of the tab's sections. Carried as two CSS variables on the tab's own
+  // element, which every chart grid reads (chartShell.makeChartGridWrap), so a change needs no redraw.
   let columnsPref: number | undefined;
   let columnsSelect: (HTMLElement & { value: string }) | null = null;
+  /** The most cards in any grid on screen in the tab; 0 where nothing can be measured (not drawn yet). */
+  const fullestGrid = (): number => {
+    let fullest = 0;
+    for (const g of Array.from(rootEl.querySelectorAll<HTMLElement>('[data-wmap-chart-grid]'))) {
+      if (g.offsetParent === null) continue;
+      fullest = Math.max(fullest, Array.from(g.children).filter(c => (c as HTMLElement).offsetParent !== null).length);
+    }
+    return fullest;
+  };
+  const applyColumns = (): void => {
+    if (columnsPref === undefined) { rootEl.style.removeProperty('--wmap-insights-cols'); rootEl.style.removeProperty('--wmap-insights-min'); return; }
+    const fullest = fullestGrid();
+    const used = fullest > 0 ? Math.min(columnsPref, fullest) : columnsPref;
+    if (rootEl.style.getPropertyValue('--wmap-insights-cols') !== String(used)) rootEl.style.setProperty('--wmap-insights-cols', String(used));
+    rootEl.style.setProperty('--wmap-insights-min', '0px');
+  };
   const setColumns = (n: number | undefined): void => {
     columnsPref = n;
-    if (n === undefined) { rootEl.style.removeProperty('--wmap-insights-cols'); rootEl.style.removeProperty('--wmap-insights-min'); }
-    else { rootEl.style.setProperty('--wmap-insights-cols', String(n)); rootEl.style.setProperty('--wmap-insights-min', '0px'); }
+    applyColumns();
     if (columnsSelect) columnsSelect.value = n === undefined ? 'auto' : String(n);
   };
-  // Keys 1 to 5 set the columns and 0 sets Auto, as in a gallery. Heard on the document so it needs no focus inside the tab, only
-  // while this tab is on screen, and not in a text box, a menu or a window.
+  // A tab's cards come and go (a tab opened, Group by changed, the Plot tab loading late): the count is worked out again then.
+  const MO = doc.defaultView?.MutationObserver;
+  let columnsFrame = 0;
+  const columnsObserver = MO ? new MO(() => {
+    if (columnsFrame || columnsPref === undefined) return;
+    const win = doc.defaultView;
+    if (!win) { applyColumns(); return; }
+    columnsFrame = win.requestAnimationFrame(() => { columnsFrame = 0; applyColumns(); });
+  }) : undefined;
+  columnsObserver?.observe(bodyEl, { childList: true, subtree: true });
   const onColumnsKey = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented) return;
     if (!/^[0-5]$/.test(e.key) || !rootEl.isConnected || rootEl.style.display === 'none') return;
@@ -1058,14 +1087,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     // Each wafer judged by its own pass bins — index-aligned with allWafers above.
     const ringRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, buildRingRegions);
-    if (ringRows.length) {
-      const ring = renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, onSelectRegion: regionClick(buildRingRegions), onSaveImage, ownerDocument: doc });
-      elements.push(ring.card);
-      destroyFns.push(ring.destroy);
-    }
+    const ring = ringRows.length
+      ? renderRegionYieldDiagram({ title: 'Ring yield', mode: 'ring', rows: ringRows, onSelectRegion: regionClick(buildRingRegions), onSaveImage, ownerDocument: doc })
+      : undefined;
+    if (ring) destroyFns.push(ring.destroy);
     // The same regions wafer by wafer (or group by group): whether a pattern is on every wafer or on one. A plot
     // (plotCard.ts), so Edit as plot works; the diagrams pool the wafers.
-    const regionByWafer = (id: string, region: 'ring' | 'quadrant', noun: string): void => {
+    // With two wafers or more both are drawn, as one card with a View choice: the heatmap first, the pooled diagram beside it.
+    const regionByWafer = (id: string, region: 'ring' | 'quadrant', noun: string, diagram: { card: HTMLElement } | undefined): void => {
       const grouped = !!groupsForPassRate;
       const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount })));
       const card = renderCardWithSave({
@@ -1074,15 +1103,17 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         chart: { onSaveImage },
       });
       card.card.style.minHeight = '300px';
-      elements.push(card.card);
+      elements.push(diagram ? pairCards([{ label: 'Heatmap', card: card.card }, { label: 'Diagram', card: diagram.card }], doc) : card.card);
       destroyFns.push(card.destroy);
     };
-    if (ringRows.length && items.length >= 2) regionByWafer('card-ring-wafer', 'ring', 'Ring');
+    if (ringRows.length && items.length >= 2) regionByWafer('card-ring-wafer', 'ring', 'Ring', ring);
+    else if (ring) elements.push(ring.card);
     const quadrantRows = buildRegionYieldData(diesByWafer, allWafers, ringCount, wi => items[wi].passBins, buildQuadrantRegions);
     if (quadrantRows.length) {
       const quadrant = renderRegionYieldDiagram({ title: 'Quadrant yield', mode: 'quadrant', rows: quadrantRows, onSelectRegion: regionClick(buildQuadrantRegions), onSaveImage, ownerDocument: doc });
-      elements.push(quadrant.card);
-      destroyFns.push(quadrant.destroy);      if (items.length >= 2) regionByWafer('card-quadrant-wafer', 'quadrant', 'Quadrant');
+      destroyFns.push(quadrant.destroy);
+      if (items.length >= 2) regionByWafer('card-quadrant-wafer', 'quadrant', 'Quadrant', quadrant);
+      else elements.push(quadrant.card);
     }
 
     // Reticle cell yield: the field as a grid, one cell per position in it, pooled over every field on every wafer. Only when
@@ -1115,6 +1146,21 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         },
         chart: { onSaveImage },
       });
+      elements.push(card.card);
+      destroyFns.push(card.destroy);
+    }
+
+    // Re-probed dies: the share of dies probed more than once, ring by wafer (or group), so a hotspot of retests (a contact
+    // problem at the edge, one wafer that needed it all) shows. Only when the lot has re-probes at all.
+    if (items.some(it => it.dies.some(d => d.retestCount !== undefined))) {
+      const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount })));
+      const grouped = !!groupsForPassRate;
+      const card = renderCardWithSave({
+        doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
+        spec: { id: 'card-reprobed', title: `Re-probed dies by ring and ${grouped ? groupLabelText ?? 'group' : 'wafer'}`, chart: 'heatmap', aggregate: 'mean', fields: { x: { slot: 'groupBy' }, rows: { builtin: 'ring' }, y: { builtin: 'reprobed' } } },
+        chart: { onSaveImage },
+      });
+      card.card.style.minHeight = '300px';
       elements.push(card.card);
       destroyFns.push(card.destroy);
     }
@@ -1631,15 +1677,23 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // Test value distribution: a box per wafer, or with Group by on one pooled box per group, whose click drills this card
     // into that group's wafers (and Back), as on Yield by group. Only Show narrows the whole tab.
     // Grouped, a second view nests each group's wafers inside it: the spread between groups and within them together.
-    let boxNested = false;
+    // A third view is the radial profile: a box per ring, centre to edge, over every die in view.
+    let boxNested = false, boxRadial = false;
     const boxplot = distributionCard({
       valueRole: 'y', logToggle: true,
-      choices: grouped && !narrowed ? [{ current: 'groups', options: [['groups', `By ${groupLabelText ?? 'group'}`], ['nested', `${groupLabelText ?? 'Group'}, then wafer`, 'Each group with its wafers inside it']] }] : [],
+      choices: [{
+        current: grouped && !narrowed ? 'groups' : 'wafers',
+        options: [
+          ...(grouped && !narrowed ? [['groups', `By ${groupLabelText ?? 'group'}`], ['nested', `${groupLabelText ?? 'Group'}, then wafer`, 'Each group with its wafers inside it']] as Array<[string, string, string?]> : [['wafers', 'By wafer'] as [string, string]]),
+          ['radius', 'By radius', 'A box for each ring, from the centre to the edge: whether the test changes across the wafer'],
+        ],
+      }],
       build: (p, log, [view]) => {
         boxNested = grouped && !narrowed && view === 'nested';
+        boxRadial = view === 'radius';
         return ({
-        id: 'card-box', title: 'Test value distribution', chart: 'box', orientation: 'horizontal',
-        fields: { x: boxNested ? [{ slot: 'groupBy' }, { builtin: 'wafer' }] : grouped && !narrowed ? { slot: 'groupBy' } : { builtin: 'wafer' }, y: { slot: 'test' }, color: boxNested ? { follow: 'groupBy' } : { none: true } },
+        id: 'card-box', title: boxRadial ? 'Test value by radius' : 'Test value distribution', chart: 'box', orientation: 'horizontal',
+        fields: { x: boxRadial ? { builtin: 'ring' } : boxNested ? [{ slot: 'groupBy' }, { builtin: 'wafer' }] : grouped && !narrowed ? { slot: 'groupBy' } : { builtin: 'wafer' }, y: { slot: 'test' }, color: boxNested ? { follow: 'groupBy' } : { none: true } },
         ...(narrowed ? { where: { conditions: [{ field: { meta: analysisGroupKey! }, values: [activeSectionGroup!] }] } } : {}),
         ...axisSpec('y', p, log),
         });
@@ -1647,7 +1701,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       card: {
         ...(grouped && !narrowed ? {
           drill: (points: readonly PlotPoint[]) => {
-            if (boxNested) return null;
+            if (boxNested || boxRadial) return null;
             const v = facetValueOf(plotItems[points[0]?.item]?.metadata, analysisGroupKey!, deps.attributes);
             if (v === undefined) return null;
             return spec => ({
@@ -1656,7 +1710,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
               where: { conditions: [{ field: { meta: analysisGroupKey! }, values: [v] }] },
             });
           },
-          drillLabel: () => (boxNested ? undefined : 'see its wafers'),
+          drillLabel: () => (boxNested || boxRadial ? undefined : 'see its wafers'),
         } : {}),
         // A group in force (picked here or under Show) arrives as its own wafers: Back widens to every group again.
         ...(activeSectionGroup !== null ? { externalBack: { shown: () => activeSectionGroup !== null, onBack: () => selectGroupEverywhere(null) } } : {}),
@@ -1670,13 +1724,18 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const histogram = distributionCard({
       valueRole: 'x', logToggle: true, extras: histExtras,
       // Overlaid groups differ in size: each as a share of its own dies lets their shapes compare; counts are a click away.
-      choices: grouped ? [{ current: 'percent', options: [['percent', `Share of ${groupLabelText ?? 'group'}`, 'Each group’s bars as a share of its own dies, so groups of different sizes compare'], ['count', 'Counts']] }] : [],
+      // Cumulative is the same values as a curve (the probability plot): where a group sits and how wide it is read off the
+      // curve, and curves overlap more readably than bars.
+      choices: [
+        { current: 'bars', options: [['bars', 'Histogram'], ['cumulative', 'Cumulative', 'The share of dies at or below each value, as one curve per colour']] },
+        ...(grouped ? [{ current: 'percent', options: [['percent', `Share of ${groupLabelText ?? 'group'}`, 'Each group’s bars as a share of its own dies, so groups of different sizes compare'], ['count', 'Counts']] as Array<[string, string, string?]> }] : []),
+      ],
       // Narrowed to a group (from the box plot or Show): Back shows every group again, as on the box plot. A legend click only filters this plot, as on every other.
       card: activeSectionGroup !== null ? { externalBack: { shown: () => activeSectionGroup !== null, onBack: () => selectGroupEverywhere(null) } } : {},
-      build: (p, log, [norm]) => ({
-        id: 'card-histogram', title: 'Value histogram', chart: 'histogram',
+      build: (p, log, [view, norm]) => ({
+        id: 'card-histogram', title: view === 'cumulative' ? 'Cumulative distribution' : 'Value histogram', chart: view === 'cumulative' ? 'probability' : 'histogram',
         fields: { y: { slot: 'test' }, color: grouped ? { follow: 'groupBy' } : { none: true } },
-        ...(grouped && norm !== 'count' ? { histNorm: 'percent' as const } : {}),
+        ...(grouped && norm !== 'count' && view !== 'cumulative' ? { histNorm: 'percent' as const } : {}),
         ...(histWafer !== null ? { where: { conditions: [{ field: { builtin: 'wafer' }, values: [plotItems[histWafer].label] }] } } : {}),
         ...axisSpec('x', p, log),
       }),
@@ -1711,7 +1770,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       choices: items.length >= 3 ? [{ current: 'trend', options: [['trend', 'Trend', 'Each wafer’s mean with a band of one standard deviation'], ['control', 'Control chart', 'One value per wafer against control limits, with the points that break a Western Electric rule marked']] }] : [],
       build: (p, log, [view]) => view === 'control' ? ({
         id: 'card-trend', title: 'Wafer-to-wafer control chart', chart: 'control', aggregate: 'mean',
-        fields: { x: { builtin: 'waferOrder' }, y: { slot: 'test' }, color: { none: true } },
+        fields: { x: { builtin: 'waferOrder' }, y: { slot: 'test' }, color: grouped ? { follow: 'groupBy' } : { none: true } },
         ...axisSpec('y', p, log),
       }) : ({
         id: 'card-trend', title: 'Wafer-to-wafer trend', chart: 'line', aggregate: 'mean', spread: 'sd',
@@ -1719,7 +1778,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         ...axisSpec('y', p, log),
         axes: { ...axisSpec('y', p, log).axes, y: { ...axisSpec('y', p, log).axes!.y, references: [{ stat: 'mean', label: populationStat(describeWaferPopulation(items.map(it => it.wafer.metadata)), 'mean') }] } },
       }),
-      card: { ctx: { ...plotCtx, groupBy: undefined }, ...(items.length < 2 ? { unavailable: 'A trend needs at least two wafers' } : {}) },
+      card: { ctx: plotCtx, ...(items.length < 2 ? { unavailable: 'A trend needs at least two wafers' } : {}) },
       chart: {
         onSaveImage,
         onWaferMenu: waferContextMenu(items),
@@ -1792,8 +1851,26 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     // than a guessed constant. Capability's empty state (no test data at
     // all) never calls that, so it stays sized to its compact message
     // instead of forcing a large dead box next to functional siblings.
+    // Every test at once: the tests whose wafers (or groups) differ most, as a grid of z-scores, first since it says which
+    // test to look at in the panels below. One test per row, rescaled so a ppm shift and a volt shift share the colours.
+    const gridTests = items.length >= 2
+      ? rankTestsByWaferSpread(items.map(it => ({ dies: it.dies })), testDefs.filter(t => t.testNumber !== undefined && isParametricTest(t)).map(t => t.testNumber!), TESTS_BY_WAFER)
+      : [];
+    const testsGrid = gridTests.length >= 2
+      ? renderCardWithSave({
+        doc, editAsPlot, items: plotItems, ctx: plotCtx,
+        spec: { id: 'card-tests-wafer', title: `Tests by ${groups ? groupLabelText ?? 'group' : 'wafer'} (z-scores)`, chart: 'heatmap', level: 'wafer', aggregate: 'mean', normalize: 'zscore',
+          fields: { x: { slot: 'groupBy' }, y: { tests: gridTests } } },
+        chart: { onSaveImage },
+      })
+      : undefined;
+    if (testsGrid) testsGrid.card.style.minHeight = '300px';
     // With Group by on, the cards that compare the groups come first, together, under their own heading, so they are not
     // lost among the cards about each test.
+    if (testsGrid) {
+      wrap.append(rowHeading(`Tests across ${groups ? groupLabelText ?? 'groups' : 'wafers'}`, 'tests-grid'));
+      wrap.append(testsGrid.card);
+    }
     if (compare || difference) {
       wrap.append(rowHeading(`Comparing ${groupLabelText ?? 'groups'}`, 'comparing'));
       if (compare) wrap.append(compare.card);
@@ -1822,7 +1899,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       card: wrap,
       destroy: () => {
         for (const mo of observers) mo.disconnect();
-        capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); compare?.destroy(); difference?.destroy();
+        capability.destroy(); boxplot.destroy(); histogram.destroy(); trend.destroy(); compare?.destroy(); difference?.destroy(); testsGrid?.destroy();
       },
     };
   }
@@ -1836,6 +1913,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     items: Item[],
     testDefs: TestDef[],
     groups: { key: string; items: Item[] }[] | undefined,
+    groupLabelText?: string,
   ): { card: HTMLElement; destroy: () => void } {
     const wrap = makeChartGridWrap(doc);
 
@@ -1928,6 +2006,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const correlation = renderCorrelationPanel({
       title: 'Test correlation matrix',
       items, testDefs, onSaveImage, onSaveText,
+      ...(grouped && groups && groups.length >= 2 ? { groups, groupLabelText } : {}),
       onSelectPair: (x, y) => scatter.setXY(x, y),
       ownerDocument: doc,
     });
@@ -2033,7 +2112,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       [{ value: 'auto', label: 'Auto (0)' }, ...[1, 2, 3, 4, 5].map(n => ({ value: String(n), label: `${n} (${n})` }))],
       columnsPref === undefined ? 'auto' : String(columnsPref),
       v => setColumns(v === 'auto' ? undefined : Number(v)),
-      { hook: 'insights-columns', maxWidth: '90px', ownerDocument: doc, hint: 'How many cards sit side by side; the keys 1 to 5 set it and 0 returns to Auto' },
+      { hook: 'insights-columns', maxWidth: '90px', ownerDocument: doc, hint: 'The most cards that sit side by side (a tab with fewer cards uses fewer); the keys 1 to 5 set it and 0 returns to Auto' },
     );
     columnsSelect = columnsLabel.querySelector('button') as (HTMLElement & { value: string }) | null;
     controlsRow.appendChild(columnsLabel);
@@ -2135,7 +2214,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       activeView === 'plot'          ? renderPlotBlock(scopeItems, scopedAllDefs,
         // The Group by in force: a narrowed scope has collapsed it, so plots follow nothing then.
         scoped_ ? undefined : analysisGroupKey, scoped_ ? undefined : groupLabelText) :
-      renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups));
+      renderCorrelationSection(scopeItems, scopedTestDefs, scopeGroups, groupLabelText));
     if (!cached) sectionCache.set(activeView, section);
     // Say why the test list is short, and how to get the rest back — above
     // whichever view is active, because all three reconcile over the scope and
@@ -2163,6 +2242,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     }
 
     bodyEl.appendChild(section.card);
+    applyColumns();
   }
 
   return {
@@ -2170,6 +2250,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     render,
     destroy: () => {
       doc.removeEventListener('keydown', onColumnsKey);
+      columnsObserver?.disconnect();
       dropSectionCache();
       plotStore.flush();
       rootEl.remove();

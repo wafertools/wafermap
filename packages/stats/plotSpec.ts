@@ -31,7 +31,7 @@ export type SweepPayload = Omit<SweepSpec, 'id' | 'title'>;
 export const PLOT_CHARTS = ['scatter', 'histogram', 'box', 'bar', 'line', 'sweep', 'probability', 'control', 'goal', 'heatmap'] as const;
 export type PlotChart = (typeof PLOT_CHARTS)[number];
 
-export const PLOT_BUILTINS = ['wafer', 'x', 'y', 'ring', 'quadrant', 'reticleCell', 'reticleShot', 'hbin', 'sbin', 'site', 'yield', 'dieCount', 'waferOrder', 'test', 'pat', 'radius'] as const;
+export const PLOT_BUILTINS = ['wafer', 'x', 'y', 'ring', 'quadrant', 'reticleCell', 'reticleShot', 'hbin', 'sbin', 'site', 'yield', 'dieCount', 'waferOrder', 'test', 'pat', 'radius', 'reprobed'] as const;
 export type PlotBuiltin = (typeof PLOT_BUILTINS)[number];
 
 /** A series a plot can put on an axis or use for colour. */

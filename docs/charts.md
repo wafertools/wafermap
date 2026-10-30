@@ -361,6 +361,23 @@ See [Using a plot's JSON](#using-a-plots-json).
 ## Values and distributions
 
 
+### Re-probed dies
+
+*The share of dies that were probed more than once, by ring on each wafer (or group), to show where the retests are. Drawn when the lot has re-probed dies.*
+
+**Why it is useful.** A die is probed again after a first failure, to see whether the contact or the die was at fault. How many dies need it, and where, says a good deal before any yield figure does: a ring of re-probes at the edge is a contact or planarity problem, and one wafer that needed most of them is a wafer problem.
+
+**How to read it.** One row per ring, one column per wafer (or group), each cell the percentage of its dies that were probed more than once. Click a cell for its dies.
+
+**Notes.**
+
+- **Only with re-probed dies.** A lot probed once has no such dies, and the card is not drawn.
+- **The final yield, not the first-pass yield.** The library keeps the die's last result under the retest policy, so the yield elsewhere includes the recovered dies. How many re-probes recovered a die is not shown here.
+
+**Where to find it.** The Overview tab, after Yield by site. **Edit as plot** opens it as a heatmap of the Re-probed field by ring.
+
+**See also.** [Yield by site](#yield-by-site), [Ring yield by wafer](#ring-yield-by-wafer), [Heatmap](#heatmap).
+
 ### Yield by site
 
 *Yield of each test site (probe position): passing dies as a share of judged dies, over every wafer. Shown when the dies come from two sites or more.*
@@ -379,6 +396,23 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **See also.** [Yield by wafer](#yield-by-wafer), [Reticle cell yield](#reticle-cell-yield).
 
+### Tests by wafer
+
+*The tests whose wafers (or groups) differ most, one row each, as a grid of z-scores: where a wafer is above or below that test’s average.*
+
+**Why it is useful.** A lot has dozens or hundreds of tests, and the question "which tests move, and on which wafers?" is not answered by opening them one at a time. Each row is a test, rescaled by its own spread so a shift in volts and one in nanoamps share the colours, and the tests shown are the ones where the wafers differ most from each other. Blocks of the same colour across several rows are wafers that moved together.
+
+**How to read it.** Blue is below the test's average, orange above, and the cell prints its z-score. With **Group by** on the columns are the groups. Click a cell for the dies it counts.
+
+**Notes.**
+
+- **Up to twelve tests**, ranked by the share of each test's variance that lies between wafers. A test that is the same on every wafer is not shown however many there are.
+- **A z-score is relative to the wafers in view**, so it changes when you narrow them. A z-score always rescales a test's own spread, so a test that barely varies can still show strong colours: check the test's own chart before reading a difference as meaningful.
+
+**Where to find it.** The Distributions tab, first, under its own heading; with several wafers or groups and two tests that vary. **Edit as plot** opens it as a heatmap of the tests by the Group by field (or by wafer).
+
+**See also.** [Heatmap](#heatmap), [Test value distribution](#test-value-distribution), [Comparison by group](#comparison-by-group).
+
 ### Test value distribution
 
 ![Test value distribution: a box for each wafer](examples/thumbs/test-value-distribution.webp)
@@ -392,6 +426,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 **Notes.**
 
 - **The same notes as the box plot apply**: the count is dies, not wafers, and one outlier sets a whisker. Whether groups differ is for the [comparison](#comparison-by-group).
+- **By radius.** The card's view choice also offers a box for each ring, from the centre to the edge, over every die in view: a test that drifts across the wafer shows as a trend of boxes.
 - **It is a plot.** **Edit as plot** in the card's ⋯ menu opens it as one of your own.
 
 **Where to find it.** **Insights ▸ Distributions**.
@@ -411,6 +446,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 **Notes.**
 
 - **Pooling can make two humps.** A histogram of every die in a lot mixes its splits and wafers; use Group by, or colour a plot by the split, to see whether one hump is really two groups.
+- **Cumulative.** The view choice draws the same values as a cumulative curve, one per colour: the share of dies at or below each value, so where a group sits and how wide it is are read off the curve and curves overlap more readably than bars.
 - **A limit shows where the values lie, not what the limit should be.** For "what if the limit moved" use a plot with what-if limits (see the [histogram](#histogram)).
 - **It is a plot.** **Edit as plot** opens it as one of your own, and the right-click [histogram of the dies picked](#histogram-of-the-dies-picked) is the same chart for a selection.
 
@@ -568,7 +604,8 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Notes.**
 
-- **Pooled groups can mislead.** When the dies pool several values of a split, lot or other field, the card warns that correlations may be misleading (Simpson's paradox); use **Group by**, or the **Wafer** picker, to narrow to like-for-like.
+- **Fails together.** The **Values | Fails together** choice compares failures instead of values: each cell is the share of the dies failing either of two tests that fail both, judged by the tests' limits, so two symptoms of one defect show as a pair even when their values do not correlate. Tests without limits, and tests that fail on fewer than two dies, are left out; the colour runs from 0 to 1.
+- **Pooled groups can mislead.** When the dies pool several values of a split, lot or other field, the card warns that correlations may be misleading (Simpson's paradox); with **Group by** on, choose **Within** (beside **Pooled**) to take each group's mean off every test first, or use the **Wafer** picker to narrow to like-for-like.
 - **With Group by on, Show decides the dies.** Pick one group in **Show** to see the correlations inside it; with **All groups** the matrix pools every wafer, and the card warns when that mixes groups.
 - **Dies on one wafer are not independent**, so a pair's n overstates how well it is known.
 - **Correlation says two tests move together, not why.**
@@ -616,7 +653,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Why it is useful.** When two categories interact (tests by wafer, bins by split, rings by lot), a grid of colours shows where the interesting cells are faster than a pile of bars. With tests as the rows it is a quick read of which wafers move which tests.
 
-**How to read it.** One row per value of one field and one column per value of another, each cell coloured by the value combined over its dies (a count when no value is chosen). The colour bar above spans the cells and a cell shows its value when it has room. A heatmap of z-scores (or robust z-scores) runs blue below average, through a neutral middle at zero, to orange above, with the bar equally far either side of zero (the same blue and orange as the correlation matrix: warm is positive or above average); a yield or pass rate runs orange-red for bad to blue for good on a fixed scale from 50% to 100%, so the same yield is always the same colour; any other value runs from its lowest cell to its highest. **Colours** in Customise chooses another gradient, such as Cividis (safe for colour-blind readers) or Plasma, and **Reverse colours** flips it. Click a cell to chart or tabulate its dies. With several tests as the rows, they are rescaled so they can share the colours, and the cells then say how far from each test's own average a wafer is.
+**How to read it.** One row per value of one field and one column per value of another, each cell coloured by the value combined over its dies (a count when no value is chosen). The colour bar above spans the cells and a cell shows its value when it has room. A heatmap of z-scores (or robust z-scores) runs blue below average, through a neutral middle at zero, to orange above, with the bar equally far either side of zero (the same blue and orange as the correlation matrix: warm is positive or above average); a yield or pass rate runs orange-red for bad to blue for good on a fixed scale from 50% to 100%, so the same yield is always the same colour; any other value runs from its lowest cell to its highest. **Colours** in Customise chooses another gradient, such as Cividis (safe for colour-blind readers) or Plasma, and **Reverse colours** flips it. Click a cell to chart or tabulate its dies. With several tests as the rows, they are rescaled so they can share the colours, and the cells then say how far from each test's own average a wafer is. A z-score always rescales a test's own spread, so a test that barely varies still shows strong colours: check the test's own chart before reading a difference as meaningful.
 
 **Notes.**
 
@@ -678,6 +715,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 - **Where the limits come from.** The centre and the control limits are worked out from the wafers on the chart, so they say what this run normally does, and a point beyond them is unusual *for this run*. They are not read from any limit your team sets for the test, and the two answer different questions: a run can be steady and still outside a limit you use, or the reverse. Lines for the test's own limits, or any value you choose, can be added to the axis as reference lines; the capability chart compares the values with the test's limits directly.
 - **A few marks are expected.** With many points a number of false flags is normal; one flag among fifty wafers is not a finding by itself.
 - **Order is the whole point.** The wafers must be in the sequence they were run; a lot sorted by yield or ID has no meaningful trend. A chart of several lots or programs in one run mixes processes and widens the limits.
+- **Colour the points by a wafer field.** Choosing a colour (or, in Insights, Group by) colours each point by its wafer's value, so a pattern that belongs to a group (both low wafers are SS) shows as a colour; the line and the limits stay one series over every wafer, and a click on a group in the legend dims the others.
 - **It needs a baseline.** **Limits from the first** sets the centre and sigma from earlier wafers and judges the later ones against them; it needs at least three points.
 
 **Where to find it.** Choose **+ New plot** on **My plots**, set **Chart type** to Control, **Along (X axis)** to wafer order and **Values (Y axis)** to a test; **Limits from the first** is optional. The Overview's **Worth a look** draws one when it finds a trend across the wafers.
@@ -709,6 +747,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 - **A line implies an order.** It is meaningful where X is ordered (wafer order, a test order, a condition) and misleading across unordered categories; use a [bar chart](#bar-chart) there.
 - **A mean can hide the shape.** Compare with the [box plot](#box-plot) of the same values.
+- **A field put in ranges can be the X.** A measured value or a distance from the centre in ranges is drawn along the middle of each range, so a profile across the wafer, one line per colour, reads at a glance where boxes would crowd.
 
 **Where to find it.** On **My plots**, choose **+ New plot**, set **Chart type** to Line, the **X axis** and **Y axis**; **Band** and **Combine values by** are below.
 

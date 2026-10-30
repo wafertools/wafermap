@@ -803,30 +803,74 @@ test('the editor says so under the title box, live', () => {
   assert.equal('title' in emitted.at(-1), false);
 });
 
-test('Add examples draws one of each type from the lot, and does not add them twice', async () => {
+const EXAMPLE_CHARTS = ['scatter', 'histogram', 'box', 'bar', 'bar', 'line', 'probability', 'heatmap', 'heatmap', 'box', 'box', 'histogram', 'line', 'line', 'bar', 'bar', 'sweep'];
+const gallery = s => s.querySelector('[data-wmap-plot-gallery]');
+const exampleCards = s => [...gallery(s).querySelectorAll('[data-wmap-plot-example]')];
+/** The My plots | Examples switch: a click on a segment's label, as a reader's click is. */
+const showView = (s, view) => click(s.querySelector(`[data-wmap-plot-views] input[value="${view}"]`).closest('label'));
+
+test('Examples shows one of each type from the lot without saving any, and My plots brings the list back', async () => {
+  const { tab, store } = mountPlot({ plots: [SCATTER] });
+  const s = await section(tab);
+  assert.equal(gallery(s).style.display, 'none');
+  click(button(s, 'wmap-plot-examples'));
+  assert.equal(gallery(s).style.display, 'flex');
+  assert.equal(cards(tab).length > 0 && cards(tab)[0].parentElement.style.display, 'none', 'the list is not on screen beside them: one grid at a time');
+  assert.deepEqual(exampleCards(s).map(c => c.dataset.wmapPlotExample), EXAMPLE_CHARTS);
+  for (const c of exampleCards(s)) {
+    assert.ok(c.querySelector('canvas'), c.dataset.wmapChartTitle);
+    assert.ok(c.querySelector('[data-wmap-plot-example-badge]'), 'each is marked as an example');
+  }
+  assert.equal(store.get().length, 1, 'looking at them saves nothing');
+  assert.match(gallery(s).textContent, /17 examples from this lot, drawn for you\. They are not your plots until you add them/);
+  showView(s, 'plots');
+  assert.equal(gallery(s).style.display, 'none');
+  assert.equal(exampleCards(s).length, 0, 'the cards are gone');
+  assert.equal(cards(tab)[0].parentElement.style.display, 'grid', 'and the list is back');
+});
+
+test('Add to my plots adds that one example, and the card then says it is in the list', async () => {
   const { tab, store, changes } = mountPlot();
   const s = await section(tab);
   click(button(s, 'wmap-plot-examples'));
-  assert.deepEqual(store.get().map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'bar', 'line', 'probability', 'box', 'heatmap', 'box', 'box', 'histogram', 'box', 'box', 'bar', 'bar', 'sweep']);
-  assert.equal(cards(tab).length, 17);
-  for (const c of cards(tab)) assert.ok(c.querySelector('canvas'), c.dataset.wmapChartTitle);
-  assert.match(s.textContent, /Added 17 example plots: scatter, histogram, box, bar, line, probability, heatmap, sweep/);
-  click(button(s, 'wmap-plot-examples'));
-  assert.equal(store.get().length, 17, 'a second click adds nothing');
-  assert.match(s.textContent, /already in your plots/);
+  const first = exampleCards(s)[0];
+  click(first.querySelector('[data-wmap-plot-example-add]'));
+  assert.deepEqual(store.get().map(p => p.chart), ['scatter']);
+  assert.equal(first.querySelector('[data-wmap-plot-example-add]').textContent, 'In your plots');
+  assert.equal(first.querySelector('[data-wmap-plot-example-add]').disabled, true);
   await tick(10);
   assert.ok(changes.length >= 1, 'the host is told');
 });
 
-test('Add examples keeps what the reader already has and adds only what is missing', async () => {
+test('Add all adds every example once, then shows My plots with an Undo, and keeps what the reader already has', async () => {
   const { tab, store } = mountPlot();
   const s = await section(tab);
   click(button(s, 'wmap-plot-examples'));
+  click(button(s, 'wmap-plot-examples-add-all'));
+  assert.deepEqual(store.get().map(p => p.chart), EXAMPLE_CHARTS);
+  assert.equal(gallery(s).style.display, 'none', 'the reader is taken to the plots they now have');
+  assert.equal(exampleCards(s).length, 0);
+  assert.match(s.querySelector('[role="status"]').textContent, /Added 17 plots to My plots\./);
+  click(button(s, 'wmap-plot-examples'));
+  assert.equal(button(s, 'wmap-plot-examples-add-all').disabled, true, 'nothing left to add');
+  click(button(s, 'wmap-plot-examples-add-all'));
+  assert.equal(store.get().length, 17, 'a second click adds nothing');
   const second = store.get()[1];
   store.remove(second.id);
-  click(button(s, 'wmap-plot-examples'));
+  assert.equal(button(s, 'wmap-plot-examples-add-all').disabled, false, 'the heading and buttons follow the list');
+  click(button(s, 'wmap-plot-examples-add-all'));
   assert.equal(store.get().length, 17);
-  assert.equal(store.get().at(-1).chart, 'histogram');
+  assert.equal(store.get().at(-1).chart, 'histogram', 'only the missing one comes back, at the end');
+});
+
+test('Undo after Add all removes exactly what it added', async () => {
+  const { tab, store } = mountPlot({ plots: [SCATTER] });
+  const s = await section(tab);
+  click(button(s, 'wmap-plot-examples'));
+  click(button(s, 'wmap-plot-examples-add-all'));
+  assert.ok(store.get().length > 1);
+  click(button(s, 'wmap-plot-notice-action'));
+  assert.deepEqual(store.get().map(p => p.id), ['p1'], 'the plot the reader had is kept');
 });
 
 // ── saving and printing ──

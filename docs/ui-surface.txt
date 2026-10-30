@@ -220,8 +220,8 @@ Controls:
       hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
-  · Expand   (×13)
-  · Chart actions  [opens menu]   (×13)
+  · Expand   (×11)
+  · Chart actions  [opens menu]   (×11)
   · Show on map
       hint: Leave Insights and show this on the map, as its row in What stands out does   (×3)
   · Heatmaps and the difference map   (×3)
@@ -235,6 +235,8 @@ Controls:
   · Test limits  [radio, checked]
   · Tester flag  [radio, unchecked]
   · Functional  [radio, unchecked]
+  · Heatmap  [radio, checked]   (×2)
+  · Diagram  [radio, unchecked]   (×2)
   · Part average testing (PAT)
   · Map the verdicts
       hint: Show the maps with their dies coloured by PAT verdict: within the limits, outlier, fails anyway
@@ -281,14 +283,20 @@ Controls:
       hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
+  · Expand   (×5)
+  · Chart actions  [opens menu]   (×5)
+  · Heatmaps and the difference map
+  · Rescaling values
   · Idsat▾  [aria="Test", opens menu]
-  · Expand   (×4)
-  · Chart actions  [opens menu]   (×4)
   · Capability, Ppk and the goal plot
   · Axis includes limits  [checkbox, checked]   (×2)
   · Clip outliers  [checkbox, unchecked]   (×3)
   · Log scale  [checkbox, unchecked]   (×3)
+  · By wafer  [radio, checked]
+  · By radius  [radio, unchecked]
   · All wafers▾  [aria="Wafer", opens menu]
+  · Histogram  [radio, checked]
+  · Cumulative  [radio, unchecked]
   · Axis includes limits  [checkbox, unchecked]
   · Trend  [radio, checked]
   · Control chart  [radio, unchecked]
@@ -304,10 +312,6 @@ Menu — Test:
     · Ioff
     · Pin Ioff (or press P on the row)
         hint: Pin this test to the top of every test list
-
-Menu — Chart actions:
-    · Save as PNG
-    · ✓About this chart  [unchecked]
 
 Menu — Wafer:
     · All wafers
@@ -346,6 +350,8 @@ Controls:
   · Chart actions  [opens menu]   (×2)
   · Max tests:  [number]
   · All wafers▾  [aria="Wafer", opens menu]   (×2)
+  · Values  [radio, checked]
+  · Fails together  [radio, unchecked]
   · Correlation CSV
       hint: Save the correlation coefficients as a CSV file, one row per pair of tests
   · Idsat▾  [aria="Test", opens menu]
@@ -358,6 +364,10 @@ Controls:
   · Bin 2
   · Bin 3
   · Bin 4
+
+Menu — Chart actions:
+    · Save as PNG
+    · ✓About this chart  [unchecked]
 
 ## Insights tab › Data
 
@@ -426,10 +436,10 @@ Controls:
       hint: Plots you have built and saved
   · None▾  [aria="Group by", opens menu]
   · Auto (0)▾  [aria="Columns", opens menu]
+  · My plots  [radio, checked]
+  · Examples  [radio, unchecked]
   · + New plot
       hint: Start a chart of your own: choose its type (a sweep reads runs of tests as response curves), what goes on each axis and how it is coloured
-  · Add examples
-      hint: Draw one example of each chart type this lot can show, to edit or delete
   · Import plots…
       hint: Add the plots from a file written by Export plots…
   · Export plots…

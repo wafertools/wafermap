@@ -586,7 +586,7 @@ export function formatValue(v: number): string {
  * is the same label with the scaled unit appended, for an axis with no
  * separate unit label.
  */
-/** The bracketed note `axisLabel` carries after `name` ("Idsat_A (×10E-6)" → "×10E-6"), or '' when it is just the name. */
+/** The bracketed note `axisLabel` carries after `name` ("Idsat_A (×10⁻⁶)" → "×10⁻⁶"), or '' when it is just the name. */
 function exponentNote(axisLabel: string, name: string): string {
   const prefix = `${name} (`;
   return axisLabel.startsWith(prefix) && axisLabel.endsWith(')') ? axisLabel.slice(prefix.length, -1) : '';
@@ -605,7 +605,7 @@ export function makeAxisFormat(
   return {
     tick: tickFmt,
     tickWithUnit: scaledUnit ? v => `${tickFmt(v)} ${scaledUnit}` : tickFmt,
-    // A name that states its unit is the whole title; only an exponent note ("×10E-6", for very small or large values) follows it.
+    // A name that states its unit is the whole title; only an exponent note ("×10⁻⁶", for very small or large values) follows it.
     // That note is what fmtColorbarAxis added after the name, so it is read off the label past the name: a name that itself
     // ends in a bracketed unit ("Vth (mV)") has nothing after it and must not be mistaken for the note.
     unitLabel: statesUnit ? exponentNote(axisLabel, name!) : axisLabel,
@@ -1060,6 +1060,36 @@ function styleHeaderBtn(btn: HTMLButtonElement): void {
   wireControlHover(btn);
 }
 
+/**
+ * Two cards that are two views of one idea (a heatmap and a diagram of the same regions) as one place in the grid: a
+ * View choice in each card's header shows one and hides the other. Each stays a whole card, so its menu, About line and
+ * Expand are its own; the first is shown to begin with.
+ */
+export function pairCards(views: Array<{ label: string; card: HTMLElement }>, ownerDocument: Document = document): HTMLElement {
+  const host = ownerDocument.createElement('div');
+  host.dataset.wmapCardPair = '1';
+  Object.assign(host.style, { display: 'flex', flexDirection: 'column', minWidth: '0', minHeight: '0', flex: '1 1 0' } as Partial<CSSStyleDeclaration>);
+  const shown = views.map(v => v.card.style.display);
+  const segs: Array<{ setValue(value: string): void }> = [];
+  const show = (index: number): void => {
+    views.forEach((v, i) => { v.card.style.display = i === index ? shown[i] : 'none'; });
+    // Each card has a control of its own, and each keeps its own checked state: without this a card shown again still reads as
+    // the view it was left on, and choosing that view does nothing because it already looks chosen.
+    for (const seg of segs) seg.setValue(String(index));
+  };
+  views.forEach((v, i) => {
+    const row = [...v.card.children].find(c => c.querySelector('[data-wmap-card-expand]')) as HTMLElement | undefined;
+    const seg = makeSegmented(views.map((w, k) => [String(k), w.label] as [string, string]), String(i), value => { show(Number(value)); }, ownerDocument);
+    segs.push(seg);
+    seg.dataset.wmapCardView = '1';
+    // After the heading, before the header's buttons.
+    if (row?.firstElementChild) row.firstElementChild.after(seg);
+    host.appendChild(v.card);
+  });
+  show(0);
+  return host;
+}
+
 export function cardShell(title: string, onSaveImage?: SaveImageHandler, ownerDocument: Document = document, opts: CardShellOptions = {}): CardShell {
   const card = ownerDocument.createElement('div');
   // Stable test/tooling hooks — this card carries no other id/class, and
@@ -1262,7 +1292,7 @@ export function makeSegmented(
   /** Smaller type/padding for the summary panel's 260px column, where the
    *  chart-card sizing overflows a section header. Charts keep the default. */
   compact = false,
-): HTMLElement {
+): HTMLElement & { setValue(value: string): void } {
   const group = ownerDocument.createElement('div');
   group.setAttribute('role', 'radiogroup');
   // Each segment draws its own border and overlaps its neighbours by a pixel
@@ -1272,6 +1302,7 @@ export function makeSegmented(
   const last = options.length - 1;
   const name = `seg-${Math.random().toString(36).slice(2, 9)}`;
   const paints: Array<() => void> = [];
+  const radios: HTMLInputElement[] = [];
 
   options.forEach(([value, text, hint], i) => {
     const label = ownerDocument.createElement('label');
@@ -1292,6 +1323,7 @@ export function makeSegmented(
     radio.name = name;
     radio.value = value;
     radio.checked = value === current;
+    radios.push(radio);
     Object.assign(radio.style, { position: 'absolute', opacity: '0', width: '0', height: '0' } as Partial<CSSStyleDeclaration>);
 
     const paint = () => {
@@ -1315,7 +1347,13 @@ export function makeSegmented(
     group.appendChild(label);
   });
 
-  return group;
+  // Chosen from outside (another control of the same choice moved it): shows `value` without calling `onChange`.
+  return Object.assign(group, {
+    setValue(value: string): void {
+      for (const r of radios) r.checked = r.value === value;
+      for (const p of paints) p();
+    },
+  });
 }
 
 // ── First rows, then all of them ─────────────────────────────────────────────
@@ -1993,7 +2031,8 @@ export function makeToggle(labelText: string, checked: boolean, onChange: (v: bo
 
 export function makeLabeledSelect(
   labelText: string,
-  options: readonly { value: string; label: string }[],
+  /** A getter is read each time the list opens (see `makeListSelect`). */
+  options: readonly { value: string; label: string }[] | (() => readonly { value: string; label: string }[]),
   selected: string,
   onChange: (value: string) => void,
   /** `hint` is the hover tooltip over the label and its trigger, for a control whose name alone does not say what it does. */

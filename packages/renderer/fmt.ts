@@ -199,6 +199,10 @@ export interface AxisFormat {
   scaledUnit: string;
 }
 
+const SUPERSCRIPT: Record<string, string> = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+/** An axis's exponent note, as a reader writes it: ×10³, ×10⁻⁶; nothing for a power of zero. */
+const timesTen = (exp: number): string => (exp === 0 ? '' : `×10${[...String(exp)].map(c => SUPERSCRIPT[c]).join('')}`);
+
 /**
  * The formatting for one numeric axis: a shared SI scale chosen from `vRef`
  * (typically the largest-magnitude value), applied to every tick so the axis
@@ -228,7 +232,7 @@ export function fmtColorbarAxis(
   // The name already carries the unit it was measured in: keep that unit, unscaled, and let the name be the title.
   if (unit && nameStatesUnit(name, unit)) {
     // A prefixed unit (MHz, mV, nA) is already the readable one. A base unit (A, V, s) with very small or large values
-    // is not ("0.00" at every tick), so those take the exponent form the unitless branch uses: "Idsat_A (×10E-6)".
+    // is not ("0.00" at every tick), so those take the exponent form the unitless branch uses: "Idsat_A (×10⁻⁶)".
     const readable = abs === 0 || (abs >= 0.1 && abs < 1e4);
     if (resolveUnitPrefix(unit).preScale !== 1 || readable) return build(1, name!, unit);
     return fmtColorbarAxis(vRef, name, undefined, fallbackFormat, step);
@@ -259,7 +263,7 @@ export function fmtColorbarAxis(
     // (the prefix letter alone is cryptic without a unit).
     const [scale] = SI_PREFIXES.find(([s]) => abs >= s * 0.9999) ?? [1e-15, 'f'];
     const exp      = Math.round(Math.log10(scale));
-    const expLabel = exp === 0 ? '' : `×10E${exp}`;
+    const expLabel = timesTen(exp);
     return build(scale, name ? (expLabel ? `${name} (${expLabel})` : name) : expLabel, expLabel);
   }
 
@@ -268,7 +272,7 @@ export function fmtColorbarAxis(
   const exp3    = Math.floor(Math.log10(abs) / 3) * 3;
   const clamped = Math.max(-15, Math.min(12, exp3));
   const scale   = Math.pow(10, clamped);
-  const expLabel  = clamped === 0 ? '' : `×10E${clamped}`;
+  const expLabel  = timesTen(clamped);
   return build(scale, name ? (expLabel ? `${name} (${expLabel})` : name) : expLabel, expLabel);
 }
 

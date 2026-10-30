@@ -211,6 +211,29 @@ function testInfoFrom(testDefs: TestDef[]): CorrelationTestInfo[] {
 }
 
 /**
+ * The dies of several groups with each group's mean taken off every test's values, as dies of test values only, for a
+ * correlation within groups: the correlation that is left when a difference between groups (a corner lot's slow and fast
+ * wafers moving every test together) is removed. A group with one value of a test contributes none of it. Above the die
+ * budget an even spread of the dies is kept, as the matrix itself would; the means are those of every die.
+ */
+export function demeanWithinGroups(groups: ReadonlyArray<ReadonlyArray<Die>>, testDefs: TestDef[]): Die[] {
+  const tests = testInfoFrom(testDefs).map(t => t.testNumber);
+  const means = groups.map(dies => tests.map(t => {
+    let n = 0, s = 0;
+    for (const d of dies) { const v = testValue(d, t); if (v !== undefined && Number.isFinite(v)) { n++; s += v; } }
+    return n ? s / n : 0;
+  }));
+  const all: Array<{ die: Die; group: number }> = [];
+  groups.forEach((dies, g) => { for (const die of dies) if (dieHasValues(die)) all.push({ die, group: g }); });
+  const picked = all.length > CORRELATION_DIE_BUDGET ? strideIndices(all.length, CORRELATION_DIE_BUDGET).map(i => all[i]) : all;
+  return picked.map(({ die, group }) => {
+    const testValues: Record<number, number> = {};
+    tests.forEach((t, k) => { const v = testValue(die, t); if (v !== undefined && Number.isFinite(v)) testValues[t] = v - means[group][k]; });
+    return { x: die.x, y: die.y, testValues } as unknown as Die;
+  });
+}
+
+/**
  * Pearson correlation matrix for the parametric tests in `testDefs` across the
  * dies in `dies` — every test up to `CORRELATION_TEST_BUDGET` (above it, the
  * chosen ones: `testSample`), every die up to `CORRELATION_DIE_BUDGET` (above it,

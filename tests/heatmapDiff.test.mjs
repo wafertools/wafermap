@@ -89,6 +89,9 @@ test('the Insights card draws the difference as a map, with what was subtracted 
   dom.window.document.getElementById('root').appendChild(p.card);
   assert.match(p.card.textContent, /Vth: A \(1 wafer\) minus B \(1\), each the mean over its wafers at the position\. 36 positions compared/);
   assert.ok(p.card.querySelector('canvas'), 'drawn as a map');
+  const { listValueColorSchemes, resolveValueColorFn } = await import('../dist/packages/renderer/colorSchemes.js');
+  assert.ok(listValueColorSchemes().some(g => g.name === 'diverging'), 'the signed scale is a registered gradient');
+  assert.notEqual(resolveValueColorFn('diverging')(0), resolveValueColorFn('diverging')(1), 'blue at one end, orange at the other');
   p.setTest(2);
   assert.match(p.card.textContent, /Idsat: A/, 'it follows the section’s test');
   p.destroy();

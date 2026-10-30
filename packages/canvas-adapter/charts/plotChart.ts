@@ -806,15 +806,34 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     clipMarks(ctx, plotW, plotH);
     const groups = counts.map((_, g) => g).filter(g => active.size === 0 || active.has(g));
     const overlay = groups.length > 1;
+    // Three colours or more blend into brown where their fills overlap, so each is drawn as a step outline over a faint
+    // fill: every group's shape is readable on its own. One or two colours keep their translucent bars.
+    const outlined = groups.length >= 3;
+    const left = (b: number): number => LEFT + Math.min(x.frac(edges[b]), x.frac(edges[b + 1])) * plotW;
+    const right = (b: number): number => LEFT + Math.max(x.frac(edges[b]), x.frac(edges[b + 1])) * plotW;
     for (const g of groups) {
+      if (outlined) {
+        ctx.fillStyle = colorOf(g); ctx.strokeStyle = colorOf(g); ctx.lineWidth = 1.75; ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.1;
+        heights[g].forEach((n, b) => { if (n === 0) return; const top = TOP + (1 - y.frac(n)) * plotH; ctx.fillRect(left(b), top, Math.max(1, right(b) - left(b)), TOP + plotH - top); });
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        let open = false;
+        heights[g].forEach((n, b) => {
+          const top = TOP + (1 - y.frac(n)) * plotH;
+          if (!open) { ctx.moveTo(left(b), TOP + plotH); open = true; }
+          ctx.lineTo(left(b), top); ctx.lineTo(right(b), top);
+          if (b === heights[g].length - 1) ctx.lineTo(right(b), TOP + plotH);
+        });
+        ctx.stroke();
+        continue;
+      }
       ctx.globalAlpha = overlay ? 0.55 : 0.85;
       ctx.fillStyle = colorOf(g);
       heights[g].forEach((n, b) => {
         if (n === 0) return;
-        const x0 = LEFT + Math.min(x.frac(edges[b]), x.frac(edges[b + 1])) * plotW;
-        const x1 = LEFT + Math.max(x.frac(edges[b]), x.frac(edges[b + 1])) * plotW;
         const top = TOP + (1 - y.frac(n)) * plotH;
-        ctx.fillRect(x0, top, Math.max(1, x1 - x0 - 1), TOP + plotH - top);
+        ctx.fillRect(left(b), top, Math.max(1, right(b) - left(b) - 1), TOP + plotH - top);
       });
     }
     ctx.globalAlpha = 1;
@@ -1365,7 +1384,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         const x0 = left + c * cw, y0 = TOP + r * ch;
         const fill = Number.isFinite(v) && scale ? gradient((v - scale.lo) / span) : theme.track;
         ctx.fillStyle = fill;
-        ctx.fillRect(x0 + 0.5, y0 + 0.5, Math.max(1, cw - 1), Math.max(1, ch - 1));
+        ctx.fillRect(x0, y0, cw, ch);
         // The value itself, where the cell has room for it: dark text on a light cell, white on a dark one.
         if (Number.isFinite(v) && cw >= 40 && ch >= 16) {
           const dark = darkTextOnColor(fill);
@@ -1374,14 +1393,28 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         }
       }
     }
+    // A line between the cells, a frame round the whole and a tick at each row and column, so a pale or empty cell reads as a
+    // cell against the card and each label is tied to its row or column.
+    ctx.lineWidth = 1; ctx.setLineDash([]);
+    ctx.strokeStyle = theme.border;
+    ctx.beginPath();
+    for (let r = 1; r < m.rows.length; r++) { const y = Math.round(TOP + r * ch) + 0.5; ctx.moveTo(left, y); ctx.lineTo(left + plotW, y); }
+    for (let c = 1; c < m.cols.length; c++) { const x = Math.round(left + c * cw) + 0.5; ctx.moveTo(x, TOP); ctx.lineTo(x, TOP + plotH); }
+    ctx.stroke();
+    ctx.strokeStyle = theme.textMuted;
+    ctx.strokeRect(left + 0.5, TOP + 0.5, plotW - 1, plotH - 1);
+    ctx.beginPath();
+    for (let r = 0; r < m.rows.length; r++) { const y = Math.round(TOP + (r + 0.5) * ch) + 0.5; ctx.moveTo(left - 4, y); ctx.lineTo(left, y); }
+    for (let c = 0; c < m.cols.length; c++) { const x = Math.round(left + (c + 0.5) * cw) + 0.5; ctx.moveTo(x, TOP + plotH); ctx.lineTo(x, TOP + plotH + 4); }
+    ctx.stroke();
     if (hoveredHeat) { ctx.lineWidth = 2; ctx.strokeStyle = theme.text; ctx.strokeRect(left + hoveredHeat.c * cw, TOP + hoveredHeat.r * ch, cw, ch); }
     // Row labels at the left, column labels below, and the two axis titles.
     ctx.fillStyle = theme.textMuted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    m.rows.forEach((t, r) => ctx.fillText(t.length > 24 ? `${t.slice(0, 23)}…` : t, left - 6, TOP + (r + 0.5) * ch));
+    m.rows.forEach((t, r) => ctx.fillText(t.length > 24 ? `${t.slice(0, 23)}…` : t, left - 8, TOP + (r + 0.5) * ch));
     m.cols.forEach((t, c) => {
       const text = t.length > 22 ? `${t.slice(0, 21)}…` : t, cx = left + (c + 0.5) * cw;
-      if (rotate) { ctx.save(); ctx.translate(cx, TOP + plotH + 6); ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
-      else { ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(text, cx, TOP + plotH + 4); }
+      if (rotate) { ctx.save(); ctx.translate(cx, TOP + plotH + 8); ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, 0); ctx.restore(); }
+      else { ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(text, cx, TOP + plotH + 7); }
     });
     ctx.font = `${fontPx(0)}px system-ui, sans-serif`; ctx.fillStyle = theme.text;
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -1451,15 +1484,40 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     }
     // The values joined in order; a point breaking a rule in the error colour, its rule numbers above it.
     ctx.strokeStyle = colorOf(0); ctx.lineWidth = 1.5; ctx.setLineDash([]);
-    ctx.beginPath(); m.values.forEach((v, k) => { if (k === 0) ctx.moveTo(px(k), py(v)); else ctx.lineTo(px(k), py(v)); }); ctx.stroke();
+    const filtered = active.size > 0;
+    const groupAt = (k: number): number => m.group?.[k] ?? 0;
+    if (!filtered) {
+      ctx.beginPath(); m.values.forEach((v, k) => { if (k === 0) ctx.moveTo(px(k), py(v)); else ctx.lineTo(px(k), py(v)); }); ctx.stroke();
+    } else {
+      // The line stays one series in order, so the limits mean the same thing; a stretch of it that does not join two chosen
+      // colours is dimmed, and the chosen stretches are drawn over it, so the chosen wafers stand out from the line as well.
+      for (const lit of [false, true]) {
+        ctx.globalAlpha = lit ? 1 : 0.2;
+        ctx.beginPath();
+        for (let k = 1; k < m.values.length; k++) {
+          if ((active.has(groupAt(k - 1)) && active.has(groupAt(k))) !== lit) continue;
+          ctx.moveTo(px(k - 1), py(m.values[k - 1])); ctx.lineTo(px(k), py(m.values[k]));
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
     const broken = new Map(m.violations.map(v => [v.index, v.rules]));
     drawn = [];
     m.values.forEach((v, k) => {
       const rules = broken.get(k);
-      ctx.beginPath(); ctx.arc(px(k), py(v), rules ? 4.5 : 3, 0, Math.PI * 2);
-      ctx.fillStyle = rules ? theme.alert : colorOf(0); ctx.fill();
-      if (rules) { ctx.fillStyle = theme.alert; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(rules.join(','), px(k), py(v) - 6); }
-      drawn.push({ p: { x: m.xs[k], y: v, group: 0, item: m.items[k] }, cx: px(k), cy: py(v) });
+      const g = groupAt(k);
+      // A colour switched off in the legend dims its points, as the other charts do; a chosen colour's points are larger and
+      // ringed, as the dimming of small dots beside a full-strength line is hard to see.
+      const chosen = filtered && active.has(g);
+      const dim = filtered && !chosen;
+      ctx.globalAlpha = dim ? 0.2 : 1;
+      ctx.beginPath(); ctx.arc(px(k), py(v), (rules ? 4.5 : 3) + (chosen ? 1.5 : 0), 0, Math.PI * 2);
+      ctx.fillStyle = rules ? theme.alert : colorOf(g); ctx.fill();
+      if (chosen) { ctx.lineWidth = 1.5; ctx.strokeStyle = theme.text; ctx.stroke(); }
+      if (rules) { ctx.fillStyle = theme.alert; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(rules.join(','), px(k), py(v) - (chosen ? 8 : 6)); }
+      ctx.globalAlpha = 1;
+      drawn.push({ p: { x: m.xs[k], y: v, group: g, item: m.items[k] }, cx: px(k), cy: py(v) });
     });
     const hot = hovered ? drawn.find(d => d.p === hovered) : undefined;
     if (hot) { ctx.beginPath(); ctx.arc(hot.cx, hot.cy, 6, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = theme.text; ctx.stroke(); }
@@ -1647,7 +1705,9 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     for (const p of panels) p.destroy();
     panels = [];
     stopPanelKeys?.(); stopPanelKeys = undefined;
-    body.style.overflowY = '';
+    // Back to the shell's `hidden`, not unset: with overflow-x hidden an unset y computes to `auto`, and a scrollbar that
+    // appears and goes with a sub-pixel overflow resizes the canvas every frame at a fractional device pixel ratio.
+    body.style.overflowY = 'hidden';
     delete card.dataset.wmapPlotPanelsOwner; delete card.dataset.wmapPanelsHover;
     setPngCanvas(() => card.querySelector<HTMLCanvasElement>('canvas'));
     const r = resolved;

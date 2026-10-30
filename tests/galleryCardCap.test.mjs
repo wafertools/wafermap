@@ -188,10 +188,26 @@ test('the number keys set the columns and 0 returns to auto', () => {
   assert.match(gridTemplate(root), /^repeat\(2, /);
   assert.deepEqual(cardMaxWidths(root), ['none', 'none']);
   press(card, '5');
-  assert.match(gridTemplate(root), /^repeat\(5, /);
+  assert.match(gridTemplate(root), /^repeat\(2, /, 'two wafers: no fifth column to ask for');
   press(card, '0');
   assert.deepEqual(cardMaxWidths(root), ['480px', '480px']);
   ctrl.destroy();
+});
+
+test('the columns on offer stop at the number of cards, and a host may still set more', () => {
+  const root = dom.window.document.getElementById('root');
+  root.innerHTML = '';
+  const three = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02'), waferAtPitch(10, 'W03')]);
+  const card = root.querySelector('.wmap-gallery-card');
+  press(card, '4');
+  press(card, '5');
+  assert.equal(gridTemplate(root), gridTemplate(root), 'keys above the card count change nothing');
+  assert.doesNotMatch(gridTemplate(root), /^repeat\([45], /);
+  press(card, '3');
+  assert.match(gridTemplate(root), /^repeat\(3, /);
+  three.setColumns(5);
+  assert.match(gridTemplate(root), /^repeat\(5, /, 'the host\'s own count is not second-guessed');
+  three.destroy();
 });
 
 test('the column keys leave a key with a modifier, a digit above 5, and typing in a text box alone', () => {
@@ -217,7 +233,7 @@ test('the column keys work with the pointer over the gallery and no click first,
   const doc = dom.window.document;
   const root = doc.getElementById('root');
   root.innerHTML = '';
-  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02'), waferAtPitch(10, 'W03'), waferAtPitch(10, 'W04')]);
   const before = gridTemplate(root);
   press(doc.body, '3');                                   // pointer nowhere near it, focus elsewhere
   assert.equal(gridTemplate(root), before, 'a key on the page body is not the gallery\'s when the pointer is elsewhere');
@@ -251,7 +267,7 @@ test('a pointer already resting over the gallery counts once it moves, or when t
   const doc = dom.window.document;
   const root = doc.getElementById('root');
   root.innerHTML = '';
-  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02')]);
+  const ctrl = renderWaferGallery(root, [waferAtPitch(10, 'W01'), waferAtPitch(10, 'W02'), waferAtPitch(10, 'W03'), waferAtPitch(10, 'W04')]);
   const before = gridTemplate(root);
   // The pointer was there before the gallery was drawn, so no `pointerenter` ever fires: only movement, or `:hover`, can say so.
   press(doc.body, '2');

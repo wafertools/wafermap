@@ -2407,16 +2407,22 @@ export function renderWaferGallery(
   wireControlHover(btnPicked, 'bare');
   btnPicked.addEventListener('click', clearPickedCards);
 
-  type ColsValue = '1' | '2' | '3' | '4' | '5' | 'auto';
+  type ColsValue = string;
+  /** How many columns the Columns control offers: 1 up to the cards on show (at most 5), and the current count if it is more. */
+  const columnChoices = (): number[] => {
+    const shown = currentItems.filter(it => it != null && !hiddenItems.has(it)).length;
+    const most = Math.min(5, Math.max(1, shown));
+    const choices = Array.from({ length: most }, (_, k) => k + 1);
+    if (currentColumns != null && !choices.includes(currentColumns)) choices.push(currentColumns);
+    return choices;
+  };
   const btnColumns = makeDropdown(
     'columns', 'Columns',
+    // No more columns than there are cards to put in them: a fifth column of three maps is only a smaller map. A count set
+    // some other way (the `columns` option, a saved choice) stays in the list so the control can show it.
     () => [
       { value: 'auto' as ColsValue, label: 'Auto (0)' },
-      { value: '1'    as ColsValue, label: '1 column (1)' },
-      { value: '2'    as ColsValue, label: '2 columns (2)' },
-      { value: '3'    as ColsValue, label: '3 columns (3)' },
-      { value: '4'    as ColsValue, label: '4 columns (4)' },
-      { value: '5'    as ColsValue, label: '5 columns (5)' },
+      ...columnChoices().map(n => ({ value: String(n) as ColsValue, label: `${n} column${n === 1 ? '' : 's'} (${n})` })),
     ],
     () => (currentColumns != null ? String(currentColumns) as ColsValue : 'auto'),
     (v) => setColumnsState(v === 'auto' ? undefined : Number(v)),
@@ -3043,6 +3049,8 @@ export function renderWaferGallery(
     if (!/^[0-5]$/.test(e.key) || container.ownerDocument.querySelector('[role="dialog"]')) return;
     const target = e.target as { closest?: (selector: string) => Element | null } | null;
     if (typeof target?.closest === 'function' && target.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"]')) return;
+    // The control offers no more columns than there are cards, and the keys follow it.
+    if (e.key !== '0' && !columnChoices().includes(Number(e.key))) return;
     e.preventDefault();
     setColumnsState(e.key === '0' ? undefined : Number(e.key));
   };

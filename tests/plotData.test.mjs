@@ -479,12 +479,13 @@ test('examples: one of each type the lot can show, and the newer features, built
   const cat = fieldCatalogue(lot(), ctx);
   let n = 0;
   const ex = examplePlots(cat, 3, () => `e${n++}`);
-  assert.deepEqual(ex.map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'box', 'heatmap', 'box', 'box', 'histogram', 'box', 'box', 'bar', 'bar', 'sweep']);
+  assert.deepEqual(ex.map(p => p.chart), ['scatter', 'histogram', 'box', 'bar', 'line', 'probability', 'heatmap', 'heatmap', 'box', 'box', 'histogram', 'line', 'line', 'bar', 'bar', 'sweep']);
   assert.deepEqual(ex[0].fields, { x: { test: 1050, name: 'Vth' }, y: { test: 1060, name: 'Idsat' }, color: { meta: 'split' } }, 'coloured by the split');
   assert.deepEqual(ex[3].fields.color, { meta: 'split' }, 'a bar per split, each its own colour');
   assert.equal(ex[0].fit, 'linear');
   assert.deepEqual(ex[6].fields.y, { tests: [1050, 1060], names: { 1050: 'Vth', 1060: 'Idsat' } }, 'the lot\'s tests as one set, rescaled');
   assert.equal(ex[6].normalize, 'zscore');
+  assert.deepEqual(ex[6].fields.x, { meta: 'split' }, 'under a split the tests are a grid by split, not dozens of boxes');
   assert.deepEqual(ex[9].fields.x, [{ meta: 'split' }, { builtin: 'wafer' }], 'wafers nested in their split');
   assert.deepEqual(ex[11].fields.x, { binned: { test: 1060, name: 'Idsat' }, bins: 5 });
   assert.equal(ex[13].cumulative, true, 'a pareto of the hard bins');
@@ -651,7 +652,7 @@ test('examples follow the data: the worst ring filtered, the most-failing test r
   assert.equal(whatIf.fields.y.test, 2);
   assert.ok(whatIf.whatIf.lo < 0 && whatIf.whatIf.hi > 2e-9, 'the limits widened by a tenth of the window');
   assert.ok(ex.some(p => p.chart === 'box' && p.fields.x?.test === 3), 'the lead test by the pass/fail test');
-  assert.ok(ex.some(p => p.chart === 'box' && p.normalize === 'limits' && p.fields.y.tests.length === 2), 'the tests with limits, each placed between them');
+  assert.ok(ex.some(p => p.chart === 'heatmap' && p.normalize === 'limits' && p.fields.y.tests.length === 2), 'the tests with limits, each placed between them, by split');
   const grid = ex.find(p => p.chart === 'heatmap' && p.fields.y.passRate);
   assert.deepEqual([grid.fields.y.tests, grid.fields.x], [[1, 2], { meta: 'split' }], 'which tests fail in which split');
   assert.equal(ex.find(p => p.chart === 'histogram' && p.normalCurve).histNorm, 'percent', 'the split\'s arms as shares of their own dies');
@@ -723,4 +724,25 @@ test('a heatmap of a yield or a pass rate is a rating (bad to good); a z-score i
   const measured = resolvePlot(spec('heatmap', { ...rows, y: T(1050, 'Vth') }, { level: 'wafer', aggregate: 'mean' }), lot(), ctx);
   assert.equal(measured.colorScale.rating, undefined);
   assert.equal(measured.colorScale.diverging, undefined);
+});
+
+test('the Re-probed field is the share of dies probed more than once, offered only when a lot has re-probes', () => {
+  const retested = (retests) => {
+    const w = wafer('W1', { n: 10, pass: 9 });
+    w.dies = w.dies.map((d, k) => (k < retests ? { ...d, retestCount: 2 } : d));
+    return w;
+  };
+  const withRetests = [retested(3)];
+  assert.ok(fieldCatalogue(withRetests, ctx).some(f => 'builtin' in f.field && f.field.builtin === 'reprobed'));
+  assert.ok(!fieldCatalogue([wafer('W1', { n: 10, pass: 9 })], ctx).some(f => 'builtin' in f.field && f.field.builtin === 'reprobed'), 'not offered with none');
+  const r = resolvePlot(spec('bar', { x: { builtin: 'wafer' }, y: { builtin: 'reprobed' } }, { aggregate: 'mean' }), withRetests, ctx);
+  assert.deepEqual(r.issues, []);
+  assert.ok(Math.abs(r.marks.values[0][0] - 30) < 1e-9, '3 of 10 dies re-probed is 30%');
+});
+
+test('a heatmap of wafers under Group by sits the wafers with their group', () => {
+  const wafers = [wafer('W1', { vth0: 0.4, meta: { split: 'B' } }), wafer('W2', { vth0: 0.5, meta: { split: 'A' } }), wafer('W3', { vth0: 0.6, meta: { split: 'B' } }), wafer('W4', { vth0: 0.7, meta: { split: 'A' } })];
+  const heat = (c) => resolvePlot(spec('heatmap', { x: { builtin: 'wafer' }, y: { tests: [1050, 1060] } }, { level: 'wafer', aggregate: 'mean', normalize: 'zscore' }), wafers, c);
+  assert.deepEqual(heat(ctx).marks.cols, ['W1', 'W2', 'W3', 'W4'], 'in the lot\'s order without grouping');
+  assert.deepEqual(heat({ ...ctx, groupBy: 'split' }).marks.cols, ['W2', 'W4', 'W1', 'W3'], 'group A, then group B');
 });

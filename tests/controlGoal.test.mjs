@@ -100,3 +100,25 @@ test('control and goal plots read and write back', () => {
   const bad = readPlotsFile(JSON.stringify({ format: PLOTS_FORMAT, version: PLOTS_VERSION, plots: [{ id: 'c', chart: 'control', fields: {}, baseline: 2 }] }));
   assert.equal('baseline' in bad.plots[0], false);
 });
+
+test('a control chart coloured by a wafer field colours its points by it, and the line stays one series', async () => {
+  const { resolvePlot } = await import('../dist/packages/stats/plotData.js');
+  const { buildWaferMap } = await import('../dist/index.js');
+  const wafer = (label, v, split) => {
+    const r = buildWaferMap({ results: Array.from({ length: 4 }, (_, k) => ({ x: k, y: 0, hbin: 1, testValues: { 1: v } })), waferConfig: { diameter: 30, metadata: { split } }, dieConfig: { width: 2, height: 2 }, passBins: [1], testDefs: [{ testNumber: 1, name: 'Vth', unit: 'V' }] });
+    return { label, dies: r.dies, metadata: r.metadata, passBins: [1], ringCount: r.ringCount, wafer: r.wafer };
+  };
+  const items = [wafer('W1', 1, 'A'), wafer('W2', 2, 'B'), wafer('W3', 1.1, 'A'), wafer('W4', 2.1, 'B')];
+  const spec = color => ({ id: 'c', chart: 'control', fields: { x: { builtin: 'waferOrder' }, y: { test: 1 }, ...(color ? { color } : {}) } });
+  const ctx = { testDefs: [{ testNumber: 1, name: 'Vth', unit: 'V' }], passBins: [1] };
+  const plain = resolvePlot(spec(), items, ctx);
+  assert.deepEqual(plain.groups, ['']);
+  assert.equal(plain.marks.group, undefined);
+  const coloured = resolvePlot(spec({ meta: 'split' }), items, ctx);
+  assert.deepEqual(coloured.groups, ['A', 'B']);
+  assert.deepEqual(coloured.marks.group, [0, 1, 0, 1]);
+  assert.equal(coloured.marks.values.length, 4, 'one series, joined in order');
+  const followed = resolvePlot(spec({ follow: 'groupBy' }), items, { ...ctx, groupBy: 'split' });
+  assert.deepEqual(followed.marks.group, [0, 1, 0, 1], 'a followed colour is Group by');
+  assert.deepEqual(resolvePlot(spec({ follow: 'groupBy' }), items, ctx).groups, [''], 'with no Group by, nothing to follow');
+});

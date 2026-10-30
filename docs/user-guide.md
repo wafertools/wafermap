@@ -348,7 +348,7 @@ The gallery control bar applies to all cards simultaneously.
 | <img src="images/icons/overlays.svg" width="20" height="20"> | Overlays      | Toggles display layers for all cards simultaneously.                                                                                                                               |
 | <img src="images/icons/palette.svg" width="20" height="20">  | Colour scheme | Picks bin colours (bin modes) or value colours (other modes) for all cards, including **Reverse gradient**.                                                                                                         |
 | <img src="images/icons/orient.svg" width="20" height="20">   | Orientation   | Opens the rotate/flip controls, applied to all cards.                                                                                                                              |
-| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns, or press **1** to **5**, or **0** for Auto, while the pointer is over the gallery or focus is in it. **Auto** fits as many cards as keep each die at least 6 px across, so a dense wafer gets a wider card and a window that cannot hold another column at that width keeps the columns it has; a number divides the full width between that many columns. |
+| <img src="images/icons/columns.svg" width="20" height="20">  | Columns       | Sets the number of columns, or press **1** to **5**, or **0** for Auto, while the pointer is over the gallery or focus is in it; it offers no more columns than there are cards. **Auto** fits as many cards as keep each die at least 6 px across, so a dense wafer gets a wider card and a window that cannot hold another column at that width keeps the columns it has; a number divides the full width between that many columns. |
 | <img src="images/icons/boxSelect.svg" width="20" height="20"> | Select on every wafer | A toggle. Off (the default), each card selects on its own. A badge counts the selected die positions; clicking the button while something is selected clears it. On, a box, a click or a clear on any card applies to every card at the same die positions, so a region is read lot-wide; right-click then opens charts and tables of those dies across all the wafers (see [Box select](#43-box-select)). |
 | <img src="images/icons/downloadAll.svg" width="20" height="20"> | Save image    | Downloads the full gallery grid as a single PNG.                                                                                                                                   |
 | <img src="images/icons/aggr.svg" width="20" height="20"> | Aggregation method | Stacked modes only. Selects how values from multiple wafers are combined per die position: Mean, Median, Std Dev, Min, Max, or Count. |
@@ -877,8 +877,9 @@ The [Chart reference](https://wafertools.github.io/wafermap/charts/) describes e
 shows, how to read it, when to reach for it and where to find it. This section covers how the tab works.
 
 The **Columns** control beside **Group by** and **Show**, or the keys **1** to **5** (and **0** for Auto), sets how many columns of
-cards every section of the tab uses. **Auto** fits as many as the width holds at 420 px or more; a number divides the width that many ways,
-and the choice stays while you move between the tabs.
+cards every section of the tab uses. **Auto** fits as many as the width holds at 420 px or more; a number is the most columns a section uses, dividing the width that many ways,
+and the choice stays while you move between the tabs. A tab uses the smaller of that number and the cards in its fullest section, so a tab
+of two cards is two columns even with 4 chosen.
 
 Any chart mark that stands for one wafer — a bar in *Yield by wafer*, a box in
 *Test value distribution*, a point in *Wafer-to-wafer trend* — can be
@@ -1076,23 +1077,23 @@ warns when that is more than a spreadsheet can open (1,048,576).
 The **My plots** sub-tab is where you build your own charts. **+ New plot** starts one,
 already filled in with the first two tests of the lot, and opens it beside a large
 copy of the chart. **Edit as plot**, in the ⋯ menu of an Insights chart, opens that chart as a plot of your own (see
-*A chart's buttons* below). **Add examples** draws plots to start from, or to see what each chart and
-setting is for. They are chosen from the lot in view: the *lead* test is the one that varies most from wafer to
+*A chart's buttons* below). The **My plots | Examples** switch above the list shows one or the other, never both: **Examples** shows plots to start from, or to see what each chart and
+setting is for, each marked as an example; none is saved until you add it. They are chosen from the lot in view: the *lead* test is the one that varies most from wafer to
 wafer (for a single wafer, the one that follows distance from the centre most), its partner the test that tracks it
 best, and the split is the lot field that best explains the lead test. The examples are a scatter of the lead
 test against its partner with a fitted line, a histogram with its
-normal curve, a box of the lead test by wafer, a bar of yield by the split, a line over wafer order with a ±1 SD band, and a probability plot. It adds one of each newer
+normal curve, a box of the lead test by wafer, a bar of yield by the split, a line over wafer order with a ±1 SD band, and a probability plot. It shows one of each newer
 feature the lot can show: the most telling tests as one set rescaled to z-scores (a box per test, and a heatmap of
 tests by wafer), the lead test by split and by wafer nested in split, panels by ring, the lead test by ranges of its
 partner and of the distance from the centre, a pareto of the hard bins and each wafer's bin mix, the
 lead test by PAT verdict, an individuals control chart (five or more wafers), a capability goal plot and a
 pass-rate bar when tests have limits, and a sweep of the first
-tests in test order. Edit any of them to see how it is set. Pressing the button again adds only what is missing. Every change you make there is drawn at once; there is no Apply
+tests in test order. Each example has **Add to my plots**, and **Add all** adds the ones you do not have yet and shows My plots, with an **Undo**; edit a plot to see how it is set. Every change you make there is drawn at once; there is no Apply
 button, and the plot is kept as you go.
 
 ![The My plots tab: example plots, one card each](images/guide-plot-tab.png)
 
-*The My plots tab after **Add examples**: each card is a plot, with Edit, Duplicate and Delete.*
+*The My plots tab after the examples are added: each card is a plot, with Edit, Duplicate and Delete.*
 
 ![The plot editor: the chart beside its Setup tab](images/guide-plot-editor.png)
 
@@ -1483,7 +1484,7 @@ its wafers and dies in the same place. The image takes the card's own background
 theme saves a dark chart. The file name identifies the lot, wafers and chart (see below).
 
 **Printing.** The dropdowns, toggles and buttons (Expand, the ⋯ menu button and, on the My plots tab, New
-plot, Add examples, Import, Export, Delete all, Edit, Duplicate and Delete) are left off the printed page.
+plot, Examples, Import, Export, Delete all, Edit, Duplicate and Delete) are left off the printed page.
 In their place each chart prints a small block under its title giving the same settings and
 lines as the saved image, so a printed histogram says which test it is of.
 
@@ -1692,7 +1693,7 @@ Treat the counts as a way to find out where PAT would matter and which tests dri
 
 ### 10.13 Example plots
 
-**Add examples** chooses its tests from the data in view rather than the order they are listed in. The **lead test**
+**Examples** chooses its tests from the data in view rather than the order they are listed in. The **lead test**
 is the one with the largest share of its variation lying between wafers (for a single wafer, the one most tied to
 distance from the centre); its **partner** is the test that follows it most closely over a sample of dies (correlation
 above 0.3); the **split** is the lot field whose groups explain most of the lead test's variation between wafers,

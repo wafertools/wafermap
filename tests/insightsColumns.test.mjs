@@ -65,6 +65,32 @@ test('the number keys set every chart grid\'s columns in the Insights tab, and 0
   ctrl.destroy();
 });
 
+test('the chosen columns are a most: each tab uses the smaller of it and the cards in its fullest grid', async () => {
+  // jsdom has no layout, so a rendered element is taken to be on screen.
+  Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetParent', { get() { return this.parentNode; }, configurable: true });
+  try {
+    const { ctrl, root } = await openInsights();
+    const fullest = () => Math.max(0, ...Array.from(root.querySelectorAll('[data-wmap-chart-grid]')).map(g => g.children.length));
+    const current = () => cols(root.querySelector('[data-wmap-chart-grid]'));
+    const overview = fullest();
+    assert.ok(overview >= 5, `the Overview has a grid of ${overview} cards`);
+    press(document.body, '5');
+    assert.equal(current(), '5', 'a tab with five cards or more uses all five');
+    root.querySelector('[data-wmap-insights-tab="correlation"]').click();
+    await waitFor(() => root.querySelector('[data-wmap-chart-card][data-wmap-chart-title*="correlation matrix"]'), 'the Correlation tab');
+    const correlation = fullest();
+    assert.ok(correlation >= 1 && correlation < 5, `the Correlation tab has a fullest grid of ${correlation} cards`);
+    await waitFor(() => current() === String(correlation), `the Correlation tab uses ${correlation} columns, not five`);
+    root.querySelector('[data-wmap-insights-tab="overview"]').click();
+    await waitFor(() => fullest() >= 5 && current() === '5', 'back on the Overview the five columns return');
+    press(document.body, '0');
+    assert.equal(current(), '', 'Auto is unaffected');
+    ctrl.destroy();
+  } finally {
+    delete dom.window.HTMLElement.prototype.offsetParent;
+  }
+});
+
 test('the Insights column keys leave modified keys, other digits and text boxes alone', async () => {
   const { root, ctrl, grid } = await openInsights();
   press(document.body, '2', { ctrlKey: true });

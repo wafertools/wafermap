@@ -714,10 +714,14 @@ test('every button on the Plot tab has a hover hint', async () => {
   await waitFor(() => chartTitleAttrs(plotTab).includes('Vth sweep card'), 'the sweep card');
   const buttons = [...plotTab.el.querySelectorAll("button")].filter(b => Object.keys(b.dataset).some(k => k.startsWith('wmapPlot')));
   const hooks = buttons.map(b => Object.keys(b.dataset).find(k => k.startsWith('wmapPlot')));
-  for (const hook of ['wmapPlotNew', 'wmapPlotExamples', 'wmapPlotImport', 'wmapPlotExport', 'wmapPlotDeleteAll', 'wmapPlotEdit', 'wmapPlotDuplicate', 'wmapPlotDelete']) {
+  for (const hook of ['wmapPlotNew', 'wmapPlotImport', 'wmapPlotExport', 'wmapPlotDeleteAll', 'wmapPlotEdit', 'wmapPlotDuplicate', 'wmapPlotDelete']) {
     assert.ok(hooks.includes(hook), `the tab has a ${hook} button`);
   }
   for (const b of buttons) assert.ok((b.dataset.wmapTip ?? '').length > 10, `${b.textContent.trim()} has a hint`);
+  // My plots | Examples is a switch, not a button: each segment explains itself.
+  const views = [...plotTab.el.querySelectorAll('[data-wmap-plot-views] label')];
+  assert.deepEqual(views.map(l => l.textContent), ['My plots', 'Examples']);
+  for (const l of views) assert.ok((l.dataset.wmapTip ?? '').length > 10, `${l.textContent} has a hint`);
 });
 
 // A segmented control's option can carry a hint; the ones whose labels do not explain themselves do.
@@ -747,7 +751,7 @@ test('the Overview has a Reticle cell yield card when the wafers carry a reticle
   const withReticle = build({ width: 3, height: 2 });
   const tab = mountInsights(withReticle.items, withReticle.lot);
   assert.ok(cardTitles(tab).includes('Reticle cell yield'), `got ${cardTitles(tab)}`);
-  assert.ok(cardTitles(tab).includes('Ring yield') && cardTitles(tab).includes('Quadrant yield'), 'beside the ring and quadrant cards');
+  assert.ok(cardTitles(tab).some(t => t.startsWith('Ring yieldHeatmap')) && cardTitles(tab).some(t => t.startsWith('Quadrant yieldHeatmap')), 'beside the ring and quadrant cards');
   const without = build(undefined);
   assert.ok(!cardTitles(mountInsights(without.items, without.lot)).includes('Reticle cell yield'));
 });

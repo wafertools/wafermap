@@ -143,7 +143,18 @@ export const CHART_CATALOGUE: readonly CatalogueEntry[] = [
     see: ['yield-by-wafer', 'reticle-cell-yield'],
   },
 
+  {
+    id: 're-probed-dies', kind: 'chart', title: 'Re-probed dies', cards: ['card-reprobed'], tab: 'overview',
+    about: 'The share of dies that were probed more than once, by ring on each wafer (or group), to show where the retests are. Drawn when the lot has re-probed dies.',
+    guide: [GUIDE_SECTIONS.heatmap], see: ['yield-by-site', 'ring-yield-by-wafer', 'heatmap'],
+  },
+
   // ── Built-in cards: test values ───────────────────────────────────────────────────────────────────────────────────
+  {
+    id: 'tests-by-wafer', kind: 'chart', title: 'Tests by wafer', cards: ['card-tests-wafer'], tab: 'distributions',
+    about: 'The tests whose wafers (or groups) differ most, one row each, as a grid of z-scores: where a wafer is above or below that test’s average.',
+    guide: [GUIDE_SECTIONS.heatmap], see: ['heatmap', 'test-value-distribution', 'comparison-by-group'],
+  },
   {
     id: 'test-value-distribution', kind: 'chart', title: 'Test value distribution', cards: ['card-box'], tab: 'distributions',
     about: 'How one test’s values spread on each wafer or group: the box holds the middle half of the dies, the line inside it is the median, and the whiskers reach the lowest and highest values.',

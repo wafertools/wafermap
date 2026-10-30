@@ -21,7 +21,7 @@ import { sweepAppliesTo } from '../stats/sweep.js';
 import { plotToSweep } from '../stats/plotSpec.js';
 import { renderPlotChart } from './charts/plotChart.js';
 import { renderSweepPanel } from './charts/sweep.js';
-import { makeChartGridWrap } from './charts/chartShell.js';
+import { makeChartGridWrap, makeSegmented } from './charts/chartShell.js';
 import { confirmDialog } from './confirmDialog.js';
 import { openDrilldownMenu } from './drilldown.js';
 import { openPlotEditor } from './plotModal.js';
@@ -86,9 +86,21 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     return b;
   };
   const deleteAllBtn = button('Delete all plots…', 'wmapPlotDeleteAll', 'Remove every plot and sweep. You are asked first, and Undo brings them back for ten seconds', () => { void deleteAll(); });
+  // One grid at a time: the reader's own plots, or examples drawn from this lot. Examples are not saved, so they are never
+  // mixed into the list; adding one puts it in My plots.
+  let view: 'plots' | 'examples' = 'plots';
+  const switcher = makeSegmented(
+    [['plots', 'My plots', 'Your own plots, kept for the next lot'], ['examples', 'Examples', 'One example of each chart type this lot can show, drawn from its own tests. They are not your plots until you add them']],
+    view, v => showView(v as 'plots' | 'examples'), doc,
+  );
+  switcher.dataset.wmapPlotViews = '1';
+  switcher.setAttribute('aria-label', 'Plots shown');
+  for (const label of Array.from(switcher.querySelectorAll('label'))) {
+    if (label.querySelector('input')?.value === 'examples') label.dataset.wmapPlotExamples = '1';
+  }
   bar.append(
+    switcher,
     button('+ New plot', 'wmapPlotNew', 'Start a chart of your own: choose its type (a sweep reads runs of tests as response curves), what goes on each axis and how it is coloured', () => newPlot()),
-    button('Add examples', 'wmapPlotExamples', 'Draw one example of each chart type this lot can show, to edit or delete', () => addExamples()),
     button('Import plots…', 'wmapPlotImport', 'Add the plots from a file written by Export plots…', () => { void importPlots(); }),
     button('Export plots…', 'wmapPlotExport', 'Save all your plots to a file, to share or to keep a copy', () => exportPlots()),
     deleteAllBtn,
@@ -129,9 +141,23 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     notice.replaceChildren();
   }
 
+  // ── examples: a read-only gallery, so looking at them does not fill the reader's own list ──
+  const gallery = doc.createElement('div');
+  gallery.dataset.wmapPlotGallery = '1';
+  Object.assign(gallery.style, { display: 'none', flexDirection: 'column', gap: SPACE.md, padding: SPACE.md, border: `1px solid ${CLR.menuBorder}`, borderRadius: RADIUS.container } as Partial<CSSStyleDeclaration>);
+  markNoPrint(gallery);
+  root.appendChild(gallery);
+  let galleryCards: Array<{ card: HTMLElement; destroy: () => void }> = [];
+  const closeGallery = (): void => {
+    for (const c of galleryCards) c.destroy();
+    galleryCards = [];
+    gallery.replaceChildren();
+    gallery.style.display = 'none';
+  };
+
   // ── the list ──
   const empty = doc.createElement('div');
-  empty.textContent = 'No plots yet. A plot is any measured value against another, or a distribution, that you choose: New plot starts one, and it is kept for the next lot. Add examples draws one of each chart type from this lot to start from.';
+  empty.textContent = 'No plots yet. A plot is any measured value against another, or a distribution, that you choose: New plot starts one, and it is kept for the next lot. Examples shows one of each chart type from this lot, to look at and to add the ones you want.';
   Object.assign(empty.style, { color: CLR.label, fontSize: FONT.body, padding: `${SPACE.lg} 0` } as Partial<CSSStyleDeclaration>);
   const grid = makeChartGridWrap(doc);
   root.append(empty, grid);
@@ -175,23 +201,115 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     if (source) openDrilldownMenu({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, source, menuContext());
   }
   function newPlot(): void {
+    setView('plots');
     const plot = defaultPlot(catalogue, newPlotId());
     store.upsert(plot);
     edit(plot);
   }
 
-  /** Example plots drawn from this lot's own tests and fields, most telling first, skipping any the reader already has. */
-  function addExamples(): void {
-    // The options that define an example (a fitted line, a rescaling, a band) are part of its identity, so a plain plot of the same fields does not hide it.
-    const key = (p: PlotSpec) => JSON.stringify([p.chart, p.fields, p.aggregate ?? null, p.sweep ?? null, p.fit ?? null, p.normalCurve ?? null, p.spread ?? null, p.normalize ?? null, p.sort ?? null, p.cumulative ?? null, p.stack ?? null]);
-    const have = new Set(store.get().map(key));
-    const fresh = examplePlots(catalogue, items.length, newPlotId, { items, ctx }).filter(p => !have.has(key(p)));
-    if (fresh.length === 0) {
-      say(catalogue.some(f => f.group === 'Tests') ? 'The examples for this lot are already in your plots.' : 'There are no measured values in this lot to draw examples from.');
-      return;
+  /** What defines an example (a fitted line, a rescaling, a band) is part of its identity, so a plain plot of the same fields does not hide it. */
+  const exampleKey = (p: PlotSpec) => JSON.stringify([p.chart, p.fields, p.aggregate ?? null, p.sweep ?? null, p.fit ?? null, p.normalCurve ?? null, p.spread ?? null, p.normalize ?? null, p.sort ?? null, p.cumulative ?? null, p.stack ?? null]);
+
+  /** Switch the segmented control itself, so it and the grid shown never disagree (its change handler does the rest). */
+  function setView(next: 'plots' | 'examples'): void {
+    const radio = switcher.querySelector<HTMLInputElement>(`input[value="${next}"]`);
+    if (!radio || radio.checked) return;
+    radio.checked = true;
+    // Built in the document's own window: a chart tab can live in a detached popup, whose events are not this realm's.
+    radio.dispatchEvent(new (doc.defaultView ?? window).Event('change'));
+  }
+
+  /** Which grid is on screen: the list (and its empty-state line), or the examples. */
+  function applyView(): void {
+    grid.style.display = view === 'plots' ? 'grid' : 'none';
+    empty.style.display = view === 'plots' && store.get().length === 0 ? '' : 'none';
+    gallery.style.display = view === 'examples' ? 'flex' : 'none';
+  }
+
+  function showView(next: 'plots' | 'examples'): void {
+    if (next === view) return;
+    view = next;
+    if (next === 'examples') {
+      if (!showExamples()) { setView('plots'); return; }
+    } else {
+      closeGallery();
     }
-    for (const p of fresh) store.upsert(p);
-    say(`Added ${fresh.length} example plot${fresh.length === 1 ? '' : 's'}: ${[...new Set(fresh.map(p => p.chart))].join(', ')}. Edit one to make it yours, or Delete what you do not need.`);
+    applyView();
+  }
+
+  /** Draw the examples: drawn from this lot's own tests and fields, most telling first, none of them saved. False when there are none. */
+  function showExamples(): boolean {
+    const examples = examplePlots(catalogue, items.length, newPlotId, { items, ctx });
+    if (examples.length === 0) {
+      say(catalogue.some(f => f.group === 'Tests') ? 'There are no examples this lot can draw.' : 'There are no measured values in this lot to draw examples from.');
+      return false;
+    }
+    const head = doc.createElement('div');
+    Object.assign(head.style, { display: 'flex', flexWrap: 'wrap', gap: SPACE.md, alignItems: 'center' } as Partial<CSSStyleDeclaration>);
+    const title = doc.createElement('div');
+    Object.assign(title.style, { color: CLR.text, fontSize: FONT.body, flex: '1 1 auto' } as Partial<CSSStyleDeclaration>);
+    const addButtons: Array<{ example: PlotSpec; add: () => string | undefined }> = [];
+    const addAll = button('Add all', 'wmapPlotExamplesAddAll', 'Add every example you do not have yet to My plots', () => {
+      const added = addButtons.map(b => b.add()).filter((id): id is string => id !== undefined);
+      if (added.length === 0) return;
+      setView('plots');
+      say(`Added ${added.length} plot${added.length === 1 ? '' : 's'} to My plots.`, { label: 'Undo', run: () => {
+        const gone = new Set(added);
+        store.replaceAll(store.get().filter(p => !gone.has(p.id)));
+      } });
+    });
+    head.append(title, addAll);
+    const grid2 = makeChartGridWrap(doc);
+    gallery.append(head, grid2);
+    const syncAll: Array<() => void> = [];
+    const retitle = (): void => {
+      const have = addButtons.filter(b => store.get().some(p => exampleKey(p) === exampleKey(b.example))).length;
+      title.textContent = `${examples.length} examples from this lot, drawn for you. They are not your plots until you add them${have ? ` (${have} added)` : ''}; edit them under My plots.`;
+      addAll.disabled = have === examples.length;
+      addAll.style.opacity = have === examples.length ? '0.6' : '1';
+    };
+    for (const example of examples) {
+      let card: { card: HTMLElement; actions: HTMLElement; destroy: () => void };
+      if (example.chart === 'sweep') {
+        const panel = renderSweepPanel({ spec: plotToSweep(example)!, dies: items.flatMap(it => it.dies), testDefs: d.testDefs, onSaveImage: d.onSaveImage, ownerDocument: doc, onSelectPoint: selectLevel });
+        card = panel;
+      } else {
+        const chart = renderPlotChart({ ownerDocument: doc, waferLabel: i => items[i]?.label ?? '', ...chartHooks() });
+        chart.setPlot(resolve(example));
+        card = chart;
+      }
+      card.card.dataset.wmapPlotExample = example.chart;
+      const badge = doc.createElement('span');
+      badge.textContent = 'Example';
+      badge.dataset.wmapPlotExampleBadge = '1';
+      Object.assign(badge.style, { fontSize: FONT.sub, color: CLR.label, border: `1px dashed ${CLR.menuBorder}`, borderRadius: RADIUS.control, padding: `0 ${SPACE.sm}` } as Partial<CSSStyleDeclaration>);
+      const addBtn = button('Add to my plots', 'wmapPlotExampleAdd', 'Add this example to My plots, where you can edit it', () => {});
+      const have = (): boolean => store.get().some(p => exampleKey(p) === exampleKey(example));
+      const sync2 = (): void => {
+        const there = have();
+        addBtn.textContent = there ? 'In your plots' : 'Add to my plots';
+        addBtn.disabled = there;
+        addBtn.style.opacity = there ? '0.6' : '1';
+      };
+      const add = (): string | undefined => {
+        if (have()) return undefined;
+        const id = newPlotId();
+        store.upsert({ ...example, id });
+        return id;
+      };
+      addBtn.addEventListener('click', () => { add(); });
+      addButtons.push({ example, add });
+      syncAll.push(sync2);
+      card.actions.append(badge, addBtn);
+      grid2.appendChild(card.card);
+      galleryCards.push(card);
+    }
+    // Added from here or deleted under My plots, the buttons and the heading follow the list.
+    const follow = store.subscribe(() => { for (const f of syncAll) f(); retitle(); });
+    galleryCards.push({ card: head, destroy: follow });
+    for (const f of syncAll) f();
+    retitle();
+    return true;
   }
 
   /** Edit, Duplicate and Delete on a card's button row: the same three for every kind of plot. */
@@ -317,7 +435,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
       }
       if (grid.children[i] !== e.card) grid.insertBefore(e.card, grid.children[i] ?? null);
     });
-    empty.style.display = plots.length === 0 ? '' : 'none';
+    empty.style.display = view === 'plots' && plots.length === 0 ? '' : 'none';
     // Nothing to delete is not an action: the button says so rather than opening a dialog about zero plots.
     deleteAllBtn.disabled = plots.length === 0;
     deleteAllBtn.style.opacity = plots.length === 0 ? '0.5' : '1';
@@ -381,6 +499,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     if (read.error) { say(`Could not import: ${read.error}`); return; }
     const { plots, copies } = addPlots(store.get(), read.plots);
     store.replaceAll(plots);
+    setView('plots');
     const lines = [...read.warnings, ...(copies.length ? [`Kept as copies, since a plot with the same id already existed: ${copies.join(', ')}`] : [])];
     say(`Imported ${read.plots.length} plot${read.plots.length === 1 ? '' : 's'}.`, undefined, lines);
   }
@@ -390,6 +509,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     destroy: () => {
       unsubscribe();
       if (noticeTimer !== undefined) clearTimeout(noticeTimer);
+      closeGallery();
       for (const e of entries.values()) e.destroy();
       entries.clear();
       store.flush();

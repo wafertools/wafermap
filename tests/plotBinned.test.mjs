@@ -37,6 +37,18 @@ test('a box of a test by a binned test: one box per range, lowest first, equal c
   assert.match(r.x.label, /Idsat/);
 });
 
+test('a line over a binned X says it is ranges: in its title and its note, with the name as written', () => {
+  const defs = [{ testNumber: 1, name: 'vth_n_mV' }, { testNumber: 2, name: 'idsat_n_uA' }];
+  const r = resolvePlot(plot('line', { x: binned({ test: 1 }, 4), y: { test: 2 }, color: { none: true } }, { aggregate: 'median', spread: 'sd' }), [wafer('W1')], { testDefs: defs });
+  assert.deepEqual(r.issues, []);
+  assert.match(r.autoTitle, /by range of vth_n_mV$/);
+  assert.match(r.aggregation, /^median of idsat_n_uA in each of 4 ranges of vth_n_mV \(about the same number of dies in each\), drawn at the middle of the range; band: ± 1 standard deviation of the dies in each range$/);
+  const width = resolvePlot(plot('line', { x: binned({ test: 1 }, 4, 'width'), y: { test: 2 }, color: { none: true } }, { aggregate: 'mean' }), [wafer('W1')], { testDefs: defs });
+  assert.match(width.aggregation, /\(equal widths\)/);
+  const plain = resolvePlot(plot('line', { x: { builtin: 'waferOrder' }, y: { test: 2 }, color: { none: true } }, { aggregate: 'mean', spread: 'sd' }), [wafer('W1'), wafer('W2')], { testDefs: defs });
+  assert.match(plain.aggregation, /at each wafer order/, 'a plain heading is lower case in the sentence');
+});
+
 test('a binned field is one series with its unbinned field, and round-trips through the plots file', () => {
   const spec = plot('bar', { x: binned({ builtin: 'radius' }, 6, 'width'), y: { test: 1 } });
   const back = readPlotsFile(writePlotsFile([spec]));

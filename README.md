@@ -7,7 +7,8 @@
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 ![bundle](https://img.shields.io/badge/data%20layer%20min%2Bgz-~82%20kB-blue)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![support](https://img.shields.io/badge/support-wafertools-ff5e5b)](https://wafertools.github.io/support/)
+[![sponsor on GitHub](https://img.shields.io/badge/sponsor-GitHub%20Sponsors-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/wafertools)
+[![support on Ko-fi](https://img.shields.io/badge/support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/wafertools)
 
 <img src="docs/images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
 

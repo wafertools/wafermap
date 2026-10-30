@@ -511,7 +511,7 @@ export const CAPTURES = [
   },
 
   // ── The Plot tab (§8): the cards, the editor window, and the saved plots in the right-click menu. Driven by the
-  //    real UI, from "Add examples", so each picture shows what the library builds. ─────────────────────────────
+  //    real UI, from Examples ▸ Add all, so each picture shows what the library builds. ─────────────────────────────
   {
     file: 'guide-plot-tab',
     group: 'plots',
@@ -522,6 +522,7 @@ export const CAPTURES = [
       await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
       await page.locator('[data-wmap-insights-tab="plot"]').click();
       await page.locator('[data-wmap-plot-examples]').click();
+      await page.locator('[data-wmap-plot-examples-add-all]').click();
       await page.waitForSelector('[data-wmap-plot-id] canvas');
       await page.waitForTimeout(1200);
       await page.mouse.move(2, 2);
@@ -549,6 +550,7 @@ export const CAPTURES = [
       await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
       await page.locator('[data-wmap-insights-tab="plot"]').click();
       await page.locator('[data-wmap-plot-examples]').click();
+      await page.locator('[data-wmap-plot-examples-add-all]').click();
       await page.waitForSelector('[data-wmap-plot-id] canvas');
       await page.locator('[data-wmap-plot-edit]').first().click();
       await page.waitForSelector('[data-wmap-plot-window] canvas');
@@ -608,11 +610,11 @@ export const CAPTURES = [
       // Catalogue id → where the chart is and how its card is titled (the first words of its heading).
       const CARDS = [
         ['overview', 'yield-by-wafer', /^Yield by wafer/], ['overview', 'bin-pareto', /^Hard bin pareto/],
-        ['overview', 'pass-rate-by-test', /^Parametric pass rate/], ['overview', 'ring-yield', /^Ring yield(?! by wafer)/], ['overview', 'ring-yield-by-wafer', /^Ring yield by wafer/],
-        ['overview', 'quadrant-yield', /^Quadrant yield(?! by)/], ['overview', 'quadrant-yield-by-wafer', /^Quadrant yield by/], ['overview', 'reticle-cell-yield', /^Reticle cell yield/],
+        ['overview', 'pass-rate-by-test', /^Parametric pass rate/], ['overview', 'ring-yield', /^Ring yield by wafer/, 'Diagram', /^Ring yield(?! by wafer)/], ['overview', 'ring-yield-by-wafer', /^Ring yield by wafer/],
+        ['overview', 'quadrant-yield', /^Quadrant yield by/, 'Diagram', /^Quadrant yield(?! by)/], ['overview', 'quadrant-yield-by-wafer', /^Quadrant yield by/], ['overview', 'reticle-cell-yield', /^Reticle cell yield/],
         ['overview', 'what-divides-yield', /^What divides yield/], ['overview', 'part-average-testing-pat', /^Part average testing/],
         ['distributions', 'test-value-distribution', /^Test value distribution/], ['distributions', 'value-histogram', /^Value histogram/],
-        ['distributions', 'wafer-to-wafer-trend', /^Wafer-to-wafer trend/], ['distributions', 'process-capability', /^Process capability/],
+        ['distributions', 'tests-by-wafer', /^Tests by wafer/], ['distributions', 'wafer-to-wafer-trend', /^Wafer-to-wafer trend/], ['distributions', 'process-capability', /^Process capability/],
         ['correlation', 'test-correlation-matrix', /^Test correlation matrix/], ['correlation', 'test-scatter', /^Test scatter/],
         // The comparison and the difference map only exist once Group by is on.
         ['grouped', 'comparison-by-group', /^Comparison by/], ['grouped', 'difference-map', /^Difference map/],
@@ -627,7 +629,11 @@ export const CAPTURES = [
         await page.waitForTimeout(1800);
       };
       const shoot = async (locator, id) => {
+        if (!(await locator.isVisible())) throw new Error(`chart-gallery: no visible card for "${id}" - the catalogue and this list have drifted`);
         await locator.scrollIntoViewIfNeeded();
+        // A card at the top of its tab sits under the page's sticky header: scroll up until its own heading is clear of it.
+        const under = await locator.boundingBox();
+        if (under && under.y < 130) { await page.evaluate(d => window.scrollBy(0, -d), 130 - under.y); await page.waitForTimeout(200); }
         await page.mouse.move(2, 2);
         await page.waitForTimeout(250);
         const box = await locator.boundingBox();
@@ -653,7 +659,15 @@ export const CAPTURES = [
       await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click().catch(() => {});
       for (const tab of ['overview', 'distributions', 'correlation', 'plot']) {
         await open(tab);
-        for (const [t, id, m] of CARDS) if (t === tab) await shoot(card(m), id);
+        for (const [t, id, m, view, viewTitle] of CARDS) {
+          if (t !== tab) continue;
+          // A card with a View choice (Ring yield, Quadrant yield) draws the pooled diagram as one of its views, and is titled for
+          // it there: switch for the shot and back, so the next card sharing the heading is shot in its default view.
+          if (!view) { await shoot(card(m), id); continue; }
+          await card(m).locator('label', { hasText: new RegExp(`^${view}$`) }).click();
+          await shoot(card(viewTitle), id);
+          await card(viewTitle).locator('label', { hasText: /^Heatmap$/ }).click();
+        }
       }
       // The PAT verdict map, from the PAT showcase lot (docs/data/showcase-pat-screen.*): the demo lot's PAT limits reach its test
       // limits, so it has no outliers to show. The gallery is drawn over the page, in the PAT verdict mode, and the wafer with the
@@ -761,7 +775,8 @@ export const CAPTURES = [
     screenshotFn: async (page, outFile) => {
       await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
       await page.locator('[data-wmap-insights-tab="plot"]').click();
-      await page.locator('[data-wmap-plot-new-sweep]').click();
+      await page.locator('[data-wmap-plot-new]').click();
+      await page.locator('[data-wmap-plot-window]').locator('label', { hasText: /^Sweep$/ }).click();
       await page.waitForSelector('[data-wmap-plot-window] canvas');
       await page.waitForTimeout(1200);
       await page.mouse.move(2, 2);
@@ -782,6 +797,7 @@ export const CAPTURES = [
       await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click();
       await page.locator('[data-wmap-insights-tab="plot"]').click();
       await page.locator('[data-wmap-plot-examples]').click();
+      await page.locator('[data-wmap-plot-examples-add-all]').click();
       await page.waitForSelector('[data-wmap-plot-id] canvas');
       await page.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Maps' }).click();
       await page.waitForTimeout(800);

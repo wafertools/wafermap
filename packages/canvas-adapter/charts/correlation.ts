@@ -14,7 +14,8 @@
 // warning) itself from `items`/`groups`, and owns its own matrix-size state
 // internally — same end-user behavior, one fewer indirection.
 
-import { buildCorrelationMatrix, filterCorrelationMatrix, correlationSampleNote, type CorrelationMatrix, type CorrelationTestInfo } from '../../stats/correlation.js';
+import { buildCoFailureMatrix } from '../../stats/coFailure.js';
+import { buildCorrelationMatrix, demeanWithinGroups, filterCorrelationMatrix, correlationSampleNote, type CorrelationMatrix, type CorrelationTestInfo } from '../../stats/correlation.js';
 import { maxOf } from '../../core/utils.js';
 import { CORRELATION_POSITIVE, CORRELATION_NEGATIVE } from './palette.js';
 import { buildFacetTable, type FacetItem } from '../../stats/facets.js';
@@ -22,7 +23,7 @@ import type { Die } from '../../core/dies.js';
 import type { TestDef } from '../../renderer/buildWaferMap.js';
 import { wireControlHover, wireTooltip, controlStyle, SPACE, RADIUS, fontPx, FONT, CLR, type SaveTextHandler } from '../toolbar.js';
 import { exportCsv } from '../tableExport.js';
-import { attachChartTip, cardShell, setChartGrow, isExpandedCard, bodyRoom, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
+import { attachChartTip, cardShell, makeSegmented, setChartGrow, isExpandedCard, bodyRoom, observeResize, makeTooltip, positionChartTooltip, makeWaferSelect, renderEmptyState, resolveChartCanvasColors, type SaveImageHandler, prepareCanvas, chartDpr } from './chartShell.js';
 import { escHtml } from '../../core/utils.js';
 import { unmarkedLabel, derivedCsvCell, DERIVED_CSV_HEADER, DERIVED_MARK, DERIVED_KEY } from '../../renderer/testLabel.js';
 import { cardAbout } from './cardAbout.js';
@@ -49,6 +50,14 @@ export interface CorrelationPanelOptions {
    */
   /** Clicking a non-diagonal cell calls this — the Analysis tab wires it to drive the scatter panel's X/Y in place. */
   onSelectPair?: (xTestNumber: number, yTestNumber: number) => void;
+  /**
+   * With Group by on (two groups or more), the groups' wafers: the matrix then offers **Within groups**, the correlation
+   * left once each group's mean is taken off every test. Not a restriction to one group (see above): the choice is how
+   * the same wafers are correlated.
+   */
+  groups?: ReadonlyArray<{ key: string; items: CorrelationItem[] }>;
+  /** The field the groups are values of, for the choice's label. */
+  groupLabelText?: string;
   /** Document to build this panel's DOM into. Default `document` — pass the
    *  host's own `ownerDocument` when the container might live in a
    *  different document (e.g. a gallery card detached into its own popup
@@ -156,6 +165,27 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     controlsRow.appendChild(makeWaferSelect(items, activeWaferIndex, i => { activeWaferIndex = i; rebuild(); }, { ownerDocument: card.ownerDocument }));
   }
 
+  // With groups, how the wafers are correlated: all of them pooled, or within each group (each group's means removed), which
+  // is the right answer when the groups differ and the pooled one is the groups' difference read as a relationship.
+  let within = false;
+  // What the matrix compares: the tests' values (Pearson r), or which dies they fail on (the share of the dies failing either
+  // that fail both). Offered when two tests have limits to fail by.
+  let fails = false;
+  if (testDefs.filter(d => d.limitLow !== undefined || d.limitHigh !== undefined).length >= 2) {
+    const kind = makeSegmented(
+      [['values', 'Values', 'How the tests’ values move together (Pearson r)'], ['fails', 'Fails together', 'Which tests fail on the same dies: the share of the dies failing either of two tests that fail both']],
+      'values', v => { fails = v === 'fails'; rebuild(); }, card.ownerDocument);
+    kind.dataset.wmapCorrelationKind = '1';
+    controlsRow.appendChild(kind);
+  }
+  if (options.groups && options.groups.length >= 2) {
+    const seg = makeSegmented(
+      [['pooled', 'Pooled'], ['within', `Within ${options.groupLabelText ?? 'groups'}`, 'The correlation left once each group’s mean is taken off every test, so a difference between groups is not read as a relationship between tests']],
+      'pooled', v => { within = v === 'within'; rebuild(); }, card.ownerDocument);
+    seg.dataset.wmapCorrelationMode = '1';
+    controlsRow.appendChild(seg);
+  }
+
   function currentItems(): CorrelationItem[] {
     if (activeWaferIndex !== null) return items[activeWaferIndex] ? [items[activeWaferIndex]] : [];
     return items;
@@ -202,8 +232,8 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
         { header: 'Test X number', get: p => p.x.testNumber },
         { header: 'Test Y', get: p => unmarkedLabel(p.y.label) },
         { header: 'Test Y number', get: p => p.y.testNumber },
-        { header: 'r', get: p => p.r === null ? '' : p.r.toFixed(6) },
-        { header: 'n', get: p => p.n },
+        { header: fails ? 'Share failing both' : 'r', get: p => p.r === null ? '' : p.r.toFixed(6) },
+        { header: fails ? 'Dies failing either' : 'n', get: p => p.n },
         ...(anyDerived ? [
           { header: `Test X ${DERIVED_CSV_HEADER.toLowerCase()}`, get: (p: Pair) => derivedCsvCell(p.x) },
           { header: `Test Y ${DERIVED_CSV_HEADER.toLowerCase()}`, get: (p: Pair) => derivedCsvCell(p.y) },
@@ -244,7 +274,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     if (mixedFields.length > 0) {
       const warn = card.ownerDocument.createElement('div');
       warn.dataset.wmapCaption = '1';
-      warn.textContent = `⚠ Mixed ${mixedFields.join(', ')} within this set — correlations may be misleading (Simpson's paradox). Use Group by, or the Wafer picker, to narrow to a like-for-like set.`;
+      warn.textContent = `⚠ Mixed ${mixedFields.join(', ')} within this set — correlations may be misleading (Simpson's paradox). ${options.groups && options.groups.length >= 2 ? `Choose Within ${options.groupLabelText ?? 'groups'} to take the groups’ differences out, or use the Wafer picker` : 'Use the Wafer picker to narrow to a like-for-like set, or Group by one of these fields where it is in the list'}.`;
       Object.assign(warn.style, { color: CLR.warnText, background: CLR.warnBg, border: `1px solid ${CLR.warnBorder}`, borderRadius: RADIUS.control, padding: `${SPACE.xs} ${SPACE.md}`, fontSize: FONT.body } as Partial<CSSStyleDeclaration>);
       hintRow.appendChild(warn);
     }
@@ -261,21 +291,23 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
     // coverage — a single number would otherwise silently be one pair's.
     // The derived-test key rides on this line whenever a marked name is on the
     // matrix — a glyph with no key reads as a rendering artefact.
-    hintText.textContent = (pairN !== null
+    hintText.textContent = fails
+      ? `Share of the dies failing either that fail both${pairN !== null ? ` · ${pairN.toLocaleString()} failing dies per pair (median)` : ''} · click a cell to view that pair in scatter ·`
+      : (pairN !== null
       ? `Pearson r · n ≈ ${pairN.toLocaleString()} dies per pair · click a cell to view that pair in scatter ·`
       : 'Pearson r · click a cell to view that pair in scatter ·')
       + (anyDerived ? ` ${DERIVED_MARK} ${DERIVED_KEY} ·` : '');
     hint.appendChild(hintText);
     const scaleWrap = card.ownerDocument.createElement('span');
     Object.assign(scaleWrap.style, { display: 'inline-flex', alignItems: 'center', gap: SPACE.xs } as Partial<CSSStyleDeclaration>);
-    const lo = card.ownerDocument.createElement('span'); lo.textContent = '−1';
+    const lo = card.ownerDocument.createElement('span'); lo.textContent = fails ? '0' : '−1';
     const bar = card.ownerDocument.createElement('span');
     Object.assign(bar.style, {
       display: 'inline-block', width: '64px', height: '8px', borderRadius: RADIUS.control,
       border: `1px solid ${CLR.menuBorder}`,
-      background: `linear-gradient(to right, ${CORRELATION_NEGATIVE}, ${CLR.menuBg}, ${CORRELATION_POSITIVE})`,
+      background: fails ? `linear-gradient(to right, ${CLR.menuBg}, ${CORRELATION_POSITIVE})` : `linear-gradient(to right, ${CORRELATION_NEGATIVE}, ${CLR.menuBg}, ${CORRELATION_POSITIVE})`,
     } as Partial<CSSStyleDeclaration>);
-    const hi = card.ownerDocument.createElement('span'); hi.textContent = '+1';
+    const hi = card.ownerDocument.createElement('span'); hi.textContent = fails ? '1' : '+1';
     scaleWrap.append(lo, bar, hi);
     hint.appendChild(scaleWrap);
     hintRow.appendChild(hint);
@@ -284,7 +316,11 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
     summaryLine.dataset.wmapCaption = '1';
     Object.assign(summaryLine.style, { color: CLR.value, fontSize: FONT.body, fontWeight: '500' } as Partial<CSSStyleDeclaration>);
-    if (strongPairs === 0 && moderatePairs === 0) {
+    if (fails) {
+      summaryLine.textContent = strongestPair && strongestPair.r > 0
+        ? `Most shared failures: ${strongestPair.xLabel} ↔ ${strongestPair.yLabel} (${Math.round(100 * strongestPair.r)}% of the dies failing either fail both)`
+        : 'No two tests fail on the same dies';
+    } else if (strongPairs === 0 && moderatePairs === 0) {
       summaryLine.textContent = strongestPair
         ? `No significant correlations found — strongest pair: ${strongestPair.xLabel} ↔ ${strongestPair.yLabel} (r = ${strongestPair.r.toFixed(2)})`
         : 'No significant correlations found';
@@ -475,7 +511,7 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
       if (isDiag) {
         tooltip.innerHTML = `<strong>${escHtml(xLabel)}</strong>`;
       } else if (cell?.r !== null && cell?.r !== undefined) {
-        tooltip.innerHTML = `<strong>${escHtml(shortLabel(matrix.tests[yi]))}</strong> (#${matrix.tests[yi].testNumber}) vs <strong>${escHtml(shortLabel(matrix.tests[xi]))}</strong> (#${matrix.tests[xi].testNumber})<br>r = ${cell.r.toFixed(4)} · n = ${cell.n.toLocaleString()}${onSelectPair ? '<br><em>click to view in scatter</em>' : ''}`;
+        tooltip.innerHTML = `<strong>${escHtml(shortLabel(matrix.tests[yi]))}</strong> (#${matrix.tests[yi].testNumber}) vs <strong>${escHtml(shortLabel(matrix.tests[xi]))}</strong> (#${matrix.tests[xi].testNumber})<br>${fails ? `${(100 * cell.r).toFixed(0)}% of the dies failing either fail both · ${cell.n.toLocaleString()} fail either` : `r = ${cell.r.toFixed(4)} · n = ${cell.n.toLocaleString()}`}${onSelectPair ? '<br><em>click to view in scatter</em>' : ''}`;
       } else {
         tooltip.innerHTML = `${escHtml(`${yLabel} vs ${xLabel}`)}<br><em>insufficient data</em>`;
       }
@@ -505,10 +541,14 @@ export function renderCorrelationPanel(options: CorrelationPanelOptions): Correl
 
   function rebuild(): void {
     const scopedItems = currentItems();
-    const dies = scopedItems.flatMap(it => it.dies ?? []);
-    const fullMatrix = buildCorrelationMatrix(dies, testDefs);
+    const withinGroups = !fails && within && activeWaferIndex === null && !!options.groups;
+    const dies = withinGroups
+      ? demeanWithinGroups(options.groups!.map(g => g.items.flatMap(it => it.dies ?? [])), testDefs)
+      : scopedItems.flatMap(it => it.dies ?? []);
+    const fullMatrix = fails ? buildCoFailureMatrix(dies, testDefs) : buildCorrelationMatrix(dies, testDefs);
     const { matrix, strongPairs, moderatePairs, hiddenWeakPairs, strongestPair } = filterCorrelationMatrix(fullMatrix, { minTests: 6, maxTests: limit });
-    const mixedFields = buildFacetTable(scopedItems, { facetableOnly: true }).filter(f => f.splittable).map(f => f.label);
+    // Within groups, what mixes the wafers is what was taken out: no warning.
+    const mixedFields = withinGroups || fails ? [] : buildFacetTable(scopedItems, { facetableOnly: true }).filter(f => f.splittable).map(f => f.label);
     // Median of the off-diagonal pair counts, not the die total: tests can have
     // different coverage, so no single n describes every cell. Median is the
     // honest one-number summary and the per-cell tooltip carries the exact value.

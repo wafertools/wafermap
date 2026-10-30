@@ -27,8 +27,10 @@ export function compareNatural(a: string, b: string): number {
  * different ways depending on which surface rendered it.
  */
 export function prettyKey(key: string): string {
+  // Split where a word starts (processSplit, waferID), not before every capital: an all-caps key (TEMP, LOT_ID) stays whole.
   return key
-    .replace(/([A-Z])/g, ' $1')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
     .replace(/_/g, ' ')
     .trim()
     .replace(/^./, s => s.toUpperCase());

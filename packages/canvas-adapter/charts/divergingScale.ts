@@ -9,7 +9,7 @@
 // `plotGradient` is the one place a plot's gradient is resolved, so the cells, the points, the colour key and the saved
 // image cannot disagree about what a colour means.
 
-import { resolveValueColorFn } from '../../renderer/colorSchemes.js';
+import { registerValueColorScheme, resolveValueColorFn } from '../../renderer/colorSchemes.js';
 import { SIGNED_HIGH, SIGNED_LOW } from './palette.js';
 
 type Rgb = [number, number, number];
@@ -44,6 +44,9 @@ export const PLOT_GRADIENTS: ReadonlyArray<{ name: string; label: string }> = [
   { name: 'diverging', label: 'Blue to orange, around zero' },
   { name: 'rating', label: 'Rating: orange-red to blue (colour-blind safe)' },
 ];
+
+// Registered too, so a map of a signed quantity (the difference map) can use it and any map's colour menu lists it.
+registerValueColorScheme('diverging', { label: PLOT_GRADIENTS[0].label, forValue: divergingColor });
 
 /**
  * The colour of a value at `t` in [0, 1] of a plot's key. `scheme` is a name from `PLOT_GRADIENTS` or a map gradient;
