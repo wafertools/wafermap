@@ -128,6 +128,39 @@ async function mountPatGallery(page) {
   });
 }
 
+// A small lot for the two Insights cards the demo lot cannot show: Yield by site needs dies from two sites or more, and Re-probed
+// dies needs dies probed more than once. Four wafers of a four-site probe card, one site weaker than the rest, with the re-probes
+// gathered at the edge of the second wafer. Generated here, so no data file stands for it. Drawn over the page as #site-shot.
+async function mountSiteGallery(page) {
+  await page.evaluate(async () => {
+    const { buildWaferMap } = await import('wafermap');
+    const { renderWaferGallery } = await import('wafermap/render');
+    const hash = (x, y, w) => ((Math.imul(x + 101, 2654435761) ^ Math.imul(y + 211, 2246822519) ^ Math.imul(w + 7, 40503)) >>> 0) % 1000 / 1000;
+    const items = [];
+    for (let w = 0; w < 4; w++) {
+      const results = [];
+      for (let x = -15; x <= 15; x++) {
+        for (let y = -15; y <= 15; y++) {
+          const r = Math.hypot(x, y);
+          if (r > 15) continue;
+          const siteNum = (x & 1) + ((y & 1) << 1) + 1;
+          const edge = r > 12.5;
+          const failShare = 0.05 + (siteNum === 3 ? 0.14 : 0) + (edge ? 0.12 : 0);
+          const die = { x, y, hbin: hash(x, y, w) < failShare ? 2 : 1, siteNum };
+          if (edge && hash(y, x, w + 20) < (w === 1 ? 0.7 : 0.15)) die.retestCount = 2;
+          results.push(die);
+        }
+      }
+      items.push({ ...buildWaferMap({ results, waferConfig: { diameter: 200, notch: { type: 'bottom' } }, dieConfig: { width: 6, height: 6 }, passBins: [1] }), label: `SITE-0${w + 1}` });
+    }
+    const host = document.createElement('div');
+    host.id = 'site-shot';
+    host.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#fff;overflow:auto';
+    document.body.appendChild(host);
+    renderWaferGallery(host, items, { insights: { enabled: true }, columns: 4 });
+  });
+}
+
 export const CAPTURES = [
 
   // ── hero-test-values.png — homepage hero: Idsat heatmap with colorbar + toolbar ─
@@ -678,6 +711,16 @@ export const CAPTURES = [
       await page.waitForTimeout(1800);
       await shoot(patCard, 'pat-verdict-map');
       await page.evaluate(() => document.getElementById('pat-shot')?.remove());
+      // Yield by site and Re-probed dies, from a lot that has sites and re-probes.
+      await mountSiteGallery(page);
+      const siteHost = page.locator('#site-shot');
+      await siteHost.locator('[data-wmap-view-switch] [role="tab"]', { hasText: 'Insights' }).click().catch(() => {});
+      await siteHost.locator('[data-wmap-insights-tab="overview"]').click();
+      await page.waitForTimeout(2200);
+      for (const [id, m] of [['yield-by-site', /^Yield by site/], ['re-probed-dies', /^Re-probed dies/]]) {
+        await shoot(siteHost.locator('[data-wmap-chart-card]').filter({ hasText: m }).first(), id);
+      }
+      await page.evaluate(() => document.getElementById('site-shot')?.remove());
       // Group by Process Split: the comparison and the difference map appear on Distributions.
       await open('distributions');
       await page.locator('[data-wmap-select="group-by"]').click();
