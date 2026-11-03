@@ -1,0 +1,30 @@
+name: Security
+
+on:
+  pull_request:
+  schedule:
+    # Weekly, so a new advisory against an unchanged tree still surfaces.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Production dependencies only: dev tooling advisories do not reach the
+      # published package.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
