@@ -4,7 +4,7 @@
 
 ## Adding statistical findings
 
-The statistics engine (`analyzeWaferMap`) scans for spatial patterns across five families: rings, quadrants, angular sectors, contiguous failure clusters, and edge arcs. For each family it compares the local zone to the rest of the wafer using a statistical test appropriate to the variable type.
+The statistics engine (`analyzeWaferMap`) scans for spatial patterns in rings, quadrants, angular sectors, reticle positions and test sites, and for contiguous failure clusters and edge arcs. For each region family it compares the local zone to the rest of the wafer using a statistical test appropriate to the variable type.
 
 It also runs a **spatial pattern classifier** that labels the overall failure signature of the wafer — edge-ring, center cluster, scratch, and so on. This operates separately from the zone-by-zone statistical tests: the statistical findings are the evidence, the pattern label is the interpretation. See [Spatial Pattern Detection](../pattern-detection.md) for how the classifier works, what it was tested on, and its known limitations.
 
@@ -26,7 +26,7 @@ renderWaferMap(container, result, {
 });
 ```
 
-A "Findings" button (notebook icon) appears in the toolbar. Clicking it opens
+A **Summary** button appears in the toolbar. Clicking it opens
 the summary panel — a persistent results panel alongside the map showing yield,
 bin distribution, ring and quadrant stats, test value summaries, and the full
 findings list. Clicking any finding in the panel highlights the affected dies on
@@ -43,7 +43,7 @@ By default the engine checks every combination of:
 
 - **Ring zones** — each concentric ring vs. the rest of the wafer
 - **Quadrant zones** — each of NE/NW/SE/SW vs. the rest of the wafer
-- **Angular sectors** — 16 compass-direction sectors (N, NNE, NE, …) vs. the rest of the wafer; finer directional resolution than quadrants, catching drift patterns a single quadrant would dilute
+- **Angular sectors** — compass-direction sectors (8 by default: N, NE, E, …) vs. the rest of the wafer; finer directional resolution than quadrants, catching drift patterns a single quadrant would dilute
 - **Reticle-field positions** — each reticle cell vs. other cells (only when a `reticleConfig` was used)
 - **Failure clusters** — contiguous groups of failing dies that are denser than the wafer-wide background failure rate; each cluster highlighted as a specific set of dies
 - **Edge arcs** — failure clusters whose centroid is near the wafer perimeter and whose angular span is narrow; distinguished from full-ring edge effects (which ring analysis catches separately)
@@ -65,9 +65,7 @@ Clicking the finding again clears the highlight.
 
 ### Interpreting findings and severity
 
-The findings list is ranked and filtered by statistical strength and effect size:
-
-These thresholds are **internal constants, not options** — see [§7.3 of the API reference](../api/stats.md#73-analyzewafermapoptions) for why. They are documented here so you can tell why a pattern did or did not produce a finding.
+The findings list is ranked and filtered by statistical strength and effect size. These thresholds are **internal constants, not options** — see [§7.3 of the API reference](../api/stats.md#73-analyzewafermapoptions) for why. They are documented here so you can tell why a pattern did or did not produce a finding.
 
 - **p-value correction:** adjusted p-values are used (threshold 0.05), corrected with a Benjamini–Hochberg FDR procedure over every comparison of one kind on the wafer at once: all its yield, bin, functional and limit-fail rates in every region family are one family. Rates whose expected counts are small (a rare bin, a small region, a nearly clean wafer) are tested exactly (Fisher's test) rather than by the normal approximation.
 - **A region must hold against the regions that are not themselves deviant:** compared with "the rest of the wafer", the regions beside a strong pattern look deviant the other way (a failing quadrant makes the sectors opposite look good). Each finding is re-tested against the rest without the other findings of the same variable and family, losses first, and a region is called better only than the regions that are not worse. A failing block of rings is reported as the block, never as the rings either side of it being better.
@@ -146,7 +144,7 @@ The **test-value row** is the expensive one: it runs a Welch comparison for ever
 |---------------------------------------------------------------------------|-------------------------------------|---------------|
 | Yield, bin, and spatial (ring/quadrant/sector/cluster) findings only      | `enableTestValueAnalysis: false`    | baseline      |
 | …plus per-test descriptive stats (mean, stddev, min, max, median, Q1, Q3) for box plots / histograms | `enableTestValueAnalysis: false, computePerTestStats: true` | ~5× baseline  |
-| …plus "this test's value differs significantly in this region" findings (and spec-limit region findings), whatever the size | `enableTestValueAnalysis: true`     | ~12× baseline |
+| …plus "this test's value differs significantly in this region" findings (and limit-fail region findings), whatever the size | `enableTestValueAnalysis: true`     | ~12× baseline |
 
 The test-value analysis also produces the per-test descriptive stats, so you never need both. The cost multipliers are illustrative (measured at ~2.8k dies × 200 tests); the absolute numbers scale with your test count.
 
@@ -225,10 +223,10 @@ exports and your own UI:
 const summary = analyzeWaferMap(result, { computePerTestStats: true });
 
 summary.stats.capability;                   // Cp/Cpk/Pp/Ppk per parametric test, worst first
-summary.stats.testSpecYield;                // pass rate by spec limits
+summary.stats.testSpecYield;                // pass rate by test limits
 summary.stats.testFlagYield;                // pass rate by the tester's own recorded verdict
 summary.stats.functionalYield;              // pass rate of functional (pass/fail-only) tests
-summary.stats.specVerdictDisagreementDies;  // dies where spec limits and the tester disagree
+summary.stats.specVerdictDisagreementDies;  // dies where the test limits and the tester disagree
 summary.stats.regionYield;                  // { ring, quadrant } yield, with die and pass counts
 ```
 

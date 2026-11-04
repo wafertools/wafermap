@@ -99,7 +99,7 @@ results with no X/Y coordinates at all, for some or every die on a wafer.
 fabricated positions would risk being misread as real spatial layout. Instead the card shows a
 compact summary matching the active plot mode: a **bin breakdown** (coloured the same as a
 positioned card's own bin legend) for hard/soft-bin modes, or a **histogram** for value mode —
-coloured through the same colour scheme, log-scale, and spec/data-range settings the map itself
+coloured through the same colour scheme, log-scale, and limit/data-range settings the map itself
 uses, so switching those in the toolbar updates the chart the same way it would a real map. A
 **View die list** toggle switches to the full per-die table (position/site, hard bin, soft bin,
 every test value) with its own CSV export; **View chart** switches back.
@@ -273,9 +273,9 @@ Use the **Overlays** menu to toggle optional display layers on and off:
 
 - **Axis labels** — the die coordinates along the bottom and left edges. They appear when you zoom; this row shows
   them all the time, or hides them. **Clear overlays** returns to showing them on zoom
-- **XY axis indicator** — shows X and Y axis lines through the wafer centre
+- **XY axis indicator** — arrows showing which way the X and Y die coordinates run
 - **Ring boundaries** — concentric ring divisions that match the spatial analysis zones
-- **Quadrant lines** — divides the wafer into N, S, E, W quadrants
+- **Quadrant lines** — divides the wafer into NE, NW, SE and SW quadrants
 - **Die coordinate labels** — draws the (x, y) grid position inside each die (useful at high zoom)
 - **Reticle grid** — stepper field grid (only shown when reticle geometry is configured)
 - **Limit pass/fail** — pass/fail colouring for Test Value mode, judged against the test limits, when the active test defines them
@@ -609,8 +609,8 @@ A map with only bin data has no charts to draw, but its menu still opens with
 
 ## 5. Findings panel
 
-When spatial analysis has been run, the **Findings** panel lists statistically
-detected patterns on the wafer. Open it from the toolbar.
+When spatial analysis has been run, the **Findings** section of the Summary panel lists statistically
+detected patterns on the wafer. Open the panel with the toolbar's **Summary** button.
 
 Each finding shows:
 
@@ -624,7 +624,7 @@ Each finding shows:
 **Severity** reflects how strong the statistical evidence is. *Unusual* findings
 have both a very low adjusted p-value and a large effect size — they are reliably
 important. *Notable* findings are statistically significant with a meaningful
-effect but not as extreme. *Info* findings pass the significance threshold at
+effect but not as extreme. *Minor* findings pass the significance threshold at
 lower strength and are worth reviewing but may reflect smaller or noisier patterns.
 
 **Test-value findings** (a region reading high or low on a test) take the longest to compute, so
@@ -650,7 +650,7 @@ next to other failures (a spot touching a failing edge, say) is still reported a
 | Type                 | What it indicates                                                                                   |
 | -------------------- | --------------------------------------------------------------------------------------------------- |
 | **Ring**             | Yield or value difference between radial bands — e.g. centre vs edge gradient                       |
-| **Quadrant**         | Yield or value difference between N, S, E, or W quadrants                                           |
+| **Quadrant**         | Yield or value difference between NE, NW, SE or SW quadrants                                           |
 | **Sector**           | Asymmetry across finer angular slices — rotational bias or directional process variation            |
 | **Test-site**        | Yield or value difference between parallel probe sites on the same wafer                            |
 | **Reticle position** | Yield signature repeating at specific stepper field grid positions                                  |
@@ -868,10 +868,9 @@ bin 1 (Pass) or bin 2 (Fail) at that location.*
 
 The **Insights** side of the **Maps | Insights** switch (at the far right of the toolbar row, single map or
 gallery) swaps the wafer view for a chart suite computed from the same die data — without leaving the
-toolbar. Choose **Maps** to return to the map; the switch stays where it is. Independent of the Findings
-sidebar (see [Summary panel](#6-summary-panel)) — the two toggle independently, and opening one never
-hides the other's toolbar button, since Findings has nothing to highlight
-against once the map is replaced.
+toolbar. Choose **Maps** to return to the map; the switch stays where it is. While Insights is open the
+buttons that act on the map, the **Summary** button among them, are hidden, since there is no map for the
+[Summary panel](#6-summary-panel) to highlight; **Maps** brings them back.
 
 The [Chart reference](https://wafertools.github.io/wafermap/charts/) describes every chart, plot and table: what it
 shows, how to read it, when to reach for it and where to find it. This section covers how the tab works.
@@ -895,7 +894,7 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   [Reticle cell yield](https://wafertools.github.io/wafermap/charts/#reticle-cell-yield). With four or more wafers and wafer fields to compare, [What divides yield](https://wafertools.github.io/wafermap/charts/#what-divides-yield)
   ranks the fields by how clearly their groups differ; **Group by** on its row groups the whole tab by that field. With
   Group by on, the yield bar and the pareto draw a bar per group (click a group's bar to see its wafers, **Back** to return). The
-  pass-rate card offers up to three ways of judging, whichever the data supports: **Spec limits**, **Tester flag** and
+  pass-rate card offers up to three ways of judging, whichever the data supports: **Test limits**, **Tester flag** and
   **Functional**; when the first two disagree it says how many dies they judged differently. The card is the size of the
   others whatever the number of tests: more than fit scroll. With nothing to judge it is left out.
 - **Worth a look**, on the Overview below the yield, bin and region cards — the same items as
@@ -1082,7 +1081,7 @@ setting is for, each marked as an example; none is saved until you add it. They 
 wafer (for a single wafer, the one that follows distance from the centre most), its partner the test that tracks it
 best, and the split is the lot field that best explains the lead test. The examples are a scatter of the lead
 test against its partner with a fitted line, a histogram with its
-normal curve, a box of the lead test by wafer, a bar of yield by the split, a line over wafer order with a ±1 SD band, and a probability plot. It shows one of each newer
+normal curve, a box of the lead test by wafer, a bar of yield by the split, a line over wafer order with a ±1 SD band, and a probability plot. The examples also show one of each newer
 feature the lot can show: the most telling tests as one set rescaled to z-scores (a box per test, and a heatmap of
 tests by wafer), the lead test by split and by wafer nested in split, panels by ring, the lead test by ranges of its
 partner and of the distance from the centre, a pareto of the hard bins and each wafer's bin mix, the
@@ -1112,6 +1111,7 @@ In **Setup**, choose the **chart type**, then the field for each role:
 | **Control** | one value per wafer in order, against control limits, with the points that break a rule marked | along (X), the values |
 | **Heatmap** | one cell per row and column, coloured by the value combined there | columns, rows, values (optional: a count) |
 | **Goal** | every test with both limits as a point: how far off centre and how wide | the tests (all by default) |
+| **Sweep** | a run of tests read as one response curve, and the pair of curves measured against each other (see [Sweep cards](#sweep-cards)) | the series of tests and where each one's X comes from |
 
 - **X axis** and **Y axis** (a histogram has one **Values** field; a box or bar has
   **Categories** instead of a numeric X). Any measured test, a die's X or Y position,
@@ -1353,7 +1353,9 @@ questions:
 opens on a selection or a wafer (**Plots** section), drawn over just those dies and
 captioned with them.
 
-![The right-click menu on a selection, with the Plots section](images/guide-plot-drilldown.png) **New plot…** and **New sweep…** in the same menu start a draft on the selection;
+![The right-click menu on a selection, with the Plots section](images/guide-plot-drilldown.png)
+
+**New plot…** and **New sweep…** in the same menu start a draft on the selection;
 a draft is kept only if you press **Add to my plots**.
 
 Every change is kept as you make it. If you make a mistake, **Reset** (under the settings) puts the plot back as it was
@@ -1510,7 +1512,7 @@ mask defects.
 
 <div data-wmap-demo="reticle" class="wmap-demo"></div>
 
-Reticle-position findings in the Findings panel highlight the specific field
+Reticle-position findings in the Summary panel's Findings section highlight the specific field
 positions that show elevated failure rates. Hovering any die also shows its
 **Reticle (column, row)** position — its location within its own stepper
 field — just below the die's coordinate in the tooltip.
@@ -1684,7 +1686,7 @@ requirements are met, so nothing here claims it. The differences:
   outlier analysis, and lists tests that shall use PAT limits at test (pin leakage, standby supply current, IDDQ, output
   levels, propagation delays and others, in its Appendix 2). Nothing here checks a test's distribution or matches tests
   to that list.
-- **A floor of 30 passing values per wafer.** That floor is ours. The guideline's 1.35 is inexact for under 20 values,
+- **A floor of 30 passing values per wafer.** That floor is this library's own choice. The guideline's 1.35 is inexact for under 20 values,
   and sets sample sizes only for static limits.
 - **Quartiles** are found by interpolation between the ranked values, which the guideline does not specify.
 

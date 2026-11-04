@@ -25,7 +25,7 @@ Only the renderers, from `/render`, need a browser environment.
 
 ```ts
 import { WMAP_VERSION, WMAP_BUILD_TIME } from '@wafertools/wafermap/render';
-// '0.28.0'   '2026-09-11T07:58:39.023Z'
+// '0.39.0'   '2026-11-01T07:39:49.203Z'
 ```
 
 Both are generated at build time, so they describe **the bundle actually loaded** rather than
@@ -177,7 +177,7 @@ Note this is purely index arithmetic on `die.x`/`die.y`, so it is unaffected by 
 
 ---
 
-### 10.6 `getReticleShot(die, config)`
+### 10.5.1 `getReticleShot(die, config)`
 
 ```ts
 import { getReticleShot } from '@wafertools/wafermap';

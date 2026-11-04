@@ -80,7 +80,7 @@ scripts/check-bundle-size.mjs` prints the per-chunk breakdown.
 | Option | What you get | Where it shows up |
 |---|---|---|
 | *(none — just `buildWaferMap` + `renderWaferMap`)* | The interactive map itself | Always |
-| `analyzeWaferMap({ enableTestValueAnalysis: false })` | Yield %, bin breakdown, ring/quadrant yield (`stats.regionYield`), pass rates by spec, verdict and functional test, basic findings | Summary panel, Insights → Overview |
+| `analyzeWaferMap({ enableTestValueAnalysis: false })` | Yield %, bin breakdown, ring/quadrant yield (`stats.regionYield`), pass rates by test limits, tester verdict and functional test, basic findings | Summary panel, Insights → Overview |
 | `analyzeWaferMap({ computePerTestStats: true })` | Per-test five-number summaries (min/Q1/median/Q3/max) and Cp/Cpk/Pp/Ppk (`stats.capability`) | Insights → Distributions |
 | `analyzeWaferMap()` — the default, `'auto'` | Automatic spatial statistical findings — flags regions where a test's values differ significantly (Welch's t-test per region) — when within the budget; otherwise offered in the Findings section. `true` runs it at any size | Summary panel's findings list |
 | Insights tab (on by default) | Process capability, distributions, correlation charts | Insights tab (the Maps | Insights switch) |

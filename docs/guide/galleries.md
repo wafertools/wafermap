@@ -157,7 +157,7 @@ the lot data to discover unique tests and bins when entering a stacked mode, and
 generates default labels (e.g. "Test 1050", "Bin 2") automatically.
 
 **Spatial findings.** Each stacked card automatically gets a spatial analysis
-summary — detach the card into its own window and click the findings button to
+summary — detach the card into its own window and click its Summary button to
 see ring, quadrant, sector, and cluster findings on the aggregated map.  No extra
 code is required.
 
@@ -280,12 +280,12 @@ renderWaferGallery(container, items, { insights: { enabled: true } });
 
 Either way, a **Maps | Insights** switch appears at the far right of the toolbar row, after the toolbar, and stays in the same place in both views. Choosing **Insights** swaps the map (or gallery grid) for the chart suite; choosing **Maps** — the toolbar stays visible and usable throughout — returns to the map. Pass `defaultOpen: true` to land on the charts instead of the map, for a surface where the analysis is the point rather than an option — the [Insights example](../examples/insights.html) does exactly that. Panels read parametric test values, so pass `testDefs` to `buildWaferMap` if you want the pass-rate chart, capability, box plots, histograms, the trend chart, correlation, and scatter to have data; yield and bin pareto only need `die.hbin`/`die.sbin`.
 
-The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Findings controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Findings specifically toggles the map/gallery findings panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own Expand, in its ⋯ menu, for enlarging just that chart.
+The toolbar itself adapts: mode, palette, overlay, orientation, Expand, and Summary controls (and, in a gallery, columns/download) are hidden while the Insights tab is open — none of them apply to the chart suite, and Summary specifically toggles the map/gallery summary panel, which sits behind (or inside the now-hidden grid body of) the Insights view with no visible effect. Only Insights and User guide stay visible. Expand has no single view left to enlarge once Insights owns the screen — each chart panel inside Insights has its own Expand, in its ⋯ menu, for enlarging just that chart.
 
 The tab lays out three chart sub-tabs, then **Data** and **My plots**. Sweeps are cards on the My plots tab (see [Derived tests and sweeps](#derived-tests-and-sweeps)):
 
 - **Overview** — headline tiles naming the population (wafers, dies analysed and excluded, and for a lot the mean wafer yield), a **per-test pass rate** chart (worst test first, one sub-bar per group when grouping is active), a yield bar labelled with the actual pass bins in use and marked with a dashed median reference, and a hard/soft bin pareto.
-- **Distributions** — process capability, a test-value box plot, a value histogram, and a **wafer-to-wafer trend** (one point per wafer at its mean, ±1σ whiskers, the die-weighted lot mean as a centre line, and spec limits where the test has them). The trend is always in slot order and has no sort control by design — drift only reads in the population's own sequence.
+- **Distributions** — process capability, a test-value box plot, a value histogram, and a **wafer-to-wafer trend** (one point per wafer at its mean, ±1σ whiskers, the die-weighted lot mean as a centre line, and the test's limits where it has them). The trend is always in slot order and has no sort control by design — drift only reads in the population's own sequence.
 - **Correlation** — a Pearson-r matrix (each cell carrying its own `n`) and a die-level X/Y scatter that prints `r` and `n` for the pair it is showing.
 
 Clicking a capability box drives the box plot, histogram and trend's selected test in place; clicking a correlation-matrix cell drives the scatter panel's X/Y in place — the same live cross-linking the toolbar's own mode/colour controls give you elsewhere.
@@ -469,7 +469,7 @@ const result = buildWaferMap({
 });
 ```
 
-That is all the wiring there is. Test 900001 now appears in the test-value plot modes, the colour bar, tooltips, `analyzeWaferMap`, the Insights panels and the report, with its `limitHigh` driving spec marks and Cpk exactly as a measured limit would.
+That is all the wiring there is. Test 900001 now appears in the test-value plot modes, the colour bar, tooltips, `analyzeWaferMap`, the Insights panels and the report, with its `limitHigh` driving limit marks and Cpk exactly as a measured limit would.
 
 Three accessors read the die, and the distinction between the last two matters: `t[1020]` is the measured value, `testPass[1020]` is the verdict the *tester* recorded, and `specPass[1020]` is the verdict *the limits* imply. Those two genuinely disagree in the field — guard bands and dynamic limits routinely cause it — so they are separate accessors rather than one conflated "did it pass". `diePass()` gives the die's bin verdict under the map's `passBins`.
 
@@ -588,7 +588,6 @@ sweeps: [{
   | `Vth @ 50mV` | `@ {x}` | 0.05 | the `m` of `mV` is read as milli, so 50 mV is 0.05 |
   | `Delay 5ns @ 25C` | `Delay {x}` | 5 × 10⁻⁹ | a unit with a prefix is scaled to its base unit |
   | `Leak I=1e-6A` | `I={x}` | 10⁻⁶ | exponent notation is read |
-
   | `12314` | `123?{x}` | 4 | `?` is any one character, so names of one shape can be read by position: here the digit after `123` and one more |
   | `12336` | `123?{x}` | 6 | the same pattern on the next name |
 

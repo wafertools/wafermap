@@ -417,7 +417,7 @@ buildWaferMap({
 |---|---|---|---|
 | `t[1020]` | the measured value | number | parametric tests |
 | `testPass[1020]` | the tester's recorded verdict (`die.testPass`, via `getTestPassStatus`) | boolean | any test |
-| `specPass[1020]` | the spec-limit judgement | boolean | parametric tests declaring a limit |
+| `specPass[1020]` | the judgement by the test limits (`limitLow`/`limitHigh`) | boolean | parametric tests declaring a limit |
 | `diePass()` | the die's bin verdict under the map's `passBins` | boolean | any die |
 | `dieX()`, `dieY()` | the die's position on the grid | number | a positioned die |
 | `hbin()`, `sbin()` | the die's hard or soft bin number | number | a die with that bin |

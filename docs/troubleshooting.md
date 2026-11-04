@@ -138,7 +138,7 @@ slice of a large one. With partial coverage the diameter and centre are both gue
 so every die can be misplaced relative to the true wafer boundary.
 
 **Diagnosis:** `result.warnings` carries a structured advisory, and from 0.22.0 the
-toolbar shows a red ⚠ for it — geometry advisories are severity `'error'` precisely
+toolbar shows a red ⛔ for it — geometry advisories are severity `'error'` precisely
 because they mean the picture may be wrong, not merely incomplete.
 
 ```ts

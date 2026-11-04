@@ -17,8 +17,6 @@ The test numbers and wafer attributes in the examples (`1060`, `processSplit`) a
 
 ---
 
----
-
 ## Maps
 
 ### Bin map
@@ -310,7 +308,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 **Notes.**
 
 - **A radial pattern shows in all four quarters.** Read it together with the [ring yield](#ring-yield); a loss can be radial and one-sided at once.
-- **Four quarters are coarse.** A diagonal or narrow sector shows better in the findings, which also scan 16 compass sectors.
+- **Four quarters are coarse.** A diagonal or narrow sector shows better in the findings, which also scan compass sectors (8 by default).
 - **Judged dies only**, as in every yield here.
 
 **Where to find it.** **Insights ▸ Overview**. As a plot, put **Quadrant** on the categories of a [bar chart](#bar-chart) of yield.
@@ -854,7 +852,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 **Notes.**
 
 - **It shows what PAT would have flagged; it is not the screening.** Screening belongs in the test programme under a documented procedure. The method follows the robust statistics of AEC-Q001 Rev D (the median, and the interquartile range ÷ 1.35, with limits of six robust sigma), here per wafer, and nothing here claims conformance.
-- **A wafer needs 30 or more passing values on a test**, and some spread, before it has PAT limits for it. The floor of 30 is ours, not the guideline's.
+- **A wafer needs 30 or more passing values on a test**, and some spread, before it has PAT limits for it. The floor of 30 is this library's own choice, not the guideline's.
 - **Every test with both limits is judged.** The card does not check whether a test's distribution suits outlier analysis, and a lopsided test gets the same symmetric limits; the card lists the tests whose middle half of values is lopsided, without changing their limits.
 - **Neighbourhood screens** (a good die in a bad neighbourhood) are not part of the guideline and are not in this card.
 

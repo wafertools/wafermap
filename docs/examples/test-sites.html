@@ -105,14 +105,19 @@
     function build(injectDefect) {
       const results = makeResults({
         seed:         7,
-        edgeFail:     true,
         siteCount:    SITE_COUNT,
         siteFail:     injectDefect ? 3 : 0,
         includePartId: true,
       });
 
+      // Each die also carries its site as metadata, so the map can be coloured by site.
+      const SITE_COLOURS = ['#4e79a7', '#f28e2b', '#59a14f', '#b07aa1'];
       const result = buildWaferMap({
-        results,
+        results: results.map(r => ({ ...r, metadata: { site: `Site ${r.siteNum}` } })),
+        metadataFields: [{
+          key: 'site', label: 'Test site',
+          values: SITE_COLOURS.map((color, i) => ({ value: `Site ${i + 1}`, label: `Site ${i + 1}`, color })),
+        }],
         waferConfig: WAFER_CONFIG,
         dieConfig:   DIE_CONFIG,
         hbinDefs:    HBIN_DEFS,
@@ -170,19 +175,17 @@
     });
 
     document.getElementById('btn-site').addEventListener('click', () => {
-      // siteNum is not a native plotMode; colour by metadata isn't available yet —
-      // show a tooltip note instead and keep hardBin mode.
-      // (A dedicated siteNum plot mode is a future feature.)
-      ctrl.setOptions({ plotMode: 'hardBin' });
-      document.getElementById('btn-hbin').classList.add('active');
-      document.getElementById('btn-site').classList.remove('active');
-      alert('Per-site colouring as a dedicated plot mode is planned for a future release.\nThe findings panel already shows site-level statistical comparisons.');
+      ctrl.setOptions({ plotMode: 'metadata', activeMetadataKey: 'site' });
+      document.getElementById('btn-site').classList.add('active');
+      document.getElementById('btn-hbin').classList.remove('active');
     });
 
     // Defect injection toggle
     document.getElementById('btn-defect-on').addEventListener('click', () => {
       document.getElementById('btn-defect-on').classList.add('active');
       document.getElementById('btn-defect-off').classList.remove('active');
+      document.getElementById('btn-hbin').classList.add('active');
+      document.getElementById('btn-site').classList.remove('active');
       const rebuilt = build(true);
       ctrl = renderWaferMap(document.getElementById('map'), rebuilt.result, {
         viewOptions:  { plotMode: 'hardBin' },
@@ -195,6 +198,8 @@
     document.getElementById('btn-defect-off').addEventListener('click', () => {
       document.getElementById('btn-defect-off').classList.add('active');
       document.getElementById('btn-defect-on').classList.remove('active');
+      document.getElementById('btn-hbin').classList.add('active');
+      document.getElementById('btn-site').classList.remove('active');
       const rebuilt = build(false);
       ctrl = renderWaferMap(document.getElementById('map'), rebuilt.result, {
         viewOptions:  { plotMode: 'hardBin' },

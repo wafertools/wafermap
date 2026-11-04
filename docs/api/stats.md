@@ -30,11 +30,11 @@ const summary = analyzeWaferMap(result);
 console.log(summary.findings[0]?.summary);
 // e.g. "Ring 4 (edge) yield is 18.3 pp lower than the rest of the wafer"
 
-// Pass to renderWaferMap to add a findings panel to the toolbar:
+// Pass to renderWaferMap to add the Summary button and panel to the toolbar:
 renderWaferMap(container, result, { statsSummary: summary });
 ```
 
-**Analysing a lot-stack result** — pass a `WaferMapResult` built with `lotStack` directly. Ring, quadrant, sector, and reticle-position analysis run on the aggregated test values. When the active test has spec limits (`limitLow` / `limitHigh` in `testDefs`), out-of-spec dies are used as the failure proxy for cluster and edge-arc detection. If no spec limits are defined, cluster detection is skipped automatically.
+**Analysing a lot-stack result** — pass a `WaferMapResult` built with `lotStack` directly. Ring, quadrant, sector, and reticle-position analysis run on the aggregated test values. When the active test has test limits (`limitLow` / `limitHigh` in `testDefs`), dies outside them are used as the failure proxy for cluster and edge-arc detection. If no test limits are defined, cluster detection is skipped automatically.
 
 ```ts
 const result = buildWaferMap({
@@ -324,7 +324,7 @@ Either the rate criterion or the size criterion can trigger the severity level; 
                                          // perTestStats. One wafer is one subgroup, so here Cp equals Pp (§7.4.1)
     testFlagYield?:  TestVerdictYield[] // per-test pass rate by the tester's recorded verdict (die.testPass),
                                          // parametric tests with verdicts; worst first (§7.4.1)
-    specVerdictDisagreementDies?: number // dies where the spec-limit judgement and the recorded verdict disagree,
+    specVerdictDisagreementDies?: number // dies where the test-limit judgement and the recorded verdict disagree,
                                          // over tests that have both; absent when none has both, 0 = full agreement
     regionYield?:    RegionYieldFigures // yield by ring and by quadrant — the Summary panel's region yield (§7.4.1)
     spatialPattern?: PatternClassification // the pattern classifier's label, confidence and geometry features
@@ -372,7 +372,7 @@ These are computed by the same code the Insights charts and Summary panel use, s
 { key: string; label: string; yieldPercent: number; n: number; passDies: number }   // key is an identity ("ring:2") — do not parse it
 ```
 
-- **Which pass/fail.** `testSpecYield` judges values against spec limits, `testFlagYield` reads the tester's own verdict, and `functionalYield` covers functional tests. The two parametric notions can legitimately disagree (guard bands, dynamic or per-site limits), which is why `specVerdictDisagreementDies` counts the difference rather than picking one.
+- **Which pass/fail.** `testSpecYield` (the name is historical) judges values against the test limits (`limitLow`/`limitHigh`), `testFlagYield` reads the tester's own verdict, and `functionalYield` covers functional tests. The two parametric notions can legitimately disagree (guard bands, dynamic or per-site limits), which is why `specVerdictDisagreementDies` counts the difference rather than picking one.
 - **Populations.** Partial and edge-excluded dies are excluded, as for yield; a die with no verdict is never a fail; region yield counts positioned dies with a bin, each judged by its own wafer's pass bins.
 - **Lots.** On `LotStatsSummary.stats` (§7.5), pass rates are each wafer's counts summed per test and are **absent unless every wafer reported them**, since a rate pooled over part of a lot is not the lot's. Capability uses each wafer as a subgroup, so there `stdWithin` is the pooled within-wafer stddev and Cp and Pp differ.
 

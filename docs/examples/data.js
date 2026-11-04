@@ -169,7 +169,7 @@ export function makeResults({
         const phaseX = ((1 % reticleWidth) + reticleWidth) % reticleWidth;
         const cellX = ((i + phaseX) % reticleWidth + reticleWidth) % reticleWidth;
         const cellY = ((j % reticleHeight) + reticleHeight) % reticleHeight;
-        if (cellX === 2 && cellY === 1) pass -= 0.32;
+        if (cellX === 2 && cellY === 1) pass -= 0.6;
       }
 
       pass -= yieldShift;
@@ -294,7 +294,7 @@ const IDSAT_LSL = 0.95e-3;
 const IOFF_USL = 6e-11;
 
 /**
- * Hard bin names and brand colours.
+ * Hard bin names.
  * Bin 1 = Pass; bins 2–4 are failure categories as assigned by the test program handler.
  */
 export const HBIN_DEFS = [

@@ -56,7 +56,7 @@ renderWaferGallery(document.getElementById('gallery'), items);
 const result  = buildWaferMap({ results, passBins: [1] });
 const summary = analyzeWaferMap(result);
 
-// summary panel and findings button appear automatically
+// the Summary button and panel appear automatically
 renderWaferMap(container, result, { statsSummary: summary });
 ```
 
@@ -307,8 +307,8 @@ Systematic lot patterns (e.g. an NE-quadrant drift present on every wafer) survi
 averaging and emerge as clear findings on the lot-average map. The Summary panel
 labels the view as "N wafers · mean" so it is unambiguous to the reader.
 
-For cluster and edge-arc detection, dies that exceed a test's spec limits
-(`limitLow` / `limitHigh` in `testDefs`) are used as the failure proxy. If no spec
+For cluster and edge-arc detection, dies that exceed a test's limits
+(`limitLow` / `limitHigh` in `testDefs`) are used as the failure proxy. If no test
 limits are defined, cluster detection is skipped automatically.
 
 **→ [Demo: Standalone stacked map with spatial analysis](../examples/statistics.html#lot-stack)**

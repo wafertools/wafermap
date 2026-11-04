@@ -197,9 +197,9 @@ With `testDefs` in place:
 
 `TestDef.logScale: true` enables log₁₀ scale for that test by default (silently falls back to linear when any die value ≤ 0). The user can also toggle log scale at any time via the toolbar Log scale button, which overrides the per-test default.
 
-### Spec limits on test parameters
+### Test limits on test parameters
 
-Add `limitLow` and/or `limitHigh` to a `TestDef` to specify the engineering specification window. Both are optional independently — one-sided limits are valid. Once limits are defined, two things happen automatically across all plot modes:
+Add `limitLow` and/or `limitHigh` to a `TestDef` to give the test limits: the window the tester judges each die's value by. Both are optional independently — one-sided limits are valid. Once limits are defined, two things happen automatically across all plot modes:
 
 **In `value` mode** — test limits affect both the colour bar and the die colours:
 
@@ -249,7 +249,7 @@ A value exactly equal to a test limit passes by default. A tester that records t
 The specification limits (`specLow`, `specHigh`, STDF `LO_SPEC` and `HI_SPEC`) are separate from the test limits: they are what process capability (Cp, Cpk, Pp, Ppk)
 is measured against when a test has both, and the charts draw them as the long-dashed LSL and USL.
 
-Spec limits also feed the stats engine: `analyzeWaferMap` populates `summary.stats.testSpecYield` with per-test spec yield, fail-low count, and fail-high count for every test that has at least one limit defined.
+Limits also feed the stats engine: `analyzeWaferMap` populates `summary.stats.testSpecYield` with per-test spec yield, fail-low count, and fail-high count for every test that has at least one limit defined.
 
 **→ [Demo: Working with test values](../examples/test-values.html)**
 
@@ -311,7 +311,7 @@ const results = [
 const result = buildWaferMap({ results, testDefs, passBins: [1] });
 ```
 
-Selecting a functional test as the active test always renders as **Test pass/fail** (`passFailDisplay: 'test'`) — coloured by the tester's *recorded* verdict from `die.testPass`, green pass / red fail, undirected (there is no "which side" the way spec limits have a high/low side). This is forced regardless of the requested display; a functional test has nothing to put on a gradient. The Overlays menu's "Test pass/fail" toggle is also available on a **parametric** test that happens to carry recorded verdicts (e.g. a tester-recorded PTR `TEST_FLG`), as an alternative to spec-limit judgement.
+Selecting a functional test as the active test always renders as **Test pass/fail** (`passFailDisplay: 'test'`) — coloured by the tester's *recorded* verdict from `die.testPass`, green pass / red fail, undirected (there is no "which side" the way test limits have a high/low side). This is forced regardless of the requested display; a functional test has nothing to put on a gradient. The Overlays menu's "Test pass/fail" toggle is also available on a **parametric** test that happens to carry recorded verdicts (e.g. a tester-recorded PTR `TEST_FLG`), as an alternative to judging by the test limits.
 
 Functional tests are excluded from every parametric statistic — per-test stats, capability, correlation, distribution charts, value stacks, and regional value findings — since a mean or Cpk of a binary outcome is meaningless. They get their own pass-rate analysis instead: `stats.functionalYield` (one entry per functional test, with `passDies`/`failDies`/`totalDies`/`passRatePercent`), a **Functional Tests** table in the [summary panel](findings.md#summary-panel) alongside — not replacing — the parametric Test values table, and regional pass-rate findings (`kind: 'functionalTest'`).
 
