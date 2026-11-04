@@ -1000,7 +1000,7 @@ insights: {
 | `title` | `string` | Card title |
 | `series[].tests` | `(number \| string)[]` | Test numbers **in sweep order** — never sorted. An entry may be a range string, `"1200..1230"` (see below) |
 | `series[].xValues` | `number[]` | The real swept quantity per test, one per test **after** ranges are expanded. Without it the x axis is the ordinal position, because test numbers are identifiers and nothing guarantees they are evenly spaced — interpolating a crossing along them would assume a scale the data never claimed. Supply it and the crossing is reported in dBm rather than "between the 3rd and 4th test". |
-| `series[].xFromName` | `string` | Read each test's x value from its **name** instead of `xValues` — for programs that record the swept quantity only in the test text. A placeholder pattern, not a regex: `{x}` reads a number, `*` matches anything, `?` matches exactly one character, the rest is literal. Found anywhere in the name; literal text matches regardless of case. `{x}` reads an SI prefix (`12K` → 12,000, `1M` → 1,000,000; case-sensitive, so `m` is milli, with `K` accepted as kilo). A letter counts as a prefix only when it stands alone or leads a unit symbol — `12K`, `12kΩ`, `5us` — so `12Kangaroos` reads 12. In a name written all in capitals a prefix before a unit is read in any case (`5NS` → 5 ns), except `M`, which could be milli or mega and is reported rather than guessed (`2MV`): spell it in the pattern (`"V_{x}MV"`). Put the prefix in the pattern (`"LRS_STATS_{x}K"`) to keep the number as written. Each x stays attached to its own test, so a missing test loses one point rather than shifting the rest. A name the pattern does not fit is reported and nothing is measured. Not a regex because a shared file must not be able to freeze the app: this matcher's cost is bounded whatever the pattern. |
+| `series[].xFromName` | `string` | Read each test's x value from its **name** instead of `xValues` — for programs that record the swept quantity only in the test text. A placeholder pattern, not a regex: `{x}` reads a number, `*` matches anything, `?` matches exactly one character, the rest is literal. Found anywhere in the name; literal text matches regardless of case. `{x}` reads an SI prefix (`12K` → 12,000, `1M` → 1,000,000; case-sensitive, so `m` is milli, with `K` accepted as kilo). A letter counts as a prefix only when it stands alone or leads a unit symbol — `12K`, `12kΩ`, `5us` — so `12Kangaroos` reads 12. In a name written all in capitals a prefix before a unit is read in any case (`5NS` → 5 ns), except `M`, which could be milli or mega and is reported rather than guessed (`2MV`): spell it in the pattern (`"V_{x}MV"`). Put the prefix in the pattern (`"LEVEL_{x}K"`) to keep the number as written. Each x stays attached to its own test, so a missing test loses one point rather than shifting the rest. A name the pattern does not fit is reported and nothing is measured. Not a regex because a shared file must not be able to freeze the app: this matcher's cost is bounded whatever the pattern. |
 | `series[].testNames` | `Record<string, string>` | What each test was called when the sweep was set up, by test number. The number is the key and the name is a check: a test whose name now differs (case and surrounding space aside) is not drawn, the card names it, and the crossing and widths are not measured — a lot from another test program can reuse the numbers for other measurements. The sweep editor and **+ New sweep** fill it in; a sweep written by hand without it is not checked. |
 | `series[].color` | `string` | Optional override. Omit it and the series take CVD-safe palette colours that theme correctly in dark mode; a hardcoded hex does neither. |
 | `crossing` | `boolean` | Default `true` when there are two or more series |
@@ -1015,19 +1015,19 @@ A sweep deliberately carries **no population scope of its own**: it names which 
 
 **Drilldown.** Every sweep plot is also offered on a population the user picks — selected dies, one wafer — in the menu's **Plots** section, alongside a value histogram and process capability. See §5.12.
 
-**Swept values in test names, on a log axis.** A resistance CDF — one test per threshold, the threshold written only in the test text (`Normalized_LRS= LRS_STATS_12K / …`), thresholds growing by multiples:
+**Swept values in test names, on a log axis.** A resistance CDF — one test per threshold, the threshold written only in the test text (`Cum_share= LEVEL_12K / …`), thresholds growing by multiples:
 
 ```ts
 sweeps: [{
-  id: 'lrs-cdf',
-  title: 'LRS CDF — before vs after bake',
-  xLabel: 'LRS threshold', xUnit: 'Ω', xScale: 'log',
+  id: 'level-cdf',
+  title: 'Level CDF — before vs after bake',
+  xLabel: 'Level threshold', xUnit: 'Ω', xScale: 'log',
   yLabel: 'Fraction of cells below',
   separationAt: [0.5],        // the median resistance shift, reported as a ratio
   crossing: false,            // two CDFs of one population are not expected to meet
   series: [
-    { label: 'Before bake', tests: ['31200..31230'], xFromName: 'LRS_STATS_{x}' },  // 12K → 12,000 Ω
-    { label: 'After bake',  tests: ['31300..31330'], xFromName: 'LRS_STATS_{x}' },
+    { label: 'Before bake', tests: ['41200..41230'], xFromName: 'LEVEL_{x}' },  // 12K → 12,000 Ω
+    { label: 'After bake',  tests: ['41300..41330'], xFromName: 'LEVEL_{x}' },
   ],
 }]
 ```

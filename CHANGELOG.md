@@ -24,6 +24,11 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Changed
+
+- **The Insights demo lot carries a tester and a probe card.** Its wafers are probed on two testers and three probe cards, one of them weak, so **What divides yield** ranks equipment beside the process split, and a field that moves with another is named as such. `docs/examples/data.js` takes `equipmentForWafer(index)` and a `yieldShift` option for it.
+- **The Chart gallery shows Sweep and Histogram of the dies picked.** Each has a thumbnail and a tile that opens its own page. The sweep, derived-test and name-pattern examples use neutral test names (`LEVEL_12K`, `Cum_share= …`) in the guide, the API reference and the tests.
+
 ## [0.39.0] — 2026-10-31
 
 ### Added
@@ -1510,10 +1515,10 @@ under `### Breaking`.
 
 - **Sweep x values from test names, an x unit, and a log x axis.** For a
   program that records the swept quantity only in the test text — a
-  resistance CDF named `Normalized_LRS= LRS_STATS_12K / …`, one test per
+  resistance CDF named `Cum_share= LEVEL_12K / …`, one test per
   threshold:
   - `SweepSeriesSpec.xFromName` reads each test's x from its name with a
-    placeholder pattern, `"LRS_STATS_{x}"`: `{x}` reads a number with its SI
+    placeholder pattern, `"LEVEL_{x}"`: `{x}` reads a number with its SI
     prefix (`12K` → 12,000; case-sensitive, `K` accepted as kilo; a letter is a
     prefix only alone or before a unit, so `12Kangaroos` reads 12; in an all-capitals
     name the unit's case is gone, so `5NS` is 5 ns and `2MV` — milli or mega? — is
@@ -1748,7 +1753,7 @@ under `### Breaking`.
 - **Docs and examples brought up to date with this release.** The developer
   guide's sweep section no longer says `tests` has no range syntax or that a
   sweep has no log option; it covers ranges, `xFromName`, `xUnit`, `xScale` and
-  drilldown. The sweeps example adds a fifth sweep (an RRAM resistance
+  drilldown. The sweeps example adds a fifth sweep (a resistance
   distribution read from test names on a log axis) and gives the output-driver
   sweep an x unit; the derived-tests example's sweep uses ranges and a real swept
   quantity (pulse amplitude in volts) instead of ordinal steps, and places the †

@@ -520,7 +520,7 @@ renderWaferGallery(container, items, {
 
 A sweep is a plot with `chart: 'sweep'`, so it is a card on the **My plots** sub-tab, kept and shared like any other plot (`plots`, `onPlotsChange`, Export and Import) — on a single map or a gallery alike. **+ New sweep** starts one in the app and **Edit** opens a sweep editor beside the curve; pass `defaultView: 'plot'` to open on the tab. `insights.sweeps` still works but is deprecated: each entry is drawn as a sweep plot under its own `id`, and `readPlotsFile` reads a `tsmap-sweeps` file.
 
-**→ [Example: Parametric sweeps](../examples/sweeps.html)** — five characterisation sweeps: temperature inversion, DIBL, data retention, output drive, and an RRAM resistance distribution read from test names on a log axis.
+**→ [Example: Parametric sweeps](../examples/sweeps.html)** — five characterisation sweeps: temperature inversion, DIBL, data retention, output drive, and a resistance distribution read from test names on a log axis.
 
 **Give the swept quantity whenever you know it.** Without it the x axis is the ordinal position in the sequence, because test numbers are identifiers — nothing guarantees they are evenly spaced or even ascending, and interpolating a crossing point along them would assume a scale the data never claimed. With it, the crossing is reported in dBm rather than "somewhere between the third and fourth test". There are two ways to give it:
 
@@ -545,21 +545,21 @@ A range is checked, not trusted: if one test inside it is missing from this lot,
 - **Along y** (a transfer curve's current, from 1 nA to 1 mA) — sweep a derived test per step, `log10(t[n])`. The width at a constant log-current is then the constant-current threshold shift: DIBL, for two drain biases.
 - **Along x** (thresholds of 1k, 2k, 5k … 1M) — set `xScale: 'log'`. The steps get equal room, the crossing is interpolated along log x, and a width is reported as a **ratio** with both ends, `×2.49 (15.9 kΩ → 39.7 kΩ)`, because on a log axis the same shift is the same multiple anywhere along it. `xUnit` makes the axis and those values read in SI units.
 
-**Swept values in test names.** Some programs record the swept value only in the test text — a resistance CDF with one test per threshold, named `Normalized_LRS= LRS_STATS_12K / Total_LRS= …`. `xFromName` reads it from there with a placeholder pattern:
+**Swept values in test names.** Some programs record the swept value only in the test text — a resistance CDF with one test per threshold, named `Cum_share= LEVEL_12K / Total_n= …`. `xFromName` reads it from there with a placeholder pattern:
 
 ```ts
 sweeps: [{
-  id: 'lrs-cdf',
-  title: 'LRS CDF — before vs after bake',
-  xLabel: 'LRS threshold', xUnit: 'Ω', xScale: 'log',   // thresholds grow by multiples
+  id: 'level-cdf',
+  title: 'Level CDF — before vs after bake',
+  xLabel: 'Level threshold', xUnit: 'Ω', xScale: 'log',   // thresholds grow by multiples
   yLabel: 'Fraction of cells below',
   separationAt: [0.5],                                   // the median resistance shift
   crossing: false,                                       // two CDFs of one cell population do not meet
   series: [
-    // "LRS_STATS_{x}" finds the number after LRS_STATS_ anywhere in the name,
+    // "LEVEL_{x}" finds the number after LEVEL_ anywhere in the name,
     // with its SI prefix: 12K → 12,000 Ω.
-    { label: 'Before bake', tests: ['31200..31230'], xFromName: 'LRS_STATS_{x}' },
-    { label: 'After bake',  tests: ['31300..31330'], xFromName: 'LRS_STATS_{x}' },
+    { label: 'Before bake', tests: ['41200..41230'], xFromName: 'LEVEL_{x}' },
+    { label: 'After bake',  tests: ['41300..41330'], xFromName: 'LEVEL_{x}' },
   ],
 }]
 ```
@@ -579,11 +579,11 @@ sweeps: [{
   | `Tj-40C_Vth` | `Tj{x}C` | −40 | a minus sign belongs to the number |
   | `Step 03 of 12` | `Step {x}` | 3 | |
   | `PAT_7_RUN2` | `PAT_{x}_` | 7 | text after `{x}` must follow it, so `RUN2` is not read |
-  | `LRS_STATS_12K` | `LRS_STATS_{x}` | 12,000 | `{x}` reads the `K` as kilo |
-  | `LRS_STATS_12K` | `LRS_STATS_{x}K` | 12 | write the `K` in the pattern to keep the number as the name shows it |
+  | `LEVEL_12K` | `LEVEL_{x}` | 12,000 | `{x}` reads the `K` as kilo |
+  | `LEVEL_12K` | `LEVEL_{x}K` | 12 | write the `K` in the pattern to keep the number as the name shows it |
   | `Fmax_25C_0.55V` | `C_{x}` | 0.55 | the text just before the number, here the end of the temperature |
   | `VCC_1.8V_TEMP_125` | `TEMP_{x}` | 125 | other numbers in the name are ignored |
-  | `LRS_RUN3_STATS_12K` | `LRS*STATS_{x}` | 12,000 | `*` skips any length of text between the two parts |
+  | `RUN3_LEVEL_12K` | `RUN*LEVEL_{x}` | 12,000 | `*` skips any length of text between the two parts |
   | `fmax @ 0.55 v` | `FMAX @ {x}` | 0.55 | text matches in any case |
   | `Vth @ 50mV` | `@ {x}` | 0.05 | the `m` of `mV` is read as milli, so 50 mV is 0.05 |
   | `Delay 5ns @ 25C` | `Delay {x}` | 5 × 10⁻⁹ | a unit with a prefix is scaled to its base unit |

@@ -48,7 +48,11 @@ export async function renderIndex() {
   const elsewhere = CHART_CATALOGUE.filter(e => (e.kind === 'map' && e.example) || e.id === 'sweep' || e.tab === 'drilldown');
   const pageOf = e => e.example ?? (e.id === 'sweep' ? 'sweeps.html' : 'drilldown.html');
   const chip = e => `        <a class="chip" href="${pageOf(e)}" title="${esc(e.about)}">${esc(e.title)}</a>`;
-  sections.push(`    <section>\n      <h3>Shown on their own pages</h3>\n      <p>The maps, the sweeps and the menu on picked dies are not on this page; each has its own.</p>\n      <div class="chips">\n${elsewhere.map(chip).join('\n')}\n      </div>\n    </section>`);
+  // A chart on its own page keeps its thumbnail, and a tile with no data-tab opens that page instead of the live view below.
+  const pageTile = e => tile(e).replace('href="#live" data-tab="' + (e.tab === 'plots' ? 'plot' : e.tab) + '"', `href="${pageOf(e)}"`);
+  const charts = elsewhere.filter(e => e.kind === 'chart');
+  const others = elsewhere.filter(e => e.kind !== 'chart');
+  sections.push(`    <section>\n      <h3>Shown on their own pages</h3>\n      <p>The maps, the sweeps and the menu on picked dies are not on this page; each has its own.</p>\n      <div class="tiles">\n${charts.map(pageTile).join('\n')}\n      </div>\n      <div class="chips">\n${others.map(chip).join('\n')}\n      </div>\n    </section>`);
   return `  ${START}\n  <div class="chart-index">\n${sections.join('\n')}\n  </div>\n  ${END}`;
 }
 

@@ -188,7 +188,7 @@ export function createSweepEditor(o: SweepEditorOptions): SweepEditorHandle {
       }, { mono: true });
       box.appendChild(fieldRow(doc, 'X values', xs.el, 'One per test, in the same order. A different count is reported on the chart, which then uses test order.'));
     } else if (source === 'name') {
-      const pat = textField(s.xFromName ?? '', `Series ${i + 1} name pattern`, 'LRS_STATS_{x}', text => {
+      const pat = textField(s.xFromName ?? '', `Series ${i + 1} name pattern`, 'LEVEL_{x}', text => {
         edit(d => { d.sweep!.series[i].xFromName = text; });
         refreshPreview?.();
         return undefined;

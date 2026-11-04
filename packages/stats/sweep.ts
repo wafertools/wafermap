@@ -64,13 +64,13 @@ export interface SweepSeriesSpec {
    * Read each test's x value from its NAME instead — for programs that record
    * the swept quantity only in the test text. A placeholder pattern, not a
    * regular expression: `{x}` reads a number, `*` matches any run of
-   * characters, `?` matches exactly one character, everything else is literal. `"LRS_STATS_{x}"` reads 12,000 from
-   * a test named `"Normalized_LRS= LRS_STATS_12K / …"`.
+   * characters, `?` matches exactly one character, everything else is literal. `"LEVEL_{x}"` reads 12,000 from
+   * a test named `"Cum_share= LEVEL_12K / …"`.
    *
    * - The pattern is found ANYWHERE in the name; no leading or trailing `*`.
    * - Literal text matches case-insensitively; the value's SI prefix does not
    *   (`m` is milli, `M` mega). `{x}` reads the prefix, and `K` is accepted as
-   *   kilo. Put the prefix in the pattern instead (`"LRS_STATS_{x}K"`) to keep
+   *   kilo. Put the prefix in the pattern instead (`"LEVEL_{x}K"`) to keep
    *   the numbers as the name shows them (12 rather than 12,000).
    * - Each x stays attached to its own test, so a test missing from the data
    *   loses one point instead of shifting every later x the way a positional

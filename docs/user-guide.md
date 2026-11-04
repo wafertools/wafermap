@@ -1406,7 +1406,7 @@ test numbers and ranges, such as `1010, 1011, 1020..1030` (a range means the
 tests declared between its ends). Then choose where each test's X comes from:
 **Test order** (the position in the run, labelled by test), **Values** (one
 number per test, in the same order) or **From test name** (a pattern such as
-`LRS_STATS_{x}`, for programs that record the swept value only in the test
+`LEVEL_{x}`, for programs that record the swept value only in the test
 text). The editor lists the first few test names with what your pattern reads
 from each as you type, and **Pattern examples** shows worked ones: `@ {x}`
 reads 0.55 from `Fmax @ 0.55 V`, and `-{x}` reads 5 from `1234-5`). Text that is not a test number or a range is flagged under the box,

@@ -188,23 +188,23 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
       <h3>5 · Resistance distribution, values from test names</h3>
       <div class="spec-row">
         <div class="spec-code">
-          <pre>// Tests named "Normalized_LRS= LRS_STATS_12K / Total_LRS (…)": the
+          <pre>// Tests named "Cum_share= LEVEL_12K / Total_n (…)": the
 // threshold is only in the name, so read it from there.
-{ id: 'lrs-cdf',
-  title: 'RRAM LRS distribution — before vs after bake',
+{ id: 'level-cdf',
+  title: 'Level distribution — before vs after bake',
   series: [
-    { label: 'Before bake', tests: ['3500..3509'], xFromName: 'LRS_STATS_{x}' },
-    { label: 'After bake',  tests: ['3510..3519'], xFromName: 'LRS_STATS_{x}' },
+    { label: 'Before bake', tests: ['3500..3509'], xFromName: 'LEVEL_{x}' },
+    { label: 'After bake',  tests: ['3510..3519'], xFromName: 'LEVEL_{x}' },
   ],
   xScale: 'log',            // thresholds grow by multiples: 1K … 1M
-  xUnit: 'Ω', xLabel: 'LRS threshold',
+  xUnit: 'Ω', xLabel: 'Level threshold',
   yLabel: 'Fraction of cells below',
   separationAt: [0.5],      // the median resistance shift
   crossing: false }</pre>
         </div>
         <div class="spec-notes">
           <p class="look">Each test is one point of a cumulative distribution: the fraction
-          of RRAM cells whose low-resistance state reads below a threshold. The program
+          of devices whose resistance reads below a threshold. The program
           writes the threshold only into the test text, so <code>xFromName</code> reads it
           from there — <code>{x}</code> takes the number with its SI prefix, so
           <code>12K</code> is 12,000 Ω. It is a placeholder pattern, not a regular
@@ -241,7 +241,7 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
     const BAKE_H  = [0, 24, 48, 96, 168, 336, 500, 750, 1000];                 // h — deliberately uneven
     const LOAD_MA = [0, 2, 4, 6, 8, 10, 12, 14, 16];                           // mA, for the model
     const LOAD_A  = LOAD_MA.map(mA => mA / 1000);                              // A, the bare unit, for the axis
-    // LRS thresholds, as the program writes them in the test text.
+    // Level thresholds, as the program writes them in the test text.
     const THRESH  = ['1K', '2K', '5K', '10K', '20K', '50K', '100K', '200K', '500K', '1M'];
     const THRESH_OHM = [1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6];      // Ω, for the model only
 
@@ -251,7 +251,7 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
     const LOG_ID_LIN = span(3200, 9), LOG_ID_SAT = span(3210, 9);   // derived
     const VT_PROG   = span(3300, 9), VT_ERASE = span(3310, 9);
     const VOH       = span(3400, 9), VOL      = span(3410, 9);
-    const LRS_PRE   = span(3500, 10), LRS_POST = span(3510, 10);
+    const LEVEL_PRE   = span(3500, 10), LEVEL_POST = span(3510, 10);
 
     // Characterisation data: no spec limits on the individual sweep points, which
     // is usual — the judgement is made on the curve, not on each point.
@@ -265,8 +265,8 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
       ...VOH      .map((tn, i) => ({ testNumber: tn, name: `VOH ${LOAD_MA[i]}mA`,             unit: 'V' })),
       ...VOL      .map((tn, i) => ({ testNumber: tn, name: `VOL ${LOAD_MA[i]}mA`,             unit: 'V' })),
       // The threshold is in the name and nowhere else — what xFromName reads.
-      ...LRS_PRE  .map((tn, i) => ({ testNumber: tn, name: `Normalized_LRS= LRS_STATS_${THRESH[i]} / Total_LRS (before bake)` })),
-      ...LRS_POST .map((tn, i) => ({ testNumber: tn, name: `Normalized_LRS= LRS_STATS_${THRESH[i]} / Total_LRS (after bake)` })),
+      ...LEVEL_PRE  .map((tn, i) => ({ testNumber: tn, name: `Cum_share= LEVEL_${THRESH[i]} / Total_n (before bake)` })),
+      ...LEVEL_POST .map((tn, i) => ({ testNumber: tn, name: `Cum_share= LEVEL_${THRESH[i]} / Total_n (after bake)` })),
     ];
 
     // ── Derived tests ────────────────────────────────────────────────────────
@@ -318,12 +318,12 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
         xLabel: 'Load current', xUnit: 'A', yLabel: 'Output voltage',
       },
       {
-        id: 'lrs-cdf', title: 'RRAM LRS distribution — before vs after bake',
+        id: 'level-cdf', title: 'Level distribution — before vs after bake',
         series: [
-          { label: 'Before bake', tests: ['3500..3509'], xFromName: 'LRS_STATS_{x}' },
-          { label: 'After bake',  tests: ['3510..3519'], xFromName: 'LRS_STATS_{x}' },
+          { label: 'Before bake', tests: ['3500..3509'], xFromName: 'LEVEL_{x}' },
+          { label: 'After bake',  tests: ['3510..3519'], xFromName: 'LEVEL_{x}' },
         ],
-        xScale: 'log', xUnit: 'Ω', xLabel: 'LRS threshold',
+        xScale: 'log', xUnit: 'Ω', xLabel: 'Level threshold',
         yLabel: 'Fraction of cells below',
         separationAt: [0.5],
         crossing: false,
@@ -382,15 +382,15 @@ const LOAD_A = [0, 2, 4, 6, 8, 10, 12, 14, 16].map(mA => mA / 1000);
           tv[VOL[i]] =       ron * (0.060 * ma + 0.0010 * ma * ma) + 0.005 * noise(80 + i);
         });
 
-        // 5 · LRS distribution: each die's cells are log-normal in resistance
+        // 5 · level distribution: each die's cells are log-normal in resistance
         // (median 10^4.2 ≈ 16 kΩ, higher at the edge); a bake shifts the median
         // up ~2.5× and widens the spread. Each test is the fraction of cells
         // below its threshold — a logistic CDF of log10 R.
         const mu = 4.2 + 0.06 * noise(6) + 0.12 * radial;
         const cdf = (ohm, m, sd) => 1 / (1 + Math.exp(-(Math.log10(ohm) - m) / sd));
         THRESH_OHM.forEach((ohm, i) => {
-          tv[LRS_PRE[i]]  = cdf(ohm, mu,        0.22);
-          tv[LRS_POST[i]] = cdf(ohm, mu + 0.40, 0.27);
+          tv[LEVEL_PRE[i]]  = cdf(ohm, mu,        0.22);
+          tv[LEVEL_POST[i]] = cdf(ohm, mu + 0.40, 0.27);
         });
 
         // Only the sweep tests: the shared demo data's own tests are not the

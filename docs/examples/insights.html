@@ -143,6 +143,10 @@
     <section>
       <h3>Shown on their own pages</h3>
       <p>The maps, the sweeps and the menu on picked dies are not on this page; each has its own.</p>
+      <div class="tiles">
+        <a class="tile" href="drilldown.html" data-id="histogram-of-the-dies-picked" title="How one test’s values are distributed over the dies picked: the number of dies in each value range, with the test’s limits marked."><img src="thumbs/histogram-of-the-dies-picked.webp" alt="" loading="lazy"><strong>Histogram of the dies picked</strong><span>How one test’s values are distributed over the dies picked: the number of dies in each value range, with the test’s limits marked.</span></a>
+        <a class="tile" href="sweeps.html" data-id="sweep" title="A measured value against a swept condition, a curve per series, to show how the part responds across the range."><img src="thumbs/sweep.webp" alt="" loading="lazy"><strong>Sweep</strong><span>A measured value against a swept condition, a curve per series, to show how the part responds across the range.</span></a>
+      </div>
       <div class="chips">
         <a class="chip" href="display-control.html" title="Each die coloured by its hard or soft bin, passing bins in greens and failing bins in other colours, to show where the failures are.">Bin map</a>
         <a class="chip" href="test-values.html" title="Each die coloured by one test’s value on a colour scale, with the test’s limits on the colour bar, to show where on the wafer the value shifts.">Test value map</a>
@@ -150,8 +154,6 @@
         <a class="chip" href="test-values.html" title="Each die coloured by the pass or fail the tester recorded for one test, to show where a test failed, whether or not it has a measured value.">Test pass/fail map</a>
         <a class="chip" href="metadata-mode.html" title="Each die coloured by an attribute the data carries (a test site, a probe step, a zone), to show whether a pattern follows it.">Die attribute map</a>
         <a class="chip" href="lot-stack-analysis.html" title="The wafers of a lot laid over one another die by die: how often a bin occurs, or a value’s mean, median or spread at each position, to show what repeats from wafer to wafer.">Stacked map</a>
-        <a class="chip" href="drilldown.html" title="How one test’s values are distributed over the dies picked: the number of dies in each value range, with the test’s limits marked.">Histogram of the dies picked</a>
-        <a class="chip" href="sweeps.html" title="A measured value against a swept condition, a curve per series, to show how the part responds across the range.">Sweep</a>
       </div>
     </section>
   </div>
@@ -167,7 +169,7 @@
     import { renderWaferGallery } from 'wafermap/render';
     import { analyzeWaferLot } from 'wafermap/stats';
     import {
-      makeResults, makeWaferConfig, DIE_CONFIG,
+      makeResults, makeWaferConfig, equipmentForWafer, DIE_CONFIG,
       TEST_DEFS, FUNCTIONAL_TEST_DEF, HBIN_DEFS, SBIN_DEFS,
     } from './data.js';
 
@@ -186,8 +188,8 @@
     const items = [];
     for (let i = 0; i < WAFER_COUNT; i++) {
       const result = buildWaferMap({
-        results:     makeResults({ seed: 11 + i, waferIndex: i, quadrant: true, edgeFail: true }),
-        waferConfig: makeWaferConfig(i),
+        results:     makeResults({ seed: 11 + i, waferIndex: i, quadrant: true, edgeFail: true, yieldShift: equipmentForWafer(i).yieldShift }),
+        waferConfig: makeWaferConfig(i, { equipment: true }),
         dieConfig:   DIE_CONFIG,
         passBins:    PASS_BINS,
         // A reticle grid, so the lot has reticle cells to take a yield from.
@@ -250,7 +252,7 @@
     // A tile opens its chart live: the Insights tab it is on, then the live view in sight.
     document.addEventListener('click', e => {
       const tile = e.target.closest('.tile');
-      if (!tile) return;
+      if (!tile || !tile.dataset.tab) return;   // a tile with no tab is a link to a page of its own
       e.preventDefault();
       const tab = document.querySelector(`[data-wmap-insights-tab="${tile.dataset.tab}"]`);
       if (tab) tab.click();

@@ -1,5 +1,5 @@
 // Reading a sweep point's x value out of its test's NAME — for programs that
-// record the swept quantity only in the test text ("… LRS_STATS_12K / …").
+// record the swept quantity only in the test text ("… LEVEL_12K / …").
 //
 // The pattern is a placeholder template, not a regular expression: `{x}` reads
 // a number, `*` matches any run of characters, `?` matches exactly one character, everything else is literal.
@@ -86,11 +86,11 @@ export const NAME_PATTERN_EXAMPLES: ReadonlyArray<{ name: string; pattern: strin
   { name: 'Tj-40C_Vth', pattern: 'Tj{x}C', reads: -40, note: 'a minus sign belongs to the number' },
   { name: 'Step 03 of 12', pattern: 'Step {x}', reads: 3 },
   { name: 'PAT_7_RUN2', pattern: 'PAT_{x}_', reads: 7, note: 'text after {x} must follow it, so RUN2 is not read' },
-  { name: 'LRS_STATS_12K', pattern: 'LRS_STATS_{x}', reads: 12000, note: '{x} reads the K as kilo' },
-  { name: 'LRS_STATS_12K', pattern: 'LRS_STATS_{x}K', reads: 12, note: 'write the K in the pattern to keep the number as the name shows it' },
+  { name: 'LEVEL_12K', pattern: 'LEVEL_{x}', reads: 12000, note: '{x} reads the K as kilo' },
+  { name: 'LEVEL_12K', pattern: 'LEVEL_{x}K', reads: 12, note: 'write the K in the pattern to keep the number as the name shows it' },
   { name: 'Fmax_25C_0.55V', pattern: 'C_{x}', reads: 0.55, note: 'the text just before the number, here the end of the temperature' },
   { name: 'VCC_1.8V_TEMP_125', pattern: 'TEMP_{x}', reads: 125, note: 'other numbers in the name are ignored' },
-  { name: 'LRS_RUN3_STATS_12K', pattern: 'LRS*STATS_{x}', reads: 12000, note: '* skips any length of text between the two parts' },
+  { name: 'RUN3_LEVEL_12K', pattern: 'RUN*LEVEL_{x}', reads: 12000, note: '* skips any length of text between the two parts' },
   { name: 'fmax @ 0.55 v', pattern: 'FMAX @ {x}', reads: 0.55, note: 'text matches in any case' },
   { name: 'Vth @ 50mV', pattern: '@ {x}', reads: 0.05, note: 'the m of mV is read as milli, so 50 mV is 0.05' },
   { name: 'Delay 5ns @ 25C', pattern: 'Delay {x}', reads: 5e-9, note: 'a unit with a prefix is scaled to its base unit' },

@@ -77,6 +77,8 @@ export const SPLIT_VTH_BIAS = { 'POR': 0, 'Hi-dose': 0.050 };
  * @param {number}  [opts.siteFail=0]            Site number (1-based) to inject a yield loss on (~20 pp drop).
  *                                               Ignored when siteCount=0.
  * @param {boolean} [opts.includePartId=false]   When true, adds partId (1-based probe step counter, row order).
+ * @param {number}  [opts.yieldShift=0]          Pass probability lost across the whole wafer (a weak probe card):
+ *                                               pair it with `equipmentForWafer(index).yieldShift`.
  * @param {number}  [opts.waferIndex]             When given, applies that wafer's process-split Vth bias
  *                                                (see `splitForWafer`/`SPLIT_VTH_BIAS`). Pair it with
  *                                                `makeWaferConfig(waferIndex)`, which stamps the matching
@@ -95,6 +97,7 @@ export function makeResults({
   siteCount       = 0,
   siteFail        = 0,
   includePartId   = false,
+  yieldShift      = 0,
   waferIndex,
 } = {}) {
   const vthBias = waferIndex === undefined ? 0 : (SPLIT_VTH_BIAS[splitForWafer(waferIndex)] ?? 0);
@@ -169,6 +172,7 @@ export function makeResults({
         if (cellX === 2 && cellY === 1) pass -= 0.32;
       }
 
+      pass -= yieldShift;
       pass = Math.max(0.04, Math.min(0.97, pass));
 
       // Hard bin + soft bin assignment
@@ -354,16 +358,30 @@ export const WAFER_CONFIG = {
 };
 
 /**
- * Build a wafer config for a specific wafer in a lot.
+ * The equipment a wafer of the demo lot was probed on. Independent of the process split (which alternates), so the two are
+ * different reasons for a difference between wafers: the middle probe card is weak, and costs its wafers yield; the testers
+ * differ in name only.
  * @param {number} index  0-based wafer index.
  */
-export function makeWaferConfig(index) {
+export function equipmentForWafer(index) {
+  const probeCard = index < 3 ? 'PC-0114' : index < 6 ? 'PC-0207' : 'PC-0331';
+  return { tester: index < 5 ? 'Tester-1' : 'Tester-2', probeCard, yieldShift: probeCard === 'PC-0207' ? 0.12 : 0 };
+}
+
+/**
+ * Build a wafer config for a specific wafer in a lot.
+ * @param {number} index  0-based wafer index.
+ * @param {{ equipment?: boolean }} [opts]  `equipment` adds the tester and probe card the wafer was probed on.
+ */
+export function makeWaferConfig(index, { equipment = false } = {}) {
   const n = String(index + 1).padStart(2, '0');
+  const { tester, probeCard } = equipmentForWafer(index);
   return {
     ...WAFER_CONFIG,
     metadata: {
       ...WAFER_CONFIG.metadata,
       waferId: `W${n}`,
+      ...(equipment ? { tester, probeCard } : {}),
       // The lot's groupable axis. Pair with `makeResults({ waferIndex: index })`
       // so the wafer's data actually reflects the split it is labelled with.
       processSplit: splitForWafer(index),

@@ -1163,9 +1163,9 @@ test('a series read from test names shows those names while the pattern is writt
   type(box, '@ {x}');
   assert.match(names().textContent, /What the pattern reads/);
   assert.match(names().textContent, /10 {2}“Fmax @ 0\.55 V” {2}→ 0\.55/);
-  type(box, 'LRS_{x}');
+  type(box, 'LEVEL_{x}');
   assert.match(names().textContent, /→ no match/);
-  assert.equal(emitted.at(-1).sweep.series[0].xFromName, 'LRS_{x}');
+  assert.equal(emitted.at(-1).sweep.series[0].xFromName, 'LEVEL_{x}');
   type(e.el.querySelector('[data-wmap-sweep-tests="0"]'), '10, 11');
   assert.ok(!/and \d+ more/.test(names().textContent), 'the list follows the tests');
   e.el.remove();

@@ -661,7 +661,7 @@ export const CAPTURES = [
         await page.locator(`[data-wmap-insights-tab="${tab}"]`).click();
         await page.waitForTimeout(1800);
       };
-      const shoot = async (locator, id) => {
+      const shoot = async (locator, id, maxHeight = MAX_H) => {
         if (!(await locator.isVisible())) throw new Error(`chart-gallery: no visible card for "${id}" - the catalogue and this list have drifted`);
         await locator.scrollIntoViewIfNeeded();
         // A card at the top of its tab sits under the page's sticky header: scroll up until its own heading is clear of it.
@@ -670,7 +670,7 @@ export const CAPTURES = [
         await page.mouse.move(2, 2);
         await page.waitForTimeout(250);
         const box = await locator.boundingBox();
-        const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: Math.min(box.width, MAX_W), height: Math.min(box.height, MAX_H) }, scale: 'device' });
+        const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: Math.min(box.width, MAX_W), height: Math.min(box.height, maxHeight) }, scale: 'device' });
         // A tile shows it about 300 px wide: scaled down once, to twice that, as WebP so thirty-odd thumbnails stay small files.
         const small = await page.evaluate(async ([b64, width]) => {
           const img = new Image();
@@ -734,6 +734,27 @@ export const CAPTURES = [
         await page.waitForTimeout(1500);
         await shoot(page.locator('[data-wmap-data-tab]'), id);
       }
+      // Sweep and Histogram of the dies picked, from the sweeps example: it has sweep plots, and its first wafer is a map to pick
+      // dies on. The harness page is left behind for these two, so they come last.
+      await page.goto(new URL('/examples/sweeps.html', harnessPage.url()).href, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-wmap-plot-id="fmax-vdd"]');
+      await page.waitForTimeout(2500);
+      await shoot(card('fmax-vdd'), 'sweep');
+      await page.locator('[data-wmap-view="maps"]').first().click();
+      await page.waitForTimeout(800);
+      const pickCanvas = page.locator('#gallery canvas').first();
+      await pickCanvas.scrollIntoViewIfNeeded();
+      const pb = await pickCanvas.boundingBox();
+      await page.getByRole('button', { name: 'Select (drag to select dies)' }).first().click();
+      await page.mouse.move(pb.x + pb.width * 0.30, pb.y + pb.height * 0.30);
+      await page.mouse.down();
+      await page.mouse.move(pb.x + pb.width * 0.48, pb.y + pb.height * 0.48, { steps: 8 });
+      await page.mouse.up();
+      await page.mouse.click(pb.x + pb.width * 0.40, pb.y + pb.height * 0.40, { button: 'right' });
+      await page.locator('[data-wmap-drilldown-menu] [role="menuitem"]', { hasText: 'Value histogram' }).first().click();
+      await page.waitForTimeout(1500);
+      // The window is taller than a card: the whole chart, axis included, is what the tile is for.
+      await shoot(page.locator('.wmap-overlay-box').first(), 'histogram-of-the-dies-picked', 640);
       await context.close();
     },
   },

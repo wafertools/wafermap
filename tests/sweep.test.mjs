@@ -356,23 +356,23 @@ test('an unreadable range entry is reported and contributes no tests', () => {
 // ── x values read from test names (`xFromName`), `xUnit`, `xScale: 'log'` ──
 //
 // A program that records the swept quantity only in the test text — a CDF of
-// LRS resistance, one test per threshold, named "… LRS_STATS_12K / …". The
+// resistance, one test per threshold, named "… LEVEL_12K / …". The
 // pattern is a placeholder template, not a regex (see stats/sweepXFromName.ts).
 
 const { compileXNamePattern, readXFromName } = await import('../dist/packages/stats/sweepXFromName.js');
 
-// The real test text, truncated at STDF's 255 characters as it arrives.
-const PTR_NAME = 'Normalized_LRS= LRS_STATS_12K / Total_LRS= Parametric test descriptor [Test name=0x55555555_15_30000_LRSerr, Test suite name=Main.Readouts_Autoconfig_flow.Read_CDF_after_0x5, Test number=31285, Test text=Register_0x2000013c, Low limit=0.0, Low limit compa';
+// A long test text, truncated at STDF's 255 characters as it arrives.
+const PTR_NAME = 'Cum_share= LEVEL_12K / Total_n= Parametric test descriptor [Test name=run3_a, Test suite name=Main.Readout_flow.Read_after_bake, Test number=41285, Test text=Reg_A, Low limit=0.0, Low limit compa';
 const read = (pattern, name) => readXFromName(compileXNamePattern(pattern), name);
 
 test('a name pattern finds the value anywhere in the name, with its SI prefix', () => {
-  assert.equal(read('LRS_STATS_{x}', PTR_NAME), 12000);
+  assert.equal(read('LEVEL_{x}', PTR_NAME), 12000);
   // The prefix written into the pattern keeps the number as the name shows it.
-  assert.equal(read('LRS_STATS_{x}K', PTR_NAME), 12);
+  assert.equal(read('LEVEL_{x}K', PTR_NAME), 12);
   // Literal text ignores case — test text changes case between programs.
-  assert.equal(read('lrs_stats_{x}', PTR_NAME), 12000);
-  assert.equal(read('Normalized*STATS_{x}', PTR_NAME), 12000);
-  assert.equal(read('HRS_STATS_{x}', PTR_NAME), null);
+  assert.equal(read('level_{x}', PTR_NAME), 12000);
+  assert.equal(read('Cum*LEVEL_{x}', PTR_NAME), 12000);
+  assert.equal(read('BASE_{x}', PTR_NAME), null);
 });
 
 test('the SI prefix is case-sensitive: m is milli, M is mega; K is the one alias', () => {
@@ -395,7 +395,7 @@ test('a letter after the number is a prefix only when it stands alone or leads a
   assert.equal(read('I_{x}', 'I_3UA'), 3e-6);
   assert.equal(read('C_{x}', 'C_2PF'), 2e-12);
   // Starting a word: not a prefix. These read 12,000, 1.2e-8, 3e-12 and 0.01.
-  assert.equal(read('LRS_STATS_{x}', 'LRS_STATS_12Kangaroos'), 12);
+  assert.equal(read('LEVEL_{x}', 'LEVEL_12Kangaroos'), 12);
   assert.equal(read('T_{x}', 'T_12nodes'), 12);
   assert.equal(read('T_{x}', 'T_3pass'), 3);
   assert.equal(read('T_{x}', 'T_10mins'), 10);
@@ -422,7 +422,7 @@ test('a prefixed value is exact, not a product carrying binary rounding', () => 
 });
 
 test('a pattern must contain {x} exactly once', () => {
-  assert.ok('error' in compileXNamePattern('LRS_STATS_'));
+  assert.ok('error' in compileXNamePattern('LEVEL_'));
   assert.ok('error' in compileXNamePattern('{x}_{x}'));
 });
 
@@ -436,16 +436,16 @@ test('a hostile pattern cannot freeze the reader — its cost is bounded', () =>
 const CDF_TESTS = [2001, 2002, 2003, 2004, 2011, 2012, 2013, 2014];
 const THRESHOLDS = ['1K', '10K', '100K', '1M'];
 const cdfDefs = CDF_TESTS.map((n, i) => ({
-  testNumber: n, unit: '', name: `Normalized_LRS= LRS_STATS_${THRESHOLDS[i % 4]} / Total_LRS= (${n < 2010 ? 'before' : 'after'})`,
+  testNumber: n, unit: '', name: `Cum_share= LEVEL_${THRESHOLDS[i % 4]} / Total_n= (${n < 2010 ? 'before' : 'after'})`,
 }));
 // Before: fraction below threshold 0.1, 0.4, 0.8, 1.0 — after: shifted up one step
 // in resistance, 0.02, 0.2, 0.6, 0.95. Level 0.5 is crossed between 10K and 100K.
 const CDF_DIES = dies([{ 2001: 0.1, 2002: 0.4, 2003: 0.8, 2004: 1.0, 2011: 0.02, 2012: 0.2, 2013: 0.6, 2014: 0.95 }]);
 const CDF_SPEC = {
-  id: 'cdf', title: 'LRS CDF', xLabel: 'LRS threshold', xUnit: 'Ω', xScale: 'log', separationAt: [0.5],
+  id: 'cdf', title: 'Level CDF', xLabel: 'Level threshold', xUnit: 'Ω', xScale: 'log', separationAt: [0.5],
   series: [
-    { label: 'Before', tests: ['2001..2004'], xFromName: 'LRS_STATS_{x}' },
-    { label: 'After',  tests: ['2011..2014'], xFromName: 'LRS_STATS_{x}' },
+    { label: 'Before', tests: ['2001..2004'], xFromName: 'LEVEL_{x}' },
+    { label: 'After',  tests: ['2011..2014'], xFromName: 'LEVEL_{x}' },
   ],
 };
 
@@ -473,7 +473,7 @@ test('on a log axis a width is interpolated in log x and reported as a ratio', (
 });
 
 test('a name the pattern does not fit is reported and nothing is measured', () => {
-  const broken = cdfDefs.map(d => d.testNumber === 2003 ? { ...d, name: 'LRS_TOTAL' } : d);
+  const broken = cdfDefs.map(d => d.testNumber === 2003 ? { ...d, name: 'LEVEL_TOTAL' } : d);
   const d = buildSweepData(CDF_DIES, broken, CDF_SPEC);
   assert.equal(d.xIsPhysical, false);
   assert.ok(d.notMeasured);
@@ -499,7 +499,7 @@ test('giving both xValues and xFromName is reported, not resolved by preference'
 });
 
 test('a series that revisits an x value is drawn but not measured', () => {
-  const dup = cdfDefs.map(d => d.testNumber === 2002 ? { ...d, name: 'LRS_STATS_1K' } : d);
+  const dup = cdfDefs.map(d => d.testNumber === 2002 ? { ...d, name: 'LEVEL_1K' } : d);
   const d = buildSweepData(CDF_DIES, dup, CDF_SPEC);
   assert.equal(d.xIsPhysical, true);
   assert.match(d.notMeasured ?? '', /revisits an x value/);
