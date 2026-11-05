@@ -29,7 +29,7 @@ import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 // The report builders are loaded when a report is opened, not with the map (see `openReportModal`'s callers):
 // they are most of the report's markup and stylesheet, and a panel that is never exported to a report never needs them.
 import type { ReportMap } from '../stats/renderSummaryReport.js';
-import { buildSynthesis, synthesisKey, synthesisSource, synthesisRowShare, synthesisMoreTests, SYNTHESIS_ALSO_HEADING, type SynthesisItem, type SynthesisTarget } from '../stats/synthesis.js';
+import { buildSynthesis, synthesisKey, synthesisSource, synthesisRowShare, synthesisMoreTests, SYNTHESIS_ALSO_HEADING, SYNTHESIS_POSSIBLE_HEADING, type SynthesisItem, type SynthesisTarget } from '../stats/synthesis.js';
 import { ICONS } from './icons.js';
 import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWord, impactShortWord, formatPoints, shortfallColor, type MeterTier } from '../stats/presentation.js';
 import { regionYieldRows, waferYieldRows } from '../stats/yieldRows.js';
@@ -2264,7 +2264,7 @@ export function buildSynthesisSection(
   const { outer, content } = collapsibleSection('What stands out', true, { stateKey: 'synthesis', panel });
 
   const isActive = (t: SynthesisTarget): boolean =>
-    t.kind === 'finding' ? activeFindingId === t.id : activeTest === t.testNumber;
+    t.kind === 'finding' ? activeFindingId === t.id : t.kind === 'test' && activeTest === t.testNumber;
   /** Wires `btn` to show `target`; false when nothing can show it here, and the element stays inert. */
   const wire = (btn: HTMLButtonElement, target: SynthesisTarget, tip: string): boolean => {
     if (target.kind === 'finding') {
@@ -2273,6 +2273,9 @@ export function buildSynthesisSection(
       btn.dataset.wmapFinding = finding.id;
       wireTooltip(btn, `${formatFindingTooltip(finding)}\n${tip}`);
       btn.addEventListener('click', () => onFindingClick(finding, btn));
+    } else if (target.kind === 'group') {
+      // About a group of wafers, which has no map to show: the item's chart is its view.
+      return false;
     } else {
       if (!onTestClick) return false;
       btn.dataset.wmapTest = String(target.testNumber);
@@ -2423,6 +2426,12 @@ export function buildSynthesisSection(
     const more = synthesis.also?.more ?? 0;
     if (more > 0) list.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR }, `and ${more} more`));
     content.appendChild(list);
+  }
+  if (synthesis.possible?.length) {
+    content.appendChild(el('div', { fontSize: FONT.meta, color: LABEL_COLOR, marginBottom: SPACE.xxs }, SYNTHESIS_POSSIBLE_HEADING));
+    for (const it of synthesis.possible) {
+      content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: CLR.text, marginBottom: SPACE.xs }, plainBinTerms(it.text)));
+    }
   }
   content.appendChild(el('div', { fontSize: FONT.body, lineHeight: LEADING.base, color: LABEL_COLOR, marginTop: SPACE.xs }, plainBinTerms(synthesis.checked)));
   if (onOpenReport) {

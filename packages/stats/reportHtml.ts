@@ -1,5 +1,5 @@
 import type { StatsFinding, StatsSeverity } from './types.js';
-import { SYNTHESIS_ALSO_HEADING, synthesisMoreTests, synthesisRowShare, type Synthesis, type SynthesisTarget } from './synthesis.js';
+import { SYNTHESIS_ALSO_HEADING, SYNTHESIS_POSSIBLE_HEADING, synthesisMoreTests, synthesisRowShare, type Synthesis, type SynthesisTarget } from './synthesis.js';
 import { formatFindingTooltip, findingMetricLabel, isProportionFinding } from './findingText.js';
 import { arrangeFindings } from './filterFindings.js';
 import { SEVERITY_MARK, METER_DOTS, filledDots, impactWord, impactShortWord, shortfallColor, shortfallStep, formatPoints, barPercent, type MeterTier } from './presentation.js';
@@ -284,9 +284,16 @@ export function synthesisSectionHtml(synthesis: Synthesis, anchorFor: (target: S
 ${smaller.map((it) => `<li>${renderMeter(it.impact, impactShortWord(it.impact))}<span>${link(it.brief, it.target)}</span><span class="synthesis-share">${escHtml(synthesisRowShare(it))}</span></li>`).join('\n')}${more ? `\n<li class="synthesis-rest"><span></span><span>and ${more} more</span><span></span></li>` : ''}
   </ul>`
     : '';
+  const possible = synthesis.possible?.length
+    ? `<p class="synthesis-smaller">${escHtml(SYNTHESIS_POSSIBLE_HEADING)}</p>
+  <ul class="synthesis-more">
+${synthesis.possible.map((it) => `<li><span>${escHtml(it.text)}</span></li>`).join('\n')}
+  </ul>`
+    : '';
   return renderSection('What stands out', `<p class="synthesis-headline">${escHtml(synthesis.headline)}</p>
   ${items}
   ${rows}
+  ${possible}
   <p class="synthesis-checked">${escHtml(synthesis.checked)}</p>`, 'synthesis');
 }
 

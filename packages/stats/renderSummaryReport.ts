@@ -317,7 +317,7 @@ function synthesisSection(
   const anchorIds = new Set(visibleFindings(summary.findings).map((f) => f.id));
   const anchorFor = (t: SynthesisTarget): string | undefined => t.kind === 'finding'
     ? (anchorIds.has(t.id) ? findingAnchor(t.id, scope) : undefined)
-    : testSections.get(t.testNumber);
+    : t.kind === 'test' ? testSections.get(t.testNumber) : undefined;
   return synthesisSectionHtml(buildSynthesis(summary, { passBins: passBins ? [...passBins] : undefined }), anchorFor);
 }
 

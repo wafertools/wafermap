@@ -711,7 +711,7 @@ Sections, top to bottom:
   one value, the way Insights compares groups, adjusted over every field and test compared, and its size
   is the shift in the test's within-wafer standard deviations, the scale a region's shift is measured on.
   A field is one item however many tests it moves ("34 tests differ by Split. Largest: …; next: …"), with the tests
-  that moved most as its chips, so a corner lot does not fill the list with one split. Its chart is a grid of the field's values by those tests, in z-scores (and a card that shows a bar per wafer draws the wafers under their group, in the group's colour, when Group by is on): blue where a group sits below the lot's average on a test, red where it sits above, so a process corner reads as a pattern of cells. Both are ranked on one scale, the share of the dies an item
+  that moved most as its chips, so a corner lot does not fill the list with one split. The same comparison is made on the wafers' yield and on the pass rate of the lot's weakest ring ("Yield is 4.7 points lower on probe card PC-B than on PC-A"); each set of groups is read after allowing for the strongest other one, and says so, and fields that group the wafers identically are one item that names them together. Groups that differ on two or more measures with no overlap but that the sample is too small to confirm are listed apart, under *Possible, not confirmed*. Its chart is a grid of the field's values by those tests, in z-scores (and a card that shows a bar per wafer draws the wafers under their group, in the group's colour, when Group by is on): blue where a group sits below the lot's average on a test, red where it sits above, so a process corner reads as a pattern of cells. Both are ranked on one scale, the share of the dies an item
   affects: a loss by the dies it cost; a shift by its dies, counted in full from two standard deviations
   and by the square of its size below that (a one-sigma shift counts a quarter of its dies); a trend by
   how far it moved; a group's shift by the dies of the wafers that moved, weighted as a shift is; a Ppk under 1.0 by
@@ -1079,7 +1079,7 @@ copy of the chart. **Edit as plot**, in the ⋯ menu of an Insights chart, opens
 *A chart's buttons* below). The **My plots | Examples** switch above the list shows one or the other, never both: **Examples** shows plots to start from, or to see what each chart and
 setting is for, each marked as an example; none is saved until you add it. They are chosen from the lot in view: the *lead* test is the one that varies most from wafer to
 wafer (for a single wafer, the one that follows distance from the centre most), its partner the test that tracks it
-best, and the split is the lot field that best explains the lead test. The examples are a scatter of the lead
+best, and the split is the lot field that best explains the lead test. Each other lot field that divides the wafers' yield (a probe card, a tester) gets a bar of yield by its groups too; fields that group the wafers identically, such as a tester and the handler docked to it, each get one, so you can follow either. The examples are a scatter of the lead
 test against its partner with a fitted line, a histogram with its
 normal curve, a box of the lead test by wafer, a bar of yield by the split, a line over wafer order with a ±1 SD band, and a probability plot. The examples also show one of each newer
 feature the lot can show: the most telling tests as one set rescaled to z-scores (a box per test, and a heatmap of
@@ -1557,8 +1557,8 @@ the evidence, not a fault; more wafers are what settle it.
 The **What divides yield** card makes the comparison [Comparing groups of wafers](#102-comparing-groups-of-wafers) describes for every wafer field at once, for yield and for each of the five most
 common fail bins (a bin's value is its share of a wafer's judged dies). Rows are ranked by q, so the fields at the top
 separate the wafers more clearly than wafer-to-wafer noise would. The **Group by** button regroups every chart by that
-field. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
-two fields that change together (a lot and its start date) cannot be told apart by the wafers. A low q points to where
+field. Each field is read after allowing for the strongest other field that explains the same measure (and does not contain it): a probe card on wafers that also differ by recipe is ranked by what the recipe leaves, and its row says "allowing for" that field, with the degrees of freedom the removed means used charged to the p. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
+fields that change together (a lot and its start date, or a tester and the handler docked to it) cannot be told apart by the wafers; the card names each set of them. A low q points to where
 to look; it is not a cause. Tool, chamber and probe-card fields appear only when the host supplies them as wafer
 attributes.
 

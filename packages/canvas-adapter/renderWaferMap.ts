@@ -1406,7 +1406,7 @@ export function renderWaferMapCard(
       showOnMap: (target) => {
         setInsightsOpen(false);
         if (target.kind === 'test') showTestOnMap(target.testNumber);
-        else {
+        else if (target.kind === 'finding') {
           const finding = statsNow()?.findings.find(f => f.id === target.id);
           if (finding) showFindingOnMap(finding);
         }

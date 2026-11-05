@@ -49,7 +49,7 @@ const DETECTION_RULES = [
     'facility', 'facil_id', 'floor_id', 'floor',
     'sublot', 'sblot_id', 'sub_lot', 'sublot_id',
     'site', 'site_num', 'site_grp', 'head_num',
-    'handler', 'hand_typ', 'hand_id',
+    'handler', 'hand_typ', 'hand_id', 'probe_card', 'probecard', 'card_typ', 'card_id', 'split',
     'loadboard', 'load_typ', 'load_id', 'dib_typ', 'dib_id',
     'contactor', 'cont_typ', 'cont_id',
     'exec_typ', 'exec_ver', 'test_cod', 'rtst_cod',

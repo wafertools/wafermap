@@ -2441,6 +2441,9 @@ function worstPassRate<T extends { f: PlotField; d: TestDef }>(limited: readonly
   return worst;
 }
 
+/** The most bars of yield by a lot field the examples offer beyond the one drawn by the split. */
+const MAX_YIELD_EXAMPLES = 4;
+
 export function examplePlots(catalogue: readonly FieldOption[], waferCount: number, newId: () => string, data?: { items: readonly PlotItem[]; ctx?: PlotContext }): PlotSpec[] {
   const inOrder = catalogue.filter(f => f.group === 'Tests' && 'test' in f.field);
   // With the data to hand the tests are put in the order they have most to show, the second being the one that follows the first.
@@ -2478,6 +2481,12 @@ export function examplePlots(catalogue: readonly FieldOption[], waferCount: numb
   if (tests.length >= 1 && manyWafers) add({ chart: 'box', fields: { x: { builtin: 'wafer' }, y: tests[0], ...bySplit }, axes: { y: { references: [{ stat: 'median' }] } } });
   // Each value at its bar's end and the median of the bars as a line, as the Overview's yield card draws it.
   if (manyWafers) add({ chart: 'bar', fields: { x: split ?? { builtin: 'wafer' }, y: { builtin: 'yield' }, color: split ?? { none: true } }, valueLabels: true, axes: { y: { references: [{ stat: 'median' }] } } });
+  // Each other field that divides the wafers' yield, as a bar of yield by its groups. Fields that group the wafers identically
+  // (a tester and the handler docked to it) each get one, so neither is hidden and the reader can follow either.
+  if (manyWafers) for (const key of (picks?.yieldKeys ?? []).filter(k => !(split && 'meta' in split && split.meta === k)).slice(0, MAX_YIELD_EXAMPLES)) {
+    const field = catalogue.find(f => 'meta' in f.field && f.field.meta === key)?.field;
+    if (field) add({ chart: 'bar', fields: { x: field, y: { builtin: 'yield' }, color: field }, valueLabels: true, axes: { y: { references: [{ stat: 'median' }] } } });
+  }
   // A filter: each wafer's yield on the ring that yields least, where a ring is worse than the rest (the edge, usually).
   const worstRing = manyWafers && has('ring') && data ? lowestYieldRing(data.items, data.ctx) : undefined;
   if (worstRing) add({ chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } }, where: { conditions: [{ field: { builtin: 'ring' }, values: [worstRing] }] } });

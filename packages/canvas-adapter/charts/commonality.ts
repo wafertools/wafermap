@@ -45,9 +45,9 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
 
   const note = doc.createElement('div');
   const parts = [
-    `Every wafer field, compared for yield and for the ${result.bins.length} most common fail bin${result.bins.length === 1 ? '' : 's'}, with each wafer as one value. Ranked by q (Welch's p adjusted for the ${result.rows.length} comparisons). A low q says the groups differ by more than wafer-to-wafer noise; it does not say why.`,
+    `Every wafer field, compared for yield and for the ${result.bins.length} most common fail bin${result.bins.length === 1 ? '' : 's'}, with each wafer as one value. Ranked by q (Welch's p adjusted for the ${result.rows.length} comparisons), each field read after allowing for the strongest other field that explains the same measure and does not contain it. A low q says the groups differ by more than wafer-to-wafer noise; it does not say why.`,
   ];
-  if (result.confounded.length) parts.push(`These fields group the wafers identically, so the wafers cannot tell them apart: ${result.confounded.map(([a, b]) => `${a.label} and ${b.label}`).join('; ')}.`);
+  if (result.tied.length) parts.push(`These fields group the wafers identically, so the wafers cannot tell them apart: ${result.tied.map(set => `${set.slice(0, -1).map(f => f.label).join(', ')} and ${set[set.length - 1].label}`).join('; ')}.`);
   if (result.untestable.length) parts.push(`Not compared, with no two groups of two or more wafers: ${result.untestable.map(f => f.label).join(', ')}.`);
   note.textContent = parts.join(' ') + ' ';
   note.append(guideCite(doc, GUIDE_SECTIONS.dividesYield), '.');
@@ -103,13 +103,14 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
     tbody.replaceChildren();
     for (const r of all ? result.rows : result.rows.slice(0, FIRST_ROWS)) {
       const tr = doc.createElement('tr');
-      td(tr, r.field.label, { align: 'left' });
+      td(tr, r.allowedFor ? `${r.field.label} (allowing for ${r.allowedFor.map(f => f.label).join(', ')})` : r.field.label, { align: 'left', title: r.allowedFor ? `Read after allowing for ${r.allowedFor.map(f => f.label).join(', ')}: each wafer's value less its ${r.allowedFor.length === 1 ? 'group’s' : 'groups’'} mean on ${r.allowedFor.length === 1 ? 'that field' : 'those fields'}, so a difference the other field explains does not hide this one. The Worst and Best groups are the measure's own means.` : undefined });
       td(tr, measureLabel(r.measure), { align: 'left' });
       td(tr, `${r.worst.key}: ${pct(r.worst.mean)} (${n(r.worst.key, r)} wafers)`, { align: 'left', shade: worstShade(r) });
       td(tr, `${r.best.key}: ${pct(r.best.mean)} (${n(r.best.key, r)} wafers)`, { align: 'left' });
       td(tr, `${r.spread.toFixed(1)} pts`);
-      td(tr, formatP(r.comparison.welch?.p ?? NaN), { title: r.comparison.issue });
-      td(tr, `${formatP(r.comparison.kruskal?.p ?? NaN)}${r.comparison.kruskal?.approximate ? '*' : ''}`, { title: r.comparison.kruskal?.approximate ? 'Approximate: fewer than five wafers in a group' : undefined });
+      const ranked = r.adjusted ?? r.comparison;
+      td(tr, formatP(ranked.welch?.p ?? NaN), { title: ranked.issue });
+      td(tr, `${formatP(ranked.kruskal?.p ?? NaN)}${ranked.kruskal?.approximate ? '*' : ''}`, { title: ranked.kruskal?.approximate ? 'Approximate: fewer than five wafers in a group' : undefined });
       td(tr, formatP(r.pAdjusted), { strong: r.pAdjusted < 0.05 });
       if (r.field.key === o.groupedBy) {
         td(tr, 'Grouped by this', { align: 'left' });

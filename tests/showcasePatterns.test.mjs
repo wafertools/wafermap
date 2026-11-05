@@ -5,10 +5,11 @@
 // - edge-ring:  failure probability rises steeply over the outer three dies of
 //               every wafer — an edge ring on 8/8 wafers.
 // - parametric: leakage rises with radius and fails its bin limit near the edge
-//               on every wafer — an edge ring on 6/6 — plus one hotspot per wafer
+//               on every wafer but the slow-corner (SS) ones, whose leakage stays under
+//               the limit — an edge ring on 8/12 — plus one hotspot per wafer
 //               at a different place each time, which is not a lot pattern.
 // - cluster:    two or three defect clusters per wafer, all within 6 dies of the
-//               centre of a 20-die-radius wafer — a centre cluster on 7/7.
+//               centre of a 20-die-radius wafer — a centre cluster on 8/8.
 // - high-yield: uniform ~1% random fails — no spatial pattern at all.
 //
 // A pattern visible on every wafer must be reported on every wafer, as one lot
@@ -45,11 +46,12 @@ const CENTRE = new Set(['Center cluster', 'Donut']);
 
 const SCENARIOS = [
   { name: 'edge-ring',  labels: EDGE,   ring: 'Ring 4 (edge)' },
-  { name: 'parametric', labels: EDGE,   ring: 'Ring 4 (edge)' },
+  // The slow corner (every third wafer, SS) draws less leakage, so on some of those wafers the edge stays under the Iddq limit.
+  { name: 'parametric', labels: EDGE,   ring: 'Ring 4 (edge)', mayLack: i => i % 3 === 2 },
   { name: 'cluster',    labels: CENTRE, ring: 'Ring 1 (core)' },
 ];
 
-for (const { name, labels, ring } of SCENARIOS) {
+for (const { name, labels, ring, mayLack = () => false } of SCENARIOS) {
   test(`showcase ${name}: the lot reports its pattern on every wafer, once`, () => {
     const maps = loadScenario(name);
     const lot = analyzeWaferLot(maps);
@@ -57,8 +59,9 @@ for (const { name, labels, ring } of SCENARIOS) {
     assert.equal(patterns.length, 1, `one lot pattern, got: ${patterns.map(f => f.summary).join(' | ')}`);
     const [pattern] = patterns;
     assert.ok(labels.has(pattern.comparison.left), `wrong pattern: ${pattern.summary}`);
-    assert.deepEqual([...pattern.highlight.waferIndices].sort((a, b) => a - b), maps.map((_, i) => i),
-      `on every wafer: ${pattern.summary}`);
+    const seen = new Set(pattern.highlight.waferIndices);
+    assert.deepEqual(maps.map((_, i) => i).filter(i => !mayLack(i) && !seen.has(i)), [], `on every wafer: ${pattern.summary}`);
+    if (!maps.some((_, i) => mayLack(i))) assert.equal(seen.size, maps.length, `on every wafer: ${pattern.summary}`);
     for (const i of pattern.highlight.waferIndices) {
       assert.ok(pattern.highlight.dieKeysByWafer?.[i]?.length, `wafer ${i + 1} names the dies to highlight`);
     }

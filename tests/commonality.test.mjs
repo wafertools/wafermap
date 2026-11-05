@@ -16,16 +16,16 @@ function wafer(meta, fail2, fail3 = 3) {
   return { metadata: r.metadata, dies: r.dies, passBins: [1] };
 }
 
-// Probe card B loses about 15 points of yield to bin 2; split is noise; slot gives every wafer its own value; lot and
-// date move together.
+// Probe card B loses about 15 points of yield to bin 2; split is noise (neither value is consistently higher within a card,
+// which is how a field is read once the card is allowed for); slot gives every wafer its own value; lot and date move together.
 const lotOf = () => [
   wafer({ probeCard: 'A', split: 'X', slot: '1', lot: 'L1', date: 'D1' }, 4),
   wafer({ probeCard: 'A', split: 'Y', slot: '2', lot: 'L1', date: 'D1' }, 5),
-  wafer({ probeCard: 'A', split: 'X', slot: '3', lot: 'L1', date: 'D1' }, 3),
-  wafer({ probeCard: 'A', split: 'Y', slot: '4', lot: 'L2', date: 'D2' }, 6),
+  wafer({ probeCard: 'A', split: 'X', slot: '3', lot: 'L1', date: 'D1' }, 5),
+  wafer({ probeCard: 'A', split: 'Y', slot: '4', lot: 'L2', date: 'D2' }, 4),
   wafer({ probeCard: 'B', split: 'X', slot: '5', lot: 'L2', date: 'D2' }, 19),
-  wafer({ probeCard: 'B', split: 'Y', slot: '6', lot: 'L2', date: 'D2' }, 21),
-  wafer({ probeCard: 'B', split: 'X', slot: '7', lot: 'L1', date: 'D1' }, 18),
+  wafer({ probeCard: 'B', split: 'Y', slot: '6', lot: 'L2', date: 'D2' }, 18),
+  wafer({ probeCard: 'B', split: 'X', slot: '7', lot: 'L1', date: 'D1' }, 21),
   wafer({ probeCard: 'B', split: 'Y', slot: '8', lot: 'L2', date: 'D2' }, 20),
 ];
 const fields = [
@@ -63,7 +63,7 @@ test('a field that gives every wafer its own value is not compared, and is named
 
 test('fields that group the wafers identically are named as not separable', () => {
   const r = rankCommonality(lotOf(), fields);
-  assert.deepEqual(r.confounded.map(([a, b]) => [a.key, b.key]), [['lot', 'date']]);
+  assert.deepEqual(r.tied.map(set => set.map(f => f.key)), [['lot', 'date']]);
 });
 
 test('n is wafers: the comparison is over wafer values, not dies', () => {
@@ -112,4 +112,36 @@ test('a yield row tints its worst group when it falls short of the wafers\' mean
   assert.equal(probe.cells[3].style.background, '', 'the best group is not tinted');
   const bin = rows.find(r => /^Probe card/.test(r.textContent) && !/Yield/.test(r.cells[1].textContent));
   assert.equal(bin.cells[2].style.background, '', 'a bin share is not a yield');
+});
+
+test('three fields that group the wafers identically are one tied set, not three pairs', () => {
+  const lot = [4, 5, 6, 5, 19, 20, 21, 20].map((fails, i) => wafer({ a: i < 4 ? 'x' : 'y', b: i < 4 ? 'p' : 'q', c: i < 4 ? '1' : '2' }, fails));
+  const r = rankCommonality(lot, [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }, { key: 'c', label: 'C' }]);
+  assert.deepEqual(r.tied.map(set => set.map(f => f.key)), [['a', 'b', 'c']]);
+});
+
+test('a field another hides is found once the other is allowed for, and the row says so', () => {
+  // Card B loses 15 points and split Y loses 6, on wafers where each card holds both splits twice: one-way, each field's
+  // effect is buried in the other's spread; the card stands out on its own, and the split once the card is allowed for.
+  const lot = [
+    wafer({ probeCard: 'A', split: 'X' }, 4), wafer({ probeCard: 'A', split: 'X' }, 5),
+    wafer({ probeCard: 'A', split: 'Y' }, 10), wafer({ probeCard: 'A', split: 'Y' }, 11),
+    wafer({ probeCard: 'B', split: 'X' }, 19), wafer({ probeCard: 'B', split: 'X' }, 20),
+    wafer({ probeCard: 'B', split: 'Y' }, 25), wafer({ probeCard: 'B', split: 'Y' }, 26),
+  ];
+  const r = rankCommonality(lot, [{ key: 'probeCard', label: 'Probe card' }, { key: 'split', label: 'Split' }]);
+  const yieldRow = (key) => r.rows.find(x => x.field.key === key && x.measure.kind === 'yield');
+  const split = yieldRow('split'), card = yieldRow('probeCard');
+  assert.deepEqual(split.allowedFor.map(f => f.key), ['probeCard']);
+  assert.equal(card.allowedFor, undefined, 'the card stands out on its own, so nothing is allowed for');
+  assert.ok(split.pAdjusted < 0.05 && card.pAdjusted < 0.05, `q ${split.pAdjusted}, ${card.pAdjusted}`);
+  // The row still reads in the measure's own means.
+  assert.ok(Math.abs(split.spread - 6) < 0.01, `spread ${split.spread}`);
+});
+
+test('fields that group the wafers identically are not allowed for one another', () => {
+  const lot = [4, 5, 6, 5, 19, 20, 21, 20].map((fails, i) => wafer({ tester: i < 4 ? 'T1' : 'T2', handler: i < 4 ? 'H1' : 'H2' }, fails));
+  const r = rankCommonality(lot, [{ key: 'tester', label: 'Tester' }, { key: 'handler', label: 'Handler' }]);
+  assert.ok(r.rows.every(x => !x.allowedFor), 'neither hides the other');
+  assert.equal(r.tied.length, 1);
 });

@@ -119,9 +119,15 @@ const dist = resolve(root, 'dist');
 // message, since that is what a consumer downloads. Each budget keeps ~3% over the measured size, so ordinary feature
 // work does not need a raise; the lazy-import tests below are what catch a heavy module landing in the chunk.
 // Gzipped sizes in the history above are the earlier measure.
+//   2026-11-05: root raised 244,000 -> 257,000 minified (measured 249,837; 236,568 at the 2026-10-18 entry), render raised
+//   470,000 -> 486,000 (measured 472,191; 462,005 at the 2026-10-27 entry). What stands out compares groups of wafers on yield and
+//   the weakest ring as well as on tests, reads each set of groups after allowing for the strongest other one (the shared
+//   stats/groupEffects module, also used by What divides yield and the example plots), merges fields that group the wafers
+//   identically, and lists a possible, not confirmed tier. Together with the work already in the tree (the Insights demo lot's
+//   equipment fields and the Chart gallery's new pages). Legitimate library growth.
 const THRESHOLDS = {
-  'wafermap (root)':            244_000,  // minified bytes — measured 236,568 (81.7 KB gzipped)
-  'wafermap/render (initial)':  470_000,  // minified bytes — measured 462,005 (157.0 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
+  'wafermap (root)':            257_000,  // minified bytes — measured 249,837 (84.6 KB gzipped)
+  'wafermap/render (initial)':  486_000,  // minified bytes — measured 472,191 (160.5 KB gzipped); plot store, the cards' caption and print support included; guide, Insights, drilldown, data tab and report builders excluded
 };
 
 async function bundleSize(entryPoint, plugins = []) {

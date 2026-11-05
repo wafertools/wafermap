@@ -2714,7 +2714,7 @@ export function renderWaferGallery(
           rememberViewBeforeFinding();
           clearLotFindingHighlight();
           applyLotTestHighlight(target.testNumber);
-        } else {
+        } else if (target.kind === 'finding') {
           const lotNow = lotStats();
           const finding = lotNow ? synthesisSource(lotNow).findings.find(f => f.id === target.id) : undefined;
           if (finding) {

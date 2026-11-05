@@ -227,7 +227,12 @@ Controls:
   · Heatmaps and the difference map   (×3)
   · What divides yield
   · Group by
-      hint: Group Insights by Process Split, so every chart compares its groups   (×4)
+      hint: Group Insights by Probe Card, so every chart compares its groups   (×4)
+  · Group by
+      hint: Group Insights by Process Split, so every chart compares its groups   (×2)
+  · Group by
+      hint: Group Insights by Tester, so every chart compares its groups   (×2)
+  · Show all 12 rows
   · Sort: yield  [radio, unchecked]
   · Sort: wafer  [radio, checked]
   · Hard bins  [radio, checked]
@@ -244,6 +249,8 @@ Controls:
 
 Menu — Group by:
     · None
+    · Tester (2)
+    · Probe Card (3)
     · Process Split (2)
 
 Menu — Columns:
@@ -799,64 +806,58 @@ Controls:
   · Summary report
   · Data tables
   · ▶What stands out
-  · ●●●High impact Ring 4 (edge): pass rate 28.1 points below the rest of the wafer; hard bin 2 (Contact Open) accounts for 12.2 of those points, hard bin 3 (Vth - Hi) for 10.7 — about 70 dies lost. Idsat is below its low limit on 11 dies, all of them in Ring 4 (edge). Ring 4 (edge) mean Idsat is 14.9% lower than the rest of the map
-      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map Click to show it on the map
+  · ●●●High impact Reticle cell (0, 1): pass rate 69.3 points below the rest of the wafer; hard bin 2 (Contact Open) accounts for 27.2 of those points, hard bin 3 (Vth - Hi) for 21.4 — about 39 dies lost
+      hint: Reticle cell (0, 1) yield is 69.3 percentage points lower than other reticle positions Click to show it on the map
   · Hard bin 2 (Contact Open)
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map Click to show it on the map
+      hint: Reticle cell (0, 1) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 27.2 percentage points higher than other reticle positions Click to show it on the map
   · Hard bin 3 (Vth - Hi)
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map Click to show it on the map
-  · Idsat
-      hint: Click to show this test on the map, with the dies it fails
-  · Chart  [aria="Chart: Ring 4 (edge): pass rate, 70 dies"]
+      hint: Reticle cell (0, 1) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 21.4 percentage points higher than other reticle positions Click to show it on the map
+  · Chart  [aria="Chart: Reticle cell (0, 1): pass rate, 39 dies"]
       hint: Open Insights at the chart of this, under Worth a look
-  · ●●●HighIoff: outside limits, 49 dies lost7.4%
+  · ●●●HighIoff: outside limits, 29 dies lost4.4%
       hint: Click to show this test on the map, with the dies it fails
-  · Chart  [aria="Chart: Ioff: outside limits, 49 dies lost"]
+  · Chart  [aria="Chart: Ioff: outside limits, 29 dies lost"]
       hint: Open Insights at the chart of this, under Worth a look
-  · ●●●HighVth: 36 dies outside limits5.4%
+  · ●●○ModerateVth: 17 dies outside limits2.6%
       hint: Click to show this test on the map, with the dies it fails
-  · Chart  [aria="Chart: Vth: 36 dies outside limits"]
+  · Chart  [aria="Chart: Vth: 17 dies outside limits"]
       hint: Open Insights at the chart of this, under Worth a look
-  · ●●○ModerateReticle cell (0, 1): pass rate, 21 dies3.2%
-      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions Click to show it on the map
+  · ●○○LowIdsat: 9 dies out of limits, binned passing1.4%
+      hint: Click to show this test on the map, with the dies it fails
   · Full report ▸
-  · ▶Findings (26)16 unusual, 10 notable
+  · ▶Findings (20)16 unusual, 4 notable
   · ●●●Unusual 16
-  · ●●○Notable 10
-  · Spatial pattern: edge-local (medium confidence) — 35% of edge dies failing [reticle cell (0, 1)'s failures set aside]
-      hint: Spatial pattern: edge-local (medium confidence) — 35% of edge dies failing [reticle cell (0, 1)'s failures set aside] Click to show it on the map
+  · ●●○Notable 4
   · Mean Idsat is 19.1% higher than the rest of the map
       hint: Rings 1–2 mean Idsat is 19.1% higher than the rest of the map Click to show it on the map
-  · Mean Ioff is 60.1% lower than the rest of the map
-      hint: Rings 1–2 mean Ioff is 60.1% lower than the rest of the map Click to show it on the map
-  · Mean Vth is 2.3% lower than the rest of the map
-      hint: Rings 1–2 mean Vth is 2.3% lower than the rest of the map Click to show it on the map
+  · Mean Ioff is 55.9% lower than the rest of the map
+      hint: Rings 1–2 mean Ioff is 55.9% lower than the rest of the map Click to show it on the map
   · Mean Idsat is 14.9% lower than the rest of the map
       hint: Ring 4 (edge) mean Idsat is 14.9% lower than the rest of the map Click to show it on the map
-  · Mean Ioff is 92.6% higher than the rest of the map
-      hint: Ring 4 (edge) mean Ioff is 92.6% higher than the rest of the map Click to show it on the map
-  · Mean Vth is 2.9% higher than the rest of the map
-      hint: Ring 4 (edge) mean Vth is 2.9% higher than the rest of the map Click to show it on the map
-  · Limit fail rate for Ioff is 16.4 pp higher than the rest of the wafer
-      hint: Ring 4 (edge) limit fail rate for Ioff is 16.4 pp higher than the rest of the wafer Click to show it on the map
-  · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 12.2 percentage points higher than the rest of the map Click to show it on the map
-  · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 10.7 percentage points higher than the rest of the map Click to show it on the map
-  · Limit fail rate for Vth is 8.6 pp higher than the rest of the wafer
-      hint: Ring 4 (edge) limit fail rate for Vth is 8.6 pp higher than the rest of the wafer Click to show it on the map
+  · Mean Ioff is 73.3% higher than the rest of the map
+      hint: Ring 4 (edge) mean Ioff is 73.3% higher than the rest of the map Click to show it on the map
   · Limit fail rate for Idsat is 4.4 pp higher than the rest of the wafer
       hint: Ring 4 (edge) limit fail rate for Idsat is 4.4 pp higher than the rest of the wafer Click to show it on the map
-  · Yield is 28.1 percentage points lower than the rest of the map
-      hint: Ring 4 (edge) yield is 28.1 percentage points lower than the rest of the map Click to show it on the map
-  · Yield is 37.8 percentage points lower than other reticle positions
-      hint: Reticle cell (0, 1) yield is 37.8 percentage points lower than other reticle positions Click to show it on the map
-  · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 13.3 percentage points higher than other reticle positions
-      hint: Reticle cell (0, 1) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 13.3 percentage points higher than other reticle positions Click to show it on the map
-  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions
-      hint: Reticle cell (0, 1) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 12.6 percentage points higher than other reticle positions Click to show it on the map
-  · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 11.9 percentage points higher than other reticle positions
-      hint: Reticle cell (0, 1) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 11.9 percentage points higher than other reticle positions Click to show it on the map
+  · Mean Vth is 1.5% higher than the rest of the map
+      hint: Ring 4 (edge) mean Vth is 1.5% higher than the rest of the map Click to show it on the map
+  · Limit fail rate for Ioff is 10.6 pp higher than the rest of the wafer
+      hint: Ring 4 (edge) limit fail rate for Ioff is 10.6 pp higher than the rest of the wafer Click to show it on the map
+  · Yield is 69.3 percentage points lower than other reticle positions
+      hint: Reticle cell (0, 1) yield is 69.3 percentage points lower than other reticle positions Click to show it on the map
+  · Hard bin 2 (Contact Open) and soft bin 20 (same dies) occurrence 27.2 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 2 (Contact Open) and SBin 20 (same dies) occurrence 27.2 percentage points higher than other reticle positions Click to show it on the map
+  · Hard bin 3 (Vth - Hi) and soft bin 11 (same dies) occurrence 21.4 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 3 (Vth - Hi) and SBin 11 (same dies) occurrence 21.4 percentage points higher than other reticle positions Click to show it on the map
+  · Hard bin 4 (Leakage) and soft bin 21 (same dies) occurrence 20.7 percentage points higher than other reticle positions
+      hint: Reticle cell (0, 1) has HBin 4 (Leakage) and SBin 21 (same dies) occurrence 20.7 percentage points higher than other reticle positions Click to show it on the map
+  · Limit fail rate for Ioff is 19.8 pp higher than the rest of the wafer
+      hint: Reticle cell (0, 1) limit fail rate for Ioff is 19.8 pp higher than the rest of the wafer Click to show it on the map
+  · Limit fail rate for Vth is 12.8 pp higher than the rest of the wafer
+      hint: Reticle cell (0, 1) limit fail rate for Vth is 12.8 pp higher than the rest of the wafer Click to show it on the map
+  · Mean Vth is 2.8% higher than other reticle positions
+      hint: Reticle cell (0, 1) mean Vth is 2.8% higher than other reticle positions Click to show it on the map
+  · Mean Ioff is 56.3% higher than other reticle positions
+      hint: Reticle cell (0, 1) mean Ioff is 56.3% higher than other reticle positions Click to show it on the map
   · ▶Hard Bin Breakdown — % of dies (N=661)
   · Hard  [radio, checked]
   · Soft  [radio, unchecked]
@@ -956,72 +957,52 @@ Controls:
   · Summary report
   · Data tables
   · ▶What stands out
-  · ●●●High impact Ring 4 (edge): pass rate 21.7 points below the rest of the wafer; hard bin 2 (Contact Open) accounts for 10.4 of those points, hard bin 3 (Vth - Hi) for 6.0 — about 54 dies lost. Idsat is below its low limit on 14 dies, all of them in Ring 4 (edge). Ring 4 (edge) mean Idsat is 14.5% lower than the rest of the map
-      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map Click to show it on the map
-  · Hard bin 2 (Contact Open)
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 10.4 percentage points higher than the rest of the map Click to show it on the map
+  · ●●●High impact Site 3: pass rate 19.9 points below the rest of the wafer; hard bin 3 (Vth - Hi) accounts for 8.5 of those points, hard bin 2 (Contact Open) for 8.4 — about 33 dies lost. Vth is above its high limit on 17 dies, 13 of them in Site 3. Rings 1–2 mean Vth is 1.8% lower than the rest of the map
+      hint: Site 3 yield is 19.9 percentage points lower than other test sites Click to show it on the map
   · Hard bin 3 (Vth - Hi)
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map Click to show it on the map
-  · Idsat
+      hint: Site 3 has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 8.5 percentage points higher than other test sites Click to show it on the map
+  · Hard bin 2 (Contact Open)
+      hint: Site 3 has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 8.4 percentage points higher than other test sites Click to show it on the map
+  · Vth
       hint: Click to show this test on the map, with the dies it fails
-  · Chart  [aria="Chart: Ring 4 (edge): pass rate, 54 dies"]
+  · Chart  [aria="Chart: Site 3: pass rate, 33 dies"]
       hint: Open Insights at the chart of this, under Worth a look
-  · ●●●HighSite 3: pass rate, 38 dies5.7%
-      hint: Site 3 yield is 22.5 percentage points lower than other test sites Click to show it on the map
-  · Chart  [aria="Chart: Site 3: pass rate, 38 dies"]
+  · ●●○ModerateIoff: outside limits, 22 dies lost3.3%
+      hint: Click to show this test on the map, with the dies it fails
+  · Chart  [aria="Chart: Ioff: outside limits, 22 dies lost"]
       hint: Open Insights at the chart of this, under Worth a look
-  · ●●●HighIoff: outside limits, 37 dies lost5.6%
+  · ●●○ModerateIdsat: 14 dies out of limits, binned passing2.1%
       hint: Click to show this test on the map, with the dies it fails
-  · Chart  [aria="Chart: Ioff: outside limits, 37 dies lost"]
+  · Chart  [aria="Chart: Idsat: 14 dies out of limits, binned passing"]
       hint: Open Insights at the chart of this, under Worth a look
-  · ●●●HighVth: 30 dies outside limits4.5%
-      hint: Click to show this test on the map, with the dies it fails
-  · ●○○LowIdsat: 10 dies out of limits, binned passing1.5%
-      hint: Click to show this test on the map, with the dies it fails
-  · ●○○LowSector E: hard bin 2 (Contact Open), 8 dies1.3%
-      hint: Sector E has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 10.4 percentage points higher than the rest of the map Click to show it on the map
   · Full report ▸
-  · ▶Findings (29)8 unusual, 19 notable
-  · ●●●Unusual 8
-  · ●●○Notable 19
-  · ●○○Minor 2
-  · Spatial pattern: edge-local (medium confidence) — 34% of edge dies failing
-      hint: Spatial pattern: edge-local (medium confidence) — 34% of edge dies failing Click to show it on the map
-  · ▸Show 1 supporting finding
+  · ▶Findings (16)12 unusual, 4 notable
+  · ●●●Unusual 12
+  · ●●○Notable 4
   · Mean Idsat is 19.2% higher than the rest of the map
       hint: Rings 1–2 mean Idsat is 19.2% higher than the rest of the map Click to show it on the map
-  · Mean Ioff is 55.8% lower than the rest of the map
-      hint: Rings 1–2 mean Ioff is 55.8% lower than the rest of the map Click to show it on the map
-  · Mean Vth is 2.2% lower than the rest of the map
-      hint: Rings 1–2 mean Vth is 2.2% lower than the rest of the map Click to show it on the map
+  · Mean Ioff is 53.7% lower than the rest of the map
+      hint: Rings 1–2 mean Ioff is 53.7% lower than the rest of the map Click to show it on the map
+  · Mean Vth is 1.8% lower than the rest of the map
+      hint: Rings 1–2 mean Vth is 1.8% lower than the rest of the map Click to show it on the map
   · Mean Idsat is 14.5% lower than the rest of the map
       hint: Ring 4 (edge) mean Idsat is 14.5% lower than the rest of the map Click to show it on the map
-  · Mean Ioff is 98.5% higher than the rest of the map
-      hint: Ring 4 (edge) mean Ioff is 98.5% higher than the rest of the map Click to show it on the map
-  · Mean Vth is 2.2% higher than the rest of the map
-      hint: Ring 4 (edge) mean Vth is 2.2% higher than the rest of the map Click to show it on the map
-  · Limit fail rate for Ioff is 10.4 pp higher than the rest of the wafer
-      hint: Ring 4 (edge) limit fail rate for Ioff is 10.4 pp higher than the rest of the wafer Click to show it on the map
+  · Mean Ioff is 86.1% higher than the rest of the map
+      hint: Ring 4 (edge) mean Ioff is 86.1% higher than the rest of the map Click to show it on the map
   · Limit fail rate for Idsat is 5.6 pp higher than the rest of the wafer
       hint: Ring 4 (edge) limit fail rate for Idsat is 5.6 pp higher than the rest of the wafer Click to show it on the map
-  · Yield is 21.7 percentage points lower than the rest of the map
-      hint: Ring 4 (edge) yield is 21.7 percentage points lower than the rest of the map Click to show it on the map
-  · Hard bin 2 (Contact Open) and soft bin 20 (Contact Fail) (same dies) occurrence 10.4 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 10.4 percentage points higher than the rest of the map Click to show it on the map
-  · Hard bin 3 (Vth - Hi) and soft bin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 6.0 percentage points higher than the rest of the map Click to show it on the map
-  · Hard bin 4 (Leakage) and soft bin 21 (Leakage Fail) (same dies) occurrence 5.2 percentage points higher than the rest of the map
-      hint: Ring 4 (edge) has HBin 4 (Leakage) and SBin 21 (Leakage Fail) (same dies) occurrence 5.2 percentage points higher than the rest of the map Click to show it on the map
-  · Yield is 22.5 percentage points lower than other test sites
-      hint: Site 3 yield is 22.5 percentage points lower than other test sites Click to show it on the map
-  · Hard bin 2 (Contact Open) and soft bin 20 (Contact Fail) (same dies) occurrence 10.4 percentage points higher than other test sites
-      hint: Site 3 has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 10.4 percentage points higher than other test sites Click to show it on the map
-  · Hard bin 3 (Vth - Hi) and soft bin 11 (Vth Out of Range) (same dies) occurrence 7.9 percentage points higher than other test sites
-      hint: Site 3 has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 7.9 percentage points higher than other test sites Click to show it on the map
-  · Mean Vth is 1.6% higher than other test sites
-      hint: Site 3 mean Vth is 1.6% higher than other test sites Click to show it on the map
-  · Limit fail rate for Vth is 5.9 pp higher than the rest of the wafer
-      hint: Site 3 limit fail rate for Vth is 5.9 pp higher than the rest of the wafer Click to show it on the map
+  · Limit fail rate for Ioff is 6.7 pp higher than the rest of the wafer
+      hint: Ring 4 (edge) limit fail rate for Ioff is 6.7 pp higher than the rest of the wafer Click to show it on the map
+  · Yield is 19.9 percentage points lower than other test sites
+      hint: Site 3 yield is 19.9 percentage points lower than other test sites Click to show it on the map
+  · Hard bin 3 (Vth - Hi) and soft bin 11 (Vth Out of Range) (same dies) occurrence 8.5 percentage points higher than other test sites
+      hint: Site 3 has HBin 3 (Vth - Hi) and SBin 11 (Vth Out of Range) (same dies) occurrence 8.5 percentage points higher than other test sites Click to show it on the map
+  · Limit fail rate for Vth is 6.9 pp higher than the rest of the wafer
+      hint: Site 3 limit fail rate for Vth is 6.9 pp higher than the rest of the wafer Click to show it on the map
+  · Mean Vth is 1.8% higher than other test sites
+      hint: Site 3 mean Vth is 1.8% higher than other test sites Click to show it on the map
+  · Hard bin 2 (Contact Open) and soft bin 20 (Contact Fail) (same dies) occurrence 8.4 percentage points higher than other test sites
+      hint: Site 3 has HBin 2 (Contact Open) and SBin 20 (Contact Fail) (same dies) occurrence 8.4 percentage points higher than other test sites Click to show it on the map
   · ▶Hard Bin Breakdown — % of dies (N=661)
   · Hard  [radio, checked]
   · Soft  [radio, unchecked]

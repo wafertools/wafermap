@@ -9,12 +9,16 @@ import { facetValueOf } from './facets.js';
 import type { FacetCuration } from './facets.js';
 import { dieRadialPosition } from './dieRegions.js';
 import { pearsonOfPairs } from './correlation.js';
-import { sampleVariance } from './math.js';
+import { benjaminiHochberg, sampleVariance } from './math.js';
+import { adjustedFits, mergePartitions, type Partition } from './groupEffects.js';
+import { yieldCounts } from './yield.js';
 import type { PlotItem } from './plotData.js';
 
 const MAX_DIES = 4000;
 const MAX_TESTS = 60;
 const MIN_VALUES = 20;
+/** A set of groups is offered as an example when its adjusted p, over the sets compared, is under this. */
+const SUGGEST_Q = 0.1;
 
 export interface ExamplePicks {
   /** The tests, most telling first (between wafers, or against position for one wafer); tests never scored are last, in their own order. */
@@ -23,6 +27,12 @@ export interface ExamplePicks {
   partner?: number;
   /** The lot field whose values best separate the wafers' means of the lead test. */
   splitKey?: string;
+  /**
+   * The lot fields whose groups differ in yield, strongest set of groups first. Fields that group the wafers identically (a
+   * tester and the handler docked to it) are listed together, so each is offered; a set is read after allowing for the
+   * strongest other one, as in What stands out. Absent when no field divides the wafers' yield.
+   */
+  yieldKeys?: string[];
 }
 
 const sd = (v: readonly number[]): number => Math.sqrt(sampleVariance(v));
@@ -44,7 +54,7 @@ export function pickExamples(
 ): ExamplePicks {
   const scored = tests.slice(0, MAX_TESTS);
   const total = items.reduce((n, it) => n + it.dies.length, 0);
-  if (scored.length === 0 || total === 0) return { ranked: [...tests] };
+  if (scored.length === 0 || total === 0) return { ranked: [...tests], ...fieldPicks(items, metaKeys, curation) };
   const step = Math.max(1, Math.ceil(total / MAX_DIES));
   const read = testValuesReader(scored);
   const out = new Float64Array(scored.length);
@@ -79,7 +89,7 @@ export function pickExamples(
   const order = scored.map((_, k) => k).sort((a, b) => score[b] - score[a] || a - b);
   const ranked = [...order.map(k => scored[k]), ...tests.slice(MAX_TESTS)];
   const lead = order[0];
-  if (score[lead] <= 0) return { ranked: [...tests] };
+  if (score[lead] <= 0) return { ranked: [...tests], ...fieldPicks(items, metaKeys, curation) };
 
   let partner: number | undefined, best = 0.3;
   const leadRows = finiteRows(lead);
@@ -89,23 +99,34 @@ export function pickExamples(
     if (r > best) { best = r; partner = scored[k]; }
   }
 
-  // The lot field whose groups explain most of the spread of the wafers' means of the lead test.
-  let splitKey: string | undefined, share = 0;
-  const means = waferMeans(lead);
-  const pooled = means.filter((m): m is number => m !== undefined);
-  const grand = pooled.length ? pooled.reduce((a, b) => a + b, 0) / pooled.length : 0;
-  const ss = pooled.reduce((a, m) => a + (m - grand) ** 2, 0);
-  if (ss > 0) {
-    for (const key of metaKeys) {
-      const groups = new Map<string, number[]>();
-      items.forEach((it, w) => {
-        const g = facetValueOf(it.metadata, key, curation), m = means[w];
-        if (g !== undefined && m !== undefined) groups.set(g, [...(groups.get(g) ?? []), m]);
-      });
-      if (groups.size < 2 || groups.size > Math.max(2, Math.floor(pooled.length / 2))) continue;
-      const between = [...groups.values()].reduce((a, v) => a + v.length * ((v.reduce((x, y) => x + y, 0) / v.length) - grand) ** 2, 0);
-      if (between / ss > share) { share = between / ss; splitKey = key; }
-    }
-  }
-  return { ranked, ...(partner !== undefined ? { partner } : {}), ...(splitKey && share > 0.05 ? { splitKey } : {}) };
+  const picked = fieldPicks(items, metaKeys, curation, waferMeans(lead));
+  return { ranked, ...(partner !== undefined ? { partner } : {}), ...picked };
+}
+
+/** The lot fields to split the examples by: for the lead test's wafer means, and for the wafers' yield (see {@link ExamplePicks}). */
+function fieldPicks(
+  items: readonly PlotItem[], metaKeys: readonly string[], curation: Record<string, FacetCuration> | undefined,
+  leadMeans?: ReadonlyArray<number | undefined>,
+): Pick<ExamplePicks, 'splitKey' | 'yieldKeys'> {
+  if (items.length < 4) return {};
+  // The sets of groups the lot fields make. Fields that group the wafers identically are one set; a field with a group of one
+  // wafer, or with more groups than half the wafers, cannot be compared and is left out.
+  const partitions: Partition[] = mergePartitions(metaKeys.flatMap(key => {
+    const groupOf = items.map(it => facetValueOf(it.metadata, key, curation));
+    const sizes = new Map<string, number>();
+    for (const g of groupOf) if (g !== undefined) sizes.set(g, (sizes.get(g) ?? 0) + 1);
+    return sizes.size >= 2 && sizes.size <= Math.max(2, Math.floor(items.length / 2)) && [...sizes.values()].every(n => n >= 2) ? [{ key, groupOf }] : [];
+  }));
+  if (partitions.length === 0) return {};
+  // Strongest first, by the p of the set of groups against the measure, adjusted over the sets compared; a set is offered
+  // when that q is under SUGGEST_Q (a suggestion to look, not a finding).
+  const strongest = (values: ReadonlyArray<number | undefined>): Partition[] => {
+    const fits = adjustedFits(values, partitions).filter(f => f.fitted);
+    const q = benjaminiHochberg(fits.map(f => f.fitted!.p));
+    return fits.map((f, i) => ({ f, q: q[i] })).filter(x => x.q < SUGGEST_Q).sort((a, b) => a.f.fitted!.p - b.f.fitted!.p).map(x => x.f.partition);
+  };
+  const splitKey = leadMeans ? strongest(leadMeans)[0]?.keys[0] : undefined;
+  const yields = items.map(it => { const { pass, total } = yieldCounts(it.dies, it.passBins); return total ? pass / total : undefined; });
+  const yieldKeys = strongest(yields).flatMap(p => p.keys);
+  return { ...(splitKey ? { splitKey } : {}), ...(yieldKeys.length ? { yieldKeys } : {}) };
 }

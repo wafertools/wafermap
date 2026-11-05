@@ -203,7 +203,7 @@
       'parametric': {
         file: 'data/parametric.csv',
         plotMode: 'value',
-        story: '<strong>Parametric.</strong> Six wafers that lose yield to a measurement rather than a defect: Iddq rises toward the edge and in one hotspot per wafer, and Vref drifts from left to right.',
+        story: '<strong>Parametric.</strong> Twelve wafers, four of each process corner, that lose yield to a measurement rather than a defect: Iddq rises toward the edge and in one hotspot per wafer, Vref drifts from left to right, and the fast corner (FF) leaks most.',
         steps: [
           { text: 'The maps show Iddq. Dies above its limit carry a △ mark over their colour, so the distribution stays readable. <strong>Overlays → Limit pass/fail</strong> turns it into a pass/fail map instead.', target: T.overlays },
           { text: 'Switch <strong>Plot mode</strong> to Vref: a left-to-right gradient that reaches its high limit at the right-hand edge of every wafer.', target: T.plotMode },
@@ -215,7 +215,7 @@
       'cluster': {
         file: 'data/cluster.csv',
         plotMode: 'hardBin',
-        story: '<strong>Particle clusters.</strong> Seven wafers, each with two or three tight groups of failing dies near the centre, at a different place on each wafer: a recurring centre pattern, not one bad spot.',
+        story: '<strong>Particle clusters.</strong> Eight wafers, each with two or three tight groups of failing dies near the centre, at a different place on each wafer: a recurring centre pattern, not one bad spot.',
         steps: [
           { text: 'In the Summary panel\'s <strong>Findings</strong>, click the centre-cluster pattern. The rest of each wafer fades and the clustered dies are outlined, and <strong>Show supporting findings</strong> lists the regional findings it explains.', target: T.findings },
           { text: '<strong>Right-click</strong> an outlined die. The menu opens on the finding\'s dies on every wafer; <strong>Only this wafer</strong> narrows it to one.' },

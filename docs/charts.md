@@ -845,7 +845,7 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 *Dies outside part average testing limits, set from each wafer’s own spread of each test (the AEC-Q001 method), by wafer and by test.*
 
-**Why it is useful.** A die can pass every test limit and still sit far from the distribution of its neighbours on a test. In automotive and other high-reliability work such a die is the kind of part part average testing (PAT) screens out. This card shows which dies PAT would have flagged, and which tests drive it.
+**Why it is useful.** A die can pass every test limit and still sit far from the distribution of its neighbours on a test. In automotive and other high-reliability work such a die is the kind of part average testing (PAT) screens out. This card shows which dies PAT would have flagged, and which tests drive it.
 
 **How to read it.** Per wafer, for every test with both limits, the PAT limits are the median of the dies that pass, plus and minus six robust sigma, never wider than the test's own limits. A die is *Within PAT limits*, a *PAT outlier* (it passes its bin and every test limit but is outside the PAT limits of at least one test) or *Fails* (already rejected by its bin or limits, so not an outlier). The card counts them per wafer and names the tests the outliers are outside on, and the Dies table has a **PAT** column. **Map the verdicts** opens a map of each wafer coloured by verdict.
 
@@ -876,7 +876,8 @@ See [Using a plot's JSON](#using-a-plots-json).
 
 **Notes.**
 
-- **A low q says where to look, not why.** It means the groups differ, not that the field caused it. Two fields that change together (a lot and its start date) cannot be told apart by the wafers; the card says which fields it could not separate.
+- **A low q says where to look, not why.** It means the groups differ, not that the field caused it. Fields that change together (a lot and its start date, a tester and the handler docked to it) cannot be told apart by the wafers; the card names each set it could not separate.
+- **Each field is read after allowing for the strongest other one.** A probe card hidden by a process recipe is found, and its row says "allowing for" the recipe.
 - **It needs wafers to compare.** The table appears with four or more wafers and wafer fields that take more than one value. A field that gives every wafer its own value cannot be tested, and the card names it.
 - **Many comparisons, a few false positives.** The adjustment (Benjamini–Hochberg) controls this across the table, but a field with a q near the limit is a suggestion.
 - **Tool, chamber and probe-card fields appear only when your application supplies them as wafer attributes.**

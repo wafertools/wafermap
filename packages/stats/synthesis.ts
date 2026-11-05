@@ -18,7 +18,8 @@ import { DRIFT_MIN_WAFERS } from './lotDrift.js';
 import { isOneBinCluster } from './filterFindings.js';
 import { plainBinTerms } from '../renderer/fmt.js';
 import { benjaminiHochberg, normalUpperTail } from './math.js';
-import { compareGroups, formatP } from './groupCompare.js';
+import { formatP } from './groupCompare.js';
+import { adjustedFits, mergePartitions, type Partition } from './groupEffects.js';
 import { attributeLabel, buildFacetTable, facetValueOf, type FacetCuration } from './facets.js';
 import type { LotStatsSummary, StatsFinding, StatsSeverity, StatsSummary } from './types.js';
 import type { PlotBuiltin, PlotField, PlotSpec } from './plotSpec.js';
@@ -30,7 +31,9 @@ import type { PlotBuiltin, PlotField, PlotSpec } from './plotSpec.js';
  */
 export type SynthesisTarget =
   | { kind: 'finding'; id: string }
-  | { kind: 'test'; testNumber: number };
+  | { kind: 'test'; testNumber: number }
+  /** The wafers' groups on a field (Group by's key): an item about yield, which has no finding or test to show on the map. */
+  | { kind: 'group'; field: string };
 
 /** One part of an item that can be shown on its own: a fail bin in its region, the pattern, a test on the same dies. */
 export interface SynthesisChip {
@@ -106,6 +109,11 @@ export interface Synthesis {
    * shows them all.
    */
   also?: { items: SynthesisItem[]; more: number };
+  /**
+   * Groups of wafers that differ on two or more measures with no overlap, which the sample is too small to confirm. Kept apart
+   * from `items` and not counted as what stands out. Absent when there are none.
+   */
+  possible?: SynthesisItem[];
   /** Said instead of the items when none is material, so a good lot reads as one rather than as an empty list. */
   nothing?: string;
   /** What was compared and not repeated above. Required: a short synthesis must not read as "not analysed". */
@@ -732,97 +740,183 @@ function capabilityItems(summary: StatsSummary | LotStatsSummary, failing: Reado
     });
 }
 
-/** A group's test shift is listed when its BH-adjusted p, over every field and test compared, is under this. */
+/** A group's shift is listed when its BH-adjusted p, over every field, test and yield compared, is under this. */
 const GROUP_Q = 0.05;
 /** The most tests a group-shift chart draws together. */
 const MAX_SET_TESTS = 8;
+/** A group's yield is listed when it sits at least this far (a fraction of the dies) from the other wafers'. */
+const MIN_GROUP_YIELD_GAP = 0.01;
+/** A possible (unconfirmed) group is listed when its raw p is under this, the groups do not overlap, and its gap is this large. */
+const POSSIBLE_RAW_P = 0.05;
+/** A group's extra loss is worth naming when it is this share of one material loss. */
+const MIN_ATTRIBUTION = 0.25;
+const POSSIBLE_MIN_SD = 1;
+const MAX_POSSIBLE = 3;
+
+/** `Tester`, `Tester and Handler`, `Tester, Handler and Operator`. */
+const joinNames = (names: readonly string[]): string => names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 
 /**
- * A wafer field whose groups differ in tests (Vth higher on process split SS, on lot L2, on one test program): each
- * wafer one value, its mean, so a lot's dies do not make every wafer offset look certain. For every field Group by
- * would offer (two values or more, at most half as many as wafers) and every test with wafer means, the groups are
- * compared (Welch, or Kruskal–Wallis where Welch cannot be computed), adjusted together (Benjamini–Hochberg), and the
- * group furthest from the other wafers is the shift: its size in the test's within-wafer standard deviations, the scale
- * a region shift is measured on, weighted by the group's dies. One item per field, led by its largest shift and ranked
- * by its heaviest test.
+ * A wafer field whose groups differ in tests (Vth higher on process split SS, on lot L2, on one test program) or in yield
+ * (a weak probe card, a heavier edge ring on one recipe): each wafer one value, its mean, so a lot's dies do not make
+ * every wafer offset look certain. For every field Group by would offer (two values or more, at most half as many as
+ * wafers) and every test with wafer means, and for wafer yield, the groups are compared (Welch, or Kruskal–Wallis where
+ * Welch cannot be computed), adjusted together (Benjamini–Hochberg), and the group furthest from the other wafers is the
+ * shift. A test shift is its size in the test's within-wafer standard deviations, the scale a region shift is measured on;
+ * a yield shift is its size in yield points; both are weighted by the group's dies. One test item and one yield item per
+ * set of groups, led by the largest shift. Fields that group the wafers identically (a tester and the handler docked to
+ * it) are one set, named together, so the reader can choose which to follow and neither is hidden.
  */
-function groupShiftItems(lot: LotStatsSummary, attributes: Record<string, FacetCuration> | undefined): { items: SynthesisItem[]; compared: string[] } {
-  const none = { items: [], compared: [] };
+function groupShiftItems(
+  lot: LotStatsSummary, attributes: Record<string, FacetCuration> | undefined, passBins?: readonly number[],
+  /** The dies the lot's material losses cost: a group that accounts for much of one is worth naming even if small beside the lot. */
+  lossDies: readonly number[] = [],
+): { items: SynthesisItem[]; compared: string[]; possible: SynthesisItem[] } {
+  const none = { items: [], compared: [], possible: [] };
   const wafers = lot.perWafer;
   if (wafers.length < 4) return none;
   const fields = buildFacetTable(wafers.map(w => ({ metadata: w.summary.wafer as Record<string, string> | undefined, dieCount: w.summary.stats.totalDies })), { facetableOnly: true, curation: attributes })
     .filter(f => f.splittable && f.values.length <= Math.max(2, Math.floor(wafers.length / 2)));
   if (fields.length === 0) return none;
+  // Fields that put the wafers in the same groups are one partition.
+  const partitions: Partition[] = mergePartitions(fields.map(f => ({ key: f.key, groupOf: wafers.map(w => facetValueOf(w.summary.wafer as Record<string, string> | undefined, f.key, attributes)) })));
   // Each wafer's mean and spread per test: the lot's per-wafer table, or each wafer's own statistics.
   const statsOf = (w: (typeof wafers)[number]) => lot.perWaferTestStats?.find(x => x.waferIndex === w.waferIndex)?.tests ?? w.summary.stats.perTestStats ?? [];
   const perWafer = wafers.map(w => new Map(statsOf(w).filter(t => t.count >= 2 && Number.isFinite(t.mean)).map(t => [t.testNumber, t])));
   const tests = new Map<number, string>();
   for (const m of perWafer) for (const [n, t] of m) if (!tests.has(n)) tests.set(n, t.label);
   const dies = wafers.map(w => w.summary.stats.analyzedDies);
+  const yields = wafers.map(w => w.summary.stats.yieldPercent === null ? undefined : w.summary.stats.yieldPercent / 100);
+  // Each wafer's share of its dies in each hard bin, for naming what a yield gap is made of.
+  const binShares = wafers.map(w => {
+    const counts = w.summary.stats.hardBinCounts;
+    const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
+    return counts && total > 0 ? new Map(Object.entries(counts).map(([bin, n]) => [Number(bin), n / total])) : undefined;
+  });
 
-  type Candidate = { testNumber: number; label: string; field: string; group: string; groupWafers: number; groupDies: number; d: number; higher: boolean; p: number;
+  type Candidate = { part: string; keys: string[]; testNumber: number; label: string; group: string; members: number[]; groupWafers: number; groupDies: number; d: number; higher: boolean; p: number;
     /** With two groups, the other one: the sentence names both. */
-    other?: { group: string; wafers: number } };
+    other?: { group: string; wafers: number };
+    /** Yield only: the fail bin that most of the group's extra loss is in. */
+    bin?: number;
+    /** Read after allowing for these fields, the strongest explanation of the same measure. */
+    allowedFor?: string[];
+    /** A pass rate in this ring, not the wafer's yield. */
+    region?: string;
+    /** Every wafer of the group lies beyond every other wafer, on the values the comparison used. */
+    separated?: boolean;
+    /** Pass rates only: the dies the worse side lost against the better, in the dies the measure covers. */
+    lost?: number };
+  /** The group furthest from the rest of the wafers on `valueOf`, with the size of its gap (`scale` turns it into the candidate's d). */
+  const furthest = (byGroup: Map<string, number[]>, valueOf: (i: number) => number, scale: number, make: (group: string, idx: number[], d: number, higher: boolean) => Candidate): Candidate | undefined => {
+    let best: Candidate | undefined;
+    for (const [group, idx] of byGroup) {
+      const inside = idx.map(valueOf);
+      const rest = [...byGroup].filter(([k]) => k !== group).flatMap(([, ix]) => ix.map(valueOf));
+      if (inside.length < 2 || rest.length < 2) continue;
+      const delta = inside.reduce((a, b) => a + b, 0) / inside.length - rest.reduce((a, b) => a + b, 0) / rest.length;
+      const d = delta / scale;
+      // Furthest first; two groups are equally far, so the one with fewer wafers is the shifted one, then the higher.
+      const better = !best || Math.abs(d) > Math.abs(best.d) + 1e-9
+        || (Math.abs(Math.abs(d) - Math.abs(best.d)) <= 1e-9 && (idx.length < best.groupWafers || (idx.length === best.groupWafers && delta > 0)));
+      if (better) best = make(group, idx, d, delta > 0);
+    }
+    if (best && byGroup.size === 2) {
+      const [otherKey, otherIdx] = [...byGroup].find(([k]) => k !== best!.group)!;
+      best.other = { group: otherKey, wafers: otherIdx.length };
+    }
+    return best;
+  };
+
   const candidates: Candidate[] = [];
-  for (const f of fields) {
-    const groupOf = wafers.map(w => facetValueOf(w.summary.wafer as Record<string, string> | undefined, f.key, attributes));
-    for (const [testNumber, label] of [...tests].sort((a, b) => a[0] - b[0])) {
-      const byGroup = new Map<string, number[]>();
-      const within: number[] = [];
-      perWafer.forEach((m, i) => {
-        const t = m.get(testNumber), g = groupOf[i];
-        if (!t || g === undefined) return;
-        (byGroup.get(g) ?? byGroup.set(g, []).get(g)!).push(i);
-        if (Number.isFinite(t.stddev)) within.push(t.stddev ** 2);
-      });
-      if (byGroup.size < 2) continue;
-      const cmp = compareGroups([...byGroup].map(([key, idx]) => ({ key, values: idx.map(i => perWafer[i].get(testNumber)!.mean) })));
-      const p = cmp.welch?.p ?? cmp.kruskal?.p;
-      const sd = within.length ? Math.sqrt(within.reduce((a, b) => a + b, 0) / within.length) : NaN;
-      if (p === undefined || !Number.isFinite(p) || !(sd > 0)) continue;
-      // The group furthest from the rest of the wafers.
-      let best: Candidate | undefined;
-      for (const [group, idx] of byGroup) {
-        const inside = idx.map(i => perWafer[i].get(testNumber)!.mean);
-        const rest = [...byGroup].filter(([k]) => k !== group).flatMap(([, ix]) => ix.map(i => perWafer[i].get(testNumber)!.mean));
-        if (inside.length < 2 || rest.length < 2) continue;
-        const delta = inside.reduce((a, b) => a + b, 0) / inside.length - rest.reduce((a, b) => a + b, 0) / rest.length;
-        const d = delta / sd;
-        // Furthest first; two groups are equally far, so the one with fewer wafers is the shifted one, then the higher.
-        const better = !best || Math.abs(d) > Math.abs(best.d) + 1e-9
-          || (Math.abs(Math.abs(d) - Math.abs(best.d)) <= 1e-9 && (idx.length < best.groupWafers || (idx.length === best.groupWafers && delta > 0)));
-        if (better) best = { testNumber, label, field: f.key, group, groupWafers: idx.length, groupDies: idx.reduce((n, i) => n + dies[i], 0), d, higher: delta > 0, p };
-      }
-      if (best && byGroup.size === 2) {
-        const [otherKey, otherIdx] = [...byGroup].find(([k]) => k !== best!.group)!;
-        best.other = { group: otherKey, wafers: otherIdx.length };
-      }
-      if (best) candidates.push(best);
+  const yieldCandidates: Candidate[] = [];
+  type Measure = { testNumber: number; label: string; values: Array<number | undefined>; scale: number; region?: string; scope?: number[] };
+  const measures: Measure[] = [];
+  for (const [testNumber, label] of [...tests].sort((a, b) => a[0] - b[0])) {
+    const within = perWafer.flatMap(m => { const t = m.get(testNumber); return t && Number.isFinite(t.stddev) ? [t.stddev ** 2] : []; });
+    const sd = within.length ? Math.sqrt(within.reduce((a, b) => a + b, 0) / within.length) : NaN;
+    if (sd > 0) measures.push({ testNumber, label, values: perWafer.map(m => m.get(testNumber)?.mean), scale: sd });
+  }
+  measures.push({ testNumber: NaN, label: 'Yield', values: yields, scale: 1, scope: dies });
+  // The lot's weakest ring, wafer by wafer: a pattern that belongs to a group (clusters on one tester's wafers) is a
+  // sharper contrast in the ring it lies in than in the wafer's whole yield, which the rest of the wafer dilutes.
+  const weakest = [...(lot.stats.regionYield?.ring ?? [])].sort((a, b) => a.yieldPercent - b.yieldPercent)[0];
+  if (weakest && wafers.length > 0) {
+    const values = wafers.map(w => { const r = w.summary.stats.regionYield?.ring?.find(x => x.key === weakest.key); return r ? r.yieldPercent / 100 : undefined; });
+    if (values.every(v => v !== undefined)) {
+      const scope = wafers.map(w => w.summary.stats.regionYield?.ring?.find(x => x.key === weakest.key)?.n ?? 0);
+      measures.push({ testNumber: NaN, label: `${weakest.label} pass rate`, values, scale: 1, region: weakest.label, scope });
     }
   }
-  const q = benjaminiHochberg(candidates.map(c => c.p));
-  // Per field, the tests whose groups differ.
-  const byField = new Map<string, Array<{ c: Candidate; q: number; weight: number }>>();
+  for (const m of measures) {
+    for (const { partition, used, fitted, allowedFor: allowed } of adjustedFits(m.values, partitions)) {
+      const part = partition.id, keys = partition.keys;
+      if (!fitted) continue;
+      const best = furthest(fitted.byGroup, i => used[i]!, m.scale,
+        (group, idx, d, higher) => ({ part, keys, testNumber: m.testNumber, label: m.label, group, members: idx, groupWafers: idx.length,
+          groupDies: idx.reduce((n, i) => n + dies[i], 0), d, higher, p: fitted!.p, ...(m.region ? { region: m.region } : {}), ...(allowed ? { allowedFor: allowed } : {}) }));
+      if (!best) continue;
+      const inside = best.members.map(i => used[i]!);
+      const rest = [...fitted.byGroup].filter(([g]) => g !== best.group).flatMap(([, ix]) => ix.map(i => used[i]!));
+      if (m.scope) {
+        const covered = (ix: number[]) => ix.reduce((n, i) => n + m.scope![i], 0);
+        const others = [...fitted.byGroup].filter(([g]) => g !== best.group).flatMap(([, ix]) => ix);
+        best.lost = (best.higher ? covered(others) : covered(best.members)) * Math.abs(best.d);
+      }
+      best.separated = minOf(inside) > maxOf(rest) || maxOf(inside) < minOf(rest);
+      if (Number.isNaN(m.testNumber)) {
+        // What a yield gap is made of (a ring's gap is named by its ring): the fail bin whose share differs most the same way.
+        if (passBins && !m.region) {
+          let top = 0;
+          const bins = new Set(binShares.flatMap(x => x ? [...x.keys()] : []));
+          const rest = wafers.map((_, i) => i).filter(i => !best.members.includes(i) && yields[i] !== undefined);
+          for (const bin of bins) {
+            if (passBins.includes(bin)) continue;
+            const share = (ix: number[]) => ix.reduce((a, i) => a + (binShares[i]?.get(bin) ?? 0), 0) / Math.max(1, ix.length);
+            const gap = (share(best.members) - share(rest)) * (best.higher ? -1 : 1);
+            if (gap > top) { top = gap; best.bin = bin; }
+          }
+        }
+        yieldCandidates.push(best);
+      } else candidates.push(best);
+    }
+  }
+  const q = benjaminiHochberg([...candidates, ...yieldCandidates].map(c => c.p));
+  const qOf = (i: number) => q[i];
+  // Per set of groups, the tests whose groups differ.
+  const byPart = new Map<string, Array<{ c: Candidate; q: number; weight: number }>>();
   candidates.forEach((c, i) => {
     const weight = c.groupDies * shiftWeight(c.d);
-    if (q[i] >= GROUP_Q || weight === 0) return;
-    (byField.get(c.field) ?? byField.set(c.field, []).get(c.field)!).push({ c, q: q[i], weight });
+    if (qOf(i) >= GROUP_Q || weight === 0) return;
+    (byPart.get(c.part) ?? byPart.set(c.part, []).get(c.part)!).push({ c, q: qOf(i), weight });
   });
-  const compared = candidates.length ? [...new Set(candidates.map(c => c.field))].map(k => attributeLabel(k, attributes)) : [];
-  const saidOf = (c: Candidate, field: string): string => c.other
-    ? `${c.label} is ${c.higher ? 'higher' : 'lower'} on ${field} ${c.group} than on ${field} ${c.other.group} (${c.groupWafers} and ${c.other.wafers} wafers)`
-    : `${c.label} is ${c.higher ? 'higher' : 'lower'} on ${field} ${c.group} (${c.groupWafers} of ${wafers.length} wafers) than on the other wafers`;
-  const items = [...byField].map(([key, list]) => {
+  const compared = [...new Set([...candidates, ...yieldCandidates].flatMap(c => c.keys))].map(k => attributeLabel(k, attributes));
+  const labelsOf = (keys: readonly string[]) => joinNames(keys.map(k => attributeLabel(k, attributes)));
+  /** The group as the reader names it: the first field's value, and the tied fields' values for the same wafers. */
+  const groupName = (c: Candidate): string => {
+    const first = `${attributeLabel(c.keys[0], attributes)} ${c.group}`;
+    if (c.keys.length === 1) return first;
+    const w = wafers[c.members[0]].summary.wafer as Record<string, string> | undefined;
+    const others = c.keys.slice(1).map(k => `${attributeLabel(k, attributes)} ${facetValueOf(w, k, attributes) ?? ''}`.trim());
+    return `${first} (${joinNames(others)} group${others.length === 1 ? 's' : ''} the same wafers)`;
+  };
+  const allowance = (c: Candidate): string => c.allowedFor ? `, allowing for ${labelsOf(c.allowedFor)}` : '';
+  const otherName = (c: Candidate): string => `${attributeLabel(c.keys[0], attributes)} ${c.other!.group}`;
+  const saidOf = (c: Candidate): string => c.other
+    ? `${c.label} is ${c.higher ? 'higher' : 'lower'} on ${groupName(c)} than on ${otherName(c)} (${c.groupWafers} and ${c.other.wafers} wafers)`
+    : `${c.label} is ${c.higher ? 'higher' : 'lower'} on ${groupName(c)} (${c.groupWafers} of ${wafers.length} wafers) than on the other wafers`;
+  const items = [...byPart].map(([part, list]) => {
     // Largest shift first, so the one said as the largest is; the weight caps at 2σ, so it cannot order the shifts above it.
     list.sort((a, b) => Math.abs(b.c.d) - Math.abs(a.c.d) || b.weight - a.weight || a.c.testNumber - b.c.testNumber);
     const weight = list.reduce((m, x) => Math.max(m, x.weight), 0);
-    const field = attributeLabel(key, attributes);
+    const keys = list[0].c.keys, key = keys[0];
+    const field = labelsOf(keys);
     const [lead, ...rest] = list;
     const c = lead.c;
-    const said = `${saidOf(c, field)}: a shift of ${sigma(c.d)}`;
+    const said = `${saidOf(c)}: a shift of ${sigma(c.d)}${allowance(c)}`;
     // A field that moves many tests (corners, by design) is one item: its strongest test leads, the next two are named,
     // the rest counted, so one field never fills the list.
-    const named = rest.slice(0, 2).map(({ c: o }) => `${o.label} ${o.higher ? 'higher' : 'lower'} on ${o.group} (${sigma(o.d)})`);
+    const named = rest.slice(0, 2).map(({ c: o }) => `${o.label} ${o.higher ? 'higher' : 'lower'} on ${o.keys.length > 1 ? attributeLabel(o.keys[0], attributes) + ' ' : ''}${o.group} (${sigma(o.d)})`);
     const more = rest.length - named.length;
     const n = list.length;
     const text = n === 1
@@ -839,6 +933,7 @@ function groupShiftItems(lot: LotStatsSummary, attributes: Record<string, FacetC
         ? { chart: 'heatmap', level: 'wafer', aggregate: 'mean', normalize: 'zscore', fields: { x: { meta: key }, y: { tests: list.slice(0, MAX_SET_TESTS).map(x => x.c.testNumber) } } }
         : { chart: 'box', level: 'wafer', aggregate: 'mean', fields: { x: { meta: key }, y: testField(c.testNumber), color: { meta: key } } },
     });
+    void part;
     // Each of its tests shown on its own map, largest shift first; the rest counted.
     if (n > 1) {
       item.chips = list.slice(0, MAX_TEST_CHIPS).map(({ c: o }) => ({ label: `${o.label} ${sigma(o.d)}`, target: { kind: 'test', testNumber: o.testNumber } as SynthesisTarget }));
@@ -846,7 +941,67 @@ function groupShiftItems(lot: LotStatsSummary, attributes: Record<string, FacetC
     }
     return item;
   });
-  return { items, compared };
+  // Per set of groups, the yield when its groups differ.
+  yieldCandidates.forEach((c, j) => {
+    const qy = qOf(candidates.length + j), weight = c.lost ?? c.groupDies * Math.abs(c.d);
+    if (qy >= GROUP_Q || Math.abs(c.d) < MIN_GROUP_YIELD_GAP) return;
+    const field = labelsOf(c.keys);
+    const gap = `${(Math.abs(c.d) * 100).toFixed(1)} points`;
+    const made = `${c.bin !== undefined ? `, mostly in hard bin ${c.bin}` : ''}${allowance(c)}`;
+    const said = c.other
+      ? `${c.label} is ${gap} ${c.higher ? 'higher' : 'lower'} on ${groupName(c)} than on ${otherName(c)} (${c.groupWafers} and ${c.other.wafers} wafers)`
+      : `${c.label} is ${gap} ${c.higher ? 'higher' : 'lower'} on ${groupName(c)} (${c.groupWafers} of ${wafers.length} wafers) than on the other wafers`;
+    items.push(signalItem({
+      affected: weight, measure: gap, severity: qy < 0.001 ? 'unusual' : 'notable',
+      text: `${said}${made}, each wafer one value (q ${formatP(qy)})`, reason: `${said}${made}`,
+      brief: `${field} ${c.group}: ${c.region ? 'ring pass rate' : 'yield'} ${c.higher ? 'higher' : 'lower'}`, subject: field,
+      target: { kind: 'group', field: c.keys[0] }, testNumbers: [],
+      chart: { chart: 'bar', fields: { x: { meta: c.keys[0] }, y: { builtin: 'yield' }, color: { meta: c.keys[0] } }, valueLabels: true,
+        ...(c.region ? { where: { conditions: [{ field: { builtin: 'ring' }, values: [c.region] }] } } : {}) },
+    }));
+  });
+
+  // Possible, not confirmed: groups that no wafer of overlaps on two or more measures, with a gap that matters, which the
+  // correction for the number of comparisons cannot confirm at this many wafers (four against four cannot have an exact p
+  // below 0.014, so no correction over a few dozen comparisons can pass it). Raw p, separation, size and agreement are all
+  // required, and a set of groups that already has a confirmed item is not listed again.
+  const totalDies = dies.reduce((a, b) => a + b, 0);
+  const confirmedParts = new Set<string>([
+    ...candidates.filter((c, i) => qOf(i) < GROUP_Q && c.groupDies * shiftWeight(c.d) > 0).map(c => c.part),
+    ...yieldCandidates.filter((c, j) => qOf(candidates.length + j) < GROUP_Q && Math.abs(c.d) >= MIN_GROUP_YIELD_GAP).map(c => c.part),
+  ]);
+  const pool: Candidate[] = [
+    ...candidates.filter(c => Math.abs(c.d) >= POSSIBLE_MIN_SD),
+    ...yieldCandidates.filter(c => (c.lost ?? 0) >= Math.min(MIN_SHARE_OF_DIES * totalDies, ...lossDies.map(l => MIN_ATTRIBUTION * l))),
+  ].filter(c => c.separated && c.p < POSSIBLE_RAW_P && !confirmedParts.has(c.part));
+  const byGroup = new Map<string, Candidate[]>();
+  for (const c of pool) (byGroup.get(`${c.part}|${c.group}`) ?? byGroup.set(`${c.part}|${c.group}`, []).get(`${c.part}|${c.group}`)!).push(c);
+  const possible: SynthesisItem[] = [];
+  const comparisons = candidates.length + yieldCandidates.length;
+  for (const list of byGroup.values()) {
+    // Yield and a ring's pass rate are one quantity: they must agree on which way, and a test counts on its own.
+    const lead = list.find(c => Number.isNaN(c.testNumber));
+    const agreeing = list.filter(c => !Number.isNaN(c.testNumber) || !lead || c.higher === lead.higher);
+    if (agreeing.length < 2) continue;
+    const c = agreeing[0];
+    const phrase = (x: Candidate): string => Number.isNaN(x.testNumber)
+      ? `${x.label} ${x.higher ? 'higher' : 'lower'} by ${(Math.abs(x.d) * 100).toFixed(1)} points`
+      : `${x.label} ${x.higher ? 'higher' : 'lower'} (${sigma(x.d)})`;
+    const against = c.other ? `than on ${otherName(c)} (${c.groupWafers} and ${c.other.wafers} wafers)` : `than on the other wafers (${c.groupWafers} of ${wafers.length})`;
+    const said = `${groupName(c)}: ${agreeing.map(phrase).join('; ')} ${against}`;
+    const field = labelsOf(c.keys);
+    const lostDies = agreeing.reduce((m, x) => Math.max(m, x.lost ?? 0), 0);
+    const item = signalItem({
+      affected: lostDies, measure: `${agreeing.length} measures`, severity: 'info',
+      text: `Possibly ${said}. No wafer of the group overlaps the others on ${agreeing.length === 2 ? 'either' : `any of ${agreeing.length}`}, but the sample is too small to confirm it once ${comparisons} comparisons are allowed for`,
+      reason: `Possibly ${said}`, brief: `${field} ${c.group}: possible, not confirmed`, subject: field,
+      target: { kind: 'group', field: c.keys[0] }, testNumbers: agreeing.filter(x => !Number.isNaN(x.testNumber)).map(x => x.testNumber),
+      chart: { chart: 'bar', fields: { x: { meta: c.keys[0] }, y: { builtin: 'yield' }, color: { meta: c.keys[0] } }, valueLabels: true },
+    });
+    possible.push(item);
+  }
+  possible.sort((a, b) => b.affected - a.affected);
+  return { items, compared, possible: possible.slice(0, MAX_POSSIBLE) };
 }
 
 /**
@@ -946,6 +1101,7 @@ export function buildSynthesis(input: StatsSummary | LotStatsSummary, ctx: Synth
   const built = computeSynthesis(input, ctx);
   Object.freeze(built.items);
   built.items.forEach(Object.freeze);
+  if (built.possible) { built.possible.forEach(Object.freeze); Object.freeze(built.possible); }
   if (built.also) { Object.freeze(built.also.items); built.also.items.forEach(Object.freeze); Object.freeze(built.also); }
   byOptions.set(key, { findings: [...findings], synthesis: Object.freeze(built) });
   return built;
@@ -1035,9 +1191,11 @@ function computeSynthesis(input: StatsSummary | LotStatsSummary, ctx: SynthesisC
   // A field whose groups differ in tests is one item. One that moves a single test an item already names is said in
   // that item instead: one item per test.
   let groupFields: string[] = [];
+  let possible: SynthesisItem[] = [];
   if (summary.level === 'lot') {
-    const groups = groupShiftItems(summary, ctx.attributes);
+    const groups = groupShiftItems(summary, ctx.attributes, ctx.passBins, items.filter(it => it.kind === 'loss').map(it => it.diesLost));
     groupFields = groups.compared;
+    possible = groups.possible;
     for (const g of groups.items) {
       const n = g.testNumbers[0];
       const home = g.testNumbers.length === 1
@@ -1075,7 +1233,7 @@ function computeSynthesis(input: StatsSummary | LotStatsSummary, ctx: SynthesisC
       ? `No ${what} costs as much as ${points(MIN_SHARE_OF_DIES)} yield points, though ${plural(unusual, 'finding')} below ${unusual === 1 ? 'is' : 'are'} marked unusual.`
       : `Nothing stands out: no ${what} costs as much as ${points(MIN_SHARE_OF_DIES)} yield points.`
     : undefined;
-  return { headline: headlineOf(summary, ctx), items: top, ...(also ? { also } : {}), ...(nothing ? { nothing } : {}), checked: checkedLine(summary, shown, groupFields) };
+  return { headline: headlineOf(summary, ctx), items: top, ...(also ? { also } : {}), ...(possible.length ? { possible } : {}), ...(nothing ? { nothing } : {}), checked: checkedLine(summary, shown, groupFields) };
 }
 
 /**
@@ -1083,7 +1241,10 @@ function computeSynthesis(input: StatsSummary | LotStatsSummary, ctx: SynthesisC
  * card and a card's Show on map finds its row.
  */
 export const synthesisKey = (it: Pick<SynthesisItem, 'target'>): string =>
-  it.target.kind === 'finding' ? `finding:${it.target.id}` : `test:${it.target.testNumber}`;
+  it.target.kind === 'finding' ? `finding:${it.target.id}` : it.target.kind === 'group' ? `group:${it.target.field}` : `test:${it.target.testNumber}`;
+
+/** The heading over groups that differ with no overlap but that the sample is too small to confirm. */
+export const SYNTHESIS_POSSIBLE_HEADING = 'Possible, not confirmed';
 
 /** The heading over the compact list of further items: the floor is the same one that admits an item at all. */
 export const SYNTHESIS_ALSO_HEADING = `Also, each affecting at least ${(MIN_SHARE_OF_DIES * 100).toFixed(0)}% of the dies`;
@@ -1102,6 +1263,7 @@ export function synthesisText(s: Synthesis): string {
     ...(s.nothing ? [s.nothing] : []),
     ...s.items.map((it, i) => `${i + 1}. ${it.text}`),
     ...(s.also ? [`${SYNTHESIS_ALSO_HEADING}: ${s.also.items.map(it => `${it.brief} (${synthesisRowShare(it)})`).join('; ')}${s.also.more ? `; and ${s.also.more} more` : ''}.`] : []),
+    ...(s.possible ? [`${SYNTHESIS_POSSIBLE_HEADING}:`, ...s.possible.map(it => `- ${it.text}`)] : []),
     s.checked,
   ].join('\n');
 }

@@ -107,6 +107,49 @@ function normal(rng, mean, sd) {
 // Clamp
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+// ── Probe sessions and wafer fields ────────────────────────────────────────
+// A tester writes one file per probe session, so the equipment fields (tester, handler, probe card, operator) are fixed within a
+// session and change between sessions; a lot is several sessions. A handler is docked with its tester, so those two always
+// coincide; the card and the operator are crossed with the tester, so no field stands in for another. The fab-side field
+// (`split`, a process recipe or corner) comes from the fab, not the tester, and is dealt across the wafers so every session holds
+// each value. The columns carry what a merged export of the session files would.
+const SESSION_DAY0 = Date.UTC(2025, 5, 15);        // 2025-06-15; each session is a day later
+const SESSIONS_OF_FOUR = [
+  { tester: 'Tester-1', handler: 'PRB-200', probe_card: 'PC-A', operator: 'alice' },
+  { tester: 'Tester-1', handler: 'PRB-200', probe_card: 'PC-B', operator: 'bob' },
+  { tester: 'Tester-2', handler: 'PRB-300', probe_card: 'PC-A', operator: 'bob' },
+  { tester: 'Tester-2', handler: 'PRB-300', probe_card: 'PC-B', operator: 'alice' },
+];
+const SESSIONS_OF_FIVE = [
+  { tester: 'Tester-1', handler: 'PRB-200', probe_card: 'PC-A', operator: 'alice' },
+  { tester: 'Tester-2', handler: 'PRB-300', probe_card: 'PC-A', operator: 'bob' },
+  { tester: 'Tester-1', handler: 'PRB-200', probe_card: 'PC-B', operator: 'carol' },
+  { tester: 'Tester-2', handler: 'PRB-300', probe_card: 'PC-B', operator: 'alice' },
+  { tester: 'Tester-1', handler: 'PRB-200', probe_card: 'PC-A', operator: 'bob' },
+];
+const PLANS = {
+  'edge-ring':  { wafers: 8,  program: 'EDGE_v2',  sessions: SESSIONS_OF_FOUR, split: ['Baseline', 'Recipe-2'] },
+  // Three wafers a session, one of each corner, so the corner is crossed with every equipment field.
+  'parametric': { wafers: 12, perSession: 3, program: 'PARAM_v5', sessions: SESSIONS_OF_FOUR, split: ['TT', 'FF', 'SS'] },
+  'cluster':    { wafers: 8,  program: 'CLUST_v1', sessions: SESSIONS_OF_FOUR, split: ['Baseline', 'Recipe-2'] },
+  // The null control: the fields vary and none of them does anything.
+  'high-yield': { wafers: 10, program: 'HY_v3',    sessions: SESSIONS_OF_FIVE },
+};
+
+/** The fields of wafer `i` (0-based) of a scenario: its session's equipment and date, and its split where the lot has one. */
+function waferFields(name, i) {
+  const plan = PLANS[name];
+  const session = Math.floor(i / (plan.perSession ?? 2));
+  const fields = { ...plan.sessions[session], test_program: plan.program,
+    test_date: new Date(SESSION_DAY0 + session * 86_400_000).toISOString().slice(0, 10) };
+  if (plan.split) fields.split = plan.split[i % plan.split.length];
+  return fields;
+}
+const waferId = w => `W${String(w).padStart(2, '0')}`;
+
+/** A weak probe card loses dies to contact. One draw per die from `fx`, so the lot is the same whichever card is weak. */
+const contactFail = (fx, fields, p) => fx() < p && fields.probe_card === 'PC-B' ? { open: true } : null;
+
 // Round to N decimal places
 const r2 = v => Math.round(v * 100) / 100;
 const r3 = v => Math.round(v * 1000) / 1000;
@@ -151,10 +194,10 @@ function defect(rng, iddq) {
   return { iddq: Math.max(iddq, LIMITS.iddqHigh * (1.15 + rng() * 2.5)) };
 }
 
-function row(lot, wafer, x, y, die) {
+function row(lot, wafer, x, y, die, fields = {}) {
   const { hbin, sbin } = binDie(die);
   return { lot, wafer, x, y, hbin, sbin,
-    iddq: r2(die.iddq), vref: r3(die.vref), fmax: r2(die.fmax) };
+    iddq: r2(die.iddq), vref: r3(die.vref), fmax: r2(die.fmax), ...fields };
 }
 
 // ── Scenario 1: edge-ring ──────────────────────────────────────────────────
@@ -175,13 +218,19 @@ function buildEdgeRing(geometry) {
   const amplitude = edgeAmplitude(geometry);
   const rows = [];
 
-  for (let w = 1; w <= 8; w++) {
-    const wid = `W0${w}`;
+  const fx = seededRng(0xABCD1234 ^ 0x9E3779B9);
+  for (let w = 1; w <= PLANS['edge-ring'].wafers; w++) {
+    const wid = waferId(w);
+    const fields = waferFields('edge-ring', w - 1);
+    // The ring is far stronger on the Recipe-2 wafers than on the Baseline ones; a weak probe card (PC-B) adds contact fails
+    // evenly over the wafer, which moves yield and no test value.
+    const gain = fields.split === 'Recipe-2' ? 1 : 0.35;
     for (const { x, y, r } of dies) {
       // Edge stress: probability of a defect rises sharply over the outer dies,
       // and the surviving edge dies run slower and leakier.
-      const edgeFactor = edgeFactorOf(r);
-      const failProb = Math.min(1, edgeFactor * edgeFactor * 0.85 * amplitude) + rng() * 0.01;
+      const rawEdge = edgeFactorOf(r);
+      const edgeFactor = rawEdge * gain;
+      const failProb = Math.min(1, rawEdge * rawEdge * 0.85 * amplitude * gain) + rng() * 0.01;
 
       let die = {
         iddq: clamp(normal(rng, 2.4 * (1 + edgeFactor * 0.5), 0.3), 0.5, 40),
@@ -189,7 +238,9 @@ function buildEdgeRing(geometry) {
         fmax: clamp(normal(rng, 2110 - edgeFactor * 70, 20), 1800, 2250),
       };
       if (rng() < failProb) die = { ...die, ...defect(rng, die.iddq) };
-      rows.push(row('EDGE-LOT-01', wid, x, y, die));
+      const contact = contactFail(fx, fields, 0.05);
+      if (contact) die = { ...die, ...contact };
+      rows.push(row('EDGE-LOT-01', wid, x, y, die, fields));
     }
   }
   return rows;
@@ -198,14 +249,18 @@ function buildEdgeRing(geometry) {
 // ── Scenario 2: parametric ────────────────────────────────────────────────
 // Iddq rising with radius plus one hotspot per wafer, and a left-to-right Vref
 // gradient. The yield loss is the Iddq limit, so the bin map follows the
-// value map. 6 wafers.
+// value map. 12 wafers.
 function buildParametric(geometry) {
   const rng = seededRng(0xDEADBEEF);
   const dies = waferDies(geometry);
   const rows = [];
 
-  for (let w = 1; w <= 6; w++) {
-    const wid = `W0${w}`;
+  const fx = seededRng(0xDEADBEEF ^ 0x9E3779B9);
+  for (let w = 1; w <= PLANS.parametric.wafers; w++) {
+    const wid = waferId(w);
+    const fields = waferFields('parametric', w - 1);
+    // The corner moves the speed and the leakage: FF fast and leaky, SS slow and tight. A weak card (PC-B) loses dies to contact.
+    const corner = { TT: { iddq: 1, fmax: 0, vref: 0 }, FF: { iddq: 1.25, fmax: 40, vref: 0.008 }, SS: { iddq: 0.8, fmax: -40, vref: -0.008 } }[fields.split];
     // Wafer-to-wafer process drift in Iddq
     const wDrift = rng() * 0.8 - 0.4;
     // One hotspot per wafer at a random position
@@ -221,29 +276,36 @@ function buildParametric(geometry) {
       const hotspot = Math.exp(-(dx * dx + dy * dy) / 4) * 3.5;
 
       // Iddq: log-normally distributed
-      const meanLog = Math.log(2.0 + gradient + hotspot + wDrift);
+      const meanLog = Math.log((2.0 + gradient + hotspot + wDrift) * corner.iddq);
       const die = {
         iddq: clamp(Math.exp(normal(rng, meanLog, 0.18)), 0.1, 80),
         // Vref: slight x-gradient (process non-uniformity) that reaches the
         // high limit at the right-hand edge
-        vref: clamp(normal(rng, 1.800 + xn * 0.0035, 0.015), 1.6, 2.0),
-        fmax: clamp(normal(rng, 2110, 20), 1950, 2250),
+        vref: clamp(normal(rng, 1.800 + corner.vref + xn * 0.0035, 0.015), 1.6, 2.0),
+        fmax: clamp(normal(rng, 2110 + corner.fmax, 20), 1950, 2250),
       };
-      rows.push(row('PARAM-LOT-02', wid, x, y, die));
+      const contact = contactFail(fx, fields, 0.05);
+      rows.push(row('PARAM-LOT-02', wid, x, y, contact ? { ...die, ...contact } : die, fields));
     }
   }
   return rows;
 }
 
 // ── Scenario 3: cluster ───────────────────────────────────────────────────
-// High baseline yield, but 2–3 particle clusters per wafer. 7 wafers.
+// High baseline yield, but 2–3 particle clusters per wafer. 8 wafers.
 function buildCluster(geometry) {
   const rng = seededRng(0x13579BDF);
   const dies = waferDies(geometry);
   const rows = [];
 
-  for (let w = 1; w <= 7; w++) {
-    const wid = `W0${w}`;
+  for (let w = 1; w <= PLANS.cluster.wafers; w++) {
+    const wid = waferId(w);
+    const fields = waferFields('cluster', w - 1);
+    // The clusters are far heavier on the wafers probed on Tester-2 and its handler (particles from the handler); Recipe-2 wafers
+    // sit a little higher on Vref; the card does nothing.
+    const heavy = fields.tester === 'Tester-2';
+    const gain = heavy ? 1 : 0.35, spread = 1;
+    const vrefShift = fields.split === 'Recipe-2' ? 0.012 : 0;
 
     // 2–3 clusters, each at a random position with random radius
     const nClusters = 2 + (rng() < 0.5 ? 1 : 0);
@@ -263,17 +325,17 @@ function buildCluster(geometry) {
       let clusterP = 0;
       for (const { cx, cy, r2: cr2 } of clusters) {
         const d2 = (xn - cx) ** 2 + (yn - cy) ** 2;
-        clusterP = Math.max(clusterP, Math.exp(-d2 / cr2) * 0.9);
+        clusterP = Math.max(clusterP, Math.exp(-d2 / (cr2 * spread)) * 0.9 * gain);
       }
       const failProb = clusterP + rng() * 0.01;
 
       let die = {
         iddq: clamp(normal(rng, 2.5, 0.3), 0.5, 40),
-        vref: clamp(normal(rng, 1.790, 0.015), 1.6, 2.0),
+        vref: clamp(normal(rng, 1.790 + vrefShift, 0.015), 1.6, 2.0),
         fmax: clamp(normal(rng, 2110, 20), 1950, 2250),
       };
       if (rng() < failProb) die = { ...die, ...defect(rng, die.iddq) };
-      rows.push(row('CLUST-LOT-03', wid, x, y, die));
+      rows.push(row('CLUST-LOT-03', wid, x, y, die, fields));
     }
   }
   return rows;
@@ -286,8 +348,9 @@ function buildHighYield(geometry) {
   const dies = waferDies(geometry);
   const rows = [];
 
-  for (let w = 1; w <= 10; w++) {
-    const wid = w <= 9 ? `W0${w}` : `W${w}`;
+  for (let w = 1; w <= PLANS['high-yield'].wafers; w++) {
+    const wid = waferId(w);
+    const fields = waferFields('high-yield', w - 1);
     const wOffset = normal(rng, 0, 0.08); // small W2W spread
 
     for (const { x, y } of dies) {
@@ -298,18 +361,20 @@ function buildHighYield(geometry) {
         fmax: clamp(normal(rng, 2110 + wOffset * 5, 16), 1950, 2250),
       };
       if (rng() < failProb) die = { ...die, ...defect(rng, die.iddq) };
-      rows.push(row('HY-LOT-04', wid, x, y, die));
+      rows.push(row('HY-LOT-04', wid, x, y, die, fields));
     }
   }
   return rows;
 }
 
 // ── Write files as CSV ─────────────────────────────────────────────────────
-const COLS = ['lot','wafer','x','y','hbin','sbin','iddq','vref','fmax'];
+const BASE_COLS = ['lot','wafer','x','y','hbin','sbin','iddq','vref','fmax'];
 
 function toCsv(rows) {
-  const lines = [COLS.join(',')];
-  for (const r of rows) lines.push(COLS.map(c => r[c]).join(','));
+  // The wafer fields follow the die columns, in the order the scenario's rows carry them.
+  const cols = [...BASE_COLS, ...Object.keys(rows[0]).filter(c => !BASE_COLS.includes(c))];
+  const lines = [cols.join(',')];
+  for (const r of rows) lines.push(cols.map(c => r[c]).join(','));
   return lines.join('\n') + '\n';
 }
 

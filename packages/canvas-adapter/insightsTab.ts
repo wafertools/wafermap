@@ -66,7 +66,7 @@ import { isYieldEligibleDie } from '../core/dies.js';
 import { renderPlotCard, type CardChoice } from './plotCard.js';
 import { orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
 import type { CardSpec } from '../stats/cardSpec.js';
-import { buildSynthesis, groupColouredChart, synthesisKey, type SynthesisTarget } from '../stats/synthesis.js';
+import { buildSynthesis, groupColouredChart, synthesisKey, SYNTHESIS_POSSIBLE_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
 import { commonPassBins } from '../core/passBins.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
@@ -1447,6 +1447,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
     const destroys: Array<() => void> = [];
     synthesis.items.forEach((item, i) => {
+      // A group item is drawn as yield by that field, which the Overview's own yield card already shows once Group by is on it.
+      if (item.target.kind === 'group' && item.target.field === analysisGroupKey) return;
       // Why the card is here, in one sentence (the chart says the rest): a line of its own across the card, plain, not a
       // warning. The panel's whole sentence, with the bins and tests it names, is on hover.
       const why = doc.createElement('div');
@@ -1455,7 +1457,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       if (item.text !== item.reason) wireTooltip(why, item.text);
       Object.assign(why.style, { flexBasis: '100%', fontSize: FONT.body, color: CLR.text, lineHeight: LEADING.base } as Partial<CSSStyleDeclaration>);
       const extras: HTMLElement[] = [why];
-      if (deps.showOnMap) {
+      // An item about groups of wafers has no place on the map to show.
+      if (deps.showOnMap && item.target.kind !== 'group') {
         const btn = doc.createElement('button');
         btn.type = 'button';
         btn.textContent = 'Show on map';
@@ -1479,6 +1482,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const named = synthesis.also.items.map(it => it.brief).join('; ');
       line(`Also: ${named}${synthesis.also.more ? `; and ${synthesis.also.more} more` : ''}. Their rows in What stands out show them on the map.`, 'wmapWorthAlso');
     }
+    if (synthesis.possible?.length) line(`${SYNTHESIS_POSSIBLE_HEADING}: ${synthesis.possible.map(it => it.reason).join('; ')}.`, 'wmapWorthPossible');
     return { el, destroy: () => destroys.forEach(d => d()) };
   }
 

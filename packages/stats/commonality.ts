@@ -16,6 +16,7 @@ import { diePassStatus, isYieldEligibleDie } from '../core/dies.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { benjaminiHochberg } from './math.js';
 import { compareGroups, comparisonP, type GroupComparison } from './groupCompare.js';
+import { adjustedFits, mergePartitions, partitionId } from './groupEffects.js';
 import { facetValueOf, type FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
 import { compareNatural } from '../core/utils.js';
@@ -36,7 +37,15 @@ export interface CommonalityRow {
   best: { key: string; mean: number };
   /** `worst` to `best` in percentage points, always positive. */
   spread: number;
-  /** Benjamini–Hochberg q of Welch's p (Kruskal–Wallis's where Welch cannot be computed), over every row. */
+  /**
+   * The comparison the p and q come from, when the field was read after allowing for another (the strongest other field that
+   * explains the same measure): its groups' values less that field's group means. Absent when `comparison` is what was ranked.
+   * `comparison` always holds the measure's own means, so a row reads in percent whichever way it was ranked.
+   */
+  adjusted?: GroupComparison;
+  /** The fields allowed for, when `adjusted` is set. */
+  allowedFor?: CommonalityField[];
+  /** Benjamini–Hochberg q of Welch's p (Kruskal–Wallis's where Welch cannot be computed) of `adjusted ?? comparison`, over every row. */
   pAdjusted: number;
 }
 
@@ -47,10 +56,10 @@ export interface CommonalityResult {
   /** The fail bins compared, most dies first. */
   bins: number[];
   /**
-   * Pairs of fields that divide the wafers identically (every group of one is a group of the other): the wafers cannot
-   * say which of the two it is.
+   * Sets of fields that divide the wafers identically (every group of one is a group of the other), each of two or more
+   * fields: the wafers cannot say which of them it is.
    */
-  confounded: Array<[CommonalityField, CommonalityField]>;
+  tied: CommonalityField[][];
 }
 
 /** How many of the most common fail bins are compared, besides yield. */
@@ -84,48 +93,48 @@ export function rankCommonality(wafers: readonly CommonalityWafer[], fields: rea
 
   const rows: CommonalityRow[] = [];
   const untestable: CommonalityField[] = [];
-  const partitions = new Map<string, string>();
+  const testedFields: Array<{ field: CommonalityField; value: Array<string | undefined>; keys: string[] }> = [];
   for (const field of fields) {
     const value = wafers.map(w => facetValueOf(w.metadata, field.key, curation));
     const keys = [...new Set(value.filter((v): v is string => v !== undefined))].sort(compareNatural);
     const sized = keys.filter(k => value.filter(v => v === k).length >= 2);
     if (sized.length < 2) { untestable.push(field); continue; }
-    partitions.set(field.key, value.map(v => (v === undefined ? '' : String(keys.indexOf(v)))).join('|'));
-    const measures: Array<[CommonalityMeasure, number[]]> = [[{ kind: 'yield' }, yields], ...bins.map(b => [{ kind: 'bin', bin: b }, rates.get(b)!] as [CommonalityMeasure, number[]])];
-    for (const [measure, per] of measures) {
+    testedFields.push({ field, value, keys });
+  }
+  // Fields that group the wafers identically are one set of groups; each set is read after allowing for the strongest other one.
+  const sets = mergePartitions(testedFields.map(t => ({ key: t.field.key, groupOf: t.value })));
+  const fieldOf = new Map(fields.map(f => [f.key, f]));
+  const measures: Array<[CommonalityMeasure, number[]]> = [[{ kind: 'yield' }, yields], ...bins.map(b => [{ kind: 'bin', bin: b }, rates.get(b)!] as [CommonalityMeasure, number[]])];
+  for (const [measure, per] of measures) {
+    const fits = new Map(adjustedFits(per.map(v => (Number.isFinite(v) ? v : undefined)), sets).map(f => [f.partition.id, f]));
+    for (const { field, value, keys } of testedFields) {
       const comparison = compareGroups(keys.map(key => ({ key, values: per.filter((_, i) => value[i] === key) })));
       const tested = comparison.groups.filter(g => !comparison.tooSmall.includes(g.key) && Number.isFinite(g.mean));
       if (tested.length < 2) continue;
       const low = tested.reduce((a, b) => (b.mean < a.mean ? b : a)), high = tested.reduce((a, b) => (b.mean > a.mean ? b : a));
       const [worst, best] = measure.kind === 'yield' ? [low, high] : [high, low];
-      rows.push({ field, measure, comparison, worst: { key: worst.key, mean: worst.mean }, best: { key: best.key, mean: best.mean }, spread: high.mean - low.mean, pAdjusted: NaN });
+      const fit = fits.get(partitionId(value));
+      let adjusted = fit?.allowedFor
+        ? compareGroups(keys.map(key => ({ key, values: fit.used.filter((v, i) => value[i] === key && v !== undefined) as number[] })))
+        : undefined;
+      // The p is the fit's, which has charged the degrees of freedom the allowed-for means used up.
+      if (adjusted?.welch && fit?.fitted) adjusted = { ...adjusted, welch: { ...adjusted.welch, p: fit.fitted.p } };
+      rows.push({
+        field, measure, comparison, worst: { key: worst.key, mean: worst.mean }, best: { key: best.key, mean: best.mean }, spread: high.mean - low.mean, pAdjusted: NaN,
+        ...(adjusted && fit?.allowedFor ? { adjusted, allowedFor: fit.allowedFor.map(k => fieldOf.get(k) ?? { key: k, label: k }) } : {}),
+      });
     }
   }
-  const withP = rows.filter(r => Number.isFinite(comparisonP(r.comparison)));
-  const q = benjaminiHochberg(withP.map(r => comparisonP(r.comparison)));
+  const rowP = (r: CommonalityRow) => comparisonP(r.adjusted ?? r.comparison);
+  const withP = rows.filter(r => Number.isFinite(rowP(r)));
+  const q = benjaminiHochberg(withP.map(rowP));
   withP.forEach((r, i) => { r.pAdjusted = q[i]; });
   const rank = (r: CommonalityRow) => (Number.isFinite(r.pAdjusted) ? r.pAdjusted : Infinity);
   rows.sort((a, b) => rank(a) - rank(b) || b.spread - a.spread);
 
   // Fields whose groups are the same wafers: the ranking cannot separate them, and the reader must be told.
-  const confounded: Array<[CommonalityField, CommonalityField]> = [];
-  const tested = fields.filter(f => partitions.has(f.key));
-  for (let i = 0; i < tested.length; i++) for (let j = i + 1; j < tested.length; j++) {
-    if (samePartition(partitions.get(tested[i].key)!, partitions.get(tested[j].key)!)) confounded.push([tested[i], tested[j]]);
-  }
-  return { rows, untestable, bins, confounded };
-}
-
-/** Whether two labellings of the wafers group them identically, whatever the labels. */
-function samePartition(a: string, b: string): boolean {
-  const x = a.split('|'), y = b.split('|');
-  const fwd = new Map<string, string>(), back = new Map<string, string>();
-  for (let i = 0; i < x.length; i++) {
-    if (fwd.has(x[i]) && fwd.get(x[i]) !== y[i]) return false;
-    if (back.has(y[i]) && back.get(y[i]) !== x[i]) return false;
-    fwd.set(x[i], y[i]); back.set(y[i], x[i]);
-  }
-  return true;
+  const tied = sets.filter(set => set.keys.length > 1).map(set => set.keys.map(k => fieldOf.get(k)!));
+  return { rows, untestable, bins, tied };
 }
 
 /** A measure as the reader names it: "Yield", "Hard bin 2". */
