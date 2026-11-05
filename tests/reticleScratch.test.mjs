@@ -7,7 +7,8 @@ import { analyzeWaferMap } from '../dist/packages/stats/index.js';
 const RETICLE = { width: 4, height: 3, anchorDie: { x: 1, y: 0 } };
 
 function analyse(flags, scratchLine) {
-  let results = makeResults({ seed: 19, ...flags });
+  // A mild cell defect: a strong one is classed as an edge pattern before any scratch is called, and the set-aside path is not reached.
+  let results = makeResults({ seed: 19, reticleDrop: 0.32, ...flags });
   if (scratchLine) {
     const line = new Set();
     for (let t = -12; t <= 12; t++) { line.add(`${t},${Math.round(t * 0.6) + 2}`); line.add(`${t},${Math.round(t * 0.6) + 3}`); }

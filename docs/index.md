@@ -8,7 +8,7 @@ hide:
 
 <img src="images/hero-test-values.png" alt="wafermap demo" style="max-width:640px; display:block; margin:8px 0;" />
 
-A JavaScript library for rendering interactive wafer maps from semiconductor test data. Hard bins, soft bins, test values, retest runs, edge exclusion, and spec limits are native inputs — no pre-processing required.
+A JavaScript library for rendering interactive wafer maps from semiconductor test data. Hard bins, soft bins, test values, retest runs, edge exclusion, and test limits are native inputs — no pre-processing required.
 
 ```bash
 npm install @wafertools/wafermap
@@ -55,7 +55,7 @@ It gives you everything on this page's screenshots — plot modes, the findings 
 | Render my first map | [Quick Start](quickstart.md) |
 | Load real CSV data | [Guide: Loading real data from a CSV](guide.md#loading-real-data-from-a-csv) |
 | Show bins, yield, and pass/fail colours | [Guide: Working with bins](guide/data.md#working-with-bins) |
-| Plot parametric test values with spec limits | [Guide: Working with test values](guide/data.md#working-with-test-values) |
+| Plot parametric test values against their limits | [Guide: Working with test values](guide/data.md#working-with-test-values) |
 | Handle retests | [Guide: Retests and enriching dies after build](guide/data.md#retests-and-enriching-dies-after-build) |
 | React to hover, click, and die selection | [Guide: Responding to user interaction](guide/display.md#responding-to-user-interaction) |
 | Add statistical findings / pattern detection | [Guide: Adding statistical findings](guide/findings.md#adding-statistical-findings) · [Pattern Detection](pattern-detection.md) |

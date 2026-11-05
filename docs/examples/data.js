@@ -69,6 +69,7 @@ export const SPLIT_VTH_BIAS = { 'POR': 0, 'Hi-dose': 0.050 };
  * @param {boolean} [opts.quadrant=false]        Smooth NE→SW Vth process tilt (high NE → USL fails, low SW → LSL fails) with a mild NE-corner yield droop.
  * @param {boolean} [opts.center=false]          Small defect cluster at the wafer centre.
  * @param {boolean} [opts.reticlePattern=false]  Repeating field-position defect pattern.
+ * @param {number}  [opts.reticleDrop=0.6]       Pass probability the defective field position loses.
  * @param {boolean} [opts.cluster=false]         Tight failure cluster (~8 dies) simulating a particle/ESD event.
  * @param {boolean} [opts.edgeArc=false]         Short failure arc near the wafer edge (~NNW) simulating handling damage.
  * @param {number}  [opts.siteCount=0]           When > 0, assigns siteNum (1-based) in a repeating grid of this
@@ -92,6 +93,7 @@ export function makeResults({
   quadrant        = false,
   center          = false,
   reticlePattern  = false,
+  reticleDrop     = 0.6,
   cluster         = false,
   edgeArc         = false,
   siteCount       = 0,
@@ -169,7 +171,7 @@ export function makeResults({
         const phaseX = ((1 % reticleWidth) + reticleWidth) % reticleWidth;
         const cellX = ((i + phaseX) % reticleWidth + reticleWidth) % reticleWidth;
         const cellY = ((j % reticleHeight) + reticleHeight) % reticleHeight;
-        if (cellX === 2 && cellY === 1) pass -= 0.6;
+        if (cellX === 2 && cellY === 1) pass -= reticleDrop;
       }
 
       pass -= yieldShift;

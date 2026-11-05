@@ -2327,7 +2327,7 @@ test('Layout diagnostics closes the menu and shows counts and scores only', () =
     assert.equal(window.document.querySelectorAll('[role="menu"]').length, 0, 'the menu closed');
     const text = window.document.querySelector('textarea[aria-label="Layout diagnostics"]')?.value;
     assert.ok(text, 'the dialog shows the text');
-    assert.match(text, /^wafermap compact-layout diagnostics/);
+    assert.match(text, /^compact-layout diagnostics/);
     assert.match(text, /compact layout offered: yes/);
     assert.match(text, /columns: \d+ occupied of \d+/);
     ctrl.destroy();

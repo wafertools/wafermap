@@ -290,7 +290,7 @@ function getVerdicts(this: Die & LinkedDie): Die['testPass'] {
 function readOnly(field: string): (this: Die) => void {
   return function (this: Die) {
     throw new TypeError(
-      `wafermap: die.${field} is read-only on a die built by buildWaferMap (die ${this.id}). `
+      `die.${field} is read-only on a die built by buildWaferMap (die ${this.id}). `
       + `Pass the values you want to buildWaferMap, or copy the die: { ...die, ${field}: yours }.`);
   };
 }

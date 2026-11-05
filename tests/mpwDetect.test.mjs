@@ -390,7 +390,7 @@ test('diagnostics carry no position: sliding every die leaves the text unchanged
   assert.equal(formatMpwDiagnostics(diagnoseMpwLayout(moved, [undefined]), '9.9.9'), text);
   // and nothing in it is a coordinate or an identity
   assert.ok(!/\b1000\b|\b371\b|\bLOT/.test(text));
-  assert.match(text, /^wafermap compact-layout diagnostics/);
+  assert.match(text, /^compact-layout diagnostics/);
   assert.match(text, /library: 9\.9\.9/);
   assert.match(text, /columns: \d+ occupied of \d+ \(\d+\.\d%\), \d+ runs; periodic, period 12/);
 });

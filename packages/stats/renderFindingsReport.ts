@@ -21,7 +21,7 @@ export function openHtmlReport(html: string): void {
     // silent no-op. A host here must call setReportOpener() to supply its
     // own opener (native window, in-app modal, etc.); this at least says so.
     console.warn(
-      'wmap: window.open() returned null, so the report could not be shown. ' +
+      'window.open() returned null, so the report could not be shown. ' +
       'If this host cannot use window.open (e.g. Tauri, or popups are blocked), ' +
       'call setReportOpener() to supply your own opener.'
     );

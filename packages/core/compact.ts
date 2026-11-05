@@ -421,7 +421,7 @@ function formatAxis(name: string, a: AxisDiagnostics): string {
 /** The text a user copies and sends back. Plain lines, so it can be read before it is sent. */
 export function formatMpwDiagnostics(d: MpwDiagnostics, library: string): string {
   return [
-    'wafermap compact-layout diagnostics (format 1)',
+    'compact-layout diagnostics (format 1)',
     `library: ${library}`,
     'Counts and scores only: no die coordinates, bins, test values or wafer identity.',
     `wafers: ${d.wafers}`,
