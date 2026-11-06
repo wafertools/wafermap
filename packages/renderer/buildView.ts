@@ -741,7 +741,7 @@ export function buildHoverText(
     if (v !== undefined) {
       const def   = testDefs?.[0];
       const name  = def ? markedTestLabel(def, def.testNumber) : 'Value';
-      const method = aggrMethod ? ` (${aggrMethod})` : '';
+      const method = aggrMethod ? ` (${fmtAggregationMethod(aggrMethod)})` : '';
       lines.push(escHtml(`${name}${method}: ${fmt(v, def?.unit, fallbackFormat)}`));
       const note = derivedTestNote(def);
       if (note) lines.push(`<i>${escHtml(note)}</i>`);

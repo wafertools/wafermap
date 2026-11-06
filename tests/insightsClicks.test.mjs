@@ -74,7 +74,7 @@ function mount(view, extra = {}, count = 3) {
     getItems: () => items, getLotStats: () => lot,
     getBinColors: () => ({ hard: new Map(), soft: new Map(), shared: { hard: [], soft: [] }, pass: { hard: new Set(), soft: new Set() } }),
     defaultView: view, plotStore: createPlotStore([], undefined, 0),
-    openWafer: (wi, label, test) => opened.push([wi, label, test]),
+    openWafer: (wi, label, test, view) => opened.push([wi, label, test, view]),
     ...extra,
   });
   host.appendChild(tab.el);
@@ -162,15 +162,22 @@ test('the value histogram: a bar opens the dies whose values fall in it, and the
   assert.ok(rowsOf(m).includes('Dies'));
 });
 
-test('the Wafers table: a row opens that wafer', async () => {
+test('the Wafers table: a row opens that wafer, on the test whose mean was clicked, or its bins for its yield', async () => {
   const { tab, opened } = mount('data');
   const wafers = tab.el.querySelector('[data-wmap-data-view="wafers"]');
   wafers.click();
   const row = await until(() => tab.el.querySelector('tbody tr[aria-rowindex]'), 'a wafer row');
-  assert.match(tab.el.textContent, /Click a row to open that wafer/);
-  row.click();
-  assert.equal(opened.length, 1);
-  assert.equal(opened[0][2], undefined, 'no test: a wafer row is about the wafer');
+  assert.match(tab.el.textContent, /Click a row to open that wafer, on the test whose mean you click, or on its bins for its yield/);
+  const headers = [...tab.el.querySelectorAll('thead th')].map(th => th.textContent);
+  row.children[headers.indexOf('Wafer')].click();
+  assert.deepEqual(opened.at(-1).slice(2), [undefined, undefined], 'the wafer column: neither a test nor the bins');
+  row.children[headers.indexOf('Yield %')].click();
+  assert.deepEqual(opened.at(-1).slice(2), [undefined, 'bins'], 'its yield: the bins');
+  const mean = headers.findIndex(h => / mean$/.test(h));
+  assert.ok(mean >= 0, `a mean column among ${headers.join(', ')}`);
+  row.children[mean].click();
+  assert.equal(typeof opened.at(-1)[2], 'number', 'a mean: that test');
+  assert.equal(opened.at(-1)[3], undefined);
 });
 
 test('the Plot tab: a point opens its wafer on the test the plot is about', async () => {

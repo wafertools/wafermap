@@ -731,7 +731,8 @@ Sections, top to bottom:
   fails selected; click again to clear. Under the top item's sentence, chips name its parts (its
   failing bins, with their legend colours, the pattern, and tests failing or shifted on the same dies),
   and each chip shows that part alone. With Insights on, each of the top items also has a **Chart**
-  link, which opens Insights at its card under **Worth a look** on the Overview.
+  link, which opens Insights at its card under **Worth a look** on the Overview, or, for an item about the yield of
+  groups of wafers, at **What divides yield**.
   A wafer or lot with nothing affecting a yield point's worth of dies says so: "Nothing stands out".
   The reports open with the same section, and **Full report** at the foot of it opens the
   report; in a report opened from the panel, clicking a finding's row shows it on the map.
@@ -808,7 +809,7 @@ still receives every one of them.
 
 For **lot-level views** (gallery), the panel shows lot-level findings, and the
 **Wafer Yield** section badges each wafer with its own findings count — click a
-row to open that wafer. There is no separate wafers tab: every wafer appears in
+row to open that wafer on its bins, as a yield opens everywhere. There is no separate wafers tab: every wafer appears in
 that one list, including the ones with no findings, which is what lets you see a
 low-yielding wafer that nothing flagged.
 
@@ -898,16 +899,18 @@ own charts and sweeps (see *Plots* and *Sweep cards* below):
   pass-rate card offers up to three ways of judging, whichever the data supports: **Test limits**, **Tester flag** and
   **Functional**; when the first two disagree it says how many dies they judged differently. The card is the size of the
   others whatever the number of tests: more than fit scroll. With nothing to judge it is left out.
-- **Worth a look**, on the Overview below the yield, bin and region cards — the same items as
+- **Worth a look**, at the top of the Overview — the same items as
   **What stands out** beside the map, in the same order and words, each drawn as the chart that shows
   it: a region's loss as yield by that kind of region (each bar with its value, and the median of the bars as
   a line, as on the yield card), a fail bin as the bins' shares by it, a shifted
   test as a box of the test by it, a failing or too-wide test as its histogram (a pass/fail test as its
-  pass rate), a trend as a control chart, an outlier wafer as yield by wafer. Each card says why it is
+  pass rate), a trend as a control chart, an outlier wafer as yield by wafer. An item about the yield of groups
+  of wafers (a probe card, a recipe) is a row of **What divides yield** just below, which reads the same fields
+  the same way, so it has no card here. Each card says why it is
   shown in one sentence (hover it for the whole sentence What stands out gives, with the bins and tests it
   names), and **Show on map** goes back to the map showing it as its row does, with the Summary panel
-  open on that row. The rest follow on one "Also" line. It describes the whole lot, so while the Insights
-  filter or **Show** narrows the population it says so instead of drawing cards.
+  open on that row. Smaller items are listed under What stands out only. Under a filter it shows the items What stands
+  out lists for what the filter keeps; while **Show** narrows to one group it says so instead of drawing cards.
 - **Distributions** — how values spread: [Process capability](https://wafertools.github.io/wafermap/charts/#process-capability), the [test-value box plot](https://wafertools.github.io/wafermap/charts/#test-value-distribution)
   (one box per wafer, or with Group by on one per group: click a group's box to see its wafers, **Back** to return), the
   [value histogram](https://wafertools.github.io/wafermap/charts/#value-histogram) (all wafers, one wafer, or one series per group) and the
@@ -1006,7 +1009,10 @@ onto that pair.*
 
 ### What a click does
 
-Every mark on an Insights chart stands for something, and a click opens it. A **right-click** on any mark opens the menu on what it counts, so on a mark that stands for dies a click and a right-click do the same; on a wafer's own mark, a click opens the wafer's map and a right-click its menu. The tooltip says which.
+Every mark on an Insights chart stands for something, and a click opens it. A **right-click** on any mark opens the menu on what it counts, so on a mark that stands for dies a click and a right-click do the same; on a wafer's own mark, a click opens the wafer's map and a right-click its menu. The tooltip says which. A wafer
+opens on what was clicked, wherever it was clicked from: a test (a chart of the test, a test's column in a table) opens
+it on that test, a yield or bin (a yield bar, the Yield % column) on its bins, and anything else in the mode the maps
+are in.
 
 | Click | Opens |
 | --- | --- |
@@ -1021,8 +1027,8 @@ Every mark on an Insights chart stands for something, and a click opens it. A **
 | The chart on a **Worth a look** card | as the same chart anywhere else in Insights |
 | A cell of the correlation matrix | that pair in the scatter |
 | A test in the process-capability chart | that test in the other distribution charts |
-| A row of the **Wafers** table | that wafer's map |
-| A row of the **Dies** table | that die, ringed on its wafer's map |
+| A row of the **Wafers** table | that wafer's map, on the test whose mean column you clicked, or on its bins from its yield |
+| A row of the **Dies** table | that die's wafer in a window of its own, the die ringed, on the test whose column you clicked (from the Maps view's tables, the die is ringed on its card) |
 
 The menu offers the charts and tables for just those dies (and your own plots), and its heading names
 them, for example "412 dies in hard bin 3, across 13 wafers". A mark that has no dies behind it does nothing.
@@ -1322,8 +1328,8 @@ a die without saying so. A plot coloured by hard or soft bin uses the map's bin 
 
 **Hover** a point, bar, box or line to see its values and how many dies or wafers it
 stands for. **Click** a point (or a wafer's bar or box) to open that wafer, on the plot's own
-test, so its map shows the values the plot is about and not the bins (a plot with no test in it,
-like yield against wafer order, opens the default map). Click any other bar, box, histogram bar or
+test, so its map shows the values the plot is about and not the bins (a plot of yield or bins with no test in it,
+like yield against wafer order, opens the bins, as a yield bar does everywhere). Click any other bar, box, histogram bar or
 line point to open the right-click menu on the dies it counts, and **drag** a rectangle over a
 scatter to select the dies (or wafers) inside it. The selection opens the same
 right-click menu as on a map, so a few dies from a plot can be charted and tabulated
@@ -1564,7 +1570,8 @@ scale of 0 to 100%, each with its mean, with a sentence giving the gap in percen
 spread and wafer count. **Confidence** is **Clear** (q under 0.05),
 **Possible** (under 0.2) or **Not clear**, so the fields at the top separate the wafers more clearly than wafer-to-wafer
 noise would; hover it for q, Welch's p and the rank p. A button on a field opens its other measures. The **Group by**
-button regroups every chart by that field. Each field is read after allowing for the strongest other field that explains the same measure (and does not contain it): a probe card on wafers that also differ by recipe is ranked by what the recipe leaves, and its row says "allowing for" that field, with the degrees of freedom the removed means used charged to the p. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
+button regroups every chart by that field. Each field is read after allowing for the strongest other field that explains the same measure (and does not contain it): a probe card on wafers that also differ by recipe is ranked by what the recipe leaves, and its row says "allowing for" that field, with the degrees of freedom the removed means used charged to the p. A field is compared when at least two of its groups have two wafers or more and it has no more groups than half the
+wafers (two, with fewer than six); What stands out and the example plots compare the same fields. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
 fields that change together (a lot and its start date, or a tester and the handler docked to it) cannot be told apart by the wafers; the card names each set of them, and names fields that nearly match (most wafers in matching groups) with how many wafers agree. A low q points to where
 to look; it is not a cause. Tool, chamber and probe-card fields appear only when the host supplies them as wafer
 attributes.

@@ -29,7 +29,7 @@ import { computeFunctionalYield } from '../stats/analyzeWaferMap.js';
 // The report builders are loaded when a report is opened, not with the map (see `openReportModal`'s callers):
 // they are most of the report's markup and stylesheet, and a panel that is never exported to a report never needs them.
 import type { ReportMap } from '../stats/renderSummaryReport.js';
-import { buildSynthesis, synthesisKey, synthesisSource, synthesisRowShare, synthesisMoreTests, SYNTHESIS_ALSO_HEADING, SYNTHESIS_POSSIBLE_HEADING, type SynthesisItem, type SynthesisTarget } from '../stats/synthesis.js';
+import { buildSynthesis, isGroupYieldItem, synthesisKey, synthesisSource, synthesisRowShare, synthesisMoreTests, SYNTHESIS_ALSO_HEADING, SYNTHESIS_POSSIBLE_HEADING, type SynthesisItem, type SynthesisTarget } from '../stats/synthesis.js';
 import { ICONS } from './icons.js';
 import { MEAN_WAFER_YIELD_LABEL, METER_DOTS, SEVERITY_MARK, filledDots, impactWord, impactShortWord, formatPoints, shortfallColor, type MeterTier } from '../stats/presentation.js';
 import { regionYieldRows, waferYieldRows } from '../stats/yieldRows.js';
@@ -44,7 +44,7 @@ import { classifySpec, isOutOfSpec } from '../renderer/spec.js';
 import { describeWaferPopulation, populationLabel } from '../stats/population.js';
 import { buildWarningsBanner, collectWarnings, type WaferWarning } from './warnings.js';
 export { buildWarningsBanner };
-import { fmt as fmtValue, fmtAggregationMethod, plainBinTerms } from '../renderer/fmt.js';
+import { fmt as fmtValue, fmtAggregationMethod, fmtStackedLabel, plainBinTerms } from '../renderer/fmt.js';
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers } from '../renderer/buildView.js';
 import { describeValues } from '../stats/math.js';
@@ -711,7 +711,7 @@ export function buildMetadataStripRow(
   const row = el('div', { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 14px', width: '100%', minWidth: '0' });
   if (stacked) {
     const span = el('span', { fontWeight: '500', whiteSpace: 'nowrap' },
-      stacked.aggrMethod ? `${stacked.lotSize} wafers stacked · ${stacked.aggrMethod}` : `${stacked.lotSize} wafers stacked`);
+      fmtStackedLabel(stacked.lotSize, stacked.aggrMethod));
     row.appendChild(span);
   }
   if (chips) row.appendChild(chips);
@@ -1231,7 +1231,7 @@ export function buildPerWaferYieldSection(
       row.setAttribute('aria-label',
         `${label}, ${yieldPct.toFixed(1)}% yield`
         + (f?.total ? `, ${f.total} finding${f.total === 1 ? '' : 's'}${f.unusual ? `, ${f.unusual} unusual` : ''}` : '')
-        + ' — open wafer');
+        + ' — open wafer on its bins');
       row.tabIndex = 0;
       row.addEventListener('mouseenter', () => { row.style.background = CLR.bgHover; });
       row.addEventListener('mouseleave', () => { row.style.background = ''; });
@@ -2327,7 +2327,7 @@ export function buildSynthesisSection(
     b.type = 'button';
     b.dataset.wmapSynthesisChart = synthesisKey(it);
     b.setAttribute('aria-label', `Chart: ${it.brief}`);
-    wireTooltip(b, 'Open Insights at the chart of this, under Worth a look');
+    wireTooltip(b, isGroupYieldItem(it) ? 'Open Insights at What divides yield, which compares these groups' : 'Open Insights at the chart of this, under Worth a look');
     wireControlHover(b, 'bare');
     b.addEventListener('click', () => onShowChart(synthesisKey(it)));
     return b;
@@ -3027,7 +3027,7 @@ function openDataTablesModal(
     const locate = input.onLocateDie;
     const tables = renderDataTables({
       ...input, doc: ownerDocument, view: 'dies',
-      onLocateDie: locate ? (die, waferIndex) => { close?.(); locate(die, waferIndex); } : undefined,
+      onLocateDie: locate ? (die, waferIndex, testNumber) => { close?.(); locate(die, waferIndex, testNumber); } : undefined,
     });
     const handle = openModal({ title, onClose: () => tables.destroy(), anchor, ownerDocument, boxSize: { width: 'min(96vw, 1200px)', height: 'min(92vh, 780px)' } });
     close = () => handle.close();
@@ -3103,7 +3103,7 @@ export function* renderWaferSummaryContentSteps(
     /** See `RenderOptions.dieList` — gates the "View die list" link below. */
     dieListOptions?: DieListDisplayOptions;
     /** A die row clicked in the Data tables: show that die on its map. */
-    onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+    onLocateDie?: (die: Die, waferIndex: number | undefined, testNumber?: number) => void;
     /** The host's wafer attributes (`attributes` on the render options): what the Data tables call each field. */
     attributes?: Record<string, FacetCuration>;
     /**
@@ -3321,7 +3321,7 @@ export function* renderLotSummaryContentSteps(
     /** See `RenderOptions.dieList` — gates the "View die list" link below. */
     dieListOptions?: DieListDisplayOptions;
     /** A die row clicked in the Data tables: show that die on its map. */
-    onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+    onLocateDie?: (die: Die, waferIndex: number | undefined, testNumber?: number) => void;
     /** The host's wafer attributes (`attributes` on the render options): what the Data tables call each field. */
     attributes?: Record<string, FacetCuration>;
     /** Per-wafer findings tally badged onto the Wafer Yield rows — see

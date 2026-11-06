@@ -41,7 +41,8 @@ export interface VirtualTableOptions<R> {
   overscan?: number;
   /** Viewport height assumed when the element has not been laid out (tests, hidden parents). Default 480. */
   fallbackViewportHeight?: number;
-  onRowClick?: (row: R, rowIndex: number) => void;
+  /** A row clicked; `columnIndex` is the column of the cell clicked, in `columns` order. */
+  onRowClick?: (row: R, rowIndex: number, columnIndex: number) => void;
 }
 
 export interface VirtualTable<R> {
@@ -186,7 +187,10 @@ export function createVirtualTable<R>(opts: VirtualTableOptions<R>): VirtualTabl
       if (opts.onRowClick) {
         tr.style.cursor = 'pointer';
         const idx = order ? order[i] : i;
-        tr.addEventListener('click', () => opts.onRowClick!(row, idx));
+        tr.addEventListener('click', e => {
+          const td = (e.target as Element | null)?.closest?.('td');
+          opts.onRowClick!(row, idx, td ? Array.prototype.indexOf.call(tr.children, td) : -1);
+        });
       }
       frag.appendChild(tr);
     }

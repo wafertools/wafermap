@@ -1,6 +1,5 @@
-// Worth a look and an item about groups of wafers (yield by a field): such an item has no place on the map, so its card
-// offers no Show on map, and its card is left out once Insights is grouped by one of the fields that give its groups, since
-// the Overview's own yield card then shows the same bars. Lot: the edge-ring demo lot, whose probe card costs yield.
+// Worth a look and an item about the yield of groups of wafers (yield by a field): What divides yield, just below, shows it,
+// from the same fields read the same way, so it has no card of its own. Lot: the edge-ring demo lot, whose probe card costs yield.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -15,6 +14,7 @@ window.HTMLElement.prototype.scrollIntoView = function () {};
 const { analyzeWaferLot, buildWaferMap } = await import('../dist/index.js');
 const { buildSynthesis } = await import('../dist/packages/stats/synthesis.js');
 const { createInsightsTab } = await import('../dist/packages/canvas-adapter/insightsTab.js');
+const { rankCommonality, commonalityConfidence } = await import('../dist/packages/stats/commonality.js');
 
 const DATA = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'examples', 'data');
 const FIELDS = ['tester', 'handler', 'probe_card', 'operator', 'test_date', 'split'];
@@ -65,20 +65,39 @@ test('the lot has an item about its probe card, with every field that gives the 
   assert.deepEqual(groupItem.target.fields, ['probe_card', 'card_label']);
 });
 
-test('a card about groups of wafers offers no Show on map, though the host can show the map', () => {
+test('an item about the yield of groups of wafers is drawn in What divides yield, not as a card', () => {
   const { tab } = mount();
-  assert.ok(groupItem && worthKeys(tab).includes('group:probe_card'), 'its card is drawn');
-  assert.equal(groupCard(tab).querySelector('[data-wmap-worth-show-on-map]'), null);
-  const others = [...tab.el.querySelectorAll('[data-wmap-worth-key]')].filter(c => c.dataset.wmapWorthKey !== 'group:probe_card');
-  assert.ok(others.some(c => c.querySelector('[data-wmap-worth-show-on-map]')), 'the other cards still offer it');
+  assert.equal(groupCard(tab), null);
+  assert.ok(tab.el.querySelector('[data-wmap-commonality-group="probe_card"]'), 'What divides yield has a row for the probe card');
+  assert.ok(tab.el.querySelector('[data-wmap-worth-key]')?.querySelector('[data-wmap-worth-show-on-map]'), 'the other cards still offer Show on map');
 });
 
-test('grouped by the field, the card is left out; by another field, it stays', () => {
-  const groupBy = (tab, key) => { const b = tab.el.querySelector(`[data-wmap-commonality-group="${key}"]`); assert.ok(b, `a Group by button for ${key}, among ${[...tab.el.querySelectorAll('[data-wmap-commonality-group]')].map(x => x.dataset.wmapCommonalityGroup).join(', ')}`); click(window, b); };
-  for (const [key, drawn] of [['probe_card', false], ['split', true]]) {
-    const { tab } = mount();
-    assert.ok(groupCard(tab), `drawn before grouping (${key})`);
-    groupBy(tab, key);
-    assert.equal(!!groupCard(tab), drawn, `grouped by ${key}`);
-  }
+test('the Summary panel\'s Chart link for it lands on What divides yield', () => {
+  const { tab } = mount();
+  assert.equal(tab.showWorthCard('group:probe_card'), true);
+  assert.equal(tab.showWorthCard('group:no_such_field'), false);
+});
+
+test('What stands out and What divides yield read the probe card the same way', () => {
+  const wafers = maps.map(m => ({ metadata: m.metadata, dies: m.dies, passBins: m.passBins }));
+  const fields = Object.entries(attributes).map(([key, { label }]) => ({ key, label }));
+  const result = rankCommonality(wafers, fields, attributes);
+  const row = result.rows.find(r => r.field.key === 'probe_card' && r.measure.kind === 'yield');
+  assert.ok(row, 'a yield row for the probe card');
+  assert.notEqual(commonalityConfidence(row.pAdjusted), 'none', `confirmed in What stands out, so not "Not clear" here (q ${row.pAdjusted})`);
+  // Both read it after allowing for the same field, or for none.
+  const allowed = row.allowedFor?.map(f => f.label) ?? [];
+  assert.equal(/allowing for/.test(groupItem.reason), allowed.length > 0, `allowing for: ${allowed.join(', ') || 'none'}; item: ${groupItem.reason}`);
+  for (const label of allowed) assert.ok(groupItem.reason.includes(label), `the item names ${label}`);
+});
+
+test('every item has a key of its own, so a Chart link and a Show on map find the one item meant', async () => {
+  const { synthesisKey } = await import('../dist/packages/stats/synthesis.js');
+  const all = [...synthesis.items, ...(synthesis.also?.items ?? [])];
+  const keys = all.map(synthesisKey);
+  assert.equal(new Set(keys).size, keys.length, keys.join(', '));
+  // A test's own item and one about groups that leads with the same test differ.
+  const shift = { target: { kind: 'test', testNumber: 7 }, chart: { chart: 'box', fields: { x: { meta: 'split' }, y: { test: 7 } } } };
+  const own = { target: { kind: 'test', testNumber: 7 }, chart: { chart: 'histogram', fields: { x: { test: 7 } } } };
+  assert.notEqual(synthesisKey(shift), synthesisKey(own));
 });

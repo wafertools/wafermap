@@ -50,7 +50,7 @@ export interface PlotSectionDeps {
   /** Right-click a wafer's own mark: that wafer's menu, by its index in the host's list. */
   waferMenu?: WaferContextMenuHandler;
   /** Click a point: open its wafer, on a test's values when the plot is about one. */
-  openWafer?: (waferIndex: number, label: string, testNumber?: number) => void;
+  openWafer?: (waferIndex: number, label: string, testNumber?: number, view?: 'bins') => void;
   /** A single-wafer host's version of the same: show the test on the map that is already there. */
   focusTest?: (testNumber: number) => void;
   locateDie?: (die: Die, waferIndex: number | undefined) => void;
@@ -174,7 +174,7 @@ export function createPlotSection(d: PlotSectionDeps): { card: HTMLElement; dest
     // The wafer opens on the plot's own test, so its map shows the values the plot is about and not the bins. A
     // single-wafer host has no wafer to open: it shows the test on its own map.
     onOpenWafer: d.openWafer
-      ? (i: number, testNumber?: number) => d.openWafer!(items[i].waferIndex ?? i, items[i].label, testNumber)
+      ? (i: number, testNumber?: number, view?: 'bins') => d.openWafer!(items[i].waferIndex ?? i, items[i].label, testNumber, view)
       : d.focusTest && items.length === 1
         ? (_i: number, testNumber?: number) => { if (testNumber !== undefined) d.focusTest!(testNumber); }
         : undefined,

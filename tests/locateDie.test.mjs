@@ -99,7 +99,7 @@ async function openSelectionTable() {
 
 test('a selection table says its rows can be clicked, and a click rings that die and closes the table', async () => {
   const { ctrl, canvas } = await openSelectionTable();
-  assert.match(modal().querySelector('[data-wmap-data-note]').textContent, /Click a row to show that die on the map/);
+  assert.match(modal().querySelector('[data-wmap-data-note]').textContent, /Click a row to see that die ringed on the map of its wafer, on the test whose column you click/);
   const before = rings(canvas);
   click(dieRows()[2]);
   assert.equal(modal(), null, 'the table stepped aside');
@@ -178,11 +178,33 @@ test('in Insights, a Data tab row goes back to the map and rings the die', async
   click(host.querySelector('[data-wmap-data-view="dies"]'));
   const rows = () => [...host.querySelectorAll('[data-wmap-data-tab] tbody tr[aria-rowindex]')];
   await waitFor(() => rows().length > 0, 'the Dies table opened');
-  assert.match(host.querySelector('[data-wmap-data-note]').textContent, /Click a row to show that die on the map/);
+  assert.match(host.querySelector('[data-wmap-data-note]').textContent, /Click a row to see that die ringed on the map of its wafer, on the test whose column you click/);
   const before = rings(canvas);
   click(rows()[1]);
   assert.equal(ctrl.isInsightsOpen?.() ?? false, false, 'Insights closed');
   assert.ok(rings(canvas) > before, 'and the die is ringed on the map');
+  assert.equal(ctrl.getOptions().plotMode, 'hardBin', 'a click outside a test column leaves the mode as it was');
+  ctrl.destroy();
+});
+
+test('in Insights, a click in a test\'s column of a Dies row shows the map on that test', async () => {
+  const host = document.getElementById('root');
+  host.innerHTML = '';
+  const ctrl = renderWaferMap(host, wafer('W9'), { insights: { enabled: true } });
+  ctrl.setInsightsOpen(true);
+  await waitFor(() => host.querySelector('button[data-wmap-insights-tab="data"]'), 'Insights loaded');
+  click(host.querySelector('button[data-wmap-insights-tab="data"]'));
+  await waitFor(() => host.querySelector('[data-wmap-data-view="dies"]'), 'the Data tab opened');
+  click(host.querySelector('[data-wmap-data-view="dies"]'));
+  const rows = () => [...host.querySelectorAll('[data-wmap-data-tab] tbody tr[aria-rowindex]')];
+  await waitFor(() => rows().length > 0, 'the Dies table opened');
+  const headers = [...host.querySelectorAll('[data-wmap-data-tab] thead th')].map(th => th.textContent);
+  const col = headers.findIndex(h => h.startsWith('Idsat'));
+  assert.ok(col >= 0, `an Idsat column among ${headers.join(', ')}`);
+  click(rows()[1].children[col]);
+  assert.equal(ctrl.isInsightsOpen?.() ?? false, false, 'Insights closed');
+  assert.equal(ctrl.getOptions().plotMode, 'value');
+  assert.equal(ctrl.getOptions().activeTest, 1000);
   ctrl.destroy();
 });
 

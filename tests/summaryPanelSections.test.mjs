@@ -521,9 +521,8 @@ test('a wafer yield row says it opens the wafer, and names its findings count', 
     i => (i === 0 ? { total: 2, unusual: 1, notable: 1 } : undefined),
   );
   const labels = [...section.querySelectorAll('[role=button]')].map(r => r.getAttribute('aria-label'));
-  // Previously "— view wafer" while the gallery's handler only highlighted the
-  // card in the grid; the row now actually opens it.
-  assert.ok(labels.every(l => / — open wafer$/.test(l)), `every row must state the action: ${labels}`);
+  // The row is a wafer's yield: it opens the wafer on its bins, and says so.
+  assert.ok(labels.every(l => / — open wafer on its bins$/.test(l)), `every row must state the action: ${labels}`);
   assert.match(labels[0], /2 findings, 1 unusual/);
   assert.doesNotMatch(labels[1], /finding/);
 });

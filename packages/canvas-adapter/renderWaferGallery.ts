@@ -16,7 +16,7 @@ import { SHADOW, LEADING, TRACKING, controlStyle, wireControlHover, SPACE, EDGE_
 import { openReportModal, openUserGuideWindow, registerGuideOpener, type UserGuideExtension } from './guideWindow.js';
 import { waferDisplayLabel, waferIdentityLabel } from '../core/waferLabel.js';
 import type { FilterSource, PageFilterController } from './pageFilter.js';
-import { bandButton } from './filterButton.js';
+import { bandButton, filterKeepsNothing } from './filterButton.js';
 import { metadataDisplayValue } from '../core/metadata.js';
 import { withExportContext } from './exportName.js';
 import { sortBinsForDisplay } from '../stats/binPareto.js';
@@ -28,7 +28,7 @@ import { waferPopulation, selectionPopulation, LOT_STACK_REASON, type DrilldownS
 import { sourceFromBins } from './plotItems.js';
 import type { DrilldownContext } from './drilldown.js';
 import { plotStoreFor, type WithPlotStore } from './plotStore.js';
-import type { WaferViewOptions, WaferMapController, CardViewOptions, CardController } from './renderWaferMap.js';
+import type { WaferViewOptions, CardViewOptions, CardController } from './renderWaferMap.js';
 import { classifyChanged, COLOR_KEYS, findingBin, findingPlotMode } from './renderWaferMap.js';
 import { findingPatternKey } from '../stats/filterFindings.js';
 import { synthesisSource } from '../stats/synthesis.js';
@@ -48,7 +48,7 @@ import type { SummaryPanelOptions, FindingsNotice } from './summaryPanel.js';
 import { attachExpandableMetadata } from './identityHeader.js';
 import { createSummaryPanelEl, buildMetadataStripRow, metadataEntries, renderLotSummaryContentSteps, reportMapsFromItems } from './summaryPanel.js';
 import type { FindingsFilter } from '../stats/filterFindings.js';
-import { prettyKey, type WaferAttributeDef } from '../stats/facets.js';
+import { commonMetadata, prettyKey, type WaferAttributeDef } from '../stats/facets.js';
 import type { TestDef } from '../renderer/buildWaferMap.js';
 import { testLabel, markedTestLabel, derivedFields } from '../renderer/testLabel.js';
 import { mergeTestDefs } from '../stats/mergeTestDefs.js';
@@ -812,7 +812,11 @@ export function renderWaferGallery(
     const run = ++filterAnalysisRun;
     filteredLot = undefined;
     filteredSummaries.clear();
-    const settle = (): void => { filterAnalysisPending = false; renderGallerySummaryPanel(); refreshLotSummaryButton(); };
+    const settle = (): void => {
+      filterAnalysisPending = false; renderGallerySummaryPanel(); refreshLotSummaryButton();
+      // Worth a look draws What stands out's list, which has just changed.
+      if (insightsOpen) insightsTab?.render();
+    };
     if (!filterNarrowing) { settle(); return; }
     const raw = analysableItems();
     if (!raw || !(currentLotStats || raw.some(it => it.statsSummary))) { settle(); return; }
@@ -863,6 +867,8 @@ export function renderWaferGallery(
   }
   let filterBand: ReturnType<PageFilterController['createBand']> | null = null;
   let filterButtonEl: HTMLButtonElement | null = null;
+  /** Shown above the grid while the filter keeps no wafer. */
+  let filterEmptyEl: HTMLDivElement | null = null;
   let bandTimer: ReturnType<typeof setTimeout> | undefined;
   const originalSources = (): FilterSource[] => originalItems.flatMap((it, i) => (it ? [filterSource(it, i)] : []));
 
@@ -875,6 +881,13 @@ export function renderWaferGallery(
       const kept = pageFilter.keep(sources);
       filterBand.refresh(kept.result, sources);
       filterBand.el.style.display = pageFilter.get() && !insightsOpen ? '' : 'none';
+      // Every card hidden: say why where the maps would be.
+      const none = filterIsOn() && sources.length > 0 && kept.items.length === 0;
+      filterEmptyEl ??= filterKeepsNothing(container.ownerDocument, 'wmapGalleryFilterEmpty');
+      filterEmptyEl.style.gridColumn = '1 / -1';
+      // A card rebuild empties the grid, so it is put back each time.
+      if (none && !filterEmptyEl.isConnected) gridEl.prepend(filterEmptyEl);
+      else if (!none) filterEmptyEl.remove();
     }, 0);
   }
 
@@ -1149,10 +1162,27 @@ export function renderWaferGallery(
     };
   }
 
-  /** Ring `die` on the card of wafer `waferIndex` (and no other), scrolled into view. */
-  function locateOnCard(waferIndex: number | undefined, die: Die): void {
+  /**
+   * Open wafer `waferIndex` from Insights in a window of its own, on `testNumber` when given, else in the mode that
+   * describes what opened it (openWaferMode.ts).
+   */
+  function openWaferWindow(waferIndex: number, title: string, testNumber?: number, view?: 'bins'): CardController | null {
+    const item = activeItems()[waferIndex];
+    if (!item) return null;
+    let ctrl: CardController | null = null;
+    const handle = openModal({ title, onClose: () => ctrl?.destroy(), anchor: container });
+    augmentOverlayTitleWithMetadata(handle, title, item.wafer.metadata ?? undefined);
+    const plain = waferOpenMode(sharedOpts.plotMode, sharedOpts.activeTest, testNumber, view);
+    ctrl = buildDetachedController(handle.contentWrap, item, testNumber, plain ? { plotMode: plain } : undefined, roomForPanel(handle));
+    return ctrl;
+  }
+
+  /** Ring `die` on the card of wafer `waferIndex` (and no other), on `testNumber` when given, scrolled into view. */
+  function locateOnCard(waferIndex: number | undefined, die: Die, testNumber?: number): void {
     if (waferIndex === undefined) return;
     cardControllers.forEach((ctrl, i) => { if (ctrl && i !== waferIndex) ctrl.locateDie(null); });
+    // A stacked mode's cards are not wafers, so only a wafer's own card takes the test.
+    if (testNumber !== undefined && !STACKED_MODES.has(sharedOpts.plotMode ?? 'hardBin')) cardControllers[waferIndex]?.setOptions({ plotMode: 'value', activeTest: testNumber });
     cardControllers[waferIndex]?.locateDie(die);
     gridEl.querySelectorAll<HTMLElement>('.wmap-gallery-card')[waferIndex]?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }
@@ -1221,7 +1251,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi, tn) => locateOnCard(wi, die, tn) },
     };
   }
 
@@ -1249,7 +1279,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi, tn) => locateOnCard(wi, die, tn) },
     };
   }
 
@@ -1298,7 +1328,7 @@ export function renderWaferGallery(
     const defs = mergedTestDefs().defs;
     const source = sourceFromBins(shares, kind, bins, defs, undefined, stacked);
     if (!source) return;
-    const base: DrilldownContext = { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) };
+    const base: DrilldownContext = { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi, tn) => locateOnCard(wi, die, tn) };
     const own = bins.length > 1 ? sourceFromBins(shares, kind, [bin], defs, undefined, stacked) : null;
     const ctx: DrilldownContext = own ? { ...base, narrower: { label: `Only ${kind} bin ${bin}`, backLabel: 'All filtered bins', source: own, ctx: base } } : base;
     void import('./drilldown.js').then(({ openDrilldownMenu }) => {
@@ -1326,7 +1356,7 @@ export function renderWaferGallery(
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined,
         notMeasuredReason: stacked ? LOT_STACK_REASON : undefined,
       },
-      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi, die) },
+      ctx: { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi, tn) => locateOnCard(wi, die, tn) },
     };
   }
 
@@ -1347,7 +1377,7 @@ export function renderWaferGallery(
         waferLabel: waferIdentityLabel(it), testDefs: it.testDefs, isLotStack: it.isLotStack,
         activeTest: view.plotMode === 'value' ? view.activeTest : undefined, waferIndex: found, wafer: it.wafer, passBins: passBinsOf(it), ringCount: requireRingCount(it, 'renderWaferGallery'),
       }),
-      ctx: { onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi) => locateOnCard(wi ?? found, die) },
+      ctx: { onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, wi, tn) => locateOnCard(wi ?? found, die, tn) },
     };
   }
 
@@ -1436,9 +1466,13 @@ export function renderWaferGallery(
 
   /** Open a wafer by index — the Wafer Yield rows only know the index, while
    *  `openWindowForCard` wants the item too. */
-  function openWindowForCardIndex(cardIndex: number): void {
-    const item = currentItems[cardIndex] ?? activeItems()[cardIndex];
-    if (item) openWindowForCard(cardIndex, item);
+  /**
+   * A Wafer Yield row: that wafer in a window of its own, on its bins, as a yield opens from Insights. The wafer's own
+   * item, never its card, which a stacked mode has turned into a stack.
+   */
+  function openYieldWindow(waferIndex: number): void {
+    const item = activeItems()[waferIndex];
+    if (item) openWaferWindow(waferIndex, `Wafer ${item.label ?? waferIndex + 1}`, undefined, 'bins');
   }
 
   /** Per-wafer findings tally for one wafer, for the Wafer Yield rows' badges. */
@@ -1469,12 +1503,12 @@ export function renderWaferGallery(
 
     // State the denominator. The list is a subset by design; saying so is what
     // stops it reading as the full wafer list.
-    if (activeItems().length > 0) {
+    const total = activeItems().filter(Boolean).length;
+    if (total > 0) {
       const heading = container.ownerDocument.createElement('div');
       const withCount = wafers.length;
-      const total = activeItems().filter(Boolean).length;
       heading.textContent = withCount === 0
-        ? `No findings on any of the ${total} wafers`
+        ? (total === 1 ? 'No findings on the wafer' : `No findings on any of the ${total} wafers`)
         : `${withCount} of ${total} wafer${total === 1 ? '' : 's'} with findings`;
       Object.assign(heading.style, {
         fontSize: FONT.body, color: CLR.label, marginBottom: SPACE.md } as Partial<CSSStyleDeclaration>);
@@ -1505,10 +1539,13 @@ export function renderWaferGallery(
 
     // Wafer rows
     if (wafers.length === 0) {
-      const empty = container.ownerDocument.createElement('div');
-      Object.assign(empty.style, { color: CLR.icon, fontSize: FONT.body, padding: '4px 0' });
-      empty.textContent = 'No findings on any wafer.';
-      gallerySummaryPanelEl.appendChild(empty);
+      // The heading has said it when there are wafers.
+      if (total === 0) {
+        const empty = container.ownerDocument.createElement('div');
+        Object.assign(empty.style, { color: CLR.icon, fontSize: FONT.body, padding: '4px 0' });
+        empty.textContent = filterIsOn() ? 'The filter keeps no wafer.' : 'No findings on any wafer.';
+        gallerySummaryPanelEl.appendChild(empty);
+      }
     } else {
       for (const { index, item, unusualCount, notableCount, totalCount } of wafers) {
         const topSeverity: 'unusual' | 'notable' | 'info' =
@@ -1667,12 +1704,10 @@ export function renderWaferGallery(
           setInsightsOpen(true);
           void ensureInsightsTab().then(tab => tab?.showWorthCard(key));
         } : undefined,
-        // Opens the wafer, which is what the row's own accessible name has always
-        // claimed. It previously only highlighted the card in the grid — a weak
-        // payoff for a click, and a promise the label did not keep.
-        onWaferClick: openWindowForCardIndex,
+        // A row is a wafer's yield: it opens the wafer on its bins, as a yield does everywhere.
+        onWaferClick: openYieldWindow,
         findingsFor: findingsTallyFor,
-        dieListOptions: options.dieList, onLocateDie: (die, wi) => locateOnCard(wi, die),
+        dieListOptions: options.dieList, onLocateDie: (die, wi, tn) => locateOnCard(wi, die, tn),
         // The gallery's toolbar always carries the Summary button when it has this panel: a way back in.
         onClose: () => setLotSummaryOpen(false) }), {
         // The panel is the last lot-wide surface to settle, so finishing it is
@@ -2699,6 +2734,7 @@ export function renderWaferGallery(
       attributes: options.attributes,
       getItems: () => originalItems,
       getLotStats: () => currentLotStats,
+      getSynthesisSummary: () => lotStats(),
       getBinColors: () => sharedOpts.binColors ?? lotBinColors(),
       getRingCount: () => requireRingCount({ ringCount: lotRingCount() }, 'the Insights tab'),
       defaultView: options.insights?.defaultView,
@@ -2753,16 +2789,13 @@ export function renderWaferGallery(
       // whatever plot mode the gallery currently shares — see
       // `buildDetachedController`'s own doc comment.
       // A die row in a table: back to the grid, with that die ringed on its card.
-      locateDie: (die, waferIndex) => { setInsightsOpen(false); locateOnCard(waferIndex, die); },
-      openWafer: (waferIndex, title, testNumber, view) => {
-        const item = activeItems()[waferIndex];
+      // A die row in a table: its wafer, on the test whose column was clicked, with the die ringed.
+      locateDie: (die, waferIndex, testNumber) => {
+        const item = waferIndex === undefined ? null : activeItems()[waferIndex];
         if (!item) return;
-        let ctrl: WaferMapController | null = null;
-        const handle = openModal({ title, onClose: () => ctrl?.destroy(), anchor: container });
-        augmentOverlayTitleWithMetadata(handle, title, item.wafer.metadata ?? undefined);
-        const plain = waferOpenMode(sharedOpts.plotMode, sharedOpts.activeTest, testNumber, view);
-        ctrl = buildDetachedController(handle.contentWrap, item, testNumber, plain ? { plotMode: plain } : undefined, roomForPanel(handle));
-      } });
+        openWaferWindow(waferIndex!, `Wafer ${item.label ?? waferIndex! + 1}`, testNumber)?.locateDie(die);
+      },
+      openWafer: (waferIndex, title, testNumber, view) => { openWaferWindow(waferIndex, title, testNumber, view); } });
       insightsEl = insightsTab.el;
       // Hidden on arrival; setInsightsOpen reveals it once the load resolves.
       insightsEl.style.display = 'none';
@@ -3307,8 +3340,10 @@ export function renderWaferGallery(
     // silently dropped just because it isn't common to every visible wafer.
     const resolvedItems = currentItems.filter((it): it is WaferMapDisplayItem => it != null && !hiddenItems.has(it));
     const stackedItem = resolvedItems.find(it => it.isLotStack);
+    // A stacked mode's cards are bins or tests, not wafers: the fields are the stacked wafers'.
+    const stripWafers = stackedItem ? activeItems().filter((it): it is WaferMapDisplayItem => it !== null && !hiddenItems.has(it)) : resolvedItems;
     const metaRow = buildMetadataStripRow(
-      resolvedItems.map(it => ({ metadata: it.wafer.metadata ?? undefined })),
+      stripWafers.map(it => ({ metadata: it.wafer.metadata ?? undefined })),
       stackedItem
         ? { lotSize: stackedItem.lotSize ?? resolvedItems.length, aggrMethod: stackedItem.aggrMethod }
         : undefined,
@@ -3542,11 +3577,11 @@ export function renderWaferGallery(
     if (ringCounts.size !== 1) return [];
     const stackRingCount = [...ringCounts][0];
 
-    // Wafer object for stacked analysis: strip the per-wafer 'wafer' identity field
-    // (e.g. 'W01') so the summary panel doesn't claim this is a single wafer's data.
-    // Lot-level fields (lot, product, etc.) are preserved for context.
+    // Wafer object for stacked analysis: only the fields every stacked wafer shares (the lot, the product), and never a
+    // wafer's own identity, so neither the header nor the Summary panel names one wafer's split, temperature or ID as the
+    // stack's.
     const stackedWafer = baseWafer.metadata
-      ? { ...baseWafer, metadata: (({ wafer: _w, waferId: _id, ...rest }) => rest)(baseWafer.metadata as Record<string, unknown>) as typeof baseWafer.metadata }
+      ? { ...baseWafer, metadata: (({ wafer: _w, waferId: _id, ...rest }) => rest)(commonMetadata(resolvedItems.map(it => ({ metadata: it.wafer.metadata ?? undefined }))) as Record<string, unknown>) as typeof baseWafer.metadata }
       : baseWafer;
 
     // Patch isLotStack / aggregationMethod / lotSize onto a summary produced from
@@ -3975,7 +4010,7 @@ export function renderWaferGallery(
         if (card.isConnected) {
           openDrilldownMenu(at, card, source, across
             ? { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, ...across.ctx }
-            : { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die) => locateOnCard(cardIndex, die) });
+            : { plots: plotStore, getBinColors: () => sharedOpts.binColors ?? lotBinColors(), attributes: options.attributes, onSaveImage: ctrl.getSaveImageHook(), onSaveText: ctrl.getSaveTextHook(), onLocateDie: (die, _wi, tn) => locateOnCard(cardIndex, die, tn) });
         }
       });
     });

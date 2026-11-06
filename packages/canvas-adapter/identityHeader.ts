@@ -11,6 +11,7 @@ import type { WaferMetadata } from '../core/metadata.js';
 import { metadataEntries, buildCompactMetadataRows } from './summaryPanel.js';
 import { attributeLabel, type FacetCuration } from '../stats/facets.js';
 import { SHADOW, LEADING, SPACE, FONT, CLR, RADIUS, Z_ABOVE, wireExpandToggle, wireControlHover, type ExpandToggleHandle } from './toolbar.js';
+import { fmtAggregationMethod, fmtStackedLabel } from '../renderer/fmt.js';
 
 export interface IdentityHeaderLotStack {
   lotSize: number;
@@ -125,7 +126,7 @@ export function attachExpandableMetadata(
 export function collapsedLabel(meta: WaferMetadata, lotStack: IdentityHeaderLotStack | undefined): string | undefined {
   if (lotStack) {
     return lotStack.aggrMethod
-      ? `${lotStack.lotSize} wafers · ${lotStack.aggrMethod}`
+      ? `${lotStack.lotSize} wafers · ${fmtAggregationMethod(lotStack.aggrMethod)}`
       : `${lotStack.lotSize} wafers`;
   }
   if (meta.lot && meta.waferId !== undefined && meta.waferId !== '') {
@@ -298,9 +299,7 @@ export function createIdentityHeader(
       if (lotStack) {
         const stackLine = doc.createElement('div');
         Object.assign(stackLine.style, { fontWeight: '600', marginBottom: '3px' } as Partial<CSSStyleDeclaration>);
-        stackLine.textContent = lotStack.aggrMethod
-          ? `${lotStack.lotSize} wafers stacked · ${lotStack.aggrMethod}`
-          : `${lotStack.lotSize} wafers stacked`;
+        stackLine.textContent = fmtStackedLabel(lotStack.lotSize, lotStack.aggrMethod);
         metaPanel.appendChild(stackLine);
       }
       const rows = buildCompactMetadataRows(meta, opts.attributes);

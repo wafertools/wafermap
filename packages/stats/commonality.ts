@@ -3,7 +3,7 @@
 // and answered in rank order.
 //
 // Each wafer is one value (its yield, or its share of judged dies in a bin), as in the split comparison: the wafers of a
-// group are the samples, never its dies. Every field with at least two groups of two or more wafers is compared with
+// group are the samples, never its dies. Every field whose groups can be compared (groupEffects' comparableGrouping) is compared with
 // Welch's ANOVA and Kruskal–Wallis (stats/groupCompare.ts), for yield and for each of the main fail bins, and the rows
 // are ranked together by the Benjamini–Hochberg q of Welch's p. What it cannot say, it says: a field that gives every
 // wafer its own value cannot be tested, and two fields that change together (a lot and its date) cannot be told apart
@@ -16,7 +16,7 @@ import { diePassStatus, isYieldEligibleDie } from '../core/dies.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { benjaminiHochberg } from './math.js';
 import { compareGroups, comparisonP, type GroupComparison } from './groupCompare.js';
-import { adjustedFits, mergePartitions, overlapping, partitionId } from './groupEffects.js';
+import { adjustedFits, comparableGrouping, mergePartitions, overlapping, partitionId } from './groupEffects.js';
 import { facetValueOf, type FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
 import { compareNatural } from '../core/utils.js';
@@ -51,7 +51,7 @@ export interface CommonalityRow {
 
 export interface CommonalityResult {
   rows: CommonalityRow[];
-  /** Fields with no two groups of two or more wafers: nothing to compare. */
+  /** Fields whose groups cannot be compared: fewer than two groups of two or more wafers, or nearly one group per wafer. */
   untestable: CommonalityField[];
   /** The fail bins compared, most dies first. */
   bins: number[];
@@ -99,8 +99,7 @@ export function rankCommonality(wafers: readonly CommonalityWafer[], fields: rea
   for (const field of fields) {
     const value = wafers.map(w => facetValueOf(w.metadata, field.key, curation));
     const keys = [...new Set(value.filter((v): v is string => v !== undefined))].sort(compareNatural);
-    const sized = keys.filter(k => value.filter(v => v === k).length >= 2);
-    if (sized.length < 2) { untestable.push(field); continue; }
+    if (!comparableGrouping(value)) { untestable.push(field); continue; }
     testedFields.push({ field, value, keys });
   }
   // Fields that group the wafers identically are one set of groups; each set is read after allowing for the strongest other one.

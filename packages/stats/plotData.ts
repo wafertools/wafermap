@@ -2554,16 +2554,29 @@ export function examplePlots(catalogue: readonly FieldOption[], waferCount: numb
 }
 
 
+/** The fields a plot measures, in the order a wafer opened from it looks for what to show. */
+function measureFields(spec: PlotSpec) {
+  const { x, y, color } = spec.fields ?? {};
+  return spec.chart === 'scatter' ? [x, y, color] : spec.chart === 'histogram' || spec.chart === 'probability' ? [y, x] : [y];
+}
+
+/**
+ * Whether a wafer opened from a plot opens on its bins: a plot of yield or of bins that names no test, as a yield bar does
+ * everywhere. A plot that names a test opens on it ({@link plotTestNumber}); any other leaves the map as it is.
+ */
+export function plotOpensBins(spec: PlotSpec): boolean {
+  return plotTestNumber(spec) === undefined
+    && measureFields(spec).some(f => isField(f) && 'builtin' in f && (f.builtin === 'yield' || f.builtin === 'hbin' || f.builtin === 'sbin'));
+}
+
 /**
  * The test a click on this plot should open a wafer on: the plot's own measurement, so the map shows the values the
  * plot is about rather than the bins. A scatter takes its X (as the Insights scatter does), then its Y, then its
- * colour; every other chart type its values. `undefined` when the plot has no test in it (yield against wafer order),
- * where the wafer's own default map is the right one.
+ * colour; every other chart type its values. `undefined` when the plot has no test in it (yield against wafer order):
+ * {@link plotOpensBins} then says whether the wafer opens on its bins.
  */
 export function plotTestNumber(spec: PlotSpec): number | undefined {
-  const { x, y, color } = spec.fields ?? {};
-  const order = spec.chart === 'scatter' ? [x, y, color] : spec.chart === 'histogram' || spec.chart === 'probability' ? [y, x] : [y];
-  for (const f of order) {
+  for (const f of measureFields(spec)) {
     if (isField(f) && 'test' in f) return f.test;
     // A set of tests opens a wafer on its first.
     if (isTestSet(f)) { const first = f.tests[0]; const n = typeof first === 'number' ? first : parseInt(String(first), 10); if (Number.isInteger(n)) return n; continue; }

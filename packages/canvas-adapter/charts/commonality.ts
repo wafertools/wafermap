@@ -5,6 +5,7 @@
 
 import { rankCommonality, measureLabel, groupCommonalityRows, commonalityConfidence, CONFIDENCE_LABEL, type CommonalityField, type CommonalityRow, type CommonalityWafer } from '../../stats/commonality.js';
 import { formatP } from '../../stats/groupCompare.js';
+import { maxGroups } from '../../stats/groupEffects.js';
 import type { FacetCuration } from '../../stats/facets.js';
 import { CLR, FONT, RADIUS, SPACE, controlStyle, wireControlHover, wireTooltip } from '../toolbar.js';
 import { shortfallShade } from '../cellShade.js';
@@ -54,7 +55,7 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
     `Each wafer field, compared for yield and for the ${result.bins.length} most common fail bin${result.bins.length === 1 ? '' : 's'}, with each wafer as one value. The clearest fields come first. A clear difference is more than wafer-to-wafer noise; it does not say why.`,
   ];
   if (result.overlapping.length) parts.push(`These fields nearly match, so the wafers cannot fully tell them apart: ${result.overlapping.map(o => `${names(o.fields)} and ${names(o.with)} put ${o.agree} of ${o.of} wafers in the same groups`).join('; ')}.`);
-  if (result.untestable.length) parts.push(`Not compared, with no two groups of two or more wafers: ${result.untestable.map(f => f.label).join(', ')}.`);
+  if (result.untestable.length) parts.push(`Not compared: ${result.untestable.map(f => f.label).join(', ')}. A field is compared when two of its groups have two wafers or more and it has no more than ${maxGroups(o.wafers.length)} groups.`);
   note.textContent = parts.join(' ');
   Object.assign(note.style, { color: CLR.label, fontSize: FONT.body, marginBottom: SPACE.xs } as Partial<CSSStyleDeclaration>);
   body.appendChild(note);

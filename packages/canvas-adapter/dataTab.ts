@@ -91,10 +91,16 @@ export interface DataSectionDeps {
   metadataFields?: MetadataFieldDef[];
   /** The host's own wafer attributes (`attributes` on the render options): the Wafers table names its columns by them. */
   attributes?: Record<string, FacetCuration>;
-  /** A die row was clicked: show that die on its map. When set, Dies rows are clickable and say so. */
-  onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
-  /** A wafer row was clicked: open that wafer. When set, Wafers rows are clickable and say so. */
-  onOpenWafer?: (waferIndex: number, label: string) => void;
+  /**
+   * A die row was clicked: show that die on its wafer's map, on the test whose column was clicked (none for another
+   * column). When set, Dies rows are clickable and say so.
+   */
+  onLocateDie?: (die: Die, waferIndex: number | undefined, testNumber?: number) => void;
+  /**
+   * A wafer row was clicked: open that wafer, on the test whose mean column was clicked, or on its bins for its yield.
+   * When set, Wafers rows are clickable and say so.
+   */
+  onOpenWafer?: (waferIndex: number, label: string, testNumber?: number, view?: 'bins') => void;
   /** Set when the tables describe part of a population (a drilldown selection): what to say after the
    *  counts ("selected on W03"), and a wafer column and file-name tag so a file says so too. */
   population?: { phrase: string; fileTag: string };
@@ -447,7 +453,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
   }));
   const table = createVirtualTable<Die>({
     columns: vcols, rows: dies, ariaLabel: `Dies (${dies.length})`, ownerDocument: doc,
-    onRowClick: deps.onLocateDie ? (die) => deps.onLocateDie!(die, waferIndexByDie.get(die)) : undefined,
+    onRowClick: deps.onLocateDie ? (die, _row, col) => deps.onLocateDie!(die, waferIndexByDie.get(die), visibleColumns[col]?.test?.testNumber) : undefined,
   });
   table.el.style.maxHeight = '70vh';
   table.el.style.minHeight = '240px';
@@ -488,7 +494,7 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
     el: table.el,
     destroy: () => table.destroy(),
     actions: {
-      note: () => `${plural(dies.length, 'die')} ${deps.population?.phrase ?? `on ${plural(items.length, 'wafer')}`}. ${layoutNote()} Export follows the order shown.${deps.onLocateDie ? ' Click a row to show that die on the map.' : ''}`,
+      note: () => `${plural(dies.length, 'die')} ${deps.population?.phrase ?? `on ${plural(items.length, 'wafer')}`}. ${layoutNote()} Export follows the order shown.${deps.onLocateDie ? ' Click a row to see that die ringed on the map of its wafer, on the test whose column you click.' : ''}`,
       setLayout: (l) => { long = l === 'long' && testCols.length > 0; },
       exportCsv: () => long
         ? exportCsv(longColumns(), longRows(), `die-list-long${tag}.csv`, deps.onSaveText, { rowCount: longRowsMax })
@@ -501,7 +507,11 @@ function buildDiesView(deps: DataSectionDeps): ViewResult {
 // ── Wafers ───────────────────────────────────────────────────────────────────
 
 interface WaferRow { item: DataItem; yieldPercent: number | null }
-interface WaferColumn { header: string; cell: (r: WaferRow) => CsvCell; show?: (r: WaferRow) => string; numeric?: boolean; shade?: (r: WaferRow) => string | undefined }
+interface WaferColumn {
+  header: string; cell: (r: WaferRow) => CsvCell; show?: (r: WaferRow) => string; numeric?: boolean; shade?: (r: WaferRow) => string | undefined;
+  /** What a click in this column opens the wafer on: its test, or its bins (a yield). */
+  opens?: { testNumber: number } | 'bins';
+}
 
 function buildWafersView(deps: DataSectionDeps): ViewResult {
   const { doc, items } = deps;
@@ -554,7 +564,8 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
     { header: 'Yield %', cell: r => r.yieldPercent === null ? '' : r.yieldPercent,
       show: r => r.yieldPercent === null ? '' : r.yieldPercent.toFixed(1), numeric: true,
       // A wafer short of the lot's figure (the mean per-wafer yield, as the panel and the reports state it) is tinted, as there.
-      shade: r => (r.yieldPercent === null || lotYield === undefined ? undefined : shortfallShade(r.yieldPercent - lotYield)) },
+      shade: r => (r.yieldPercent === null || lotYield === undefined ? undefined : shortfallShade(r.yieldPercent - lotYield)),
+      opens: 'bins' },
     // A wafer's mean among the wafers' means: blue below the lot's average, warm above.
     ...tests.map((td): WaferColumn => {
       const shades = new Map<WaferRow, string | undefined>();
@@ -566,6 +577,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
         show: r => { const m = meanOf(r, td); return m === undefined ? '' : fmtValue(m, td.unit); },
         numeric: true,
         shade: r => shades.get(r),
+        opens: { testNumber: td.testNumber },
       };
     }),
   ];
@@ -587,7 +599,10 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
   }));
   const table = createVirtualTable<WaferRow>({
     columns: vcols, rows, ariaLabel: `Wafers (${rows.length})`, ownerDocument: doc,
-    onRowClick: deps.onOpenWafer ? (row) => deps.onOpenWafer!(row.item.waferIndex, row.item.label) : undefined,
+    onRowClick: deps.onOpenWafer ? (row, _i, col) => {
+      const opens = shown[col]?.opens;
+      deps.onOpenWafer!(row.item.waferIndex, row.item.label, typeof opens === 'object' ? opens.testNumber : undefined, opens === 'bins' ? 'bins' : undefined);
+    } : undefined,
   });
   table.el.style.maxHeight = '70vh';
   table.el.style.minHeight = '120px';
@@ -609,7 +624,7 @@ function buildWafersView(deps: DataSectionDeps): ViewResult {
     el,
     destroy: () => table.destroy(),
     actions: {
-      note: () => `${plural(rows.length, 'wafer')}.${cutNote}${deps.onOpenWafer ? ' Click a row to open that wafer.' : ''} Export follows the order shown.`,
+      note: () => `${plural(rows.length, 'wafer')}.${cutNote}${deps.onOpenWafer ? ' Click a row to open that wafer, on the test whose mean you click, or on its bins for its yield.' : ''} Export follows the order shown.`,
       exportCsv: () => exportCsv(csvCols(), table.orderedRows(), 'wafers.csv', deps.onSaveText, { rowCount: rows.length }),
       copyText: rows.length * cols.length <= COPY_CELL_LIMIT ? () => tableToTsv(csvCols(), table.orderedRows()) : null,
     },
@@ -712,8 +727,8 @@ export interface DataTablesInput {
   metadataFields?: MetadataFieldDef[];
   /** The host's own wafer attributes, for the Wafers table's column names. */
   attributes?: Record<string, FacetCuration>;
-  /** A die row clicked: show that die on its map. The caller closes the table around it. */
-  onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+  /** A die row clicked: show that die on its map, on the test whose column was clicked. The caller closes the table around it. */
+  onLocateDie?: (die: Die, waferIndex: number | undefined, testNumber?: number) => void;
   dieListOptions?: DieListDisplayOptions;
   onSaveText?: SaveTextHandler;
 }

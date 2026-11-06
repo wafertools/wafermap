@@ -39,7 +39,7 @@ import { plotStoreFor, type PlotStore } from './plotStore.js';
 import type { PlotFilter, PlotSpec } from '../stats/plotSpec.js';
 import type { SavedFilter } from '../stats/filterFile.js';
 import { createPageFilter, type PageFilterController } from './pageFilter.js';
-import { bandButton as makeBandButton } from './filterButton.js';
+import { bandButton as makeBandButton, filterKeepsNothing } from './filterButton.js';
 import { itemPassBins, passBinsLabel as describePassBins } from '../core/passBins.js';
 import type { BinColors } from '../renderer/binColors.js';
 import { describeWaferPopulation, populationStat } from '../stats/population.js';
@@ -67,7 +67,7 @@ import { renderPlotCard, type CardChoice } from './plotCard.js';
 import type { SelectInfo } from './charts/plotChart.js';
 import { plotTestNumber, orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
 import type { CardSpec } from '../stats/cardSpec.js';
-import { buildSynthesis, groupColouredChart, synthesisKey, SYNTHESIS_POSSIBLE_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
+import { buildSynthesis, groupColouredChart, synthesisKey, SYNTHESIS_POSSIBLE_HEADING, groupedByField, isGroupYieldItem, type SynthesisTarget } from '../stats/synthesis.js';
 import { commonPassBins } from '../core/passBins.js';
 import { renderRegionYieldDiagram } from './charts/regionYieldDiagram.js';
 
@@ -185,6 +185,11 @@ export interface InsightsTabDeps {
   /** Precomputed lot-level yield, when the host has one — reused directly instead of recomputing (see stats/yield.ts). Omit when there is no lot (e.g. a single wafer). */
   getLotStats?: () => LotStatsSummary | undefined;
   /**
+   * The analysis What stands out beside the map is built from now: the lot's or the wafer's, and while the filter narrows,
+   * the one over what it keeps (undefined while that is being worked out). Worth a look draws the same list from it.
+   */
+  getSynthesisSummary?: () => StatsSummary | LotStatsSummary | undefined;
+  /**
    * The host map's resolved bin colours (`View.binColors`, or the gallery's
    * gallery-wide assignment) — read fresh each render so a live palette change is
    * picked up, and so a bin is the same colour in a chart as on the map.
@@ -222,10 +227,10 @@ export interface InsightsTabDeps {
    */
   focusTest?: (testNumber: number) => void;
   /**
-   * A die row clicked in a table (the Data tab, or a table opened from a chart): leave Insights and show
-   * that die on its map. Omit where there is no map to go back to; the rows are then not clickable.
+   * A die row clicked in a table (the Data tab, or a table opened from a chart): show that die on its wafer's map, on
+   * the test whose column was clicked. Omit where there is no map to go to; the rows are then not clickable.
    */
-  locateDie?: (die: Die, waferIndex: number | undefined) => void;
+  locateDie?: (die: Die, waferIndex: number | undefined, testNumber?: number) => void;
   /** Default sub-tab shown on first render. Default 'overview'. */
   defaultView?: InsightsView;
   /** Sweep definitions to render in the Distributions view — see `InsightsOptions.sweeps`. */
@@ -583,6 +588,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   let compareControl: string | null = null;
   /** The wafer fields that divide the wafers, as the Group by list offers them: what the commonality card compares. */
   let dividingFields: Array<{ key: string; label: string }> = [];
+  /** The Worth a look items drawn in What divides yield rather than as cards: where the Summary panel's Chart link lands for them. */
+  let groupYieldKeys = new Set<string>();
   let activeSectionGroup: string | null = null;
   // The shared axis toggles, here for the same reason: `render()` rebuilds every
   // panel, so section-local state is discarded by a scope change — and, less
@@ -862,7 +869,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         chart: {
           onSaveImage,
           // A yield bar opens the wafer's bins, whatever the gallery is showing: it is the map that says where the yield went.
-          onOpenWafer: openWafer ? (i, tn) => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`, tn, tn === undefined ? 'bins' : undefined) : undefined,
+          onOpenWafer: openWafer ? (i, tn, view) => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`, tn, view) : undefined,
           onWaferMenu: waferContextMenu(items),
         },
       });
@@ -1443,12 +1450,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
   /**
    * Worth a look: the items "What stands out" lists beside the map (the results synthesis, one list for both), each
-   * drawn as the chart that shows it, with the sentence that says why and Show on map, then the same "also" line. The
-   * list describes the whole lot, so while the filter or Show narrows the population it says so instead of
-   * drawing charts of a population the list was not made from. Null when there is no analysis to make it from.
+   * drawn as the chart that shows it, with the sentence that says why and Show on map. The smaller items are What stands
+   * out's to list; here they would repeat it. The list describes what the filter keeps, as What stands out does, so
+   * while Show narrows to one group it says so instead of drawing charts of a population the list was not made from.
+   * Null when there is no analysis to make it from.
    */
   function renderWorthALook(items: Item[], allTestDefs: TestDef[]): { el: HTMLElement; destroy: () => void } | null {
-    const summary = getLotStats?.() ?? (items.length === 1 ? items[0].statsSummary : undefined);
+    const summary = deps.getSynthesisSummary?.() ?? (filtering ? undefined : getLotStats?.() ?? (items.length === 1 ? items[0].statsSummary : undefined));
     if (!summary) return null;
     const el = doc.createElement('section');
     el.dataset.wmapWorthALook = '1';
@@ -1464,8 +1472,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       Object.assign(p.style, { margin: '0', fontSize: FONT.body, color: CLR.label, lineHeight: LEADING.base } as Partial<CSSStyleDeclaration>);
       el.appendChild(p);
     };
-    if (filtering || activeSectionGroup !== null) {
-      line('Worth a look describes the whole lot, as What stands out beside the map does. Switch the filter off, or Show all groups, to see it here.', 'wmapWorthNarrowed');
+    if (activeSectionGroup !== null) {
+      line('Worth a look describes every group, as What stands out beside the map does. Show all groups to see it here.', 'wmapWorthNarrowed');
       return { el, destroy: () => {} };
     }
     const synthesis = buildSynthesis(summary, { passBins: commonPassBins(items.map(it => it.passBins)), attributes: deps.attributes });
@@ -1477,7 +1485,12 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     el.appendChild(grid);
     const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
     const destroys: Array<() => void> = [];
-    synthesis.items.forEach((item, i) => {
+    // An item about the yield of groups of wafers is drawn in What divides yield, just below; one about a ring's pass rate in
+    // each group is not in that table, so it stays.
+    const drawn = synthesis.items.filter(item => !isGroupYieldItem(item));
+    groupYieldKeys = new Set(synthesis.items.filter(isGroupYieldItem).map(synthesisKey));
+    if (drawn.length === 0) line('The groups of wafers that differ in yield are in What divides yield, below.', 'wmapWorthGroupsBelow');
+    drawn.forEach((item, i) => {
       // A group item is drawn as yield by that field, which the Overview's own yield card already shows once Group by is on it or on a field that gives the same groups.
       if (item.target.kind === 'group' && analysisGroupKey !== undefined && item.target.fields.includes(analysisGroupKey)) return;
       // Why the card is here, in one sentence (the chart says the rest): a line of its own across the card, plain, not a
@@ -1493,7 +1506,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         const btn = doc.createElement('button');
         btn.type = 'button';
         // An item about groups of wafers that leads with a test shows that test's map, not the groups: the button says which test.
-        const grouped = item.target.kind === 'test' && !!item.chart && 'fields' in item.chart && !!item.chart.fields?.x && !Array.isArray(item.chart.fields.x) && 'meta' in item.chart.fields.x;
+        const grouped = item.target.kind === 'test' && groupedByField(item) !== undefined;
         const leadDef = grouped && item.target.kind === 'test' ? allTestDefs.find(d => d.testNumber === (item.target as { testNumber: number }).testNumber) : undefined;
         btn.textContent = leadDef ? `Show ${testLabel(leadDef, leadDef.testNumber)} on map` : 'Show on map';
         btn.dataset.wmapWorthShowOnMap = '1';
@@ -1518,17 +1531,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
               : cellName(info, one, 'in this part of the chart');
           }, info => testNumberNamed(allTestDefs, info?.cell?.row ?? info?.category) ?? plotTestNumber(item.chart as PlotSpec)),
           onWaferMenu: waferContextMenu(items),
-          onOpenWafer: openWafer ? (i, tn) => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`, tn) : undefined,
+          onOpenWafer: openWafer ? (i, tn, view) => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`, tn, view) : undefined,
         },
       });
       card.card.dataset.wmapWorthKey = synthesisKey(item);
       grid.appendChild(card.card);
       destroys.push(card.destroy);
     });
-    if (synthesis.also) {
-      const named = synthesis.also.items.map(it => it.brief).join('; ');
-      line(`Also: ${named}${synthesis.also.more ? `; and ${synthesis.also.more} more` : ''}. Their rows in What stands out show them on the map.`, 'wmapWorthAlso');
-    }
     if (synthesis.possible?.length) line(`${SYNTHESIS_POSSIBLE_HEADING}: ${synthesis.possible.map(it => it.reason).join('; ')}.`, 'wmapWorthPossible');
     return { el, destroy: () => destroys.forEach(d => d()) };
   }
@@ -1570,7 +1579,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const section = createPlotSection({
         doc, store: plotStore, items, testDefs: allTestDefs, ringCount: getRingCount(), attributes: deps.attributes,
         groupBy, groupLabel, onSaveImage, onSaveText, getBinColors, waferMenu: waferContextMenu(items),
-        openWafer: openWafer ? (wi, label, test) => openWafer(wi, label, test) : undefined,
+        openWafer: openWafer ? (wi, label, test, view) => openWafer(wi, label, test, view) : undefined,
         focusTest, locateDie, pickPlotsFile: deps.onPickPlotsFile,
       });
       host.appendChild(section.card);
@@ -1600,7 +1609,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       ringCount: getRingCount(), attributes: deps.attributes,
       yieldByWaferIndex: new Map(lotStats?.lotYieldSeries.map(y => [y.waferIndex, y.yieldPercent])),
       onSaveText, onLocateDie: locateDie,
-      onOpenWafer: openWafer ? (wi, label) => openWafer(wi, label) : undefined,
+      onOpenWafer: openWafer ? (wi, label, testNumber, view) => openWafer(wi, label, testNumber, view) : undefined,
       // These are this tab's own items, handed back by the section.
       buildStatistics: its => buildStatisticsCards(its as Item[], testDefs, allTestDefs),
       view: dataView,
@@ -2250,11 +2259,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
 
     if (allItems.length === 0) {
       // The filter kept nothing: say so where the charts would be, rather than draw every chart empty.
-      const none = doc.createElement('div');
-      none.dataset.wmapInsightsFilterEmpty = '1';
-      none.textContent = 'The filter keeps no wafer and no die. Edit the filter or switch it off to see the data.';
-      Object.assign(none.style, { color: CLR.label, fontSize: FONT.body, padding: SPACE.xl } as Partial<CSSStyleDeclaration>);
-      bodyEl.appendChild(none);
+      bodyEl.appendChild(filterKeepsNothing(doc, 'wmapInsightsFilterEmpty'));
       return;
     }
     const cached = opts?.keepSections ? sectionCache.get(activeView) : undefined;
@@ -2309,7 +2314,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     setAxisPrefs: (prefs) => broadcastAxisPrefs(prefs, null, true),
     showWorthCard: (key) => {
       if (activeView !== 'overview') { activeView = 'overview'; render({ keepSections: true }); }
-      const card = [...bodyEl.querySelectorAll<HTMLElement>('[data-wmap-worth-key]')].find(c => c.dataset.wmapWorthKey === key);
+      // An item about the yield of groups of wafers is drawn in What divides yield.
+      const card = [...bodyEl.querySelectorAll<HTMLElement>('[data-wmap-worth-key]')].find(c => c.dataset.wmapWorthKey === key)
+        ?? (groupYieldKeys.has(key) ? bodyEl.querySelector<HTMLElement>('[data-wmap-commonality]') ?? undefined : undefined);
       if (!card) return false;
       // After the frames in which opening Insights restores its own scroll position, which would otherwise undo this.
       const view = doc.defaultView;

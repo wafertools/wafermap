@@ -46,7 +46,7 @@ export interface DrilldownContext {
   /** The host's CSV save hook, for the tables' Export CSV. */
   onSaveText?: SaveTextHandler;
   /** A die row clicked in a table: show that die on the map it belongs to. The table steps aside first. */
-  onLocateDie?: (die: Die, waferIndex: number | undefined) => void;
+  onLocateDie?: (die: Die, waferIndex: number | undefined, testNumber?: number) => void;
   /**
    * A narrower population for the same dies, offered as the menu's first row: the menu reopens on it, and its own
    * `narrower` is the population it left, so the row swaps back. Set by a gallery when dies are selected on several
@@ -305,7 +305,7 @@ function tableTargets(source: DrilldownSource, ctx: DrilldownContext, anchor: El
       const tables = renderSelectionTables({
         doc, ringCount: requireRingCount(source.items[0], 'the drilldown tables'), items: source.items, testDefs: source.testDefs, population: source.population,
         view, onSaveText: ctx.onSaveText,
-        onLocateDie: ctx.onLocateDie ? (die, waferIndex) => { close?.(); ctx.onLocateDie!(die, waferIndex); } : undefined,
+        onLocateDie: ctx.onLocateDie ? (die, waferIndex, testNumber) => { close?.(); ctx.onLocateDie!(die, waferIndex, testNumber); } : undefined,
       });
       const handle = openReparentedModal([tables.el], {
         title: `${title} — ${phrase}`, anchor, ownerDocument: doc,

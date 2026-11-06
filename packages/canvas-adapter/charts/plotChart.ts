@@ -15,7 +15,8 @@ import { CONTROL_RULE_TEXT } from '../../stats/control.js';
 import { PAT_VERDICT_LABEL } from '../../stats/pat.js';
 import { fmt } from '../../renderer/fmt.js';
 import { fitTicks } from '../../renderer/axisTicks.js';
-import { binOfLabel, plotFootnote, plotGuideSections, plotTestNumber, plotTitle, probabilityPosition, type PassFailCells, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
+import { binOfLabel, plotFootnote, plotGuideSections, plotOpensBins, plotTestNumber, plotTitle, probabilityPosition, type PassFailCells, type PlotPoint, type ResolvedAxis, type ResolvedPlot } from '../../stats/plotData.js';
+import type { PlotSpec } from '../../stats/plotSpec.js';
 import { SPACE, RADIUS, fontPx, FONT, CLR, markNoPrint, type SaveTextHandler } from '../toolbar.js';
 import { exportCsv } from '../tableExport.js';
 import { tableToTsv } from '../../core/tableCsv.js';
@@ -97,6 +98,9 @@ function probabilitySample(n: number): number[] {
   return out;
 }
 
+/** What a wafer opened from a plot is shown on: the plot's test, or its bins for a plot of yield or bins. */
+const openOn = (spec: PlotSpec): [number | undefined, 'bins' | undefined] => [plotTestNumber(spec), plotOpensBins(spec) ? 'bins' : undefined];
+
 export interface PlotChartOptions {
   ownerDocument?: Document;
   onSaveImage?: SaveImageHandler;
@@ -108,8 +112,11 @@ export interface PlotChartOptions {
   binColors?: BinColors;
   /** Right-click a mark that is one wafer (a wafer's bar or box, a point per wafer): that wafer's menu, as on the maps. */
   onWaferMenu?: WaferContextMenuHandler;
-  /** Click a point: open its wafer, on `testNumber` (the plot's own measurement) when it has one. Omit where there is no wafer to open. */
-  onOpenWafer?: (item: number, testNumber?: number) => void;
+  /**
+   * Click a point: open its wafer, on `testNumber` (the plot's own measurement) when it has one, or on its bins (`view`)
+   * for a plot of yield or bins (stats/plotData.ts says which). Omit where there is no wafer to open.
+   */
+  onOpenWafer?: (item: number, testNumber?: number, view?: 'bins') => void;
   /** What a click on a bar or box that is not one wafer (or on a line's point) does, in the reader's words. Default `chart
    *  or tabulate what it counts`. Read at each draw. */
   selectActionLabel?: string;
@@ -1863,7 +1870,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         drawn: () => drawn,
         describe: describePoint,
         clickable: () => !!options.onOpenWafer,
-        onOpen: p => options.onOpenWafer?.(p.item, plotTestNumber(r.spec)),
+        onOpen: p => options.onOpenWafer?.(p.item, ...openOn(r.spec)),
         onContextMenu: waferMenu,
         onHover: p => { hovered = p; draw(); },
         select: selectable ? {
@@ -1893,7 +1900,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         drawn: () => drawn,
         describe: control ? describeControlPoint : describeGoalPoint,
         clickable: () => control && !!options.onOpenWafer,
-        onOpen: p => { if (control) options.onOpenWafer?.(p.item, plotTestNumber(r.spec)); },
+        onOpen: p => { if (control) options.onOpenWafer?.(p.item, ...openOn(r.spec)); },
         onContextMenu: control ? waferMenu : undefined,
         onHover: p => { hovered = p; draw(); },
       });
@@ -1905,7 +1912,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         drawn: () => drawn,
         describe: describeProbabilityPoint,
         clickable: () => !!options.onOpenWafer,
-        onOpen: p => options.onOpenWafer?.(p.item, plotTestNumber(r.spec)),
+        onOpen: p => options.onOpenWafer?.(p.item, ...openOn(r.spec)),
         onContextMenu: waferMenu,
         onHover: p => { hovered = p; draw(); },
         select: options.onSelectPoints ? {
@@ -2064,7 +2071,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         if (!cell) return;
         const item = cm.categoryItems?.[cell.c];
         // A wafer's own bar or box opens that wafer; any other cell picks out what it counts.
-        if (item !== undefined && item >= 0 && options.onOpenWafer) { options.onOpenWafer(item, plotTestNumber(r.spec)); return; }
+        if (item !== undefined && item >= 0 && options.onOpenWafer) { options.onOpenWafer(item, ...openOn(r.spec)); return; }
         openCellMenu(e, cell);
       });
     } else if (r.marks.type === 'line') {

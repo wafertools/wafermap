@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWaferMap } from '../dist/index.js';
-import { resolvePlot, plotFootnote, plotTitle, fieldCatalogue, defaultPlot, examplePlots, expandTestSet, withTestSetNames, plotTestNumber } from '../dist/packages/stats/plotData.js';
+import { resolvePlot, plotFootnote, plotTitle, fieldCatalogue, defaultPlot, examplePlots, expandTestSet, withTestSetNames, plotTestNumber, plotOpensBins } from '../dist/packages/stats/plotData.js';
 import { readPlotsFile, writePlotsFile, sameField, isTestSet, PLOTS_FORMAT, PLOTS_VERSION } from '../dist/packages/stats/plotSpec.js';
 
 const DEFS = [
@@ -252,4 +252,15 @@ test('nested X reads and writes back; a level that cannot be read is dropped and
   assert.deepEqual(bad.plots[0].fields.x, [{ builtin: 'ring' }]);
   assert.match(bad.warnings.join(), /fields\.x 1: metadata key is empty/);
   assert.match(plotIssue(spec('box', { x: [{ builtin: 'ring' }, { builtin: 'reticleRow' }], y: { test: 1050 } })), /newer version/);
+});
+
+test('a wafer opened from a plot of yield or bins opens on its bins; one from a plot of a test, on that test', () => {
+  const yieldByWafer = spec('bar', { x: { builtin: 'wafer' }, y: { builtin: 'yield' } });
+  assert.equal(plotTestNumber(yieldByWafer), undefined);
+  assert.equal(plotOpensBins(yieldByWafer), true);
+  assert.equal(plotOpensBins(spec('bar', { x: { builtin: 'ring' }, y: { builtin: 'hbin' } })), true);
+  const testBox = spec('box', { x: { builtin: 'wafer' }, y: { test: 1050 } });
+  assert.equal(plotTestNumber(testBox), 1050);
+  assert.equal(plotOpensBins(testBox), false, 'a test wins');
+  assert.equal(plotOpensBins(spec('bar', { x: { builtin: 'wafer' }, y: { builtin: 'reprobed' } })), false, 'neither: the map stays as it is');
 });

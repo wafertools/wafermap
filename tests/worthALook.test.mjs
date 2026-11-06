@@ -71,10 +71,19 @@ test('without a host that shows the map, the cards offer no Show on map', () => 
   assert.equal(worth(tab).querySelector('[data-wmap-worth-show-on-map]'), null);
 });
 
-test('narrowed by the Insights filter, the section says it describes the whole lot and draws no cards', () => {
-  const { tab } = mount({ filter: { conditions: [{ field: { builtin: 'wafer' }, values: ['W1'] }] } });
-  assert.ok(worth(tab).querySelector('[data-wmap-worth-narrowed]'));
-  assert.equal(cards(tab).length, 0);
+test('under a filter, Worth a look draws the list What stands out has for what the filter keeps', () => {
+  const filter = { conditions: [{ field: { builtin: 'wafer' }, values: ['W1', 'W2'] }] };
+  // The host's analysis over the wafers kept, as What stands out beside the map shows it.
+  const kept = analyzeWaferLot(maps.slice(0, 2));
+  const { tab } = mount({ filter, getSynthesisSummary: () => kept });
+  const want = buildSynthesis(kept, { passBins }).items.map(synthesisKey);
+  assert.deepEqual(cards(tab).map(c => c.dataset.wmapWorthKey), want);
+  for (const key of want) assert.equal(tab.showWorthCard(key), true, `the panel's Chart link for ${key} finds its card`);
+});
+
+test('under a filter with no analysis of what it keeps yet, Worth a look is left out rather than drawn from the whole lot', () => {
+  const { tab } = mount({ filter: { conditions: [{ field: { builtin: 'wafer' }, values: ['W1'] }] }, getSynthesisSummary: () => undefined });
+  assert.equal(worth(tab), null);
 });
 
 test('showWorthCard opens the Overview at that card, and says when there is none', () => {

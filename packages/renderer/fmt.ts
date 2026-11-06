@@ -99,6 +99,11 @@ export function fmtAggregationMethod(method: string | undefined): string {
   return AGGREGATION_METHOD_LABELS[method ?? ''] ?? method ?? 'aggregated';
 }
 
+/** A lot stack as the header and the Summary panel name it: "25 wafers stacked · occurrence count". */
+export function fmtStackedLabel(lotSize: number, method: string | undefined): string {
+  return method ? `${lotSize} wafers stacked · ${fmtAggregationMethod(method)}` : `${lotSize} wafers stacked`;
+}
+
 /**
  * Map internal bin terms to plain language for display — "HBin 2" →
  * "hard bin 2" (CLAUDE.md: internal API terms must never appear in the UI).

@@ -27,6 +27,22 @@ export function partitionId(groupOf: GroupOf): string {
   return groupOf.map(g => g === undefined ? '-' : String(seen.get(g) ?? seen.set(g, seen.size).get(g))).join(',');
 }
 
+/** The most groups a field may put `wafers` wafers in and still be compared: past it the field nearly names each wafer. */
+export const maxGroups = (wafers: number): number => Math.max(2, Math.floor(wafers / 2));
+
+/**
+ * Whether a field's groups can be compared: two groups or more with two wafers or more each, and no more groups than
+ * {@link maxGroups}. Every surface that reads groups of wafers takes its fields through here, so a field is read by all of
+ * them or by none, and each set of groups is read after allowing for the same others.
+ */
+export function comparableGrouping(groupOf: GroupOf): boolean {
+  const sizes = new Map<string, number>();
+  for (const g of groupOf) if (g !== undefined) sizes.set(g, (sizes.get(g) ?? 0) + 1);
+  let sized = 0;
+  for (const n of sizes.values()) if (n >= 2) sized++;
+  return sized >= 2 && sizes.size <= maxGroups(groupOf.length);
+}
+
 /** Fields that group the wafers identically are one partition. */
 export function mergePartitions(fields: ReadonlyArray<{ key: string; groupOf: GroupOf }>): Partition[] {
   const byId = new Map<string, Partition>();

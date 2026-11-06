@@ -19,7 +19,7 @@ import { isOneBinCluster } from './filterFindings.js';
 import { plainBinTerms } from '../renderer/fmt.js';
 import { benjaminiHochberg, normalUpperTail } from './math.js';
 import { formatP } from './groupCompare.js';
-import { adjustedFits, mergePartitions, overlapping, type Partition } from './groupEffects.js';
+import { adjustedFits, comparableGrouping, mergePartitions, overlapping, type Partition } from './groupEffects.js';
 import { ringPlotValue } from './dieRegions.js';
 import { parseRegionKey } from './regions.js';
 import { attributeLabel, buildFacetTable, facetValueOf, type FacetCuration } from './facets.js';
@@ -761,8 +761,8 @@ const joinNames = (names: readonly string[]): string => names.length < 2 ? names
 /**
  * A wafer field whose groups differ in tests (Vth higher on process split SS, on lot L2, on one test program) or in yield
  * (a weak probe card, a heavier edge ring on one recipe): each wafer one value, its mean, so a lot's dies do not make
- * every wafer offset look certain. For every field Group by would offer (two values or more, at most half as many as
- * wafers) and every test with wafer means, and for wafer yield, the groups are compared (Welch, or Kruskal–Wallis where
+ * every wafer offset look certain. For every field whose groups can be compared (groupEffects' comparableGrouping, the rule
+ * What divides yield uses too) and every test with wafer means, and for wafer yield, the groups are compared (Welch, or Kruskal–Wallis where
  * Welch cannot be computed), adjusted together (Benjamini–Hochberg), and the group furthest from the other wafers is the
  * shift. A test shift is its size in the test's within-wafer standard deviations, the scale a region shift is measured on;
  * a yield shift is its size in yield points; both are weighted by the group's dies. One test item and one yield item per
@@ -778,10 +778,12 @@ function groupShiftItems(
   const wafers = lot.perWafer;
   if (wafers.length < 4) return none;
   const fields = buildFacetTable(wafers.map(w => ({ metadata: w.summary.wafer as Record<string, string> | undefined, dieCount: w.summary.stats.totalDies })), { facetableOnly: true, curation: attributes })
-    .filter(f => f.splittable && f.values.length <= Math.max(2, Math.floor(wafers.length / 2)));
+    .filter(f => f.splittable)
+    .map(f => ({ key: f.key, groupOf: wafers.map(w => facetValueOf(w.summary.wafer as Record<string, string> | undefined, f.key, attributes)) }))
+    .filter(f => comparableGrouping(f.groupOf));
   if (fields.length === 0) return none;
   // Fields that put the wafers in the same groups are one partition.
-  const partitions: Partition[] = mergePartitions(fields.map(f => ({ key: f.key, groupOf: wafers.map(w => facetValueOf(w.summary.wafer as Record<string, string> | undefined, f.key, attributes)) })));
+  const partitions: Partition[] = mergePartitions(fields);
   // Each wafer's mean and spread per test: the lot's per-wafer table, or each wafer's own statistics.
   const statsOf = (w: (typeof wafers)[number]) => lot.perWaferTestStats?.find(x => x.waferIndex === w.waferIndex)?.tests ?? w.summary.stats.perTestStats ?? [];
   const perWafer = wafers.map(w => new Map(statsOf(w).filter(t => t.count >= 2 && Number.isFinite(t.mean)).map(t => [t.testNumber, t])));
@@ -1250,8 +1252,26 @@ function computeSynthesis(input: StatsSummary | LotStatsSummary, ctx: SynthesisC
  * A stable key for an item: what it shows, the same in the panel and in Insights, so a row's Chart link finds the item's
  * card and a card's Show on map finds its row.
  */
-export const synthesisKey = (it: Pick<SynthesisItem, 'target'>): string =>
-  it.target.kind === 'finding' ? `finding:${it.target.id}` : it.target.kind === 'group' ? `group:${it.target.field}` : `test:${it.target.testNumber}`;
+export const synthesisKey = (it: Pick<SynthesisItem, 'target' | 'chart'>): string => {
+  if (it.target.kind === 'finding') return `finding:${it.target.id}`;
+  if (it.target.kind === 'group') return `group:${it.target.field}${isGroupYieldItem(it) ? '' : ':ring'}`;
+  // A test's own item and an item about groups of wafers that leads with the same test are two items.
+  const field = groupedByField(it);
+  return `test:${it.target.testNumber}${field !== undefined ? `:by:${field}` : ''}`;
+};
+
+/** The lot field an item's chart is drawn by (a test by split), or undefined when it is not about groups of wafers. */
+export const groupedByField = (it: Pick<SynthesisItem, 'chart'>): string | undefined => {
+  const x = it.chart.fields?.x;
+  return x && !Array.isArray(x) && 'meta' in x ? x.meta : undefined;
+};
+
+/**
+ * Whether an item is about the wafers' yield in each group of a field, not a ring's pass rate in each (whose chart keeps to
+ * that ring). Such an item is a row of What divides yield, which reads the same fields the same way, so Insights draws it there.
+ */
+export const isGroupYieldItem = (it: Pick<SynthesisItem, 'target' | 'chart'>): boolean =>
+  it.target.kind === 'group' && !it.chart.where;
 
 /** The heading over groups that differ with no overlap but that the sample is too small to confirm. */
 export const SYNTHESIS_POSSIBLE_HEADING = 'Possible, not confirmed';

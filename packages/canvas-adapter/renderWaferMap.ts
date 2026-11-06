@@ -1210,7 +1210,7 @@ export function renderWaferMapCard(
   // none, right-click stays the browser's (or host's).
   // The reader's saved plots, one list for the Plot tab and for the drilldown menu.
   const plotStore = (insightsOpts as WithPlotStore | undefined)?.plotStore ?? plotStoreFor(insightsOpts);
-  const drilldownCtx: DrilldownContext = { plots: plotStore, getBinColors: () => currentView.binColors, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die) => locateDie(die) };
+  const drilldownCtx: DrilldownContext = { plots: plotStore, getBinColors: () => currentView.binColors, attributes: options.attributes, onSaveImage: exportHooks.onSaveImage, onSaveText: exportHooks.onSaveText, onLocateDie: (die, _wi, tn) => locateDieOnTest(die, tn) };
   /** Read live: `testDefs` changes with `setData`. */
   const drilldownOffered = (): boolean => !isMapless;
   let closeDrilldownMenu: (() => void) | null = null;
@@ -1391,6 +1391,7 @@ export function renderWaferMapCard(
         // carries the map's ring count as a built result does.
         ringCount: requireRingCount(currentResult, 'renderWaferMap'),
         statsSummary: currentStatsSummary }],
+      getSynthesisSummary: () => statsNow(),
       getBinColors: () => currentView.binColors,
       getRingCount: () => requireRingCount(currentResult, 'renderWaferMap'),
       onSaveImage: exportHooks.onSaveImage,
@@ -1445,8 +1446,8 @@ export function renderWaferMapCard(
         applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
         setInsightsOpen(false);
       },
-      // A die row in a table: back to the map, with that die ringed.
-      locateDie: (die) => { setInsightsOpen(false); locateDie(die); },
+      // A die row in a table: back to the map, on the test whose column was clicked, with that die ringed.
+      locateDie: (die, _waferIndex, testNumber) => { setInsightsOpen(false); locateDieOnTest(die, testNumber); },
       ownerDocument });
     // Positioned sibling of canvasWrap covering the same area, `z-index: auto`.
     // That does NOT put it above canvasWrap's own z-indexed overlays (mapless
@@ -1945,7 +1946,7 @@ export function renderWaferMapCard(
       onSaveText: exportHooks.onSaveText,
       metadataFields,
       dieListOptions: options.dieList,
-      onLocateDie: (die) => locateDie(die),
+      onLocateDie: (die, _wi, tn) => locateDieOnTest(die, tn),
       attributes: options.attributes,
       // A close button only when there is a way back in: the Summary button, which exists with a
       // toolbar and shows with a summary. Read from those, not from `summaryToggle`: the panel's
@@ -2883,6 +2884,11 @@ export function renderWaferMapCard(
   }
 
   /** Ring `die` and make sure it can be seen: a zoomed-in map returns to the fitted view. */
+  /** Ring `die`, on `testNumber` when given (a Dies table row clicked in that test's column). */
+  function locateDieOnTest(die: Die, testNumber: number | undefined): void {
+    if (testNumber !== undefined) applyOpts({ plotMode: 'value', activeTest: testNumber, highlightBin: undefined });
+    locateDie(die);
+  }
   function locateDie(die: Die | null): void {
     locatedKey = die === null ? null : getDieKey(die);
     if (die !== null && viewport !== null) { resetZoom(); return; }

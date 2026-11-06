@@ -10,7 +10,7 @@ import type { FacetCuration } from './facets.js';
 import { dieRadialPosition } from './dieRegions.js';
 import { pearsonOfPairs } from './correlation.js';
 import { benjaminiHochberg, sampleVariance } from './math.js';
-import { adjustedFits, mergePartitions, type Partition } from './groupEffects.js';
+import { adjustedFits, comparableGrouping, mergePartitions, type Partition } from './groupEffects.js';
 import { yieldCounts } from './yield.js';
 import type { PlotItem } from './plotData.js';
 
@@ -109,14 +109,11 @@ function fieldPicks(
   leadMeans?: ReadonlyArray<number | undefined>,
 ): Pick<ExamplePicks, 'splitKey' | 'yieldKeys'> {
   if (items.length < 4) return {};
-  // The sets of groups the lot fields make. Fields that group the wafers identically are one set; a field with a group of one
-  // wafer, or with more groups than half the wafers, cannot be compared and is left out.
-  const partitions: Partition[] = mergePartitions(metaKeys.flatMap(key => {
-    const groupOf = items.map(it => facetValueOf(it.metadata, key, curation));
-    const sizes = new Map<string, number>();
-    for (const g of groupOf) if (g !== undefined) sizes.set(g, (sizes.get(g) ?? 0) + 1);
-    return sizes.size >= 2 && sizes.size <= Math.max(2, Math.floor(items.length / 2)) && [...sizes.values()].every(n => n >= 2) ? [{ key, groupOf }] : [];
-  }));
+  // The sets of groups the lot fields make, from the fields whose groups can be compared (the rule What stands out and What
+  // divides yield read by). Fields that group the wafers identically are one set.
+  const partitions: Partition[] = mergePartitions(metaKeys
+    .map(key => ({ key, groupOf: items.map(it => facetValueOf(it.metadata, key, curation)) }))
+    .filter(f => comparableGrouping(f.groupOf)));
   if (partitions.length === 0) return {};
   // Strongest first, by the p of the set of groups against the measure, adjusted over the sets compared; a set is offered
   // when that q is under SUGGEST_Q (a suggestion to look, not a finding).
