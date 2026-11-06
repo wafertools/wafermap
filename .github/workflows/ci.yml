@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node
         # Must match the version deploy.yml builds the site with — otherwise the
         # version validated here is not the version actually shipped.
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
