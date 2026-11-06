@@ -16,7 +16,7 @@ import { diePassStatus, isYieldEligibleDie } from '../core/dies.js';
 import type { WaferMetadata } from '../core/metadata.js';
 import { benjaminiHochberg } from './math.js';
 import { compareGroups, comparisonP, type GroupComparison } from './groupCompare.js';
-import { adjustedFits, mergePartitions, partitionId } from './groupEffects.js';
+import { adjustedFits, mergePartitions, overlapping, partitionId } from './groupEffects.js';
 import { facetValueOf, type FacetCuration } from './facets.js';
 import { yieldCounts } from './yield.js';
 import { compareNatural } from '../core/utils.js';
@@ -60,6 +60,8 @@ export interface CommonalityResult {
    * fields: the wafers cannot say which of them it is.
    */
   tied: CommonalityField[][];
+  /** Sets of fields that nearly match without being identical: how many of the wafers they put in matching groups. */
+  overlapping: Array<{ fields: CommonalityField[]; with: CommonalityField[]; agree: number; of: number }>;
 }
 
 /** How many of the most common fail bins are compared, besides yield. */
@@ -134,7 +136,14 @@ export function rankCommonality(wafers: readonly CommonalityWafer[], fields: rea
 
   // Fields whose groups are the same wafers: the ranking cannot separate them, and the reader must be told.
   const tied = sets.filter(set => set.keys.length > 1).map(set => set.keys.map(k => fieldOf.get(k)!));
-  return { rows, untestable, bins, tied };
+  const near: CommonalityResult['overlapping'] = [];
+  sets.forEach((set, i) => {
+    for (const o of overlapping(set, sets)) {
+      // Each pair once.
+      if (sets.indexOf(o.partition) > i) near.push({ fields: set.keys.map(k => fieldOf.get(k)!), with: o.partition.keys.map(k => fieldOf.get(k)!), agree: o.agree, of: o.of });
+    }
+  });
+  return { rows, untestable, bins, tied, overlapping: near };
 }
 
 /** A measure as the reader names it: "Yield", "Hard bin 2". */

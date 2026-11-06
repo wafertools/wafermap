@@ -145,3 +145,10 @@ test('fields that group the wafers identically are not allowed for one another',
   assert.ok(r.rows.every(x => !x.allowedFor), 'neither hides the other');
   assert.equal(r.tied.length, 1);
 });
+
+test('fields that nearly match are named with how many wafers they put in the same groups', () => {
+  const lot = [4, 5, 6, 5, 19, 20, 21, 20].map((fails, i) => wafer({ tester: i < 4 ? 'T1' : 'T2', operator: i < 7 ? (i < 4 ? 'a' : 'b') : 'a' }, fails));
+  const r = rankCommonality(lot, [{ key: 'tester', label: 'Tester' }, { key: 'operator', label: 'Operator' }]);
+  assert.deepEqual(r.tied, []);
+  assert.deepEqual(r.overlapping.map(o => [o.fields.map(f => f.key), o.with.map(f => f.key), o.agree, o.of]), [[['tester'], ['operator'], 7, 8]]);
+});

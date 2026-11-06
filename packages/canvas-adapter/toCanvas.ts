@@ -189,6 +189,10 @@ const BIN_ROW_H       = 17; // px per legend row (sized against COLORBAR_LABEL_F
 const BIN_SWATCH_SIZE = 11; // px
 export const BIN_LEGEND_W               = 110; // px total right-side reserve for bin legend
 export const BIN_LEGEND_W_COMPACT       =  64; // px right-side reserve for compact legend
+// px of clear space between a side legend and the wafer area it sits beside.
+export const BIN_LEGEND_MAP_GAP         = 12;
+// px of clear space between a top/bottom legend and the axis labels or wafer next to it.
+const BIN_LEGEND_EDGE_GAP               =  8;
 export const BIN_LEGEND_ADAPT_COMPACT   = 280; // px canvas width — below this, auto-switch to compact
 export const BIN_LEGEND_ADAPT_FLOATING  = 180; // px canvas width — below this, auto-switch to floating
 // px — below either dimension no legend is drawn at all (see legendHasRoom).
@@ -341,8 +345,8 @@ export function drawMapCanvas(
 
   const maxLegendRows  = Math.floor((cssH - 2 * padding) / BIN_ROW_H);
   const legendRowCount = legendEntryCount > maxLegendRows ? maxLegendRows - 1 : legendEntryCount;
-  const bottomLegendReserve = drawLegend && legendIsBottom ? legendRowCount * BIN_ROW_H : 0;
-  const topLegendReserve    = drawLegend && legendIsTop    ? legendRowCount * BIN_ROW_H : 0;
+  const bottomLegendReserve = drawLegend && legendIsBottom ? legendRowCount * BIN_ROW_H + BIN_LEGEND_EDGE_GAP : 0;
+  const topLegendReserve    = drawLegend && legendIsTop    ? legendRowCount * BIN_ROW_H + BIN_LEGEND_EDGE_GAP : 0;
   // ── Colorbar label band ────────────────────────────────────────────────────
   // The band to the right of the bar has to be sized from the text that will
   // actually be drawn in it. It used to be a pair of constants (`labelGap = 20`
@@ -400,8 +404,8 @@ export function drawMapCanvas(
   // The wafer must clear the bar as well as the labels. The extra 8px is the
   // slack the old `colorbarWidth + 28` carried over `labelGap = 20`; keeping it
   // means a default-width colorbar reserves exactly what it always did.
-  const rightReserve    = drawColorbar ? colorbarWidth + colorbarLabelGap + 8 : drawLegend && legendIsRight ? legendWidth : 0;
-  const leftLegendReserve   = drawLegend && legendIsLeft   ? legendWidth : 0;
+  const rightReserve    = drawColorbar ? colorbarWidth + colorbarLabelGap + 8 : drawLegend && legendIsRight ? legendWidth + BIN_LEGEND_MAP_GAP : 0;
+  const leftLegendReserve   = drawLegend && legendIsLeft   ? legendWidth + BIN_LEGEND_MAP_GAP : 0;
   const axisReserve     = showAxes ? 32 : 0;
   const axisLeftReserve = showAxes ? 36 : 0;
   // When the caller specifies a minimum right reserve, use it so the wafer size
@@ -807,7 +811,12 @@ export function drawMapCanvas(
 
   // ── Draw axis ticks ────────────────────────────────────────────────────────
   if (showAxes) {
-    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve, diePitchMm, view.gridToScreen, view.rotation, theme, view.compact);
+    drawAxisTicks(ctx, cssW, cssH, originX, originY, ppm, padding, axisReserve, axisLeftReserve,
+      // The axes belong to the map area: they stop short of the legend / colorbar
+      // reserves rather than running underneath them.
+      { left: padding + leftLegendReserve, right: cssW - padding - effectiveRightReserve,
+        top: padding + topLegendReserve, bottom: cssH - padding - bottomLegendReserve },
+      diePitchMm, view.gridToScreen, view.rotation, theme, view.compact);
   }
 
   // ── Draw colorbar ──────────────────────────────────────────────────────────
@@ -1214,7 +1223,7 @@ export function drawMapCanvas(
       originXLegend = padding;
       originYLegend = padding;
     } else if (legendIsLeft) {
-      originXLegend = padding + 4;
+      originXLegend = padding;
       // Centred, but never above the reserved title row.
       originYLegend = Math.max(padding + Math.round((cssH - 2 * padding - legendHeight) / 2), padding + legendChromeH);
     } else {
@@ -1482,6 +1491,7 @@ function drawAxisTicks(
   padding: number,
   axisReserve: number,
   axisLeftReserve: number,
+  area: { left: number; right: number; top: number; bottom: number },
   diePitchMm: { x: number; y: number } | undefined,
   gridToScreen: Affine<'grid', 'screen'>,
   rotation: number,
@@ -1494,8 +1504,8 @@ function drawAxisTicks(
   ctx.strokeStyle = theme.axisLine;
   ctx.lineWidth   = 0.5;
 
-  const axisY = cssH - axisReserve + 4;
-  const axisX = padding + axisLeftReserve - 4;
+  const axisY = area.bottom - axisReserve + padding + 4;
+  const axisX = area.left + axisLeftReserve - 4;
 
   // Convert a display-space mm position to the die grid index for axis labels.
   //
@@ -1579,13 +1589,13 @@ function drawAxisTicks(
   // X axis (bottom)
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  const xStartMm = Math.ceil(((padding - originX) / ppm) / tickStepX) * tickStepX;
-  const xEndMm   = (cssW - padding - originX) / ppm;
+  const xStartMm = Math.ceil(((area.left - originX) / ppm) / tickStepX) * tickStepX;
+  const xEndMm   = (area.right - originX) / ppm;
   // Labels along the bottom need their width; labels down the side only their height.
   const xTicks = compactTicks(xAxisSrc, 36) ?? stepTicks(xStartMm, xEndMm, tickStepX, mm => diePitchMm ? String(dieIndexForDisplayX(mm)) : fmt(mm));
   for (const { mm, label } of xTicks) {
     const sx = originX + mm * ppm;
-    if (sx < padding || sx > cssW - padding) continue;
+    if (sx < area.left || sx > area.right) continue;
     ctx.beginPath();
     ctx.moveTo(sx, axisY - AXIS_TICK_LEN);
     ctx.lineTo(sx, axisY);
@@ -1596,12 +1606,12 @@ function drawAxisTicks(
   // Y axis (left) — remember Y is flipped: screen y = originY - mm * ppm
   ctx.textAlign    = 'right';
   ctx.textBaseline = 'middle';
-  const yStartMm = Math.ceil(((originY - (cssH - padding)) / ppm) / tickStepY) * tickStepY;
-  const yEndMm   = (originY - padding) / ppm;
+  const yStartMm = Math.ceil(((originY - (area.bottom - axisReserve)) / ppm) / tickStepY) * tickStepY;
+  const yEndMm   = (originY - area.top) / ppm;
   const yTicks = compactTicks(yAxisSrc, 16) ?? stepTicks(yStartMm, yEndMm, tickStepY, mm => diePitchMm ? String(dieIndexForDisplayY(mm)) : fmt(mm));
   for (const { mm, label } of yTicks) {
     const sy = originY - mm * ppm;
-    if (sy < padding || sy > cssH - padding) continue;
+    if (sy < area.top || sy > area.bottom - axisReserve) continue;
     ctx.beginPath();
     ctx.moveTo(axisX, sy);
     ctx.lineTo(axisX + AXIS_TICK_LEN, sy);

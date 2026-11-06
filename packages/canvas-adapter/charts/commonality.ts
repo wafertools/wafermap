@@ -48,6 +48,10 @@ export function renderCommonalityPanel(o: CommonalityPanelOptions): { card: HTML
     `Every wafer field, compared for yield and for the ${result.bins.length} most common fail bin${result.bins.length === 1 ? '' : 's'}, with each wafer as one value. Ranked by q (Welch's p adjusted for the ${result.rows.length} comparisons), each field read after allowing for the strongest other field that explains the same measure and does not contain it. A low q says the groups differ by more than wafer-to-wafer noise; it does not say why.`,
   ];
   if (result.tied.length) parts.push(`These fields group the wafers identically, so the wafers cannot tell them apart: ${result.tied.map(set => `${set.slice(0, -1).map(f => f.label).join(', ')} and ${set[set.length - 1].label}`).join('; ')}.`);
+  if (result.overlapping.length) {
+    const names = (fs: readonly CommonalityField[]) => `${fs.slice(0, -1).map(f => f.label).join(', ')}${fs.length > 1 ? ' and ' : ''}${fs[fs.length - 1].label}`;
+    parts.push(`These fields nearly match, so the wafers cannot fully tell them apart: ${result.overlapping.map(o => `${names(o.fields)} and ${names(o.with)} put ${o.agree} of ${o.of} wafers in the same groups`).join('; ')}.`);
+  }
   if (result.untestable.length) parts.push(`Not compared, with no two groups of two or more wafers: ${result.untestable.map(f => f.label).join(', ')}.`);
   note.textContent = parts.join(' ') + ' ';
   note.append(guideCite(doc, GUIDE_SECTIONS.dividesYield), '.');

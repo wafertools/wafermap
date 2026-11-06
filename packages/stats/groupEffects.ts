@@ -81,6 +81,12 @@ export interface AdjustedFit {
   allowedFor?: string[];
 }
 
+/** Whether two sets of groups match on most wafers: allowing for one would remove most of the other, so neither is allowed for the other. */
+function nearlyTheSame(a: GroupOf, b: GroupOf): boolean {
+  const o = overlapOf(a, b);
+  return !!o && o.agree / o.of >= MIN_OVERLAP_SHARE;
+}
+
 /**
  * Every partition read against `values`. Each is read after allowing for the strongest other set that explains the measure
  * at all (a raw p under {@link ALLOW_FOR_P}) and does not sit inside it, and for every coarser set it divides, so a field
@@ -91,7 +97,7 @@ export function adjustedFits(values: ReadonlyArray<number | undefined>, partitio
   const raw = partitions.map(partition => ({ partition, fitted: fitGroups(values, partition.groupOf) }));
   const ranked = raw.filter(r => r.fitted).sort((x, y) => x.fitted!.p - y.fitted!.p);
   return raw.map(r => {
-    const allow = ranked.filter(x => x.partition.id !== r.partition.id && x.fitted!.p < ALLOW_FOR_P && !nested(x.partition.groupOf, r.partition.groupOf));
+    const allow = ranked.filter(x => x.partition.id !== r.partition.id && x.fitted!.p < ALLOW_FOR_P && !nested(x.partition.groupOf, r.partition.groupOf) && !nearlyTheSame(x.partition.groupOf, r.partition.groupOf));
     const parents = allow.filter(x => nested(r.partition.groupOf, x.partition.groupOf));
     const strongest = allow.find(x => !nested(r.partition.groupOf, x.partition.groupOf));
     const allowing = [...(strongest ? [strongest] : []), ...parents];
@@ -110,4 +116,39 @@ export function adjustedFits(values: ReadonlyArray<number | undefined>, partitio
     }
     return { partition: r.partition, used: fitted === r.fitted ? [...values] : used, fitted, ...(allowedFor ? { allowedFor } : {}) };
   });
+}
+
+/** How closely two sets of groups agree: wafers in matching groups, and wafers compared. */
+export interface Overlap { agree: number; of: number }
+
+/** Overlaps this share of wafers or more, short of identical, is worth saying (a tester and an operator who mostly go together). */
+export const MIN_OVERLAP_SHARE = 0.75;
+
+/**
+ * The wafers two sets of groups put in matching groups, when they have the same number of groups and each group of one matches a
+ * different group of the other (its commonest partner). Undefined when they cannot be matched that way: different numbers of
+ * groups, or two groups with the same partner (one set nests inside the other, which is a different thing to say). Identical
+ * sets agree on every wafer; they are one partition (see {@link mergePartitions}) and not reported as an overlap.
+ */
+export function overlapOf(a: GroupOf, b: GroupOf): Overlap | undefined {
+  const pairs = a.flatMap((g, i) => (g !== undefined && b[i] !== undefined ? [[g, b[i]!] as const] : []));
+  const left = new Set(pairs.map(p => p[0])), right = new Set(pairs.map(p => p[1]));
+  if (pairs.length === 0 || left.size < 2 || left.size !== right.size) return undefined;
+  const counts = new Map<string, Map<string, number>>();
+  for (const [g, h] of pairs) { const m = counts.get(g) ?? counts.set(g, new Map()).get(g)!; m.set(h, (m.get(h) ?? 0) + 1); }
+  const partner = new Map<string, string>();
+  let agree = 0;
+  for (const [g, m] of counts) {
+    const [best, n] = [...m].sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1))[0];
+    partner.set(g, best); agree += n;
+  }
+  return new Set(partner.values()).size === left.size ? { agree, of: pairs.length } : undefined;
+}
+
+/** The sets among `partitions` that overlap `partition` without being identical to it, strongest first. */
+export function overlapping(partition: Partition, partitions: readonly Partition[]): Array<{ partition: Partition } & Overlap> {
+  return partitions
+    .filter(q => q.id !== partition.id)
+    .flatMap(q => { const o = overlapOf(partition.groupOf, q.groupOf); return o && o.agree < o.of && o.agree / o.of >= MIN_OVERLAP_SHARE ? [{ partition: q, ...o }] : []; })
+    .sort((x, y) => y.agree / y.of - x.agree / x.of);
 }

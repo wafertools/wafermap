@@ -19,7 +19,7 @@ import { isOneBinCluster } from './filterFindings.js';
 import { plainBinTerms } from '../renderer/fmt.js';
 import { benjaminiHochberg, normalUpperTail } from './math.js';
 import { formatP } from './groupCompare.js';
-import { adjustedFits, mergePartitions, type Partition } from './groupEffects.js';
+import { adjustedFits, mergePartitions, overlapping, type Partition } from './groupEffects.js';
 import { attributeLabel, buildFacetTable, facetValueOf, type FacetCuration } from './facets.js';
 import type { LotStatsSummary, StatsFinding, StatsSeverity, StatsSummary } from './types.js';
 import type { PlotBuiltin, PlotField, PlotSpec } from './plotSpec.js';
@@ -901,6 +901,12 @@ function groupShiftItems(
     return `${first} (${joinNames(others)} group${others.length === 1 ? 's' : ''} the same wafers)`;
   };
   const allowance = (c: Candidate): string => c.allowedFor ? `, allowing for ${labelsOf(c.allowedFor)}` : '';
+  /** Said after an item about a set of groups: the other sets that nearly match it, so a reader does not take one for the other. */
+  const overlapNote = (part: string): string => {
+    const here = partitions.find(p => p.id === part);
+    const near = here ? overlapping(here, partitions) : [];
+    return near.length === 0 ? '' : `. ${near.map(n => `${labelsOf(n.partition.keys.slice(0, 1))} puts ${n.agree} of ${n.of} wafers in the same groups`).join('; ')}, so the wafers cannot fully tell ${near.length === 1 ? 'the two' : 'them'} apart`;
+  };
   const otherName = (c: Candidate): string => `${attributeLabel(c.keys[0], attributes)} ${c.other!.group}`;
   const saidOf = (c: Candidate): string => c.other
     ? `${c.label} is ${c.higher ? 'higher' : 'lower'} on ${groupName(c)} than on ${otherName(c)} (${c.groupWafers} and ${c.other.wafers} wafers)`
@@ -919,9 +925,9 @@ function groupShiftItems(
     const named = rest.slice(0, 2).map(({ c: o }) => `${o.label} ${o.higher ? 'higher' : 'lower'} on ${o.keys.length > 1 ? attributeLabel(o.keys[0], attributes) + ' ' : ''}${o.group} (${sigma(o.d)})`);
     const more = rest.length - named.length;
     const n = list.length;
-    const text = n === 1
+    const text = (n === 1
       ? `${said}, each wafer one value (q ${formatP(lead.q)})`
-      : `${n} tests differ by ${field}. Largest: ${said}, each wafer one value (q ${formatP(lead.q)}); next: ${named.join(', ')}${more > 0 ? `, and ${more} more` : ''}`;
+      : `${n} tests differ by ${field}. Largest: ${said}, each wafer one value (q ${formatP(lead.q)}); next: ${named.join(', ')}${more > 0 ? `, and ${more} more` : ''}`) + overlapNote(part);
     const item = signalItem({
       affected: weight, measure: sigma(c.d), severity: lead.q < 0.001 ? 'unusual' : 'notable',
       text, reason: n === 1 ? said : `${n} tests differ by ${field}. Largest: ${said}`,
@@ -953,7 +959,7 @@ function groupShiftItems(
       : `${c.label} is ${gap} ${c.higher ? 'higher' : 'lower'} on ${groupName(c)} (${c.groupWafers} of ${wafers.length} wafers) than on the other wafers`;
     items.push(signalItem({
       affected: weight, measure: gap, severity: qy < 0.001 ? 'unusual' : 'notable',
-      text: `${said}${made}, each wafer one value (q ${formatP(qy)})`, reason: `${said}${made}`,
+      text: `${said}${made}, each wafer one value (q ${formatP(qy)})${overlapNote(c.part)}`, reason: `${said}${made}`,
       brief: `${field} ${c.group}: ${c.region ? 'ring pass rate' : 'yield'} ${c.higher ? 'higher' : 'lower'}`, subject: field,
       target: { kind: 'group', field: c.keys[0], fields: c.keys }, testNumbers: [],
       chart: { chart: 'bar', fields: { x: { meta: c.keys[0] }, y: { builtin: 'yield' }, color: { meta: c.keys[0] } }, valueLabels: true,

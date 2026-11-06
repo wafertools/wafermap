@@ -1558,7 +1558,7 @@ The **What divides yield** card makes the comparison [Comparing groups of wafers
 common fail bins (a bin's value is its share of a wafer's judged dies). Rows are ranked by q, so the fields at the top
 separate the wafers more clearly than wafer-to-wafer noise would. The **Group by** button regroups every chart by that
 field. Each field is read after allowing for the strongest other field that explains the same measure (and does not contain it): a probe card on wafers that also differ by recipe is ranked by what the recipe leaves, and its row says "allowing for" that field, with the degrees of freedom the removed means used charged to the p. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
-fields that change together (a lot and its start date, or a tester and the handler docked to it) cannot be told apart by the wafers; the card names each set of them. A low q points to where
+fields that change together (a lot and its start date, or a tester and the handler docked to it) cannot be told apart by the wafers; the card names each set of them, and names fields that nearly match (most wafers in matching groups) with how many wafers agree. A low q points to where
 to look; it is not a cause. Tool, chamber and probe-card fields appear only when the host supplies them as wafer
 attributes.
 

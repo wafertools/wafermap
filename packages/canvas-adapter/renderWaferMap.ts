@@ -4,7 +4,7 @@ import type { View, ViewOptions, PlotMode } from '../renderer/buildView.js';
 import { buildView, buildHoverText, findTestDef, resolveTestNumber, buildMapTitle } from '../renderer/buildView.js';
 import type { Die } from '../core/dies.js';
 import type { Reticle } from '../core/reticle.js';
-import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, PATH_SHAPES, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
+import { drawMapCanvas, BIN_LEGEND_W, BIN_LEGEND_W_COMPACT, BIN_LEGEND_MAP_GAP, BIN_LEGEND_ADAPT_COMPACT, BIN_LEGEND_ADAPT_FLOATING, PATH_SHAPES, type ToCanvasOptions, type ViewportTransform, type BinLegendRow } from './toCanvas.js';
 import { buildWaferMap, computeCoverage, computeYield, defaultBinMode, getTestPassStatus, isParametricTest, isBuiltMap } from '../renderer/buildWaferMap.js';
 import type { TestDef, BinDef, MetadataFieldDef, ReticleConfig, WaferMapResult } from '../renderer/buildWaferMap.js';
 import type { StatsFinding, StatsSummary } from '../stats/types.js';
@@ -2798,12 +2798,12 @@ export function renderWaferMapCard(
     const colorbarReserve = (drawOptions.colorbarWidth ?? 16) + 28;
     const stableRight = hasBinData && isRightLegend
       ? legendPos !== 'default'
-        ? Math.max(BIN_LEGEND_W, colorbarReserve)
+        ? Math.max(BIN_LEGEND_W + BIN_LEGEND_MAP_GAP, colorbarReserve)
         : cssW < BIN_LEGEND_ADAPT_FLOATING
           ? 0
           : cssW < BIN_LEGEND_ADAPT_COMPACT
-            ? Math.max(BIN_LEGEND_W_COMPACT, colorbarReserve)
-            : Math.max(BIN_LEGEND_W, colorbarReserve)
+            ? Math.max(BIN_LEGEND_W_COMPACT + BIN_LEGEND_MAP_GAP, colorbarReserve)
+            : Math.max(BIN_LEGEND_W + BIN_LEGEND_MAP_GAP, colorbarReserve)
       : undefined;
 
     const result = drawMapCanvas(canvas, currentView, {

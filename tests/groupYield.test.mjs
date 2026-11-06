@@ -13,9 +13,10 @@ import { pickExamples } from '../dist/packages/stats/examplePicks.js';
 import { examplePlots, fieldCatalogue } from '../dist/packages/stats/plotData.js';
 
 const DATA = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'examples', 'data');
+const cardAt = (name) => readFileSync(join(DATA, `${name}.csv`), 'utf8').split('\n')[0].split(',').indexOf('probe_card');
 const FIELDS = ['tester', 'handler', 'probe_card', 'operator', 'test_program', 'test_date', 'split'];
 
-function synthesisFull(name) {
+function synthesisFull(name, extraMeta = () => ({})) {
   const meta = JSON.parse(readFileSync(join(DATA, `${name}.meta.json`), 'utf8'));
   const [head, ...lines] = readFileSync(join(DATA, `${name}.csv`), 'utf8').trim().split('\n');
   const cols = head.split(',');
@@ -23,11 +24,11 @@ function synthesisFull(name) {
   const byWafer = new Map();
   for (const line of lines) {
     const v = line.split(',');
-    if (!byWafer.has(v[1])) byWafer.set(v[1], { metadata: { lot: v[0], waferId: v[1], ...Object.fromEntries(FIELDS.filter(f => at(f) >= 0).map(f => [f, v[at(f)]])) }, results: [] });
+    if (!byWafer.has(v[1])) byWafer.set(v[1], { metadata: { lot: v[0], waferId: v[1], ...Object.fromEntries(FIELDS.filter(f => at(f) >= 0).map(f => [f, v[at(f)]])), ...extraMeta(v, byWafer.size) }, results: [] });
     byWafer.get(v[1]).results.push({ x: +v[2], y: +v[3], hbin: +v[4], sbin: +v[5], testValues: { 1001: +v[at('iddq')], 1002: +v[at('vref')], 1003: +v[at('fmax')] } });
   }
   const maps = [...byWafer.values()].map(w => buildWaferMap({ ...meta, results: w.results, waferConfig: { ...meta.waferConfig, metadata: w.metadata } }));
-  const attributes = Object.fromEntries(FIELDS.map(f => [f, { label: f }]));
+  const attributes = Object.fromEntries([...FIELDS, 'nearly_card'].map(f => [f, { label: f }]));
   return buildSynthesis(analyzeWaferLot(maps), { passBins: [1], attributes });
 }
 const synthesisOf = (name) => { const s = synthesisFull(name); return [...s.items, ...(s.also?.items ?? [])]; };
@@ -110,4 +111,12 @@ test('example plots: a bar of yield for each field offered, beyond the one the s
   const bars = examplePlots(catalogue, items.length, ((n) => () => `e${n++}`)(0), { items }).filter(p => p.chart === 'bar' && p.fields.y?.builtin === 'yield');
   const xs = bars.map(p => p.fields.x.meta);
   assert.ok(xs.includes('tester') && xs.includes('handler'), `bars by ${xs.join(', ')}`);
+});
+
+test('a field that nearly matches the probe card is named on its item, so the two are not taken for each other', () => {
+  // Same groups as the card on every wafer but the first.
+  const s = synthesisFull('edge-ring', (v, i) => ({ nearly_card: (i === 0 ? v[cardAt('edge-ring')] === 'PC-A' : v[cardAt('edge-ring')] === 'PC-B') ? 'x' : 'y' }));
+  const card = [...s.items, ...(s.also?.items ?? [])].find(it => it.target.kind === 'group' && it.target.field === 'probe_card');
+  assert.ok(card, 'the card item');
+  assert.match(card.text, /nearly_card puts 7 of 8 wafers in the same groups, so the wafers cannot fully tell the two apart/);
 });
