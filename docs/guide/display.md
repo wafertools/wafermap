@@ -1,3 +1,7 @@
+---
+description: "Set how a wafermap map looks and behaves: plot mode, bin and value colour schemes, orientation, legends, the toolbar and interaction options."
+---
+
 # Developer Guide — Display and interaction
 
 **Part of the [Developer Guide](../guide.md).**

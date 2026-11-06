@@ -37,6 +37,8 @@ const href = d => d.file + (d.anchor ?? '');
 
 function renderMarkdown(manifest) {
   const out = [];
+  // The docs site's description of the page, for search results.
+  out.push('---', 'description: "Live interactive wafermap demos: findings, galleries, Insights charts, filters and integration examples, each a standalone page in your browser."', '---', '');
   out.push('# Examples');
   out.push('');
   out.push('Live interactive demos. Each opens a standalone page rendered in the browser.');

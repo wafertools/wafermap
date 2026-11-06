@@ -1,3 +1,7 @@
+---
+description: "How wafermap's statistics engine finds spatial patterns in rings, quadrants, sectors, reticle positions and clusters, and shows them in the Summary panel."
+---
+
 # Developer Guide — Findings and the Summary panel
 
 **Part of the [Developer Guide](../guide.md).**

@@ -1,3 +1,7 @@
+---
+description: "What to change in your code when a wafermap release removes or changes something you use, newest release first."
+---
+
 # Upgrading
 
 What to change in your code when a release removes or changes something you use, newest

@@ -1,3 +1,7 @@
+---
+description: "Validation of wafermap's spatial pattern detection: the benchmark method, detection rates and false-positive characterisation."
+---
+
 # Spatial Detection Analysis
 
 **For:** engineers and developers deciding how much to trust the automatic detections. This is a validation report — benchmark method, detection rates, false-positive characterisation — not a how-to; for usage see [Pattern Detection](pattern-detection.md).

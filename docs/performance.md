@@ -1,3 +1,7 @@
+---
+description: "How fast wafermap is: map rendering, the Summary panel's statistics, Insights charts and pattern detection, and tuning for large lots."
+---
+
 # Performance
 
 **For:** developers sizing up the library or tuning large-lot workloads.

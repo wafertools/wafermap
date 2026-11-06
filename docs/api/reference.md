@@ -1,3 +1,7 @@
+---
+description: "wafermap's package surface: its import paths, helper functions and exported TypeScript types."
+---
+
 # API Reference — Package surface, helpers and types
 
 **Part of the [API Reference](../api.md).**

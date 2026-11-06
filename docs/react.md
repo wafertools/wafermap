@@ -1,3 +1,7 @@
+---
+description: "Use wafermap in a TypeScript React app: install it, mount a wafer map in a component and clean it up, with React owning data and state."
+---
+
 # Using wafermap in React
 
 This guide is for developers integrating `wafermap` into a TypeScript + React application.

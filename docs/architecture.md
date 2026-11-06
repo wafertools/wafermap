@@ -1,3 +1,7 @@
+---
+description: "How wafermap is structured, from the outside in: what a user sees, the entry points to choose from and how the parts fit together."
+---
+
 # Architecture
 
 **For:** developers choosing an entry point or wanting the system picture. Not needed for basic use — the [Quick Start](quickstart.md) and [Developer Guide](guide.md) stand alone.

@@ -4,7 +4,8 @@ extra_javascript = [
   { path = "stylesheets/guide-demos-init.js", defer = true },
   { path = "guide-demos.js",                  defer = true },
 ]
-site_name   = "Wafermap"
+site_name   = "wafermap"
+site_description = "wafermap: an open-source JavaScript library for interactive wafer maps, yield statistics and charts from semiconductor test data."
 site_url    = "https://wafertools.github.io/wafermap/"
 site_author = "Paul Robins"
 repo_url    = "https://github.com/wafertools/wafermap"

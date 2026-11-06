@@ -1,3 +1,7 @@
+---
+description: "Statistics and findings reference: detect yield, bin and test-value patterns concentrated in rings, quadrants, sectors, reticle positions and clusters."
+---
+
 # API Reference — Statistics and findings engine
 
 **Part of the [API Reference](../api.md).**

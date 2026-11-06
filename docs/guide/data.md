@@ -1,3 +1,7 @@
+---
+description: "How wafermap reads hard and soft bins, test values, test limits and wafer and die metadata, with code for mapping your own test data."
+---
+
 # Developer Guide — Bins, test values and metadata
 
 **Part of the [Developer Guide](../guide.md).**

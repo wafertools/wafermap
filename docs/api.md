@@ -1,3 +1,7 @@
+---
+description: "API reference for @wafertools/wafermap: buildWaferMap, renderWaferMap, renderWaferGallery, the statistics engine, the Web Worker and exported types."
+---
+
 # API Reference
 
 **For:** developers integrating the library. This is a reference, not a tutorial — if you're new, start with the [Quick Start](quickstart.md) and [Developer Guide](guide.md).

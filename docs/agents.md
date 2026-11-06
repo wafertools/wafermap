@@ -1,3 +1,7 @@
+---
+description: "Using wafermap with AI coding agents such as Claude Code, Codex, Copilot and Cursor, so the wafer map code they write stays correct."
+---
+
 # Using wafermap with an AI coding agent
 
 **For:** developers whose day-to-day coding runs through Claude Code, Codex, Copilot,

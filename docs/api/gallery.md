@@ -1,3 +1,7 @@
+---
+description: "renderWaferGallery reference: a multi-wafer gallery with a shared control bar and detachable cards, its options and the controller it returns."
+---
+
 # API Reference — `renderWaferGallery` — gallery
 
 **Part of the [API Reference](../api.md).**

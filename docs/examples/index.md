@@ -1,3 +1,7 @@
+---
+description: "Live interactive wafermap demos: findings, galleries, Insights charts, filters and integration examples, each a standalone page in your browser."
+---
+
 # Examples
 
 Live interactive demos. Each opens a standalone page rendered in the browser.

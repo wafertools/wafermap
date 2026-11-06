@@ -1,3 +1,7 @@
+---
+description: "Common mistakes when integrating wafermap and how to fix them, such as CSV fields read as strings, with the error or symptom each one gives."
+---
+
 # Troubleshooting
 
 **For:** developers integrating the library. Common mistakes and how to fix them.

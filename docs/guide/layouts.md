@@ -1,3 +1,7 @@
+---
+description: "Reticle overlays and other wafer layouts in wafermap: drawing stepper fields, reticle-position analysis, and handling wafers and lots at scale."
+---
+
 # Developer Guide — Layouts and scale
 
 **Part of the [Developer Guide](../guide.md).**

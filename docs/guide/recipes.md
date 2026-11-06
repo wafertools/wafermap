@@ -1,3 +1,7 @@
+---
+description: "Short, task-focused wafermap examples for common integration questions, such as an embedded map without a toolbar or a report thumbnail."
+---
+
 # Developer Guide — Recipes
 
 **Part of the [Developer Guide](../guide.md).**

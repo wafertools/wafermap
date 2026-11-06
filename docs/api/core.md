@@ -1,3 +1,7 @@
+---
+description: "buildWaferMap reference: turn prober step positions or a die array into a wafer model, with missing geometry inferred, and its input and result types."
+---
+
 # API Reference — `buildWaferMap` — the data layer
 
 **Part of the [API Reference](../api.md).**

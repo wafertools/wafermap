@@ -1,3 +1,7 @@
+---
+description: "Developer guide to wafermap: build wafer maps from your test data, set the display, add findings and the Summary panel, galleries, Insights and reports."
+---
+
 # Developer Guide — wafermap
 
 **For:** developers integrating the library. **Read first:** [Quick Start](quickstart.md). If you're an engineer *using* an app built with wafermap, you want the [Application User Guide](user-guide.md) instead.

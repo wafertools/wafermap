@@ -1,3 +1,7 @@
+---
+description: "Use wafermap in a TypeScript Vue 3 app: install it, mount a wafer map in a component and clean it up, with Vue owning data and reactive state."
+---
+
 # Using wafermap in Vue 3
 
 This guide is for developers integrating `wafermap` into a TypeScript + Vue 3 application.

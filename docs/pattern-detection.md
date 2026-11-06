@@ -1,3 +1,7 @@
+---
+description: "wafermap's spatial pattern detection: statistical findings and pattern classification of wafer maps, what each label means and how far to trust it."
+---
+
 # Spatial Pattern Detection
 
 **For:** developers enabling pattern classification, and engineers wanting to know what the pattern labels mean and how far to trust them.

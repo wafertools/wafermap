@@ -1,3 +1,7 @@
+---
+description: "Run buildWaferMap and wafermap's analysis in a Web Worker so that building a large wafer or lot does not freeze the page."
+---
+
 # API Reference — Web Worker
 
 **Part of the [API Reference](../api.md).**

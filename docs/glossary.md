@@ -1,3 +1,7 @@
+---
+description: "Definitions of the semiconductor test and wafermap terms used in the library and its apps, for developers and for engineers using them."
+---
+
 # Glossary
 
 **For:** both audiences — developers without a semiconductor background, and app users who meet an unfamiliar term on screen.

@@ -1,3 +1,7 @@
+---
+description: "renderWaferMap reference: a self-contained interactive wafer map with a built-in toolbar, its render options and the controller it returns."
+---
+
 # API Reference — `renderWaferMap` — single map
 
 **Part of the [API Reference](../api.md).**

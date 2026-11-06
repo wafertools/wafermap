@@ -1,3 +1,7 @@
+---
+description: "Use wafermap in a TypeScript SvelteKit app: install it, mount a wafer map in a component and clean it up, with your app owning data and state."
+---
+
 # Using wafermap in SvelteKit
 
 This guide is for a developer who wants to try `wafermap` inside a TypeScript + SvelteKit application.

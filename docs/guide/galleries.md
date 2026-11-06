@@ -1,3 +1,7 @@
+---
+description: "Render many wafers with renderWaferGallery: one shared control bar, lot-stacked maps, the Insights chart suite and lot reports."
+---
+
 # Developer Guide — Galleries, Insights and reports
 
 **Part of the [Developer Guide](../guide.md).**

@@ -29,7 +29,12 @@ const rules = match[1].trim();
 const longest = Math.max(0, ...[...rules.matchAll(/^`{3,}/gm)].map(m => m[0].length));
 const fence   = '`'.repeat(Math.max(4, longest + 1));
 
-const page = `# Using wafermap with an AI coding agent
+// The front matter is the docs site's description of the page, for search results.
+const page = `---
+description: "Using wafermap with AI coding agents such as Claude Code, Codex, Copilot and Cursor, so the wafer map code they write stays correct."
+---
+
+# Using wafermap with an AI coding agent
 
 **For:** developers whose day-to-day coding runs through Claude Code, Codex, Copilot,
 Cursor or similar. **See also:** [Developer Guide](guide.md) · [API Reference](api.md)

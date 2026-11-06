@@ -42,6 +42,8 @@ const toolbarDataUri = `data:image/png;base64,${toolbarB64}`;
 
 // ── Read and pre-process Markdown ────────────────────────────────────────────
 let md = readFileSync(mdPath, 'utf8');
+// Strip YAML front matter (the docs site's title and description).
+md = md.replace(/^---\n[\s\S]*?\n---\n/, '');
 
 // Inline toolbar-single as base64 (already inlined for offline use).
 md = md.replace(

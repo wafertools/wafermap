@@ -1,4 +1,6 @@
 ---
+title: "Interactive wafer maps in JavaScript"
+description: "wafermap is an open-source JavaScript library for interactive wafer maps from semiconductor test data: bin and test maps, yield statistics, findings and charts."
 hide:
   - navigation
   - toc

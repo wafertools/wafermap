@@ -1,3 +1,7 @@
+---
+description: "User guide for wafer map apps built on wafermap: reading the maps, the toolbar, the Summary panel and findings, galleries and Insights charts."
+---
+
 # Wafer Map — User Guide
 
 This guide describes the display and analysis features of the wafer map viewer.

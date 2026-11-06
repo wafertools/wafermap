@@ -1,3 +1,7 @@
+---
+description: "Every chart, table and map wafermap draws: what each shows, when to reach for it, how to read it and where it appears."
+---
+
 # Chart reference
 
 **For:** the people who read charts: engineers using an app built on wafermap, and developers deciding which chart to put in front of them.

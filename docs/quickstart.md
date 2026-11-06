@@ -1,3 +1,7 @@
+---
+description: "Install @wafertools/wafermap and draw your first interactive wafer map from die test data in a few lines of JavaScript, coloured by bin or test value."
+---
+
 # Quick Start — @wafertools/wafermap
 
 **For:** developers integrating the library. No wafermap knowledge assumed. **Next:** [Developer Guide](guide.md).
