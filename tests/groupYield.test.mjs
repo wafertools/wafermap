@@ -57,7 +57,7 @@ test('high-yield: fields vary and no group is reported', () => {
 
 test('a group item about yield has no map to show, so its target names the field', () => {
   const card = synthesisOf('edge-ring').find(it => it.subject === 'probe_card');
-  assert.deepEqual(card.target, { kind: 'group', field: 'probe_card' });
+  assert.deepEqual(card.target, { kind: 'group', field: 'probe_card', fields: ['probe_card'] });
   assert.deepEqual(card.testNumbers, []);
   assert.equal(card.chart.chart, 'bar');
 });

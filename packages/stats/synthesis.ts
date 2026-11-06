@@ -33,7 +33,7 @@ export type SynthesisTarget =
   | { kind: 'finding'; id: string }
   | { kind: 'test'; testNumber: number }
   /** The wafers' groups on a field (Group by's key): an item about yield, which has no finding or test to show on the map. */
-  | { kind: 'group'; field: string };
+  | { kind: 'group'; field: string; /** Every field that gives the same groups, `field` first. */ fields: string[] };
 
 /** One part of an item that can be shown on its own: a fail bin in its region, the pattern, a test on the same dies. */
 export interface SynthesisChip {
@@ -955,7 +955,7 @@ function groupShiftItems(
       affected: weight, measure: gap, severity: qy < 0.001 ? 'unusual' : 'notable',
       text: `${said}${made}, each wafer one value (q ${formatP(qy)})`, reason: `${said}${made}`,
       brief: `${field} ${c.group}: ${c.region ? 'ring pass rate' : 'yield'} ${c.higher ? 'higher' : 'lower'}`, subject: field,
-      target: { kind: 'group', field: c.keys[0] }, testNumbers: [],
+      target: { kind: 'group', field: c.keys[0], fields: c.keys }, testNumbers: [],
       chart: { chart: 'bar', fields: { x: { meta: c.keys[0] }, y: { builtin: 'yield' }, color: { meta: c.keys[0] } }, valueLabels: true,
         ...(c.region ? { where: { conditions: [{ field: { builtin: 'ring' }, values: [c.region] }] } } : {}) },
     }));
@@ -995,7 +995,7 @@ function groupShiftItems(
       affected: lostDies, measure: `${agreeing.length} measures`, severity: 'info',
       text: `Possibly ${said}. No wafer of the group overlaps the others on ${agreeing.length === 2 ? 'either' : `any of ${agreeing.length}`}, but the sample is too small to confirm it once ${comparisons} comparisons are allowed for`,
       reason: `Possibly ${said}`, brief: `${field} ${c.group}: possible, not confirmed`, subject: field,
-      target: { kind: 'group', field: c.keys[0] }, testNumbers: agreeing.filter(x => !Number.isNaN(x.testNumber)).map(x => x.testNumber),
+      target: { kind: 'group', field: c.keys[0], fields: c.keys }, testNumbers: agreeing.filter(x => !Number.isNaN(x.testNumber)).map(x => x.testNumber),
       chart: { chart: 'bar', fields: { x: { meta: c.keys[0] }, y: { builtin: 'yield' }, color: { meta: c.keys[0] } }, valueLabels: true },
     });
     possible.push(item);

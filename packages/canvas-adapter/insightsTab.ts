@@ -1447,8 +1447,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     const plotItems = toPlotItems(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })));
     const destroys: Array<() => void> = [];
     synthesis.items.forEach((item, i) => {
-      // A group item is drawn as yield by that field, which the Overview's own yield card already shows once Group by is on it.
-      if (item.target.kind === 'group' && item.target.field === analysisGroupKey) return;
+      // A group item is drawn as yield by that field, which the Overview's own yield card already shows once Group by is on it or on a field that gives the same groups.
+      if (item.target.kind === 'group' && analysisGroupKey !== undefined && item.target.fields.includes(analysisGroupKey)) return;
       // Why the card is here, in one sentence (the chart says the rest): a line of its own across the card, plain, not a
       // warning. The panel's whole sentence, with the bins and tests it names, is on hover.
       const why = doc.createElement('div');
