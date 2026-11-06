@@ -1,4 +1,5 @@
 import { createViewSwitch, type ViewSwitch } from './viewSwitch.js';
+import { waferOpenMode } from './openWaferMode.js';
 import { createSummaryToggle, type SummaryToggle } from './summaryToggle.js';
 import type { PlotMode } from '../renderer/buildView.js';
 import { getUniqueTestNumbers, resolveTestNumber, findTestDef, collectMetadataValues } from '../renderer/buildView.js';
@@ -2753,13 +2754,14 @@ export function renderWaferGallery(
       // `buildDetachedController`'s own doc comment.
       // A die row in a table: back to the grid, with that die ringed on its card.
       locateDie: (die, waferIndex) => { setInsightsOpen(false); locateOnCard(waferIndex, die); },
-      openWafer: (waferIndex, title, testNumber) => {
+      openWafer: (waferIndex, title, testNumber, view) => {
         const item = activeItems()[waferIndex];
         if (!item) return;
         let ctrl: WaferMapController | null = null;
         const handle = openModal({ title, onClose: () => ctrl?.destroy(), anchor: container });
         augmentOverlayTitleWithMetadata(handle, title, item.wafer.metadata ?? undefined);
-        ctrl = buildDetachedController(handle.contentWrap, item, testNumber, undefined, roomForPanel(handle));
+        const plain = waferOpenMode(sharedOpts.plotMode, sharedOpts.activeTest, testNumber, view);
+        ctrl = buildDetachedController(handle.contentWrap, item, testNumber, plain ? { plotMode: plain } : undefined, roomForPanel(handle));
       } });
       insightsEl = insightsTab.el;
       // Hidden on arrival; setInsightsOpen reveals it once the load resolves.

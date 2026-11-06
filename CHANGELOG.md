@@ -24,6 +24,10 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+### Changed
+
+- **A wafer opened from an Insights chart starts in the mode that describes it.** A bar on a chart about a test opens that wafer on the test, a yield bar opens its bins, and a gallery showing a lot-stacked mode opens the wafer in the same kind of measure on its own, never in a stack of one wafer. The menus opened from heatmap cells and Worth a look charts name their dies once ("884 dies in FF, across 4 wafers"), and a cell of Tests by wafer opens the menu on its test.
+
 ## [0.40.0] — 2026-11-06
 
 ### Added

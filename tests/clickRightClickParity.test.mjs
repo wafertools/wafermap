@@ -79,3 +79,24 @@ for (const [name, spec] of [
     assert.ok(right.prevented > 0, 'the browser menu is left alone only where the library opens its own');
   });
 }
+
+
+// What a wafer's own bar hands over: the wafer, and the test the chart is about (none for a yield chart).
+async function openArgs(spec) {
+  const calls = new Set();
+  const chart = renderPlotChart({ onOpenWafer: (item, testNumber) => { calls.add(`${item}:${testNumber}`); } });
+  document.getElementById('root').appendChild(chart.card);
+  chart.setPlot(resolvePlot(spec, items, { testDefs: [{ testNumber: 1000, name: 'T', unit: 'V', limitLow: 0, limitHigh: 10 }] }));
+  await new Promise(r => setTimeout(r, 60));
+  const canvas = chart.card.querySelector('canvas');
+  for (let y = 0; y < 700; y += 7) for (let x = 0; x < 700; x += 7) canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  chart.destroy(); chart.card.remove();
+  return [...calls].sort();
+}
+
+test('a pass-rate bar opens its wafer on the test the chart is about; a yield bar names no test', async () => {
+  const rate = await openArgs({ id: 'r', chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { passRate: 1000 }, color: { none: true } } });
+  assert.deepEqual(rate, ['0:1000', '1:1000', '2:1000'], 'every wafer, each on test 1000');
+  const yld = await openArgs({ id: 'y', chart: 'bar', fields: { x: { builtin: 'wafer' }, y: { builtin: 'yield' }, color: { none: true } } });
+  assert.deepEqual(yld, ['0:undefined', '1:undefined', '2:undefined']);
+});

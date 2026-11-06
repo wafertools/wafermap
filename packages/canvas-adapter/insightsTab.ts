@@ -203,7 +203,7 @@ export interface InsightsTabDeps {
    * plot mode — so opening from a specific test's boxplot row lands on that
    * same test instead of hard-bin mode.
    */
-  openWafer?: (waferIndex: number, label: string, testNumber?: number) => void;
+  openWafer?: (waferIndex: number, label: string, testNumber?: number, view?: 'bins') => void;
   /**
    * Shows `testNumber` on the host's own map, in test-value mode, and leaves
    * Insights — the single-wafer counterpart to `openWafer`.
@@ -343,6 +343,12 @@ const TAB_TIPS: Partial<Record<InsightsView, string>> = {
   data: 'The same scope as tables, with CSV exports',
   plot: 'Plots you have built and saved',
 };
+
+/** The test a chart's row or category names, by the label the chart shows it with. */
+function testNumberNamed(defs: readonly TestDef[], label: string | undefined): number | undefined {
+  if (label === undefined) return undefined;
+  return defs.find(d => d.testNumber !== undefined && (d.name === label || testLabel(d, d.testNumber) === label))?.testNumber;
+}
 
 export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
   const { getItems, getLotStats, getBinColors, getRingCount, onSaveImage, onSaveText, openWafer, focusTest, locateDie } = deps;
@@ -647,8 +653,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     sectionCache = new Map();
   }
 
-  function openWaferDetailModal(waferIndex: number, title: string, testNumber?: number): void {
-    openWafer?.(waferIndex, title, testNumber);
+  function openWaferDetailModal(waferIndex: number, title: string, testNumber?: number, view?: 'bins'): void {
+    openWafer?.(waferIndex, title, testNumber, view);
   }
 
   /**
@@ -694,13 +700,23 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
    * `onSelectPoints` for a card whose marks count dies of the lot (a heatmap cell, a bar of sites): the menu on exactly the
    * dies the mark counts, per wafer. A mark counting whole wafers (a z-score cell) takes every die of those wafers.
    */
-  function marksMenu(plotItems: ReadonlyArray<{ waferIndex?: number }>, items: Item[], name: (info?: SelectInfo) => string):
+  function marksMenu(plotItems: ReadonlyArray<{ waferIndex?: number }>, items: Item[],
+    name: (info: SelectInfo | undefined, oneWafer: boolean) => string, testOf?: (info: SelectInfo | undefined) => number | undefined):
     (points: PlotPoint[], at: { x: number; y: number }, anchor: HTMLElement, info?: SelectInfo) => void {
     return (points, at, anchor, info) => {
       const dies = new Set(points.map(p => p.die).filter((d): d is Die => !!d));
       const whose = new Set(points.map(p => plotItems[p.item]?.waferIndex));
-      openDiesMenuAt(at, anchor, items.filter(it => whose.has(it.waferIndex)), name(info), dies.size ? d => dies.has(d) : () => true);
+      const among = items.filter(it => whose.has(it.waferIndex));
+      // One wafer's menu already says "on W04"; a cell's column would name it twice.
+      openDiesMenuAt(at, anchor, among, name(info, among.length === 1), dies.size ? d => dies.has(d) : () => true, testOf?.(info));
     };
+  }
+
+  /** What a mark's row and column say, for a menu's title: both when the column is a group, the row alone when it is the one wafer the menu names. */
+  function cellName(info: SelectInfo | undefined, oneWafer: boolean, fallback: string): string {
+    if (info?.cell) return `in ${info.cell.row}${oneWafer ? '' : `, ${info.cell.column}`}`;
+    if (info?.category !== undefined) return `in ${info.category}${info.group !== undefined && info.group !== info.category ? `, ${info.group}` : ''}`;
+    return fallback;
   }
 
   /** `openDiesMenu` for a gesture that reports where it ended rather than handing over its event (a drag). */
@@ -845,7 +861,8 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         drillLabel: () => (yieldNested ? undefined : 'see its wafers'),
         chart: {
           onSaveImage,
-          onOpenWafer: openWafer ? i => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`) : undefined,
+          // A yield bar opens the wafer's bins, whatever the gallery is showing: it is the map that says where the yield went.
+          onOpenWafer: openWafer ? (i, tn) => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`, tn, tn === undefined ? 'bins' : undefined) : undefined,
           onWaferMenu: waferContextMenu(items),
         },
       });
@@ -1114,7 +1131,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const card = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
         spec: { id, title: `${noun} yield by ${grouped ? groupLabelText ?? 'group' : 'wafer'}`, chart: 'heatmap', fields: { x: { slot: 'groupBy' }, rows: { builtin: region }, y: { builtin: 'yield' } } },
-        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, info => `in ${info?.cell?.row ?? noun}, ${info?.cell?.column ?? ''}`) },
+        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, (info, one) => cellName(info, one, `in a ${noun.toLowerCase()}`)) },
       });
       card.card.style.minHeight = '300px';
       elements.push(diagram ? pairCards([{ label: 'Heatmap', card: card.card }, { label: 'Diagram', card: diagram.card }], doc) : card.card);
@@ -1172,7 +1189,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const card = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
         spec: { id: 'card-reprobed', title: `Re-probed dies by ring and ${grouped ? groupLabelText ?? 'group' : 'wafer'}`, chart: 'heatmap', aggregate: 'mean', fields: { x: { slot: 'groupBy' }, rows: { builtin: 'ring' }, y: { builtin: 'reprobed' } } },
-        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, info => `re-probed dies in ${info?.cell?.row ?? 'a ring'}, ${info?.cell?.column ?? ''}`) },
+        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, (info, one) => `re-probed ${cellName(info, one, 'in a ring')}`) },
       });
       card.card.style.minHeight = '300px';
       elements.push(card.card);
@@ -1490,9 +1507,9 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         // The chart's marks answer a click and a right-click as every other Insights chart does.
         chart: {
           onSaveImage,
-          onSelectPoints: marksMenu(plotItems, items, info => (info?.cell ? `in ${info.cell.row}, ${info.cell.column}` : info?.category !== undefined ? `in ${info.category}${info.group !== undefined ? `, ${info.group}` : ''}` : 'in this part of the chart')),
+          onSelectPoints: marksMenu(plotItems, items, (info, one) => cellName(info, one, 'in this part of the chart'), info => testNumberNamed(allTestDefs, info?.cell?.row ?? info?.category)),
           onWaferMenu: waferContextMenu(items),
-          onOpenWafer: openWafer ? i => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`) : undefined,
+          onOpenWafer: openWafer ? (i, tn) => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`, tn) : undefined,
         },
       });
       card.card.dataset.wmapWorthKey = synthesisKey(item);
@@ -1886,7 +1903,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         doc, editAsPlot, items: plotItems, ctx: plotCtx,
         spec: { id: 'card-tests-wafer', title: `Tests by ${groups ? groupLabelText ?? 'group' : 'wafer'} (z-scores)`, chart: 'heatmap', level: 'wafer', aggregate: 'mean', normalize: 'zscore',
           fields: { x: { slot: 'groupBy' }, y: { tests: gridTests } } },
-        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, info => `on ${info?.cell?.column ?? 'the wafer'}, for ${info?.cell?.row ?? 'a test'}`) },
+        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, (info, one) => `${one ? '' : `in ${info?.cell?.column ?? 'the group'}, `}for ${info?.cell?.row ?? 'a test'}`, info => testNumberNamed(testDefs, info?.cell?.row)) },
       })
       : undefined;
     if (testsGrid) testsGrid.card.style.minHeight = '300px';
