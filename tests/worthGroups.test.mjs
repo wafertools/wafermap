@@ -73,9 +73,9 @@ test('a card about groups of wafers offers no Show on map, though the host can s
   assert.ok(others.some(c => c.querySelector('[data-wmap-worth-show-on-map]')), 'the other cards still offer it');
 });
 
-test('grouped by the field, the card is left out; by a field that gives the same groups, too; by another field, it stays', () => {
+test('grouped by the field, the card is left out; by another field, it stays', () => {
   const groupBy = (tab, key) => { const b = tab.el.querySelector(`[data-wmap-commonality-group="${key}"]`); assert.ok(b, `a Group by button for ${key}, among ${[...tab.el.querySelectorAll('[data-wmap-commonality-group]')].map(x => x.dataset.wmapCommonalityGroup).join(', ')}`); click(window, b); };
-  for (const [key, drawn] of [['probe_card', false], ['card_label', false], ['split', true]]) {
+  for (const [key, drawn] of [['probe_card', false], ['split', true]]) {
     const { tab } = mount();
     assert.ok(groupCard(tab), `drawn before grouping (${key})`);
     groupBy(tab, key);

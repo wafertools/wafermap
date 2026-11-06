@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cardMenuLabels } from './fixtures/cardMenu.mjs';
 import { buildWaferMap } from '../dist/index.js';
-import { rankCommonality, measureLabel, COMMONALITY_BINS } from '../dist/packages/stats/commonality.js';
+import { rankCommonality, measureLabel, COMMONALITY_BINS, groupCommonalityRows, commonalityConfidence } from '../dist/packages/stats/commonality.js';
 
 /** A wafer of 100 dies: `fail2` of them in bin 2 and `fail3` in bin 3, the rest passing in bin 1. */
 function wafer(meta, fail2, fail3 = 3) {
@@ -86,11 +86,8 @@ test('the card ranks the rows, offers Group by, and says which field Insights is
   assert.match(p.card.textContent, /Not compared.*Slot/);
   p.card.querySelector('[data-wmap-commonality-group="probeCard"]').dispatchEvent(new dom.window.MouseEvent('click'));
   assert.deepEqual(picked, ['probeCard']);
-  // Every row, then the grouped field's rows say so in place of the button.
-  [...p.card.querySelectorAll('button')].find(b => /^Show all/.test(b.textContent)).dispatchEvent(new dom.window.MouseEvent('click'));
-  const all = [...p.card.querySelectorAll('tbody tr')];
-  assert.ok(all.length > rows.length);
-  const splitRows = all.filter(r => /^Split/.test(r.textContent));
+  // The grouped field's row says so in place of the button.
+  const splitRows = [...p.card.querySelectorAll('tbody tr')].filter(r => /^Split/.test(r.textContent));
   assert.ok(splitRows.length > 0 && splitRows.every(r => /Grouped by this/.test(r.textContent)));
   const labels = cardMenuLabels(p.card);
   assert.ok(!labels.includes('Save as PNG'), 'a table: no image to save');
@@ -98,20 +95,78 @@ test('the card ranks the rows, offers Group by, and says which field Insights is
   assert.equal(p.card.style.flex, '0 0 auto', 'as tall as its table, in a column of cards');
 });
 
-test('a yield row tints its worst group when it falls short of the wafers\' mean yield; a fail bin\'s row is not tinted', async () => {
+test('a yield row tints its effect when its worst group falls short of the wafers\' mean yield; a fail bin\'s row is not tinted', async () => {
   const { JSDOM } = await import('jsdom');
   const dom = new JSDOM('<!doctype html><body></body>');
   globalThis.window = dom.window; globalThis.document = dom.window.document;
   globalThis.HTMLElement = dom.window.HTMLElement; globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
   const { renderCommonalityPanel } = await import('../dist/packages/canvas-adapter/charts/commonality.js');
   const p = renderCommonalityPanel({ wafers: lotOf(), fields, groupedBy: undefined, onGroupBy: () => {}, ownerDocument: dom.window.document });
-  [...p.card.querySelectorAll('button')].find(b => /^Show all/.test(b.textContent)).dispatchEvent(new dom.window.MouseEvent('click'));
+  p.card.querySelector('[data-wmap-commonality-more="probeCard"]').dispatchEvent(new dom.window.MouseEvent('click'));
   const rows = [...p.card.querySelectorAll('tbody tr')];
-  const probe = rows.find(r => /^Probe card/.test(r.textContent) && /Yield/.test(r.cells[1].textContent));
-  assert.match(probe.cells[2].style.background, /^rgba\(190, 60, 60/, 'probe card B: well short of the mean yield');
-  assert.equal(probe.cells[3].style.background, '', 'the best group is not tinted');
-  const bin = rows.find(r => /^Probe card/.test(r.textContent) && !/Yield/.test(r.cells[1].textContent));
-  assert.equal(bin.cells[2].style.background, '', 'a bin share is not a yield');
+  const probe = rows.find(r => /^Probe card/.test(r.textContent));
+  assert.match(probe.cells[1].querySelector('[data-wmap-sentence]').style.background, /^rgba\(190, 60, 60/, 'probe card B: well short of the mean yield');
+  const bin = rows.find(r => r.dataset.wmapCommonalityRow === 'measure' && /Hard bin 2/.test(r.textContent));
+  assert.equal(bin.cells[1].querySelector('[data-wmap-sentence]').style.background, '', 'a bin share is not a yield');
+});
+
+test('the card is one row per field, clearest first, with the other measures under a button', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!doctype html><body></body>');
+  globalThis.window = dom.window; globalThis.document = dom.window.document;
+  globalThis.HTMLElement = dom.window.HTMLElement; globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  const { renderCommonalityPanel } = await import('../dist/packages/canvas-adapter/charts/commonality.js');
+  const p = renderCommonalityPanel({ wafers: lotOf(), fields, groupedBy: undefined, onGroupBy: () => {}, ownerDocument: dom.window.document });
+  const rows = () => [...p.card.querySelectorAll('tbody tr')];
+  assert.equal(rows().length, 3, 'one row per set of fields that give the same groups (Lot and Date are one), no measure rows yet');
+  assert.ok(rows().some(r => /^Lot and Date/.test(r.textContent)), 'fields that group the wafers identically share a row');
+  assert.equal(p.card.querySelectorAll('[data-wmap-commonality-group]').length, 3, 'one Group by for each row');
+  const first = rows()[0];
+  assert.match(first.cells[1].querySelector('[data-wmap-sentence]').textContent, /^B is 15\.0 pts below A/, 'a sentence, not two group cells');
+  assert.equal(first.cells[2].dataset.wmapConfidence, 'clear');
+  assert.equal(first.cells[2].textContent, 'Clear');
+  assert.equal(first.querySelectorAll('[data-wmap-bar]').length, 2, 'the worst and the best group, as bars');
+  assert.match(first.querySelector('[data-wmap-bar="worst"]').textContent, /^B77\.5%$/);
+  assert.match(first.querySelector('[data-wmap-bar="best"]').textContent, /^A92\.5%$/);
+  const split = rows().find(r => /^Split/.test(r.textContent));
+  assert.notEqual(split.cells[2].dataset.wmapConfidence, 'clear', 'noise is not clear');
+  const more = p.card.querySelector('[data-wmap-commonality-more="probeCard"]');
+  assert.match(more.textContent, /other measure/);
+  assert.equal(more.getAttribute('aria-expanded'), 'false');
+  more.dispatchEvent(new dom.window.MouseEvent('click'));
+  assert.ok(rows().length > 4 && rows().some(r => r.dataset.wmapCommonalityRow === 'measure'));
+  assert.equal(p.card.querySelector('[data-wmap-commonality-more="probeCard"]').getAttribute('aria-expanded'), 'true');
+  assert.match(p.card.textContent, /How to read this/);
+  assert.ok(!/Welch p|Rank p/.test([...p.card.querySelectorAll('th')].map(t => t.textContent).join(' ')), 'the p-values are not columns');
+});
+
+test('yield leads a field whenever it is as clear as a fail bin, so a large yield difference is never behind a button', () => {
+  const groups = groupCommonalityRows(rankCommonality(lotOf(), fields).rows);
+  const card = groups.find(g => g.field.key === 'probeCard');
+  assert.equal(card.primary.measure.kind, 'yield');
+  assert.ok(card.others.every(o => o.measure.kind === 'bin'));
+});
+
+test('a row for fields that give the same groups says Grouped by this when Insights is grouped by any one of them', async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!doctype html><body></body>');
+  globalThis.window = dom.window; globalThis.document = dom.window.document;
+  globalThis.HTMLElement = dom.window.HTMLElement; globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  const { renderCommonalityPanel } = await import('../dist/packages/canvas-adapter/charts/commonality.js');
+  const p = renderCommonalityPanel({ wafers: lotOf(), fields, groupedBy: 'date', onGroupBy: () => {}, ownerDocument: dom.window.document });
+  const row = [...p.card.querySelectorAll('tbody tr')].find(r => /^Lot and Date/.test(r.textContent));
+  assert.match(row.textContent, /Grouped by this/);
+  assert.equal(row.querySelector('[data-wmap-commonality-group]'), null);
+});
+
+test('rows are grouped by field and ordered clear, possible, not clear, then by the size of the difference', () => {
+  assert.deepEqual([0.001, 0.049, 0.05, 0.19, 0.2, NaN].map(commonalityConfidence), ['clear', 'clear', 'possible', 'possible', 'none', 'none']);
+  const ranked = rankCommonality(lotOf(), fields);
+  const groups = groupCommonalityRows(ranked.rows, ranked.tied);
+  assert.equal(groups.length, new Set(groups.map(g => g.field.key)).size, 'each field once');
+  assert.deepEqual(groups.find(g => g.fields.length > 1).fields.map(f => f.key).sort(), ['date', 'lot'], 'a set of fields that group the wafers identically is one entry');
+  assert.equal(groups[0].field.key, 'probeCard');
+  assert.ok(groups[0].others.length > 0 && groups[0].others.every(o => o.field.key === 'probeCard'));
 });
 
 test('three fields that group the wafers identically are one tied set, not three pairs', () => {

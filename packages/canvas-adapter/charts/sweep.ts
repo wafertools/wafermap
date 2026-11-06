@@ -428,15 +428,19 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
     canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
     if (options.onSelectPoint) {
       canvas.style.cursor = 'pointer';
-      canvas.addEventListener('click', e => {
+      // A click and a right-click open the same menu on the dies measured at the level.
+      const selectLevel = (e: MouseEvent): boolean => {
         const d = data, x = nearestX(e);
-        if (d === null || x === null) return;
+        if (d === null || x === null) return false;
         // The level clicked: each series' test there (a rising and a falling run have different tests at one x).
         const here = d.series.flatMap(s => s.points.filter(p => p.x === x && p.count > 0));
-        if (here.length === 0) return;
+        if (here.length === 0) return false;
         tooltip.style.display = 'none';
         options.onSelectPoint!({ testNumbers: here.map(p => p.testNumber), label: here[0].label }, e);
-      });
+        return true;
+      };
+      canvas.addEventListener('click', e => { selectLevel(e); });
+      canvas.addEventListener('contextmenu', e => { if (selectLevel(e)) e.preventDefault(); });
     }
 
     writeFooter();

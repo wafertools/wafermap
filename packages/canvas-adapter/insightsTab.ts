@@ -64,6 +64,7 @@ import { sourceFromDies, toPlotItems } from './plotItems.js';
 import { rankTestsByWaferSpread } from '../stats/testsByWafer.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { renderPlotCard, type CardChoice } from './plotCard.js';
+import type { SelectInfo } from './charts/plotChart.js';
 import { orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
 import type { CardSpec } from '../stats/cardSpec.js';
 import { buildSynthesis, groupColouredChart, synthesisKey, SYNTHESIS_POSSIBLE_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
@@ -689,6 +690,19 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
     openDiesMenuAt({ x: e.clientX, y: e.clientY }, e.target as HTMLElement, items, what, keep, activeTest);
   }
 
+  /**
+   * `onSelectPoints` for a card whose marks count dies of the lot (a heatmap cell, a bar of sites): the menu on exactly the
+   * dies the mark counts, per wafer. A mark counting whole wafers (a z-score cell) takes every die of those wafers.
+   */
+  function marksMenu(plotItems: ReadonlyArray<{ waferIndex?: number }>, items: Item[], name: (info?: SelectInfo) => string):
+    (points: PlotPoint[], at: { x: number; y: number }, anchor: HTMLElement, info?: SelectInfo) => void {
+    return (points, at, anchor, info) => {
+      const dies = new Set(points.map(p => p.die).filter((d): d is Die => !!d));
+      const whose = new Set(points.map(p => plotItems[p.item]?.waferIndex));
+      openDiesMenuAt(at, anchor, items.filter(it => whose.has(it.waferIndex)), name(info), dies.size ? d => dies.has(d) : () => true);
+    };
+  }
+
   /** `openDiesMenu` for a gesture that reports where it ended rather than handing over its event (a drag). */
   function openDiesMenuAt(at: { x: number; y: number }, anchor: HTMLElement, items: Item[], what: string, keep: (d: Die) => boolean, activeTest?: number): void {
     const source = sourceFromDies(items.map(it => ({ label: it.identity ?? it.label, dies: it.dies, waferIndex: it.waferIndex, wafer: it.wafer, passBins: it.passBins, ringCount: getRingCount() })),
@@ -1100,7 +1114,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const card = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
         spec: { id, title: `${noun} yield by ${grouped ? groupLabelText ?? 'group' : 'wafer'}`, chart: 'heatmap', fields: { x: { slot: 'groupBy' }, rows: { builtin: region }, y: { builtin: 'yield' } } },
-        chart: { onSaveImage },
+        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, info => `in ${info?.cell?.row ?? noun}, ${info?.cell?.column ?? ''}`) },
       });
       card.card.style.minHeight = '300px';
       elements.push(diagram ? pairCards([{ label: 'Heatmap', card: card.card }, { label: 'Diagram', card: diagram.card }], doc) : card.card);
@@ -1144,7 +1158,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
           id: 'card-site', title: 'Yield by site', chart: 'bar', fields: { x: { builtin: 'site' }, y: { builtin: 'yield' }, color: { none: true } }, valueLabels: true,
           ...(sites.size >= 3 ? { axes: { y: { references: [{ stat: 'median' as const }] } } } : {}),
         },
-        chart: { onSaveImage },
+        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, info => `at site ${info?.category ?? ''}`) },
       });
       elements.push(card.card);
       destroyFns.push(card.destroy);
@@ -1158,7 +1172,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const card = renderCardWithSave({
         doc, editAsPlot, items: plotItems, ctx: { testDefs: allTestDefs, groupBy: grouped ? analysisGroupKey : undefined, curation: deps.attributes },
         spec: { id: 'card-reprobed', title: `Re-probed dies by ring and ${grouped ? groupLabelText ?? 'group' : 'wafer'}`, chart: 'heatmap', aggregate: 'mean', fields: { x: { slot: 'groupBy' }, rows: { builtin: 'ring' }, y: { builtin: 'reprobed' } } },
-        chart: { onSaveImage },
+        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, info => `re-probed dies in ${info?.cell?.row ?? 'a ring'}, ${info?.cell?.column ?? ''}`) },
       });
       card.card.style.minHeight = '300px';
       elements.push(card.card);
@@ -1472,7 +1486,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       const card = renderCardWithSave({
         doc, items: plotItems, ctx: { testDefs: allTestDefs, curation, groupBy: analysisGroupKey },
         spec: { id: `worth-${i}`, ...groupColouredChart(item.chart, !!analysisGroupKey) } as CardSpec,
-        extras, editAsPlot, chart: { onSaveImage },
+        extras, editAsPlot,
+        // The chart's marks answer a click and a right-click as every other Insights chart does.
+        chart: {
+          onSaveImage,
+          onSelectPoints: marksMenu(plotItems, items, info => (info?.cell ? `in ${info.cell.row}, ${info.cell.column}` : info?.category !== undefined ? `in ${info.category}${info.group !== undefined ? `, ${info.group}` : ''}` : 'in this part of the chart')),
+          onWaferMenu: waferContextMenu(items),
+          onOpenWafer: openWafer ? i => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`) : undefined,
+        },
       });
       card.card.dataset.wmapWorthKey = synthesisKey(item);
       grid.appendChild(card.card);
@@ -1865,7 +1886,7 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         doc, editAsPlot, items: plotItems, ctx: plotCtx,
         spec: { id: 'card-tests-wafer', title: `Tests by ${groups ? groupLabelText ?? 'group' : 'wafer'} (z-scores)`, chart: 'heatmap', level: 'wafer', aggregate: 'mean', normalize: 'zscore',
           fields: { x: { slot: 'groupBy' }, y: { tests: gridTests } } },
-        chart: { onSaveImage },
+        chart: { onSaveImage, onSelectPoints: marksMenu(plotItems, items, info => `on ${info?.cell?.column ?? 'the wafer'}, for ${info?.cell?.row ?? 'a test'}`) },
       })
       : undefined;
     if (testsGrid) testsGrid.card.style.minHeight = '300px';

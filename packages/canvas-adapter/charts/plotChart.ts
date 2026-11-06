@@ -133,6 +133,8 @@ export interface SelectInfo {
   test?: number;
   /** A histogram bar's range of values. */
   range?: { lo: number; hi: number };
+  /** A heatmap cell: its row and column. */
+  cell?: { row: string; column: string };
 }
 
 export interface PlotChartHandle {
@@ -1436,7 +1438,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     return `<strong>${escHtml(`${m.rows[cell.r]} · ${m.cols[cell.c]}`)}</strong><br>`
       + (Number.isFinite(v) ? escHtml(`${r.y?.label ?? 'Count'}: ${cellText(v, r.y?.unit, r.colorScale?.integer)}`) + '<br>' : '')
       + escHtml(`${n.toLocaleString('en-GB')} ${noun}`)
-      + (n && options.onSelectPoints ? '<br><em>click to chart or tabulate them</em>' : '');
+      + (n && options.onSelectPoints ? '<br><em>click or right-click to chart or tabulate them</em>' : '');
   }
 
   // ── control chart ──
@@ -1730,9 +1732,10 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     const open = options.openActionLabel ?? 'open this wafer';
     const interact = r.marks.type === 'scatter'
       ? (options.onOpenWafer ? ` · click a point to ${open}` : '') + (options.onSelectPoints ? ` · drag to select ${r.level === 'die' ? 'dies' : 'wafers'}` : '')
-      : (r.marks.type === 'box' || r.marks.type === 'bar') ? (options.onOpenWafer && r.marks.categoryItems ? ` · click a ${r.marks.type} to ${open}` : options.onSelectPoints ? ` · click to ${options.selectActionLabel ?? 'chart or tabulate what it counts'}` : '')
+      : (r.marks.type === 'box' || r.marks.type === 'bar') ? (options.onOpenWafer && r.marks.categoryItems ? ` · click a ${r.marks.type} to ${open}` : options.onSelectPoints ? ` · click or right-click to ${options.selectActionLabel ?? 'chart or tabulate what it counts'}` : '')
         + (r.marks.type === 'box' ? ' · box: quartiles; whiskers: minimum and maximum' : '')
-      : r.marks.type === 'histogram' && options.onSelectPoints ? ' · click a bar to chart or tabulate its dies'
+      : r.marks.type === 'histogram' && options.onSelectPoints ? ' · click or right-click a bar to chart or tabulate its dies'
+      : r.marks.type === 'heatmap' && options.onSelectPoints ? ` · click or right-click a cell to chart or tabulate its ${r.level === 'die' ? 'dies' : 'wafers'}`
       : r.marks.type === 'probability' ? (options.onOpenWafer ? ` · click a point to ${open}` : '') + (options.onSelectPoints ? ` · drag to select ${r.level === 'die' ? 'dies' : 'wafers'}` : '')
       : r.marks.type === 'line' && options.onSelectPoints ? ` · click a point to ${options.selectActionLabel ?? 'chart or tabulate what it averages'} · drag across the plot to select ${options.selectRangeLabel ?? 'a run of points'}`
       : '';
@@ -1845,8 +1848,12 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
     body.appendChild(canvas);
 
     // A point that is one wafer (no die) opens that wafer's menu on a right-click.
-    const waferMenu = options.onWaferMenu
-      ? (p: PlotPoint, e: MouseEvent) => { if (!p.die) options.onWaferMenu!(p.item, plotTestNumber(r.spec), e); }
+    // A wafer's own point opens its wafer's menu; a die's point opens the menu on that die.
+    const waferMenu = options.onWaferMenu || options.onSelectPoints
+      ? (p: PlotPoint, e: MouseEvent) => {
+        if (!p.die && options.onWaferMenu) options.onWaferMenu(p.item, plotTestNumber(r.spec), e);
+        else if (p.die && options.onSelectPoints) { e.preventDefault(); options.onSelectPoints([p], { x: e.clientX, y: e.clientY }, canvas!); }
+      }
       : undefined;
     if (r.marks.type === 'scatter') {
       const sc = r.marks;
@@ -1943,8 +1950,9 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       const hm = r.marks;
       if (options.onSelectPoints) {
         canvas.style.cursor = 'pointer';
-        canvas.addEventListener('click', e => {
-          if (!histogram || histogramTip(e) === null) return;
+        // A click and a right-click open the same menu on the dies in the bar.
+        const openBar = (e: MouseEvent): boolean => {
+          if (!histogram || histogramTip(e) === null) return false;
           const b = hoveredBin;
           const { edges } = histogram;
           const log = geometry?.x.log;
@@ -1962,11 +1970,13 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
             // A loop, not `points.push(...)`: a bin on a large wafer holds one point per die, past the spread's argument limit.
             for (const point of unitPoints(hm.unit, inBin, g)) points.push(point);
           });
-          if (points.length > 0) {
-            tooltip.style.display = 'none';
-            options.onSelectPoints!(points, { x: e.clientX, y: e.clientY }, canvas!, { range: { lo: edges[b], hi: edges[b + 1] }, ...(active.size === 1 ? { group: r.groups[[...active][0]] } : {}) });
-          }
-        });
+          if (points.length === 0) return false;
+          tooltip.style.display = 'none';
+          options.onSelectPoints!(points, { x: e.clientX, y: e.clientY }, canvas!, { range: { lo: edges[b], hi: edges[b + 1] }, ...(active.size === 1 ? { group: r.groups[[...active][0]] } : {}) });
+          return true;
+        };
+        canvas.addEventListener('click', e => { openBar(e); });
+        canvas.addEventListener('contextmenu', e => { if (openBar(e)) e.preventDefault(); });
       }
     } else if (r.marks.type === 'heatmap') {
       const hm = r.marks;
@@ -1980,12 +1990,18 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         if (!hoveredHeat || hoveredHeat.r !== cell.r || hoveredHeat.c !== cell.c) { hoveredHeat = cell; draw(); }
       });
       canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; if (hoveredHeat) { hoveredHeat = null; draw(); } });
-      canvas.addEventListener('click', e => {
+      // A click and a right-click open the same menu on the dies (or wafers) a cell counts.
+      const openCell = (e: MouseEvent): boolean => {
         const cell = heatAt(e);
-        if (!cell || !options.onSelectPoints) return;
+        if (!cell || !options.onSelectPoints) return false;
         const units = hm.cellUnits[cell.r][cell.c];
-        if (units.length) { tooltip.style.display = 'none'; options.onSelectPoints(unitPoints(hm.unit, units, 0), { x: e.clientX, y: e.clientY }, canvas!); }
-      });
+        if (!units.length) return false;
+        tooltip.style.display = 'none';
+        options.onSelectPoints(unitPoints(hm.unit, units, 0), { x: e.clientX, y: e.clientY }, canvas!, { cell: { row: hm.rows[cell.r], column: hm.cols[cell.c] } });
+        return true;
+      };
+      canvas.addEventListener('click', e => { openCell(e); });
+      canvas.addEventListener('contextmenu', e => { if (openCell(e)) e.preventDefault(); });
     } else if (r.marks.type === 'box' || r.marks.type === 'bar') {
       const cm = r.marks;
       if (r.spec.orientation === 'horizontal') {
@@ -2024,27 +2040,32 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         if (!hoveredCell || hoveredCell.g !== cell.g || hoveredCell.c !== cell.c) { hoveredCell = cell; draw(); }
       });
       canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; if (hoveredCell) { hoveredCell = null; draw(); } });
-      if (options.onWaferMenu && cm.categoryItems) {
-        canvas.addEventListener('contextmenu', e => {
-          const cell = cellAt(e);
-          const item = cell ? cm.categoryItems![cell.c] : undefined;
-          if (item === undefined || item < 0) return;
+      // The same menu on a click and on a right-click: a wafer's own bar or box opens that wafer on a click and its menu on a
+      // right-click; any other cell picks out what it counts and opens the menu on those dies either way.
+      const openCellMenu = (e: MouseEvent, cell: { g: number; c: number }): boolean => {
+        const units = cm.cellUnits[cell.g][cell.c];
+        if (units.length === 0 || !options.onSelectPoints) return false;
+        tooltip.style.display = 'none';
+        options.onSelectPoints(unitPoints(cm.unit, units, cell.g), { x: e.clientX, y: e.clientY }, canvas!,
+          { category: cm.categories[cell.c], ...(r.groups.length > 1 ? { group: r.groups[cell.g] } : {}), ...testOfCategory(cm.categories[cell.c]) });
+        return true;
+      };
+      canvas.addEventListener('contextmenu', e => {
+        const cell = cellAt(e);
+        if (!cell) return;
+        const item = cm.categoryItems?.[cell.c];
+        if (item !== undefined && item >= 0 && options.onWaferMenu) {
           tooltip.style.display = 'none';
-          options.onWaferMenu!(item, plotTestNumber(r.spec), e);
-        });
-      }
+          options.onWaferMenu(item, plotTestNumber(r.spec), e);
+        } else if (openCellMenu(e, cell)) e.preventDefault();
+      });
       canvas.addEventListener('click', e => {
         const cell = cellAt(e);
         if (!cell) return;
         const item = cm.categoryItems?.[cell.c];
         // A wafer's own bar or box opens that wafer; any other cell picks out what it counts.
         if (item !== undefined && item >= 0 && options.onOpenWafer) { options.onOpenWafer(item, plotTestNumber(r.spec)); return; }
-        const units = cm.cellUnits[cell.g][cell.c];
-        if (units.length > 0 && options.onSelectPoints) {
-          tooltip.style.display = 'none';
-          options.onSelectPoints(unitPoints(cm.unit, units, cell.g), { x: e.clientX, y: e.clientY }, canvas!,
-            { category: cm.categories[cell.c], ...(r.groups.length > 1 ? { group: r.groups[cell.g] } : {}), ...testOfCategory(cm.categories[cell.c]) });
-        }
+        openCellMenu(e, cell);
       });
     } else if (r.marks.type === 'line') {
       canvas.addEventListener('mousemove', e => {
@@ -2057,12 +2078,19 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
       });
       canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; if (hoveredLine >= 0) { hoveredLine = -1; draw(); } });
       const lm = r.marks;
-      if (options.onWaferMenu) {
+      // A right-click on a point is its wafer's menu; on a point that is not one wafer, the menu a click opens.
+      const linePoints = (): PlotPoint[] => lm.cellUnits.flatMap((perX, g) => (active.size > 0 && !active.has(g) ? [] : unitPoints(lm.unit, perX[hoveredLine] ?? [], g)));
+      if (options.onWaferMenu || options.onSelectPoints) {
         canvas.addEventListener('contextmenu', e => {
-          const item = lineTip(e) === null ? undefined : lineWaferAt(hoveredLine);
-          if (item === undefined) return;
-          tooltip.style.display = 'none';
-          options.onWaferMenu!(item, plotTestNumber(r.spec), e);
+          if (lineTip(e) === null || hoveredLine < 0) return;
+          const item = lineWaferAt(hoveredLine);
+          if (item !== undefined && options.onWaferMenu) {
+            tooltip.style.display = 'none';
+            options.onWaferMenu(item, plotTestNumber(r.spec), e);
+          } else if (options.onSelectPoints) {
+            const points = linePoints();
+            if (points.length > 0) { e.preventDefault(); tooltip.style.display = 'none'; options.onSelectPoints(points, { x: e.clientX, y: e.clientY }, canvas!); }
+          }
         });
       }
       if (options.onSelectPoints) {
@@ -2090,7 +2118,7 @@ export function renderPlotChart(options: PlotChartOptions): PlotChartHandle {
         canvas.addEventListener('click', e => {
           if (dragged) { dragged = false; return; }
           if (lineTip(e) === null || hoveredLine < 0) return;
-          const points = lm.cellUnits.flatMap((perX, g) => (active.size > 0 && !active.has(g) ? [] : unitPoints(lm.unit, perX[hoveredLine] ?? [], g)));
+          const points = linePoints();
           if (points.length > 0) { tooltip.style.display = 'none'; options.onSelectPoints!(points, { x: e.clientX, y: e.clientY }, canvas!); }
         });
       }

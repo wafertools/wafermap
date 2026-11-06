@@ -272,7 +272,8 @@ highlighting one bin at a time.
 Use the **Overlays** menu to toggle optional display layers on and off:
 
 - **Axis labels** — the die coordinates along the bottom and left edges. They appear when you zoom; this row shows
-  them all the time, or hides them. **Clear overlays** returns to showing them on zoom
+  them all the time, or hides them. **Clear overlays** returns to showing them on zoom. Labels run across the dies
+  and no further, and sit clear of the legend wherever it is placed
 - **XY axis indicator** — arrows showing which way the X and Y die coordinates run
 - **Ring boundaries** — concentric ring divisions that match the spatial analysis zones
 - **Quadrant lines** — divides the wafer into NE, NW, SE and SW quadrants
@@ -1005,7 +1006,7 @@ onto that pair.*
 
 ### What a click does
 
-Every mark on an Insights chart stands for something, and a click opens it:
+Every mark on an Insights chart stands for something, and a click opens it. A **right-click** on any mark opens the menu on what it counts, so on a mark that stands for dies a click and a right-click do the same; on a wafer's own mark, a click opens the wafer's map and a right-click its menu. The tooltip says which.
 
 | Click | Opens |
 | --- | --- |
@@ -1016,6 +1017,8 @@ Every mark on an Insights chart stands for something, and a click opens it:
 | A level of a **sweep** curve | the menu on the dies measured at that level |
 | A **drag** across the wafer-to-wafer **trend** | the menu on the dies of the wafers whose points the drag crossed (a click on a point still opens that wafer) |
 | A **ring** or **quadrant** of the yield diagrams | the menu on the dies it counts |
+| A cell of a **heatmap** (yield by ring or quadrant and wafer, re-probed dies, tests by wafer), or a bar of **Yield by site** | the menu on the dies the cell or bar counts (on every die of the wafer, for a cell of tests by wafer) |
+| The chart on a **Worth a look** card | as the same chart anywhere else in Insights |
 | A cell of the correlation matrix | that pair in the scatter |
 | A test in the process-capability chart | that test in the other distribution charts |
 | A row of the **Wafers** table | that wafer's map |
@@ -1023,7 +1026,7 @@ Every mark on an Insights chart stands for something, and a click opens it:
 
 The menu offers the charts and tables for just those dies (and your own plots), and its heading names
 them, for example "412 dies in hard bin 3, across 13 wafers". A mark that has no dies behind it does nothing.
-Right-click on any wafer's bar, box or point opens the same menu for the whole wafer.
+Right-click on any wafer's bar, box or point opens the same menu for the whole wafer. The exceptions only move within Insights and have no menu: a test in the process-capability chart and a cell of the correlation matrix.
 
 ### Data tables
 
@@ -1555,9 +1558,13 @@ the evidence, not a fault; more wafers are what settle it.
 ### 10.3 What divides yield
 
 The **What divides yield** card makes the comparison [Comparing groups of wafers](#102-comparing-groups-of-wafers) describes for every wafer field at once, for yield and for each of the five most
-common fail bins (a bin's value is its share of a wafer's judged dies). Rows are ranked by q, so the fields at the top
-separate the wafers more clearly than wafer-to-wafer noise would. The **Group by** button regroups every chart by that
-field. Each field is read after allowing for the strongest other field that explains the same measure (and does not contain it): a probe card on wafers that also differ by recipe is ranked by what the recipe leaves, and its row says "allowing for" that field, with the degrees of freedom the removed means used charged to the p. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
+common fail bins (a bin's value is its share of a wafer's judged dies). It has one row per field, showing its yield,
+or a fail bin when that differs more clearly. The **Effect** column draws the worst and the best group as two bars on a
+scale of 0 to 100%, each with its mean, with a sentence giving the gap in percentage points; hover a bar for the group's median,
+spread and wafer count. **Confidence** is **Clear** (q under 0.05),
+**Possible** (under 0.2) or **Not clear**, so the fields at the top separate the wafers more clearly than wafer-to-wafer
+noise would; hover it for q, Welch's p and the rank p. A button on a field opens its other measures. The **Group by**
+button regroups every chart by that field. Each field is read after allowing for the strongest other field that explains the same measure (and does not contain it): a probe card on wafers that also differ by recipe is ranked by what the recipe leaves, and its row says "allowing for" that field, with the degrees of freedom the removed means used charged to the p. Two limits are stated on the card itself: a field that gives every wafer its own value cannot be tested, and
 fields that change together (a lot and its start date, or a tester and the handler docked to it) cannot be told apart by the wafers; the card names each set of them, and names fields that nearly match (most wafers in matching groups) with how many wafers agree. A low q points to where
 to look; it is not a cause. Tool, chamber and probe-card fields appear only when the host supplies them as wafer
 attributes.

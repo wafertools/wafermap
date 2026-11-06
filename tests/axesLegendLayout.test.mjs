@@ -68,3 +68,14 @@ test('a bottom legend leaves the x-axis labels above it', () => {
 test('a side legend keeps a gap to the wafer area', () => {
   assert.ok(BIN_LEGEND_MAP_GAP >= 8);
 });
+
+test('x-axis labels stay within the dies whichever way the legend sits', () => {
+  // The grid is centred on 0 and 10 dies wide, so no label may name a column beyond +-6.
+  for (const pos of ['bottom', 'top', 'default']) {
+    const { texts, swatches } = draw(pos);
+    const xLabels = texts.filter(t => /^-?\d+$/.test(t.s) && t.px < 12 && t.y > 300 && t.s !== '25')
+      .filter(t => !swatches.some(s => Math.abs(t.y - (s.y + SWATCH / 2)) < 2 && t.x0 >= s.x));
+    assert.ok(xLabels.length > 0, pos);
+    for (const t of xLabels) assert.ok(Number(t.s) >= -6 && Number(t.s) <= 6, `${pos}: label "${t.s}" is beyond the dies`);
+  }
+});

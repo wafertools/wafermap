@@ -311,11 +311,16 @@ export function renderRegionYieldDiagram(options: RegionYieldDiagramOptions): Re
   canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
   if (options.onSelectRegion) {
     canvas.style.cursor = 'pointer';
-    canvas.addEventListener('click', e => {
+    // A click and a right-click open the same menu on the dies in the region.
+    const select = (e: MouseEvent): boolean => {
       const rect = canvas.getBoundingClientRect();
       const row = regionAt(e.clientX - rect.left, e.clientY - rect.top);
-      if (row) options.onSelectRegion!(row, e);
-    });
+      if (!row) return false;
+      options.onSelectRegion!(row, e);
+      return true;
+    };
+    canvas.addEventListener('click', e => { select(e); });
+    canvas.addEventListener('contextmenu', e => { if (select(e)) e.preventDefault(); });
   }
 
   const resizeHandle = observeResize(card, () => draw());

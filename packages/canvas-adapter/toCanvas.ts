@@ -816,6 +816,8 @@ export function drawMapCanvas(
       // reserves rather than running underneath them.
       { left: padding + leftLegendReserve, right: cssW - padding - effectiveRightReserve,
         top: padding + topLegendReserve, bottom: cssH - padding - bottomLegendReserve },
+      // Labels name die positions, so none is drawn beyond the dies (in mm from the origin).
+      { minX, maxX, minY, maxY },
       diePitchMm, view.gridToScreen, view.rotation, theme, view.compact);
   }
 
@@ -1492,6 +1494,7 @@ function drawAxisTicks(
   axisReserve: number,
   axisLeftReserve: number,
   area: { left: number; right: number; top: number; bottom: number },
+  extentMm: { minX: number; maxX: number; minY: number; maxY: number },
   diePitchMm: { x: number; y: number } | undefined,
   gridToScreen: Affine<'grid', 'screen'>,
   rotation: number,
@@ -1589,8 +1592,8 @@ function drawAxisTicks(
   // X axis (bottom)
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'top';
-  const xStartMm = Math.ceil(((area.left - originX) / ppm) / tickStepX) * tickStepX;
-  const xEndMm   = (area.right - originX) / ppm;
+  const xStartMm = Math.ceil(Math.max((area.left - originX) / ppm, extentMm.minX) / tickStepX) * tickStepX;
+  const xEndMm   = Math.min((area.right - originX) / ppm, extentMm.maxX);
   // Labels along the bottom need their width; labels down the side only their height.
   const xTicks = compactTicks(xAxisSrc, 36) ?? stepTicks(xStartMm, xEndMm, tickStepX, mm => diePitchMm ? String(dieIndexForDisplayX(mm)) : fmt(mm));
   for (const { mm, label } of xTicks) {
@@ -1606,8 +1609,8 @@ function drawAxisTicks(
   // Y axis (left) — remember Y is flipped: screen y = originY - mm * ppm
   ctx.textAlign    = 'right';
   ctx.textBaseline = 'middle';
-  const yStartMm = Math.ceil(((originY - (area.bottom - axisReserve)) / ppm) / tickStepY) * tickStepY;
-  const yEndMm   = (originY - area.top) / ppm;
+  const yStartMm = Math.ceil(Math.max((originY - (area.bottom - axisReserve)) / ppm, extentMm.minY) / tickStepY) * tickStepY;
+  const yEndMm   = Math.min((originY - area.top) / ppm, extentMm.maxY);
   const yTicks = compactTicks(yAxisSrc, 16) ?? stepTicks(yStartMm, yEndMm, tickStepY, mm => diePitchMm ? String(dieIndexForDisplayY(mm)) : fmt(mm));
   for (const { mm, label } of yTicks) {
     const sy = originY - mm * ppm;

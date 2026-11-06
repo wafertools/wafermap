@@ -20,6 +20,8 @@ import { plainBinTerms } from '../renderer/fmt.js';
 import { benjaminiHochberg, normalUpperTail } from './math.js';
 import { formatP } from './groupCompare.js';
 import { adjustedFits, mergePartitions, overlapping, type Partition } from './groupEffects.js';
+import { ringPlotValue } from './dieRegions.js';
+import { parseRegionKey } from './regions.js';
 import { attributeLabel, buildFacetTable, facetValueOf, type FacetCuration } from './facets.js';
 import type { LotStatsSummary, StatsFinding, StatsSeverity, StatsSummary } from './types.js';
 import type { PlotBuiltin, PlotField, PlotSpec } from './plotSpec.js';
@@ -801,8 +803,10 @@ function groupShiftItems(
     bin?: number;
     /** Read after allowing for these fields, the strongest explanation of the same measure. */
     allowedFor?: string[];
-    /** A pass rate in this ring, not the wafer's yield. */
+    /** A pass rate in this ring, not the wafer's yield: the ring as a finding names it ("Ring 4 (edge)"). */
     region?: string;
+    /** That ring as a plot's Ring field names it ("Ring 4"), which a plot condition must use. */
+    regionValue?: string;
     /** Every wafer of the group lies beyond every other wafer, on the values the comparison used. */
     separated?: boolean;
     /** Pass rates only: the dies the worse side lost against the better, in the dies the measure covers. */
@@ -830,7 +834,7 @@ function groupShiftItems(
 
   const candidates: Candidate[] = [];
   const yieldCandidates: Candidate[] = [];
-  type Measure = { testNumber: number; label: string; values: Array<number | undefined>; scale: number; region?: string; scope?: number[] };
+  type Measure = { testNumber: number; label: string; values: Array<number | undefined>; scale: number; region?: string; regionValue?: string; scope?: number[] };
   const measures: Measure[] = [];
   for (const [testNumber, label] of [...tests].sort((a, b) => a[0] - b[0])) {
     const within = perWafer.flatMap(m => { const t = m.get(testNumber); return t && Number.isFinite(t.stddev) ? [t.stddev ** 2] : []; });
@@ -845,7 +849,7 @@ function groupShiftItems(
     const values = wafers.map(w => { const r = w.summary.stats.regionYield?.ring?.find(x => x.key === weakest.key); return r ? r.yieldPercent / 100 : undefined; });
     if (values.every(v => v !== undefined)) {
       const scope = wafers.map(w => w.summary.stats.regionYield?.ring?.find(x => x.key === weakest.key)?.n ?? 0);
-      measures.push({ testNumber: NaN, label: `${weakest.label} pass rate`, values, scale: 1, region: weakest.label, scope });
+      measures.push({ testNumber: NaN, label: `${weakest.label} pass rate`, values, scale: 1, region: weakest.label, regionValue: ringPlotValue(parseRegionKey(weakest.key).ring!), scope });
     }
   }
   for (const m of measures) {
@@ -854,7 +858,7 @@ function groupShiftItems(
       if (!fitted) continue;
       const best = furthest(fitted.byGroup, i => used[i]!, m.scale,
         (group, idx, d, higher) => ({ part, keys, testNumber: m.testNumber, label: m.label, group, members: idx, groupWafers: idx.length,
-          groupDies: idx.reduce((n, i) => n + dies[i], 0), d, higher, p: fitted!.p, ...(m.region ? { region: m.region } : {}), ...(allowed ? { allowedFor: allowed } : {}) }));
+          groupDies: idx.reduce((n, i) => n + dies[i], 0), d, higher, p: fitted!.p, ...(m.region ? { region: m.region, regionValue: m.regionValue } : {}), ...(allowed ? { allowedFor: allowed } : {}) }));
       if (!best) continue;
       const inside = best.members.map(i => used[i]!);
       const rest = [...fitted.byGroup].filter(([g]) => g !== best.group).flatMap(([, ix]) => ix.map(i => used[i]!));
@@ -963,7 +967,7 @@ function groupShiftItems(
       brief: `${field} ${c.group}: ${c.region ? 'ring pass rate' : 'yield'} ${c.higher ? 'higher' : 'lower'}`, subject: field,
       target: { kind: 'group', field: c.keys[0], fields: c.keys }, testNumbers: [],
       chart: { chart: 'bar', fields: { x: { meta: c.keys[0] }, y: { builtin: 'yield' }, color: { meta: c.keys[0] } }, valueLabels: true,
-        ...(c.region ? { where: { conditions: [{ field: { builtin: 'ring' }, values: [c.region] }] } } : {}) },
+        ...(c.region ? { where: { conditions: [{ field: { builtin: 'ring' }, values: [c.regionValue ?? c.region] }] } } : {}) },
     }));
   });
 

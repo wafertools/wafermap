@@ -74,11 +74,14 @@ function cellOf(d: Die, ctx: RegionContext): { column: number; row: number } | u
   return reticle && hasPosition(d) ? getReticleCell(d, reticle) : undefined;
 }
 
+/** The value a plot's Ring field gives ring `ring`: the one name a ring condition in a plot spec must use. */
+export const ringPlotValue = (ring: number): string => `Ring ${ring}`;
+
 export const DIE_REGIONS: Record<DieRegionKey, DieRegionDef> = {
   ring: {
     key: 'ring', label: 'Ring',
     available: (ctx, anyPositioned) => !!ctx.wafer && anyPositioned,
-    valueOf: (d, ctx) => { const c = classify(d, ctx, 'a ring of a plot'); return c ? `Ring ${c.ring}` : undefined; },
+    valueOf: (d, ctx) => { const c = classify(d, ctx, 'a ring of a plot'); return c ? ringPlotValue(c.ring) : undefined; },
     rawOf: (d, ctx) => { const c = classify(d, ctx, 'a ring of a plot'); return c ? String(c.ring) : undefined; },
     grouping: {
       family: 'ring',

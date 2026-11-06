@@ -24,6 +24,8 @@ under `### Breaking`.
 
 ## [Unreleased]
 
+## [0.40.0] — 2026-11-06
+
 ### Added
 
 - **What stands out compares groups of wafers on yield and on the weakest ring, as well as on tests.** A probe card, a tester or a process recipe that costs yield is listed with its size in yield points and the fail bin most of it is in, and a pattern that is heavier in one group shows as a lower pass rate in its ring on that group's wafers. Each set of groups is read after allowing for the strongest other one (a weak card on wafers that also differ by recipe), and says so. Fields that group the wafers identically (a tester and the handler docked to it) are one item that names them together. A yield item has no map view, so its target is `{ kind: 'group', field }` and its chart is a bar of yield by that field.
@@ -36,7 +38,10 @@ under `### Breaking`.
 
 ### Changed
 
-- **Axes and legends keep clear of each other.** With axes shown, the tick labels sit beside the map rather than under a left or bottom legend and stop at a right-hand legend or colorbar, and a side legend leaves a 12 px gap to the wafer area (a left legend no longer reaches into it).
+- **A click and a right-click agree on every Insights chart.** A right-click on a bar, a histogram bar, a heatmap cell, a ring, quadrant or reticle cell, a sweep level or a point opens the same menu on the dies it counts that a click opens, and on a wafer's own bar or point the menu for that wafer. The heatmaps (yield by ring or quadrant and wafer, re-probed dies, tests by wafer), Yield by site and the charts on Worth a look open it too, and their tooltips say so.
+- **What divides yield shows fields that group the wafers identically as one row.** The row names every field of the set, and its Group by button groups by the first.
+- **What divides yield has one row per field.** Each row shows the field's yield (or a fail bin, when that differs more clearly) as two bars, the worst and the best group's mean, and a sentence giving the gap in points. **Confidence** reads Clear, Possible or Not clear from q (under 0.05, under 0.2), with q, Welch's p and the rank p in its tooltip, and the other measures open under a button on the field. Fields are ordered clear first, then by the size of the difference. How to read the statistics is under **How to read this**.
+- **Axes and legends keep clear of each other.** With axes shown, the tick labels sit beside the map, clear of a left or bottom legend, and stop at a right-hand legend or colorbar. A side legend leaves a 12 px gap to the wafer area. Tick labels name only die positions: they run across the dies and no further, whichever side the legend is on.
 - **The Insights demo lot carries a tester and a probe card.** Its wafers are probed on two testers and three probe cards, one of them weak, so **What divides yield** ranks equipment beside the process split, and a field that moves with another is named as such. `docs/examples/data.js` takes `equipmentForWafer(index)` and a `yieldShift` option for it.
 - **The Chart gallery shows Sweep and Histogram of the dies picked.** Each has a thumbnail and a tile that opens its own page. The sweep, derived-test and name-pattern examples use neutral test names (`LEVEL_12K`, `Cum_share= …`) in the guide, the API reference and the tests.
 

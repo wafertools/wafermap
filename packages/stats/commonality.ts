@@ -149,3 +149,45 @@ export function rankCommonality(wafers: readonly CommonalityWafer[], fields: rea
 /** A measure as the reader names it: "Yield", "Hard bin 2". */
 export const measureLabel = (m: CommonalityMeasure, binName?: (bin: number) => string | undefined): string =>
   m.kind === 'yield' ? 'Yield' : `Hard bin ${m.bin}${binName?.(m.bin) ? ` (${binName(m.bin)})` : ''}`;
+
+/** How plainly a row's groups differ, from its q: the word the card shows in place of the p-values. */
+export type CommonalityConfidence = 'clear' | 'possible' | 'none';
+
+/** q under 0.05 is clear, under 0.2 possible; a q that could not be computed is not clear. */
+export const commonalityConfidence = (q: number): CommonalityConfidence => (q < 0.05 ? 'clear' : q < 0.2 ? 'possible' : 'none');
+
+export const CONFIDENCE_LABEL: Record<CommonalityConfidence, string> = { clear: 'Clear', possible: 'Possible', none: 'Not clear' };
+
+/** One field with its strongest measure, and its other measures behind it. */
+export interface CommonalityFieldRows {
+  field: CommonalityField;
+  /** Every field that gives the same groups of wafers, `field` first: one row stands for all of them. */
+  fields: CommonalityField[];
+  primary: CommonalityRow;
+  others: CommonalityRow[];
+}
+
+/**
+ * The rows as one entry per field: yield leads unless a fail bin is clearer, then the measure with the lowest q, the field's other measures follow it.
+ * Fields are ordered clear, then possible, then not clear, and within each by the size of the leading difference.
+ */
+export function groupCommonalityRows(rows: readonly CommonalityRow[], tied: readonly (readonly CommonalityField[])[] = []): CommonalityFieldRows[] {
+  const byField = new Map<string, CommonalityRow[]>();
+  for (const r of rows) (byField.get(r.field.key) ?? byField.set(r.field.key, []).get(r.field.key)!).push(r);
+  const tier = (r: CommonalityRow) => ['clear', 'possible', 'none'].indexOf(commonalityConfidence(r.pAdjusted));
+  const setOf = new Map<string, readonly CommonalityField[]>();
+  for (const set of tied) for (const f of set) setOf.set(f.key, set);
+  // Fields that group the wafers identically have identical rows: one row for the set, led by its first field in rank order.
+  const emitted = new Set<readonly CommonalityField[]>();
+  const entries: CommonalityFieldRows[] = [];
+  for (const rs of byField.values()) {
+    const set = setOf.get(rs[0].field.key);
+    if (set) { if (emitted.has(set)) continue; emitted.add(set); }
+    // With nothing clear to lead with, yield leads: the measure a reader looks for first. A fail bin leads only when it is
+    // clearer than yield.
+    const yieldRow = rs.find(r => r.measure.kind === 'yield');
+    const lead = yieldRow && tier(yieldRow) <= tier(rs[0]) ? yieldRow : rs[0];
+    entries.push({ field: rs[0].field, fields: set ? [rs[0].field, ...set.filter(f => f.key !== rs[0].field.key)] : [rs[0].field], primary: lead, others: rs.filter(r => r !== lead) });
+  }
+  return entries.sort((a, b) => tier(a.primary) - tier(b.primary) || b.primary.spread - a.primary.spread);
+}
