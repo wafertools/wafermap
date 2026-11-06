@@ -436,7 +436,13 @@ export function renderSweepPanel(options: SweepPanelOptions): SweepPanelHandle {
         const here = d.series.flatMap(s => s.points.filter(p => p.x === x && p.count > 0));
         if (here.length === 0) return false;
         tooltip.style.display = 'none';
-        options.onSelectPoint!({ testNumbers: here.map(p => p.testNumber), label: here[0].label }, e);
+        // Named by the level, since the dies of every series measured there are in it, not by one series' label.
+        // "VDD (V)" and 0.65 read "VDD 0.65 V": the unit a label carries in brackets follows the value.
+        const named = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(d.xLabel);
+        const label = !d.xIsPhysical ? tickText(here[0])
+          : d.xUnit || !named ? `${d.xLabel} ${fmtX(x, d.xUnit)}`
+          : `${named[1]} ${fmtX(x)} ${named[2]}`;
+        options.onSelectPoint!({ testNumbers: here.map(p => p.testNumber), label }, e);
         return true;
       };
       canvas.addEventListener('click', e => { selectLevel(e); });

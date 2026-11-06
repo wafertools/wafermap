@@ -65,7 +65,7 @@ import { rankTestsByWaferSpread } from '../stats/testsByWafer.js';
 import { isYieldEligibleDie } from '../core/dies.js';
 import { renderPlotCard, type CardChoice } from './plotCard.js';
 import type { SelectInfo } from './charts/plotChart.js';
-import { orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
+import { plotTestNumber, orderFieldValues, axisValues, type PlotContext, type PlotItem, type PlotPoint } from '../stats/plotData.js';
 import type { CardSpec } from '../stats/cardSpec.js';
 import { buildSynthesis, groupColouredChart, synthesisKey, SYNTHESIS_POSSIBLE_HEADING, type SynthesisTarget } from '../stats/synthesis.js';
 import { commonPassBins } from '../core/passBins.js';
@@ -1492,11 +1492,14 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
       if (deps.showOnMap && item.target.kind !== 'group') {
         const btn = doc.createElement('button');
         btn.type = 'button';
-        btn.textContent = 'Show on map';
+        // An item about groups of wafers that leads with a test shows that test's map, not the groups: the button says which test.
+        const grouped = item.target.kind === 'test' && !!item.chart && 'fields' in item.chart && !!item.chart.fields?.x && !Array.isArray(item.chart.fields.x) && 'meta' in item.chart.fields.x;
+        const leadDef = grouped && item.target.kind === 'test' ? allTestDefs.find(d => d.testNumber === (item.target as { testNumber: number }).testNumber) : undefined;
+        btn.textContent = leadDef ? `Show ${testLabel(leadDef, leadDef.testNumber)} on map` : 'Show on map';
         btn.dataset.wmapWorthShowOnMap = '1';
         Object.assign(btn.style, { ...controlStyle('outlined'), fontSize: FONT.body, padding: `0 ${SPACE.md}` } as Partial<CSSStyleDeclaration>);
         wireControlHover(btn);
-        wireTooltip(btn, 'Leave Insights and show this on the map, as its row in What stands out does');
+        wireTooltip(btn, leadDef ? `Leave Insights and show ${testLabel(leadDef, leadDef.testNumber)} on the map. The map shows the test, not the groups` : 'Leave Insights and show this on the map, as its row in What stands out does');
         btn.addEventListener('click', () => deps.showOnMap!(item.target));
         extras.push(btn);
       }
@@ -1507,7 +1510,13 @@ export function createInsightsTab(deps: InsightsTabDeps): InsightsTabHandle {
         // The chart's marks answer a click and a right-click as every other Insights chart does.
         chart: {
           onSaveImage,
-          onSelectPoints: marksMenu(plotItems, items, (info, one) => cellName(info, one, 'in this part of the chart'), info => testNumberNamed(allTestDefs, info?.cell?.row ?? info?.category)),
+          onSelectPoints: marksMenu(plotItems, items, (info, one) => {
+            // A histogram bar is a range of the chart's test, said as the Distributions histogram says it.
+            const def = info?.range ? allTestDefs.find(d => d.testNumber === plotTestNumber(item.chart as PlotSpec)) : undefined;
+            return def && info?.range
+              ? `with ${testLabel(def, def.testNumber)} from ${fmt(info.range.lo, def.unit, 'engineering')} to ${fmt(info.range.hi, def.unit, 'engineering')}${info.group ? ` in ${info.group}` : ''}`
+              : cellName(info, one, 'in this part of the chart');
+          }, info => testNumberNamed(allTestDefs, info?.cell?.row ?? info?.category) ?? plotTestNumber(item.chart as PlotSpec)),
           onWaferMenu: waferContextMenu(items),
           onOpenWafer: openWafer ? (i, tn) => openWaferDetailModal(plotItems[i].waferIndex ?? i, `Wafer ${plotItems[i].label}`, tn) : undefined,
         },

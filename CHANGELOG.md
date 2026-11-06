@@ -26,7 +26,7 @@ under `### Breaking`.
 
 ### Changed
 
-- **A wafer opened from an Insights chart starts in the mode that describes it.** A bar on a chart about a test opens that wafer on the test, a yield bar opens its bins, and a gallery showing a lot-stacked mode opens the wafer in the same kind of measure on its own, never in a stack of one wafer. The menus opened from heatmap cells and Worth a look charts name their dies once ("884 dies in FF, across 4 wafers"), and a cell of Tests by wafer opens the menu on its test.
+- **A wafer opened from an Insights chart starts in the mode that describes it.** A bar on a chart about a test opens that wafer on the test, a yield bar opens its bins, and a gallery showing a lot-stacked mode opens the wafer in the same kind of measure on its own, never in a stack of one wafer. The menus opened from heatmap cells and Worth a look charts name their dies once ("884 dies in FF, across 4 wafers"), a histogram bar names its test and range ("162 dies with Ioff from 11.2 pA to 23.5 pA"), a cell of Tests by wafer opens the menu on its test, and a sweep level is named by its value ("measured at VDD 0.65 V"). On a Worth a look card about groups of wafers that leads with a test, the map button names that test ("Show fmax_MHz on map").
 
 ## [0.40.0] — 2026-11-06
 
